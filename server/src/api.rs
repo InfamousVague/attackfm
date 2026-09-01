@@ -581,6 +581,12 @@ pub async fn add_pending_like(
             .set_favorite(caller.id, id, true)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         state.db.promote_curator_track(id);
+        // A landed like is a met song: out of New Music now.
+        let st = state.clone();
+        let user = caller.id;
+        tokio::spawn(async move {
+            crate::chartlists::refresh_new_music_for(&st, user);
+        });
         return Ok(Json(json!({ "landed": true, "trackId": id, "k": k })));
     }
     state
@@ -669,6 +675,13 @@ pub async fn set_favorite(
     // skips the audition entirely and joins the library at once.
     if body.favorite {
         state.db.promote_curator_track(track_id);
+        // Hearted = met: it leaves New Music now (a promoted audition used to
+        // walk straight back in as an arrival).
+        let st = state.clone();
+        let user = caller.id;
+        tokio::spawn(async move {
+            crate::chartlists::refresh_new_music_for(&st, user);
+        });
     }
     Ok(Json(json!({ "ok": true })))
 }

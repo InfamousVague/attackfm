@@ -34,6 +34,61 @@ const RECENT_WINDOW: i64 = 80;
 /// with library lines; the voice never needed the model at all.
 const PATTER_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// How long a dealt song sits out of the taste set. Three days: long enough
+/// that a week of presses reads as a DJ with range, short enough that a small
+/// library is not starved - the hold graduates, see dealt_hold.
+pub(crate) const TASTE_DEALT_WINDOW_MS: i64 = 72 * 60 * 60 * 1000;
+
+/// The songs to hold back because they were dealt lately - with a FLOOR.
+///
+/// The all-or-nothing release this replaces ("hold everything dealt in the
+/// window, unless that would starve the table, then hold nothing") had a
+/// cliff: a heavy presser on a big library could flip the whole ledger off
+/// at once, and from then on nothing but jitter separated two presses. So
+/// the newest `want` dealt songs are held UNCONDITIONALLY - the set you just
+/// got can never be the set you get next, whatever the library's size - and
+/// older deals are held only while `pool` can spare them, oldest released
+/// first.
+pub(crate) fn dealt_hold(
+    db: &crate::db::Db,
+    user: i64,
+    window_ms: i64,
+    want: usize,
+    pool: usize,
+) -> HashSet<i64> {
+    let dealt = db.dj_dealt_since(user, crate::db::now_ms() - window_ms);
+    let mut held: HashSet<i64> = HashSet::new();
+    for (i, (id, _)) in dealt.iter().enumerate() {
+        if i < want || pool > held.len() + want * 2 {
+            held.insert(*id);
+        } else {
+            break;
+        }
+    }
+    held
+}
+
+/// The draw, not the top: a rank-weighted lottery over a wide head, so closer
+/// to the top is still likelier but every press shuffles the deal - seat 1 is
+/// ~6x likelier than seat 90. `ranked` best first; the result in drawn order.
+/// Shared by the taste set and the chart / new-music doors.
+pub(crate) fn weighted_draw(ranked: Vec<(f32, i64)>, head: usize) -> Vec<(f32, i64)> {
+    use rand_distr::Distribution;
+    let head: Vec<(f32, i64)> = ranked.into_iter().take(head).collect();
+    let mut rng = rand::thread_rng();
+    let mut drawn: Vec<(f64, (f32, i64))> = head
+        .into_iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let weight = 1.0 / (1.0 + i as f64 / 15.0);
+            let p: f64 = rand_distr::Uniform::new(0.0f64, 1.0).sample(&mut rng);
+            (p.powf(1.0 / weight), row)
+        })
+        .collect();
+    drawn.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    drawn.into_iter().map(|(_, row)| row).collect()
+}
+
 /// Runs cut by hand when the model is absent or over budget: the same shape
 /// the patter aims for, minus the prose. Seats mirror the voice layer's own
 /// choice (opener, turns, a closer once there is more than one run).
@@ -313,11 +368,8 @@ pub(crate) async fn build_reply(
     // is small enough that the exclusion would empty the table, in which
     // case variety honestly costs repeats and the hold is released.
     let mut held: HashSet<i64> = taste.heard.clone();
-    let dealt = state.db.dj_dealt_since(user, crate::db::now_ms() - 72 * 60 * 60 * 1000);
     let library_size = feats.iter().filter(|f| !f.quarantined).count();
-    if library_size > dealt.len() + want * 2 {
-        held.extend(dealt);
-    }
+    held.extend(dealt_hold(&state.db, user, TASTE_DEALT_WINDOW_MS, want, library_size));
 
     /*
      * The taste profile, in every vector the library actually has.
@@ -415,23 +467,7 @@ pub(crate) async fn build_reply(
      * likelier, but every press shuffles the deal - which, with the dealt
      * ledger above, is what "generate it fresh" actually means.
      */
-    let ranked: Vec<(f32, i64)> = {
-        use rand_distr::Distribution;
-        let head = ranked.into_iter().take(want * 6).collect::<Vec<_>>();
-        let mut rng = rand::thread_rng();
-        let mut drawn: Vec<(f64, (f32, i64))> = head
-            .into_iter()
-            .enumerate()
-            .map(|(i, row)| {
-                // Rank-weighted lottery: seat 1 is ~6x likelier than seat 90.
-                let weight = 1.0 / (1.0 + i as f64 / 15.0);
-                let p: f64 = rand_distr::Uniform::new(0.0f64, 1.0).sample(&mut rng);
-                (p.powf(1.0 / weight), row)
-            })
-            .collect();
-        drawn.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-        drawn.into_iter().map(|(_, row)| row).collect()
-    };
+    let ranked: Vec<(f32, i64)> = weighted_draw(ranked, want * 6);
 
     let artist_of: HashMap<i64, String> = feats
         .iter()
@@ -489,9 +525,17 @@ pub(crate) async fn build_reply(
             .collect();
         // Candidates: best track per unmet artist, judged by the same taste.
         let mut best: HashMap<String, (f32, i64)> = HashMap::new();
+        // The dealt hold applies here too: these seats used to be the one
+        // door the ledger never guarded, and "best track per artist" is a
+        // fixed answer - an artist that won a seat twice brought the same
+        // song both times. Held out, the artist returns with its next-best.
         for f in feats.iter() {
             let key = f.artist.to_lowercase();
-            if key.is_empty() || played.contains(&key) || taken.contains(&key) {
+            if key.is_empty()
+                || played.contains(&key)
+                || taken.contains(&key)
+                || held.contains(&f.track_id)
+            {
                 continue;
             }
             let sc = score(f, &taste);
@@ -665,7 +709,16 @@ pub(crate) async fn build_reply(
         // clip endpoint keeps the promise even if this task dies first.
         crate::voice::mint_behind(state, jobs);
     }
-    Ok(json!({ "ai": ai_url().is_some(), "vibe": seed, "blocks": blocks }))
+    // `steered` says whether the seed actually shaped the ranking. When the
+    // embedder is down every mood chip silently collapses onto the taste set;
+    // saying so lets the client (and an operator reading the JSON) tell a
+    // steered set from a shrug wearing the seed's name.
+    Ok(json!({
+        "ai": ai_url().is_some(),
+        "vibe": seed,
+        "steered": seed_vec.is_some(),
+        "blocks": blocks,
+    }))
 }
 
 /// Ask the DJ model to break the chosen set into a few runs and open each with a

@@ -3234,6 +3234,16 @@ impl Db {
         }
     }
 
+    /// Drop impressions older than `before`. The ledger only ever needs the
+    /// dealt window and the adoption look-back, and it grew a row per seat per
+    /// press forever - with the chart and new-music doors now dealing too.
+    pub fn prune_dj_impressions(&self, before: i64) {
+        let _ = self.lock().execute(
+            "DELETE FROM dj_impressions WHERE created_at < ?1",
+            params![before],
+        );
+    }
+
     /// A fresher preview URL for a pooled candidate - Deezer's carry expiring
     /// signatures, so the stored one goes stale within days.
     pub fn update_discovery_preview(&self, user_id: i64, ext_id: &str, preview: &str) {
@@ -3243,18 +3253,21 @@ impl Db {
         );
     }
 
-    /// Track ids the DJ has dealt this listener since `since` - the variety
-    /// ledger. A set that can re-deal yesterday's set is a playlist wearing
-    /// a DJ's name.
-    pub fn dj_dealt_since(&self, user_id: i64, since: i64) -> Vec<i64> {
+    /// What the DJ has dealt this listener since `since`, newest deal first:
+    /// (track_id, when it was last dealt). The variety ledger - a set that can
+    /// re-deal yesterday's set is a playlist wearing a DJ's name. Ordered so a
+    /// caller can hold the most recent deals unconditionally and graduate the
+    /// older ones (see dj::dealt_hold).
+    pub fn dj_dealt_since(&self, user_id: i64, since: i64) -> Vec<(i64, i64)> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT DISTINCT track_id FROM dj_impressions
-             WHERE user_id = ?1 AND created_at > ?2",
+            "SELECT track_id, MAX(created_at) AS at FROM dj_impressions
+             WHERE user_id = ?1 AND created_at > ?2
+             GROUP BY track_id ORDER BY at DESC",
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, since], |r| r.get(0))
+        stmt.query_map(params![user_id, since], |r| Ok((r.get(0)?, r.get(1)?)))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
@@ -3276,7 +3289,7 @@ impl Db {
                             AND f.added_at >= i.created_at)
                         THEN 1 ELSE 0 END)
              FROM dj_impressions i JOIN tracks t ON t.id = i.track_id
-             WHERE i.user_id = ?1
+             WHERE i.user_id = ?1 AND i.slot IN ('rank', 'explore')
              GROUP BY LOWER(t.artist)",
         ) else {
             return Vec::new();
@@ -5826,7 +5839,12 @@ impl Db {
 
     /// The New Music Mix's two inventories, newest first: this listener's own
     /// unadopted auditions, and the library's plain arrivals since `since`.
-    pub fn new_mix_candidates(&self, user_id: i64, since: i64) -> (Vec<i64>, Vec<i64>) {
+    pub fn new_mix_candidates(
+        &self,
+        user_id: i64,
+        auditions_since: i64,
+        arrivals_since: i64,
+    ) -> (Vec<i64>, Vec<i64>) {
         let conn = self.lock();
         let read = |sql: &str, ps: &[&dyn rusqlite::ToSql]| -> Vec<i64> {
             let Ok(mut stmt) = conn.prepare(sql) else { return Vec::new() };
@@ -5834,18 +5852,39 @@ impl Db {
                 .map(|rows| rows.filter_map(Result::ok).collect())
                 .unwrap_or_default()
         };
+        // "New to them" means they have never MET the song, decided here in
+        // SQL rather than against a window of recent plays: the old
+        // `recent_plays(400)` forgot anything played more than four hundred
+        // distinct songs ago, and never saw a song sampled and skipped inside
+        // thirty seconds (no play row lands that early), a heart, or a date
+        // verdict - all of which are the listener meeting the song and
+        // deciding. Any listen event counts. All four ledgers are indexed on
+        // (user_id, track_id). Applied to BOTH inventories - a promoted
+        // audition used to walk straight back in as an arrival.
+        const NOT_MET: &str = "
+               AND NOT EXISTS (SELECT 1 FROM plays p WHERE p.user_id = ?1 AND p.track_id = t.id)
+               AND NOT EXISTS (SELECT 1 FROM listen_events le WHERE le.user_id = ?1 AND le.track_id = t.id)
+               AND NOT EXISTS (SELECT 1 FROM favorites f WHERE f.user_id = ?1 AND f.track_id = t.id)
+               AND NOT EXISTS (SELECT 1 FROM date_verdicts d WHERE d.user_id = ?1 AND d.track_id = t.id)";
+        // Auditions are bounded in age too: an unadopted backlog from months
+        // ago is not "new music", and unbounded it filled every seat.
         let auditions = read(
-            "SELECT id FROM tracks WHERE deleted = 0 AND kind = 'music'
-               AND curator_user_id = ?1 AND COALESCE(curator_promoted, 0) = 0
-             ORDER BY added_at DESC",
-            &[&user_id],
+            &format!(
+                "SELECT t.id FROM tracks t WHERE t.deleted = 0 AND t.kind = 'music'
+                   AND t.curator_user_id = ?1 AND COALESCE(t.curator_promoted, 0) = 0
+                   AND t.added_at > ?2{NOT_MET}
+                 ORDER BY t.added_at DESC"
+            ),
+            &[&user_id, &auditions_since],
         );
         let arrivals = read(
-            "SELECT id FROM tracks WHERE deleted = 0 AND kind = 'music'
-               AND added_at > ?1
-               AND (curator_user_id IS NULL OR COALESCE(curator_promoted, 0) = 1)
-             ORDER BY added_at DESC",
-            &[&since],
+            &format!(
+                "SELECT t.id FROM tracks t WHERE t.deleted = 0 AND t.kind = 'music'
+                   AND t.added_at > ?2
+                   AND (t.curator_user_id IS NULL OR COALESCE(t.curator_promoted, 0) = 1){NOT_MET}
+                 ORDER BY t.added_at DESC"
+            ),
+            &[&user_id, &arrivals_since],
         );
         (auditions, arrivals)
     }

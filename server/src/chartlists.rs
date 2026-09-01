@@ -121,44 +121,55 @@ pub async fn cycle(state: &Arc<AppState>) {
         tokio::time::sleep(GAP).await;
     }
 
-    /*
-     * The made-for-you door on the playlists page, by request: charts are
-     * here, so the NEW music belongs here too. One daily mix per listener of
-     * music that is new TO THEM and already playable - their unadopted
-     * auditions (what the collector found for them), then the library's
-     * arrivals of the last three weeks they have not played. Deterministic:
-     * no model call, so it can never be starved into absence.
-     */
-    let heard_since = crate::db::now_ms() - 21 * 86_400_000;
-    for user in &users {
-        // One-time re-file: New Music Mix used to sit in a "Made for you"
-        // folder of exactly one item. That name is now a Home shelf of the
-        // personalized mixes (daily/mood/daylist - see mixes.rs), so the
-        // playlist moves to its own honest "New music" folder. Idempotent:
-        // after the move nothing matches the old folder, so it is a no-op on
-        // every later cycle.
-        for p in state.db.playlists(*user) {
-            if p.folder == "Made for you" && p.name == "New Music Mix" {
-                let _ = state.db.set_playlist_meta(p.id, None, Some("New music"), None);
-            }
+    // New Music no longer rides this 20h chart clock - it has its own hourly
+    // backstop (new_music_cycle) and, more to the point, rebuilds the moment a
+    // song is met. See refresh_new_music_for.
+}
+
+/// Rebuild one listener's New Music Mix from the selection the DJ's chip
+/// shares (vibes::new_music_ids, undrawn) - pure DB, idempotent (refresh_for
+/// skips an identical list). Called on the hourly clock below AND from the
+/// listening path - a play, a listen event, a heart, a landed pull - so a
+/// song leaves the list when it is met, not a day later, and a new arrival
+/// joins it within the client's next poll.
+pub fn refresh_new_music_for(state: &Arc<AppState>, user: i64) {
+    // One-time re-file: New Music Mix used to sit in a "Made for you" folder
+    // of exactly one item. That name is now a Home shelf of the personalized
+    // mixes (daily/mood/daylist - see mixes.rs), so the playlist moves to its
+    // own honest "New music" folder. Idempotent: after the move nothing
+    // matches the old folder, so it is a no-op on every later call.
+    for p in state.db.playlists(user) {
+        if p.folder == "Made for you" && p.name == "New Music Mix" {
+            let _ = state.db.set_playlist_meta(p.id, None, Some("New music"), None);
         }
-        let (auditions, arrivals) = state.db.new_mix_candidates(*user, heard_since);
-        let heard: HashSet<i64> = state
+    }
+    let ids = crate::vibes::new_music_ids(&state.db, user, 30, false);
+    refresh_for(state, user, "new-music-mix", "New Music Mix", "New music", MIX_BLURB, &ids);
+}
+
+/// The backstop clock for New Music: once an hour per listener, for the
+/// arrivals no listening hook sees - a folder scan, another listener's
+/// upload. Per-user meta stamp like the programmer's, stamped AFTER the
+/// rewrite so a failed pass retries next loop rather than in an hour.
+const NEW_MUSIC_FRESH_MS: i64 = 60 * 60 * 1000;
+
+fn new_music_key(user: i64) -> String {
+    format!("newmix.built.{user}")
+}
+
+pub async fn new_music_cycle(state: &Arc<AppState>) {
+    let now = crate::db::now_ms();
+    for (user, _, _) in state.db.list_users() {
+        let last = state
             .db
-            .recent_plays(*user, 400)
-            .into_iter()
-            .collect();
-        let mut ids: Vec<i64> = Vec::new();
-        let mut seen: HashSet<i64> = HashSet::new();
-        for id in auditions.into_iter().chain(arrivals) {
-            if !heard.contains(&id) && seen.insert(id) {
-                ids.push(id);
-            }
-            if ids.len() >= 30 {
-                break;
-            }
+            .meta_get(&new_music_key(user))
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0);
+        if now - last < NEW_MUSIC_FRESH_MS {
+            continue;
         }
-        refresh_for(state, *user, "new-music-mix", "New Music Mix", "New music", MIX_BLURB, &ids);
+        refresh_new_music_for(state, user);
+        let _ = state.db.meta_set(&new_music_key(user), &now.to_string());
     }
 }
 

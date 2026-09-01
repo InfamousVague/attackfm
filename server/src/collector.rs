@@ -141,6 +141,9 @@ pub fn spawn(state: Arc<AppState>) {
             // The standing chart playlists ride the same loop; their own
             // daily clock makes this a cheap no-op almost every pass.
             crate::chartlists::cycle(&state).await;
+            // New Music's own hourly backstop - the listening hooks do the
+            // rest the moment a song is met or lands.
+            crate::chartlists::new_music_cycle(&state).await;
             tune_cycle(&state);
             // The small-artist sources fill the same pool the Deezer harvest
             // does; their own clocks make this a no-op most cycles.
@@ -187,6 +190,10 @@ async fn settle_pulls(state: &Arc<AppState>) {
                 // open against a job that is never going to change again.
                 if state.db.land_pull(pull_id, user_id, &j.track_ids).unwrap_or(0) == 0 {
                     let _ = state.db.mark_pull_landed(pull_id);
+                } else {
+                    // A new audition for this listener: it belongs in their
+                    // New Music now, not on the next clock tick.
+                    crate::chartlists::refresh_new_music_for(state, user_id);
                 }
             }
             Some(j) if j.state == "error" => {
@@ -230,6 +237,7 @@ async fn settle_delegated(state: &Arc<AppState>) {
     {
         let ids = state.db.pull_path_track_ids(pull_id);
         if !ids.is_empty() && state.db.land_pull(pull_id, user_id, &ids).unwrap_or(0) > 0 {
+            crate::chartlists::refresh_new_music_for(state, user_id);
             continue;
         }
         /*
@@ -297,6 +305,8 @@ async fn settle_pending_likes(state: &Arc<AppState>) {
             let _ = state.db.set_favorite(user, *id, true);
             state.db.promote_curator_track(*id);
             let _ = state.db.pending_like_remove(user, &k);
+            // Hearted = met: it leaves New Music now.
+            crate::chartlists::refresh_new_music_for(state, user);
             continue;
         }
         /*
@@ -924,6 +934,10 @@ async fn reason_for(d: &DiscoveryRow, charted: bool) -> String {
 /// the dial. Auditions older than a day that got adopted argue for reach;
 /// auditions still sitting argue for caution.
 fn tune_cycle(state: &Arc<AppState>) {
+    // The deal ledger only needs its windows (three days for taste, a day for
+    // the doors) and the adoption look-back; with three doors dealing it grew
+    // a row per seat per press forever.
+    state.db.prune_dj_impressions(now_ms() - 90 * 86_400_000);
     let since = now_ms() - WINDOW_30D_MS;
     for user in state.db.listeners_since(since) {
         let (_, exploration) = state.db.collector_state(user);

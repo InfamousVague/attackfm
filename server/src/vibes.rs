@@ -51,6 +51,66 @@ fn seed_for_key(key: &str) -> Option<&'static str> {
     VIBES.iter().find(|(k, _)| *k == key).map(|(_, s)| *s)
 }
 
+/// How long a chart or new-music deal sits out of the next press. A day: the
+/// chart itself refetches every twelve hours, so a hit is dealt at most once
+/// per chart day, and the graduated hold (dj::dealt_hold) releases the tail
+/// when a small match would otherwise run dry.
+const DEALT_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// The new-music candidates, in seat order: this listener's waiting auditions
+/// (the collector's finds, newest first), then the library's arrivals they
+/// have not met (newest first) - with seats kept for arrivals, so an old
+/// audition backlog cannot fill the whole set. "Met" is decided in SQL
+/// (db::new_mix_candidates): a play, any listen event, a heart, a date verdict.
+///
+/// ONE selection for both faces of new music, so they cannot disagree: the
+/// playlist (`draw = false`, deterministic - a rewrite of an identical list
+/// is a no-op) and the DJ's chip (`draw = true` - a rank-weighted lottery
+/// within each inventory, newest likeliest, plus the dealt hold, so two
+/// presses are two sets).
+pub fn new_music_ids(db: &crate::db::Db, user: i64, cap: usize, draw: bool) -> Vec<i64> {
+    let now = crate::db::now_ms();
+    let (auditions, arrivals) =
+        db.new_mix_candidates(user, now - 60 * 86_400_000, now - 21 * 86_400_000);
+    let held: HashSet<i64> = if draw {
+        let pool = auditions.len() + arrivals.len();
+        crate::dj::dealt_hold(db, user, DEALT_WINDOW_MS, cap, pool)
+    } else {
+        HashSet::new()
+    };
+    // Newest first is the ranking; the draw keeps newest likeliest but shuffles.
+    let pick = |ids: Vec<i64>| -> Vec<i64> {
+        let ids: Vec<i64> = ids.into_iter().filter(|id| !held.contains(id)).collect();
+        if !draw {
+            return ids;
+        }
+        let ranked: Vec<(f32, i64)> =
+            ids.into_iter().enumerate().map(|(i, id)| (-(i as f32), id)).collect();
+        crate::dj::weighted_draw(ranked, 36).into_iter().map(|(_, id)| id).collect()
+    };
+    let auditions = pick(auditions);
+    let arrivals = pick(arrivals);
+    // Seats: auditions lead, but arrivals keep at least a quarter of the set.
+    let arrival_floor = (cap / 4).min(arrivals.len());
+    let audition_seats = cap.saturating_sub(arrival_floor);
+    let mut ids: Vec<i64> = auditions.iter().copied().take(audition_seats).collect();
+    for id in &arrivals {
+        if ids.len() >= cap {
+            break;
+        }
+        ids.push(*id);
+    }
+    // Backfill from the auditions the seat floor held back.
+    for id in auditions.iter().skip(audition_seats) {
+        if ids.len() >= cap {
+            break;
+        }
+        ids.push(*id);
+    }
+    ids.dedup();
+    ids
+}
+
 /// Builds in flight, so a press and the curator cycle cannot stack two
 /// model runs for the same (listener, vibe).
 fn building() -> &'static Mutex<HashSet<String>> {
@@ -148,28 +208,50 @@ pub async fn build_charts_reply(state: &Arc<AppState>, user: i64, curate: bool) 
         }
         by_key.entry(crate::discovery::key_of(&artist, &title)).or_insert((id, artist));
     }
-    let mut ids: Vec<i64> = Vec::new();
-    let mut artists: Vec<String> = Vec::new();
-    let mut per_artist: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    for (artist, title) in &chart {
-        if let Some((id, real_artist)) = by_key.get(&crate::discovery::key_of(artist, title)) {
-            // Two chart spellings of one song fold to one key and hand back
-            // the same row - it must not take two seats (or two lore lines).
-            if ids.contains(id) {
-                continue;
-            }
-            let cap = per_artist.entry(real_artist.to_lowercase()).or_insert(0);
-            if *cap >= 2 {
-                continue;
-            }
-            *cap += 1;
-            ids.push(*id);
-            artists.push(real_artist.clone());
-            if ids.len() >= 18 {
-                break;
+    // Every chart hit on this box, in chart order, then a rank-weighted draw
+    // over that head with the dealt hold - so a press deals a DIFFERENT
+    // eighteen from the same chart rather than the same top eighteen, and the
+    // set you just got sits out of the next one. Two chart spellings of one
+    // song fold to one key and hand back the same row - it takes one seat.
+    let artist_of: std::collections::HashMap<i64, String> =
+        by_key.values().map(|(id, a)| (*id, a.clone())).collect();
+    let mut matched: Vec<(f32, i64)> = Vec::new();
+    let mut seen: HashSet<i64> = HashSet::new();
+    for (i, (artist, title)) in chart.iter().enumerate() {
+        if let Some((id, _)) = by_key.get(&crate::discovery::key_of(artist, title)) {
+            if seen.insert(*id) {
+                matched.push((-(i as f32), *id));
             }
         }
     }
+    let held = crate::dj::dealt_hold(&state.db, user, DEALT_WINDOW_MS, 18, matched.len());
+    let drawn = crate::dj::weighted_draw(
+        matched.into_iter().filter(|(_, id)| !held.contains(id)).collect(),
+        54,
+    );
+    let mut ids: Vec<i64> = Vec::new();
+    let mut artists: Vec<String> = Vec::new();
+    let mut per_artist: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (_, id) in drawn {
+        let Some(real_artist) = artist_of.get(&id) else { continue };
+        let cap = per_artist.entry(real_artist.to_lowercase()).or_insert(0);
+        if *cap >= 2 {
+            continue;
+        }
+        *cap += 1;
+        ids.push(id);
+        artists.push(real_artist.clone());
+        if ids.len() >= 18 {
+            break;
+        }
+    }
+    // This door deals too now, so the ledger sees it - that is what keeps
+    // the next press different. Its own slot, so the taste set's exploration
+    // counters (explore_artist_stats) do not count a chart deal as an offer.
+    state.db.record_dj_impressions(
+        user,
+        &ids.iter().enumerate().map(|(i, id)| (*id, "charts", i as i64)).collect::<Vec<_>>(),
+    );
     // Chart hits are exactly the songs the model DOES know. The banked
     // build waits for the gaps to fill before the body freezes; the live
     // door serves what is on file and leaves the writing to the rebuild
@@ -227,38 +309,15 @@ pub async fn build_charts_reply(state: &Arc<AppState>, user: i64, curate: bool) 
 /// gesture - with plain arrivals woven between so the set still breathes.
 pub async fn build_new_music_reply(state: &Arc<AppState>, user: i64, curate: bool) -> Value {
     let seed = seed_for_key("newmusic").unwrap_or_default();
-    let since = crate::db::now_ms() - 21 * 24 * 60 * 60 * 1000;
-    let (auditions, arrivals) = state.db.new_mix_candidates(user, since);
-    let heard: HashSet<i64> = state.db.recent_plays(user, 400).into_iter().collect();
-    let fresh_arrivals: Vec<i64> =
-        arrivals.into_iter().filter(|id| !heard.contains(id)).collect();
-
-    // Two dates, then an arrival, repeating - dates lead because they are the
-    // set's namesake, arrivals keep it from being auditions wall to wall.
-    let mut ids: Vec<i64> = Vec::new();
-    let mut dates = auditions.into_iter().filter(|id| !heard.contains(id));
-    let mut future = fresh_arrivals.into_iter();
-    'weave: loop {
-        for _ in 0..2 {
-            match dates.next() {
-                Some(id) => ids.push(id),
-                None => {}
-            }
-        }
-        match future.next() {
-            Some(id) => ids.push(id),
-            None => {
-                // Arrivals dry: run the remaining dates straight.
-                ids.extend(dates.by_ref());
-                break 'weave;
-            }
-        }
-        if ids.len() >= 18 {
-            break;
-        }
-    }
-    ids.truncate(18);
-    ids.dedup();
+    // One selection shared with the New Music playlist (chartlists), drawn:
+    // met songs are excluded in SQL, auditions lead with seats kept for
+    // arrivals, newest is likeliest, and the dealt hold keeps two presses
+    // two sets. The chip deals, so the ledger records it.
+    let ids = new_music_ids(&state.db, user, 18, true);
+    state.db.record_dj_impressions(
+        user,
+        &ids.iter().enumerate().map(|(i, id)| (*id, "newmusic", i as i64)).collect::<Vec<_>>(),
+    );
 
     if ids.is_empty() {
         return serde_json::json!({ "ai": false, "vibe": seed, "blocks": [] });

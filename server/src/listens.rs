@@ -82,6 +82,15 @@ pub async fn record(
         ));
     }
     let accepted = ingest(&state.db, caller.id, &body.events);
+    // Any accepted event - a completion, a sit, a skip inside thirty seconds -
+    // is the listener meeting a song, so it leaves their New Music now.
+    if accepted > 0 {
+        let st = state.clone();
+        let user = caller.id;
+        tokio::spawn(async move {
+            crate::chartlists::refresh_new_music_for(&st, user);
+        });
+    }
     Ok(Json(json!({ "ok": true, "accepted": accepted })))
 }
 

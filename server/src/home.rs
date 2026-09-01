@@ -123,6 +123,14 @@ pub async fn record_play(
         .db
         .record_play(caller.id, body.track_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // A play is the listener meeting a song: it leaves their New Music now.
+    // Behind the reply - two indexed reads and a compare, but the play POST
+    // sits on the playback path and should answer at once.
+    let st = state.clone();
+    let user = caller.id;
+    tokio::spawn(async move {
+        crate::chartlists::refresh_new_music_for(&st, user);
+    });
     Ok(Json(json!({ "ok": true })))
 }
 
