@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.172
+
+- Press and hold any song — in search, on an artist's Popular list, or among the songs missing from your albums — for a menu that can add it to a playlist, even songs you don't own yet.
+- Build a whole playlist of songs you plan to get: add one that isn't in your library and it shows as arriving while it downloads, then settles into a real track. A playlist can be part here, part on the way.
+
 ## 0.4.171
 
 - Love or add a song and it appears in its list straight away, then eases into place when it's ready: the placeholder glides out of the way as the real track slides in with a soft glow, instead of popping into existence.
