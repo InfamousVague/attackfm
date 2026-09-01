@@ -58,6 +58,12 @@ pub struct Invite {
     pub role: String,
     pub expires_at: i64,
     pub redeemed_by: Option<i64>,
+    /// How many distinct accounts may redeem it (1 = one-time; ignored when
+    /// standing, which is unlimited).
+    pub max_uses: i64,
+    /// How many distinct accounts already have - the live tally against
+    /// max_uses, counted from invite_redemptions.
+    pub uses_count: i64,
 }
 
 /// A server an account belongs to (or has asked to).
@@ -108,6 +114,21 @@ impl Db {
                 .collect();
             if !have.iter().any(|c| c == "name") {
                 conn.execute("ALTER TABLE memberships ADD COLUMN name TEXT NOT NULL DEFAULT ''", [])?;
+            }
+        }
+        // And for invites: max_uses arrived with multi-use codes. A registry
+        // that predates it has invite rows without the column; the new
+        // invite_redemptions TABLE lands via execute_batch(SCHEMA) above, but a
+        // new COLUMN does not, so it is retrofitted here. DEFAULT 1 keeps every
+        // existing invite exactly as single-use as it was.
+        {
+            let have: Vec<String> = conn
+                .prepare("SELECT name FROM pragma_table_info('invites')")?
+                .query_map([], |r| r.get(0))?
+                .filter_map(Result::ok)
+                .collect();
+            if !have.iter().any(|c| c == "max_uses") {
+                conn.execute("ALTER TABLE invites ADD COLUMN max_uses INTEGER NOT NULL DEFAULT 1", [])?;
             }
         }
         Ok(Self { conn: Mutex::new(conn) })
@@ -474,21 +495,39 @@ impl Db {
         created_by: i64,
         role: &str,
         expires_at: i64,
+        max_uses: i64,
         now: i64,
     ) -> rusqlite::Result<()> {
         let c = self.conn.lock().unwrap();
         c.execute(
-            "INSERT INTO invites (code, server_url, server_name, created_by, role, created_at, expires_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            (code, server_url, server_name, created_by, role, now, expires_at),
+            "INSERT INTO invites (code, server_url, server_name, created_by, role, created_at, expires_at, max_uses)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            (code, server_url, server_name, created_by, role, now, expires_at, max_uses),
         )?;
         Ok(())
+    }
+
+    /// Whether this account has already redeemed this code - so a re-redeem is
+    /// idempotent rather than either burning another of the code's uses or
+    /// being rejected as "fully used".
+    pub fn has_redeemed(&self, code: &str, account_id: i64) -> bool {
+        let c = self.conn.lock().unwrap();
+        c.query_row(
+            "SELECT 1 FROM invite_redemptions WHERE code = ?1 AND account_id = ?2",
+            (code, account_id),
+            |_| Ok(()),
+        )
+        .optional()
+        .ok()
+        .flatten()
+        .is_some()
     }
 
     pub fn invite(&self, code: &str) -> Option<Invite> {
         let c = self.conn.lock().unwrap();
         c.query_row(
-            "SELECT code, server_url, server_name, created_by, role, expires_at, redeemed_by
+            "SELECT code, server_url, server_name, created_by, role, expires_at, redeemed_by, max_uses,
+                    (SELECT COUNT(*) FROM invite_redemptions WHERE code = invites.code)
                FROM invites WHERE code = ?1",
             [code],
             |r| {
@@ -500,6 +539,8 @@ impl Db {
                     role: r.get(4)?,
                     expires_at: r.get(5)?,
                     redeemed_by: r.get(6)?,
+                    max_uses: r.get(7)?,
+                    uses_count: r.get(8)?,
                 })
             },
         )
@@ -523,8 +564,17 @@ impl Db {
     ) {
         let c = self.conn.lock().unwrap();
         if !standing {
+            // The ledger row is the real tally against max_uses; INSERT OR
+            // IGNORE makes a re-redeem by the same account a no-op.
             let _ = c.execute(
-                "UPDATE invites SET redeemed_by = ?2, redeemed_at = ?3 WHERE code = ?1",
+                "INSERT OR IGNORE INTO invite_redemptions (code, account_id, redeemed_at) VALUES (?1, ?2, ?3)",
+                (code, account_id, now),
+            );
+            // redeemed_by keeps the FIRST redeemer, for display - `IS NULL`
+            // guards it so a later redeemer of a multi-use code does not
+            // overwrite who opened it.
+            let _ = c.execute(
+                "UPDATE invites SET redeemed_by = ?2, redeemed_at = ?3 WHERE code = ?1 AND redeemed_by IS NULL",
                 (code, account_id, now),
             );
         }
@@ -638,7 +688,25 @@ CREATE TABLE IF NOT EXISTS invites (
   created_at  INTEGER NOT NULL,
   expires_at  INTEGER NOT NULL DEFAULT 0,
   redeemed_by INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
-  redeemed_at INTEGER NOT NULL DEFAULT 0
+  redeemed_at INTEGER NOT NULL DEFAULT 0,
+  -- How many DISTINCT accounts may redeem this code. 1 is the classic one-time
+  -- invite, and the column's default, so every invite minted before this
+  -- existed stays single-use. A 'standing' invite (expires_at = 0) is unlimited
+  -- regardless of this. The count is kept in invite_redemptions, not a bare
+  -- counter, so a re-redeem by the same account never burns a use.
+  max_uses    INTEGER NOT NULL DEFAULT 1
+);
+
+-- One row per DISTINCT account that has redeemed an invite - the tally that
+-- max_uses caps. Separate from redeemed_by (which stays the FIRST redeemer, for
+-- display) so "how many people used it" cannot be gamed by one person entering
+-- twice (a local delete then re-enter, a double-tap), and so a re-redeem is a
+-- no-op rather than a spent use.
+CREATE TABLE IF NOT EXISTS invite_redemptions (
+  code        TEXT NOT NULL,
+  account_id  INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  redeemed_at INTEGER NOT NULL,
+  PRIMARY KEY (code, account_id)
 );
 
 -- Which servers an account belongs to, and whether the join is settled. A

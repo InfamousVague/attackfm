@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.26
+
+- One invite can now let in a whole group. When you share your server, choose
+  how many people the code admits — Once, 5, 25, or Unlimited — so a single
+  card can bring in a crowd instead of a single friend.
+
 ## 0.5.25
 
 - Listening on your phone while the music plays on another device now works

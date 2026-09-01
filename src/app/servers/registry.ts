@@ -160,8 +160,12 @@ export async function createInvite(
    *  expires and is never used up. A registry from before `ttlSecs` ignores
    *  it and mints the week it always did - the reply's expiresAt is the truth
    *  either way, which is what every surface prints. */
-  life: { ttlSecs?: number; standing?: boolean } = {},
-): Promise<{ code: string; serverUrl: string; expiresAt: number }> {
+  /** ...plus `maxUses`: how many distinct people may join with the code (1 =
+   *  the classic one-time invite; the registry clamps to a ceiling). Omit for
+   *  one-time; use `standing` for truly unlimited. A registry from before
+   *  multi-use ignores it and mints the single-use code it always did. */
+  life: { ttlSecs?: number; standing?: boolean; maxUses?: number } = {},
+): Promise<{ code: string; serverUrl: string; expiresAt: number; maxUses?: number | null }> {
   return call('/v1/invites', {
     method: 'POST',
     token,
@@ -175,6 +179,10 @@ export interface InvitePreview {
   from: string;
   spent: boolean;
   expired: boolean;
+  /** How many the code carries and how many are left, for a "3 of 5 used"
+   *  readout. Null/absent for a standing code (unlimited) or an older registry. */
+  maxUses?: number | null;
+  remaining?: number | null;
 }
 
 /** Look at an invite before redeeming it. No token needed. */

@@ -621,11 +621,22 @@ struct CreateInviteBody {
     /// good until the heat death. Ignored when `standing`.
     #[serde(default, rename = "ttlSecs")]
     ttl_secs: Option<i64>,
+    /// How many DISTINCT people may join with this code. Absent (or 1) is the
+    /// classic one-time invite; a higher number lets a handful in off one code.
+    /// Clamped to a ceiling so a typo cannot mint an effectively-open code -
+    /// the truly-unlimited option is `standing`, not a giant number here.
+    /// Ignored when `standing`.
+    #[serde(default, rename = "maxUses")]
+    max_uses: Option<i64>,
 }
 
 const INVITE_TTL_MIN_SECS: i64 = 3600;
 const INVITE_TTL_DEFAULT_SECS: i64 = 7 * 24 * 3600;
 const INVITE_TTL_MAX_SECS: i64 = 90 * 24 * 3600;
+/// The most redemptions a finite code may carry. Past this the right tool is a
+/// `standing` code, not a bigger number - a cap keeps a fat-fingered "1000"
+/// from being a de-facto open door with none of standing's deliberateness.
+const INVITE_MAX_USES_CEIL: i64 = 100;
 
 /// The alphabet invite codes are drawn from: uppercase letters and digits with
 /// the look-alikes removed (no 0/O, 1/I/L, U), so a code reads cleanly aloud and
@@ -684,11 +695,19 @@ async fn create_invite(
         .unwrap_or(INVITE_TTL_DEFAULT_SECS)
         .clamp(INVITE_TTL_MIN_SECS, INVITE_TTL_MAX_SECS);
     let expires = if body.standing { 0 } else { now_secs() + ttl };
+    // Distinct redemptions allowed. Standing codes are unlimited by their own
+    // rule, so max_uses is moot there; a finite code clamps to [1, ceiling].
+    let max_uses = body.max_uses.unwrap_or(1).clamp(1, INVITE_MAX_USES_CEIL);
     state
         .db
-        .create_invite(&code, body.server_url.trim(), body.server_name.trim(), who.sub, role, expires, now_secs())
+        .create_invite(&code, body.server_url.trim(), body.server_name.trim(), who.sub, role, expires, max_uses, now_secs())
         .map_err(db_err)?;
-    Ok(Json(json!({ "code": code, "serverUrl": body.server_url.trim(), "expiresAt": expires })))
+    Ok(Json(json!({
+        "code": code,
+        "serverUrl": body.server_url.trim(),
+        "expiresAt": expires,
+        "maxUses": if body.standing { serde_json::Value::Null } else { serde_json::json!(max_uses) },
+    })))
 }
 
 /// `GET /v1/invites/{code}` - preview an invite (what server, who from) before
@@ -705,9 +724,17 @@ async fn invite_preview(
         "serverUrl": inv.server_url,
         "serverName": inv.server_name,
         "from": from,
-        "spent": !standing && inv.redeemed_by.is_some(),
+        "spent": !standing && inv.uses_count >= inv.max_uses,
         "expired": expired,
         "standing": standing,
+        // How many the code carries and how many are left, so a card can read
+        // "3 of 5 used". Null for a standing code, which is unlimited.
+        "maxUses": if standing { serde_json::Value::Null } else { serde_json::json!(inv.max_uses) },
+        "remaining": if standing {
+            serde_json::Value::Null
+        } else {
+            serde_json::json!((inv.max_uses - inv.uses_count).max(0))
+        },
     })))
 }
 
@@ -833,8 +860,12 @@ async fn redeem_invite(
     let who = caller(&state, &headers)?;
     let inv = state.db.invite(&code).ok_or((StatusCode::NOT_FOUND, "That invite is not valid.".into()))?;
     let standing = is_standing(inv.expires_at);
-    if !standing && inv.redeemed_by.is_some() {
-        return Err((StatusCode::GONE, "That invite has already been used.".into()));
+    // Full is now "as many distinct people as it was minted for", not "used
+    // once". Someone who already redeemed it is let through again (idempotent -
+    // re-entering after a local delete must not be told the code is used up),
+    // so only a NEW account past the cap is refused.
+    if !standing && inv.uses_count >= inv.max_uses && !state.db.has_redeemed(&code, who.sub) {
+        return Err((StatusCode::GONE, "That invite has been fully used.".into()));
     }
     if !standing && now_secs() >= inv.expires_at {
         return Err((StatusCode::GONE, "That invite has expired.".into()));

@@ -62,11 +62,25 @@ function untilLabel(expiresAt: number): string {
 
 /** The lifetimes on offer. Seconds, or 0 for a standing (never-expiring,
  *  reusable) code. A week is the registry's own default and the middle seat. */
+const WEEK_TTL = 7 * 24 * 3600;
+
 const LIVES: { label: string; ttl: number }[] = [
   { label: '1 day', ttl: 24 * 3600 },
-  { label: '1 week', ttl: 7 * 24 * 3600 },
+  { label: '1 week', ttl: WEEK_TTL },
   { label: '1 month', ttl: 30 * 24 * 3600 },
   { label: 'Never expires', ttl: 0 },
+];
+
+/** How many DISTINCT people a code admits. `n === 0` is "no limit", which in
+ *  this registry is the same object as a standing (never-expiring) code - a
+ *  capped code has to carry an expiry, there is no "never expires but only 5
+ *  people" - so choosing one snaps the other, below. `1` is the classic
+ *  one-time invite and stays the default. */
+const USES: { label: string; n: number }[] = [
+  { label: 'Once', n: 1 },
+  { label: '5 people', n: 5 },
+  { label: '25 people', n: 25 },
+  { label: 'Unlimited', n: 0 },
 ];
 
 interface Invite {
@@ -143,7 +157,9 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
   const [qr, setQr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [life, setLife] = useState<number>(7 * 24 * 3600);
+  const [life, setLife] = useState<number>(WEEK_TTL);
+  // How many people the code admits; 1 = the classic one-time invite.
+  const [uses, setUses] = useState<number>(1);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
   const identity = registry?.session ?? null;
@@ -156,16 +172,24 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
    * member may mint; the server checks the code with the registry when it is
    * spent, so a code on a picture is no more power than a code in a message.
    */
-  const mint = async (ttl: number = life) => {
+  const mint = async (ttl: number = life, howMany: number = uses) => {
     if (!identity || !session || minting) return;
     setMinting(true);
     setMintError(null);
     try {
+      // No limit ⟹ a standing code (never used up, never expires). A capped
+      // code must carry an expiry, so a "Never expires" pick alongside a cap
+      // falls back to the week - the handlers below keep the two selectors
+      // from ever showing that pair, this is the belt to their braces.
+      const request =
+        howMany === 0
+          ? { standing: true }
+          : { ttlSecs: ttl === 0 ? WEEK_TTL : ttl, maxUses: howMany };
       const made = await createInvite(
         identity.token,
         session.url,
         session.username ? `${session.username}'s AttackFM` : 'AttackFM',
-        ttl === 0 ? { standing: true } : { ttlSecs: ttl },
+        request,
       );
       setInvite({ code: made.code, expiresAt: made.expiresAt });
       setCopied(false);
@@ -316,11 +340,47 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
                 onClick={() => {
                   if (life === l.ttl) return;
                   setLife(l.ttl);
+                  // Never-expires and Unlimited are the same standing code, so
+                  // picking one snaps the other; leaving Never-expires with a
+                  // still-unlimited cap would be an impossible pair, so it
+                  // drops back to a one-time code.
+                  let u = uses;
+                  if (l.ttl === 0) u = 0;
+                  else if (uses === 0) u = 1;
+                  if (u !== uses) setUses(u);
                   // A different life is a different code.
-                  void mint(l.ttl);
+                  void mint(l.ttl, u);
                 }}
               >
                 {l.label}
+              </Button>
+            ))}
+          </div>
+        )}
+        {identity && (
+          <div className="inviteSheet__life" role="radiogroup" aria-label="How many people can join">
+            <span className="inviteSheet__lifeLabel">Uses</span>
+            {USES.map((u) => (
+              <Button
+                key={u.n}
+                size="sm"
+                variant={uses === u.n ? 'solid' : 'ghost'}
+                aria-pressed={uses === u.n}
+                disabled={minting}
+                onClick={() => {
+                  if (uses === u.n) return;
+                  setUses(u.n);
+                  // Mirror of the coupling above: Unlimited is a standing,
+                  // never-expiring code; any cap needs a real lifetime, so a
+                  // capped pick nudges "Never expires" back to a week.
+                  let ttl = life;
+                  if (u.n === 0) ttl = 0;
+                  else if (life === 0) ttl = WEEK_TTL;
+                  if (ttl !== life) setLife(ttl);
+                  void mint(ttl, u.n);
+                }}
+              >
+                {u.label}
               </Button>
             ))}
           </div>
