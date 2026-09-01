@@ -570,6 +570,21 @@ CREATE TABLE IF NOT EXISTS date_verdicts (
 );
 CREATE INDEX IF NOT EXISTS date_verdicts_user ON date_verdicts(user_id, at DESC);
 
+-- What a listener decided about a PREVIEW date - a pool candidate that was
+-- never a track. Keyed by the normalised artist+title (discovery::key_of),
+-- not the catalogue's ext_id, because a pass used to just DELETE the
+-- candidate row and the next harvest (six-hourly, or the one a finished deck
+-- kicks off from the very artists just kept) found the same song again and
+-- dealt it again. The key survives the row; the harvester checks it before
+-- inserting, and the deal checks it before dealing.
+CREATE TABLE IF NOT EXISTS date_candidate_verdicts (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key     TEXT    NOT NULL,
+  verdict TEXT    NOT NULL,
+  at      INTEGER NOT NULL,
+  PRIMARY KEY (user_id, key)
+);
+
 CREATE TABLE IF NOT EXISTS plays (
   id        INTEGER PRIMARY KEY,
   user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -5648,10 +5663,16 @@ impl Db {
         seed: &str,
         popularity: f64,
     ) -> rusqlite::Result<()> {
+        // A song this listener has already ruled on as a preview date is not
+        // a discovery, whatever id the catalogue gives it this time. Checked
+        // HERE, in the one door every harvester (taste walk, on-demand seed,
+        // the charts) comes through, so no lane can forget to ask.
         self.lock().execute(
             "INSERT INTO discoveries
                (user_id, ext_id, title, artist, cover, url, preview, seed, popularity, found_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
+              WHERE NOT EXISTS (
+                SELECT 1 FROM date_candidate_verdicts v WHERE v.user_id = ?1 AND v.key = ?11)
              ON CONFLICT(user_id, ext_id) DO UPDATE SET
                popularity = excluded.popularity, seed = excluded.seed",
             params![
@@ -5664,7 +5685,8 @@ impl Db {
                 preview,
                 seed,
                 popularity,
-                now_ms()
+                now_ms(),
+                crate::discovery::key_of(artist, title)
             ],
         )?;
         Ok(())
@@ -8632,6 +8654,30 @@ impl Db {
             .unwrap_or_default()
     }
 
+    /// Write down what a listener decided about a preview date, by song
+    /// rather than by catalogue id - see `date_candidate_verdicts`.
+    pub fn record_candidate_verdict(&self, user_id: i64, key: &str, verdict: &str) {
+        let conn = self.lock();
+        let _ = conn.execute(
+            "INSERT INTO date_candidate_verdicts (user_id, key, verdict, at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(user_id, key) DO UPDATE SET verdict = excluded.verdict, at = excluded.at",
+            params![user_id, key, verdict, now_ms()],
+        );
+    }
+
+    /// Every song this listener has already judged as a preview date, so the
+    /// deal never hands one back however many times the catalogue offers it.
+    pub fn candidate_judged_keys(&self, user_id: i64) -> std::collections::HashSet<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare("SELECT key FROM date_candidate_verdicts WHERE user_id = ?1")
+        else {
+            return std::collections::HashSet::new();
+        };
+        stmt.query_map(params![user_id], |r| r.get::<_, String>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     /// Turn down an audition: tombstone the row and hand back the file to
     /// delete, if and only if this listener is the one it was fetched for.
     ///
@@ -10035,5 +10081,57 @@ mod discarding_auditions {
         // Changing your mind overwrites rather than duplicating.
         db.record_date_verdict(me, a, "kept");
         assert_eq!(db.date_judged(me).len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod judged_candidates {
+    //! A preview date that was passed on (or kept) must never be dealt again,
+    //! however many times the catalogue re-offers it - under this id or a new
+    //! one. The row used to be deleted and nothing remembered the verdict.
+
+    use super::*;
+
+    fn fresh() -> Db {
+        let d = std::env::temp_dir().join(format!("judged-candidates-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    fn offer(db: &Db, me: i64, ext: &str, artist: &str, title: &str) {
+        db.add_discovery(me, ext, title, artist, "", "", "https://p/preview.mp3", "seed", 50.0).unwrap();
+    }
+
+    #[test]
+    fn a_judged_song_is_not_rediscovered() {
+        let db = fresh();
+        let me = db.create_user("me", "", true).unwrap();
+        offer(&db, me, "dz-1", "Boards of Canada", "Dayvan Cowboy");
+        assert!(db.discovery_get(me, "dz-1").is_some(), "an unjudged offer lands");
+
+        // The swipe: remembered by song, then the row goes (as the endpoint does).
+        db.record_candidate_verdict(me, &crate::discovery::key_of("Boards of Canada", "Dayvan Cowboy"), "passed");
+        db.forget_discovery(me, "dz-1");
+        assert!(db.discovery_get(me, "dz-1").is_none());
+
+        // The next harvest offers the same song under a NEW id, spelled a
+        // little differently - key_of folds the spelling.
+        offer(&db, me, "dz-2", "BOARDS OF CANADA", "Dayvan Cowboy (Remastered)");
+        assert!(db.discovery_get(me, "dz-2").is_none(), "a passed song must not come back");
+
+        // A different song from the same artist is still welcome.
+        offer(&db, me, "dz-3", "Boards of Canada", "Roygbiv");
+        assert!(db.discovery_get(me, "dz-3").is_some());
+
+        // The ledger reads back, and a change of mind overwrites.
+        assert!(db.candidate_judged_keys(me).contains(&crate::discovery::key_of("Boards of Canada", "Dayvan Cowboy")));
+        db.record_candidate_verdict(me, &crate::discovery::key_of("Boards of Canada", "Dayvan Cowboy"), "kept");
+        assert_eq!(db.candidate_judged_keys(me).len(), 1);
+
+        // Someone else's verdict is not mine.
+        let you = db.create_user("you", "", false).unwrap();
+        offer(&db, you, "dz-2", "Boards of Canada", "Dayvan Cowboy");
+        assert!(db.discovery_get(you, "dz-2").is_some());
     }
 }

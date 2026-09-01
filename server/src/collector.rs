@@ -1161,11 +1161,20 @@ pub async fn date_candidates(
         .unwrap_or(25)
         .clamp(1, 40);
     let pulled = state.db.pulled_ext_ids(caller.id, now_ms() - FAILED_RETRY_AFTER_MS);
+    // Judged by song, not by id: a candidate the catalogue re-offered under a
+    // new id, or one that slipped into the pool before its verdict was kept
+    // by song, is still a song this listener has already answered.
+    let judged = state.db.candidate_judged_keys(caller.id);
     let all: Vec<crate::db::DiscoveryRow> = state
         .db
         .top_discoveries(caller.id, 400)
         .into_iter()
-        .filter(|d| !d.preview.trim().is_empty() && !pulled.contains(&d.ext_id) && measured(d))
+        .filter(|d| {
+            !d.preview.trim().is_empty()
+                && !pulled.contains(&d.ext_id)
+                && measured(d)
+                && !judged.contains(&crate::discovery::key_of(&d.artist, &d.title))
+        })
         .collect();
     let total = all.len();
     /*
@@ -1299,6 +1308,14 @@ pub async fn date_candidate_verdict(
         // Judged elsewhere, or swept between deal and swipe: the swipe stands.
         return Ok(Json(json!({ "ok": true, "gone": true })));
     };
+    // Remembered by SONG before anything else happens, so a pass that deletes
+    // the row and a keep whose pull later fails both stay judged: the next
+    // harvest finds the same song under whatever id and leaves it alone.
+    state.db.record_candidate_verdict(
+        caller.id,
+        &crate::discovery::key_of(&d.artist, &d.title),
+        if body.kept { "kept" } else { "passed" },
+    );
     if body.kept {
         let charted = state
             .db
