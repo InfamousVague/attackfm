@@ -30,6 +30,9 @@ export interface ArtLoadProps {
   /** Spread onto the <img>: the skeleton attribute, pop class, and handlers. */
   className: string;
   'data-loading': true | undefined;
+  /** Rides the spread (React 19 refs are ordinary props): the hook's one
+   *  handle on the element outside its own events, for the offline shortcut. */
+  ref: (el: HTMLImageElement | null) => void;
   onLoad: () => void;
   onError: (e?: { currentTarget?: HTMLImageElement }) => void;
 }
@@ -43,10 +46,29 @@ export interface ArtLoadProps {
 export function useArtLoad(src: string | null | undefined, className: string): ArtLoadProps {
   const [loaded, setLoaded] = useState(false);
   const recovered = useRef(false);
+  const el = useRef<HTMLImageElement | null>(null);
   useEffect(() => {
     setLoaded(false);
     recovered.current = false;
     if (!src) return;
+    /*
+     * WITH THE HUB DARK, the held copy at once - the same shortcut useCardArt
+     * below has carried for a while, now on the base hook's seventeen call
+     * sites too (queue rows, table thumbs, search tiles). Without it those
+     * surfaces waited for the <img> to try a host that is not answering,
+     * which does not fail promptly - it hangs into the timeout, a screen of
+     * grey squares with every cover already on disk. The error ladder stays:
+     * this is a guess about the network; the ladder answers when one
+     * particular cover genuinely fails.
+     */
+    if (serverSeemsDown() && /^https?:/i.test(src)) {
+      void cachedArt(src).then((held) => {
+        if (held && el.current && !recovered.current) {
+          recovered.current = true;
+          el.current.src = held;
+        }
+      });
+    }
     const timer = window.setTimeout(() => setLoaded(true), REVEAL_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
   }, [src]);
@@ -54,6 +76,9 @@ export function useArtLoad(src: string | null | undefined, className: string): A
   return {
     className: `${className} artPop`,
     'data-loading': waiting || undefined,
+    ref: (node) => {
+      el.current = node;
+    },
     // Every cover this hook draws is kept, which is most of them: thumbs,
     // grid cells, hero images.
     onLoad: () => {

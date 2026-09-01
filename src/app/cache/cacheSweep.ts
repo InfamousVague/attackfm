@@ -744,6 +744,18 @@ const CANVAS_LOOKUPS_PER_SWEEP = 25;
  *  the rest catch up on later sweeps, match-hits costing nothing forever. */
 const ART_FETCHES_PER_SWEEP = 300;
 
+/**
+ * What the sweep already learned about one track's clip, for surfaces that
+ * need an answer WITHOUT the network. `undefined`: never looked up (the
+ * caller may ask the server). `null`: looked up, no clip (the caller can skip
+ * the ask). A string: the stable form - hand it to {@link playableCanvasUrl}
+ * and the canvas cache can be consulted with the hub dark.
+ */
+export function knownCanvasForm(trackPath: string): string | null | undefined {
+  const memo = readCanvasKnown()[trackPath];
+  return memo === undefined ? undefined : memo.u;
+}
+
 function readCanvasKnown(): Record<string, { u: string | null; at: number }> {
   try {
     const raw = localStorage.getItem(CANVAS_KNOWN_KEY);
@@ -777,7 +789,7 @@ function stableCanvasForm(url: string, session: ServerSession): string {
 }
 
 /** The remembered form, made fetchable again with the CURRENT token. */
-function playableCanvasUrl(form: string, session: ServerSession): string {
+export function playableCanvasUrl(form: string, session: ServerSession): string {
   return form.startsWith('/')
     ? `${session.url}${form}?t=${encodeURIComponent(session.streamToken)}`
     : form;

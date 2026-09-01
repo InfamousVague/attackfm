@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.1
+
+- Covers and Canvas clips now show up offline everywhere they are already on the device. The clip check ran through the server before ever looking in the cache, so a tunnel drew the blurred cover with the clip sitting on disk; it reads the device's own memory first now. And the with-the-hub-dark shortcut for covers reaches every thumbnail surface — queue rows, tables, search tiles — instead of only the shelf cards
+
 ## 0.5.0
 
 - A new app build for every platform. On Android it carries the browsable AttackFM folder: Settings → Storage grows an "Allow the AttackFM folder" button, and once Android grants it, cached music moves to an AttackFM/Music folder any file manager can walk

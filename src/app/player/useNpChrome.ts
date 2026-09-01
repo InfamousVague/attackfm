@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { fetchCanvas, trackIdFromPath, type ServerSession } from '../server.ts';
 import { autoDownloadAllowed, nowPlayingVideoEnabled } from '../settings/behaviourPrefs.ts';
 import { cachedCanvas, keepCanvas } from '../cache/canvasCache.ts';
+import { knownCanvasForm, playableCanvasUrl } from '../cache/cacheSweep.ts';
 import { setIdleTimerDisabled } from './carplay.ts';
 import type { Track } from '../core/tauri.ts';
 
@@ -139,12 +140,48 @@ export function useNpChrome({
      */
     if (track.kind === 'book') return;
     const controller = new AbortController();
+    /*
+     * THE HELD CLIP FIRST, off the sweep's own memo - no network in the path.
+     *
+     * The old order asked /api/canvas for the URL and only then looked in the
+     * cache, so a phone in a tunnel with the clip ON DISK drew the blurred
+     * cover instead: the lookup failed before the cache was ever consulted.
+     * The sweep's canvas-known memo already records each track's stable clip
+     * form (or that it has none), which is exactly the key the cache stores
+     * under - so offline the whole chain works from localStorage and the
+     * Cache API alone. A memo that says "no clip" also skips the ask, which
+     * is a free lookup saved online too.
+     */
+    // Narrowed once for the closure below - TypeScript's narrowing does not
+    // survive into a hoisted function declaration.
+    const t = track;
+    const sess = playSession;
+    const remembered = knownCanvasForm(t.path);
+    if (remembered === null) {
+      setNpCanvas(null);
+      return;
+    }
+    if (remembered) {
+      void cachedCanvas(playableCanvasUrl(remembered, sess)).then((held) => {
+        if (controller.signal.aborted) return;
+        if (held) {
+          setNpCanvas(held);
+        } else {
+          // Remembered but not held (evicted, or another device's memo shape):
+          // fall through to the ordinary ask.
+          askServer();
+        }
+      });
+      return () => controller.abort();
+    }
+    askServer();
+    function askServer() {
     void fetchCanvas(
-      playSession,
-      track.title,
-      track.artist,
+      sess,
+      t.title,
+      t.artist,
       controller.signal,
-      trackIdFromPath(track.path),
+      trackIdFromPath(t.path),
     ).then(async (url) => {
       if (controller.signal.aborted) return;
       if (!url) {
@@ -190,6 +227,7 @@ export function useNpChrome({
       const kept = await keepCanvas(url);
       if (!controller.signal.aborted) setNpCanvas(kept ?? url);
     });
+    }
     return () => controller.abort();
   }, [npOpen, track?.title, track?.artist, track?.kind, playSession]);
 
