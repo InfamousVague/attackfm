@@ -24,7 +24,7 @@
 
 import { clearArtCache, rememberArt } from './artCache.ts';
 import { clearCanvasCache, ensureCanvas } from './canvasCache.ts';
-import { artSized, artUrl, fetchCanvas, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, transcodeUrl, type RemoteTrack, type ServerSession } from '../server.ts';
+import { artSized, artUrl, fetchCanvas, loadCachedIndex, originFromPath, remotePath, streamUrl, trackIdFromPath, transcodeUrl, type RemoteTrack, type ServerSession } from '../server.ts';
 import { heldNeedsShelving, heldPath, offlineEntries, offlineSpace, pinTrack, rebrandHeld, unpinTrack } from '../downloads/offline.ts';
 import { pickSource } from '../servers/mirrors.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
@@ -255,8 +255,10 @@ export async function sweepCache(
   // Files cached before the folder era sit on disk as hex or flat at the
   // root; now that the library index is in hand, hand the vault their shelf
   // positions. One batched call per sweep, only for files actually adrift.
+  // A key tagged with another hub's origin is that hub's #id, which this
+  // index cannot name - left adrift rather than shelved under the wrong song.
   const rebrands = onDisk
-    .filter((e) => heldNeedsShelving(e.key))
+    .filter((e) => originFromPath(e.key) === null && heldNeedsShelving(e.key))
     .map((e) => {
       const remote = byId.get(trackIdFromPath(e.key) ?? -1);
       if (!remote) return null;

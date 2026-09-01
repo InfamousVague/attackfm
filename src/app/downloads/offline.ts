@@ -15,14 +15,63 @@ import { effectsOn } from '../player/effects.ts';
 import { serverSeemsDown } from '../api/reachability.ts';
 import { fxChainOn } from '../player/fxChain.ts';
 import { stemDropParam } from '../player/stemDrop.ts';
-import { trackIdFromPath } from '../server.ts';
+import { originFromPath, remotePath, trackIdFromPath } from '../server.ts';
+import { primarySession } from '../servers/sessions.ts';
 import { isTauri, setOfflineAudioResolver, tauriCall, type Track } from '../core/tauri.ts';
 import { unmarkPinned } from '../cache/cacheStore.ts';
 
-/** Library path -> absolute file path on this device. */
+/** Vault key -> absolute file path on this device. */
 let held = new Map<string, string>();
 let hydrated = false;
 const listeners = new Set<() => void>();
+
+/**
+ * Which hub the vault's UNTAGGED keys belong to.
+ *
+ * A key is a library path, and an untagged path (`afm://42`) means "the
+ * primary server" - which was a constant until one account could sit on
+ * several hubs and switch between them. The files on disk do not move when
+ * the primary does, so the vault remembers the hub it was filled for and every
+ * lookup translates through `keyFor`: after a switch, the new primary's #42
+ * is looked up under its tagged spelling and can never be answered with the
+ * old hub's file of the same number - which is a different song.
+ *
+ * The keys themselves keep their spelling. The cache sweep plans by comparing
+ * raw key strings against what is on disk, and respelling them would have it
+ * evict and re-download every song a phone already holds.
+ */
+const VAULT_HUB = 'attackfm-vault-hub';
+
+export function vaultHubUrl(): string | null {
+  try {
+    return localStorage.getItem(VAULT_HUB);
+  } catch {
+    return null;
+  }
+}
+
+function claimVault(url: string): void {
+  try {
+    localStorage.setItem(VAULT_HUB, url);
+  } catch {
+    // Storage refused: keys fall back to their literal spelling, as before.
+  }
+}
+
+/** The vault key a library path is held under - see `VAULT_HUB`. */
+export function vaultKey(path: string): string {
+  const id = trackIdFromPath(path);
+  if (id === null) return path;
+  const origin = originFromPath(path) ?? primarySession()?.url ?? null;
+  if (!origin) return path;
+  let hub = vaultHubUrl();
+  // An unclaimed vault belongs to whichever hub pins into it first.
+  if (!hub) {
+    claimVault(origin);
+    hub = origin;
+  }
+  return origin === hub ? remotePath(id) : remotePath(id, origin);
+}
 
 export interface OfflineEntry {
   key: string;
@@ -98,6 +147,13 @@ export async function hydrateOffline(): Promise<void> {
     if (list) {
       hydrated = true;
       held = new Map(list.map((e) => [e.key, e.path]));
+      // Files pinned before the vault knew about hubs are the current
+      // primary's - that was the only server there was. Claim them now, before
+      // any lookup could reinterpret them.
+      if (!vaultHubUrl() && list.some((e) => trackIdFromPath(e.key) !== null && originFromPath(e.key) === null)) {
+        const primary = primarySession();
+        if (primary) claimVault(primary.url);
+      }
       announce();
       return;
     }
@@ -112,7 +168,7 @@ export async function offlineEntries(): Promise<OfflineEntry[]> {
 
 /** Whether this track plays without a network. */
 export function isHeld(path: string): boolean {
-  return held.has(path);
+  return held.has(vaultKey(path));
 }
 
 export function heldCount(): number {
@@ -131,7 +187,7 @@ export async function offlineSpace(): Promise<{
 
 /** The local file for a track, or null - the hook `loadAudioUrl` consults. */
 export function heldPath(path: string): string | null {
-  return held.get(path) ?? null;
+  return held.get(vaultKey(path)) ?? null;
 }
 
 /**
@@ -205,7 +261,8 @@ export async function pinTrack(
     minBytes?: number;
   },
 ): Promise<boolean> {
-  if (!isTauri() || held.has(track.path)) return held.has(track.path);
+  const key = vaultKey(track.path);
+  if (!isTauri() || held.has(key)) return held.has(key);
   const ext = opts?.ext ?? ((track.codec || '').replace(/[^a-z0-9]/gi, '') || 'audio');
   // Deliberately NOT the swallowing tauriCall(): the Rust side names its failures
   // ("server answered 401", "fetch failed: ...") and this is the one command
@@ -218,7 +275,7 @@ export async function pinTrack(
   // ignores all of it.
   const name = [track.artist, track.title].filter(Boolean).join(' - ') || undefined;
   const entry = (await invoke('offline_pin', {
-    key: track.path,
+    key,
     url,
     ext,
     name,
@@ -234,7 +291,7 @@ export async function pinTrack(
   // than returned false, so the sweep's retry loop treats it as the transient
   // failure it usually is.
   if (opts?.minBytes && entry.bytes < opts.minBytes) {
-    await tauriCall('offline_unpin', { key: track.path });
+    await tauriCall('offline_unpin', { key });
     throw new Error(`download stopped early (${entry.bytes} bytes)`);
   }
   held.set(entry.key, entry.path);
@@ -282,12 +339,13 @@ export async function rebrandHeld(
 }
 
 export async function unpinTrack(path: string): Promise<void> {
-  await tauriCall('offline_unpin', { key: path });
-  held.delete(path);
+  const key = vaultKey(path);
+  await tauriCall('offline_unpin', { key });
+  held.delete(key);
   // Whatever removed it, the deliberate-keep mark goes with the file. Here
   // rather than at the call sites so no route can leave one behind: a mark
   // outliving its song protects nothing and hides a byte from the count.
-  unmarkPinned(path);
+  unmarkPinned(key);
   announce();
 }
 

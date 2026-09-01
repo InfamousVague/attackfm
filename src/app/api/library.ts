@@ -39,6 +39,29 @@ export function trackIdFromPath(path: string): number | null {
 }
 
 /**
+ * Whether a path names a track on the given hub. An untagged path means the
+ * PRIMARY server (see `remotePath`), so this is only right when `hubUrl` IS
+ * the primary - which is what every caller has in hand, since the ids they
+ * are resolving came back from that server. With two hubs merged into one
+ * library, #42 exists on both, and a map built from every row would hand a
+ * friend's heart list or the stats page the wrong hub's song.
+ */
+export function fromHub(path: string, hubUrl: string): boolean {
+  const origin = originFromPath(path);
+  return origin === null || origin === hubUrl;
+}
+
+/** The rows of `tracks` that live on `session`'s server - see `fromHub`. A
+ *  null session is a local library, which has only one place to be from. */
+export function tracksOfHub<T extends { path: string }>(
+  tracks: readonly T[],
+  session: { url: string } | null | undefined,
+): T[] {
+  if (!session) return [...tracks];
+  return tracks.filter((t) => fromHub(t.path, session.url));
+}
+
+/**
  * Which server a path names, or null for "whichever one is current".
  *
  * Null is the answer for every path written before multi-server existed, and
@@ -207,6 +230,7 @@ export function toTrack(
 ): Track {
   return {
     path: remotePath(remote.id, tagOrigin ? session.url : null),
+    origin: session.url,
     title: remote.title,
     artist: remote.artist,
     albumArtist: remote.albumArtist || null,

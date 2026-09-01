@@ -146,6 +146,15 @@ export interface Track {
    * `loadAudioUrl` has to know the difference.
    */
   path: string;
+  /**
+   * The server this row came from - its normalised URL - or absent for a
+   * local file. Derived, never authoritative: the path still carries the
+   * origin (tagged, or untagged meaning the primary hub), and anything that
+   * routes a request must read THAT via `originFromPath`. This is for faces:
+   * an "on Kevin's server" line under a title should not have to base64-decode
+   * every row it draws.
+   */
+  origin?: string;
   title: string;
   artist: string;
   /**

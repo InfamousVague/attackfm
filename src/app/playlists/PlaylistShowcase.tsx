@@ -28,6 +28,8 @@ import { trackIdFromPath, type HomeFeed } from '../server.ts';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
 import { openMix } from '../nav/openMix.ts';
 import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
+import { tracksOfHub } from '../server.ts';
+import { serverLabelFor } from '../servers/serverNames.ts';
 // The objects made for these four tiles. Their own colours are not used: each
 // is tinted to its card's hue in CSS, so the four read as one set rather than
 // four photographs that happen to sit together.
@@ -243,7 +245,7 @@ export function PlaylistShowcase({
     const feed = readFeedCache<HomeFeed>(session, 'home');
     if (!feed?.heavy?.length) return null;
     const known = new Set<number>();
-    for (const t of tracks) {
+    for (const t of tracksOfHub(tracks, session)) {
       const id = trackIdFromPath(t.path);
       if (id !== null) known.add(id);
     }
@@ -281,7 +283,10 @@ export function PlaylistShowcase({
 
   // Same rule the page's menu follows: a folder IS the playlists that name it.
   const folders = useMemo(
-    () => [...new Set(playlists.map((p) => p.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    () =>
+      [...new Set(playlists.filter((p) => !p.origin).map((p) => p.folder).filter(Boolean))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
     [playlists],
   );
 
@@ -364,7 +369,7 @@ export function PlaylistShowcase({
    * folder gets its own labelled grid underneath, in alphabetical order - a
    * folder's position should not move when you play something inside it.
    */
-  const { loose, foldered } = useMemo(() => {
+  const { loose, foldered, elsewhere } = useMemo(() => {
     const sorted = [...playlists].sort(
       (a, b) =>
         Math.max(b.createdAt, playlistPlayedAt(b.id)) -
@@ -372,7 +377,18 @@ export function PlaylistShowcase({
     );
     const out: typeof sorted = [];
     const groups = new Map<string, typeof sorted>();
+    // Lists that live on another of this account's hubs sit under that hub's
+    // name, after the folders: they are not yours to file, and mixing them
+    // into the loose grid would put two "Gym" lists side by side with no way
+    // to tell whose box each one plays from.
+    const hubs = new Map<string, typeof sorted>();
     for (const p of sorted) {
+      if (p.origin) {
+        const bucket = hubs.get(p.origin);
+        if (bucket) bucket.push(p);
+        else hubs.set(p.origin, [p]);
+        continue;
+      }
       if (!p.folder) {
         out.push(p);
         continue;
@@ -384,6 +400,11 @@ export function PlaylistShowcase({
     return {
       loose: out,
       foldered: [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])),
+      elsewhere: [...hubs.entries()].map(([origin, lists]) => ({
+        origin,
+        label: serverLabelFor(origin) ?? 'Another server',
+        lists,
+      })),
     };
   }, [playlists]);
 
@@ -598,6 +619,39 @@ export function PlaylistShowcase({
                 onOpen={() => onOpenPlaylist(playlist.id)}
                 onDelete={() => setDeleting({ id: playlist.id, name: playlist.name })}
                 menu={tileMenu(playlist)}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+
+      {/* Lists on this account's other hubs. Read-only tiles - no hold menu,
+          no delete: those verbs all speak to the primary server. */}
+      {elsewhere.map(({ origin, label, lists }) => (
+        <section className="homeShelf" key={origin}>
+          <h2 className="homeShelfTitle">
+            On {label}
+            <span className="showcaseFolderCount">{lists.length}</span>
+          </h2>
+          <div className="showcaseGrid">
+            {lists.map((playlist) => (
+              <Tile
+                key={playlist.id}
+                name={playlist.name}
+                cover={
+                  playlist.coverUrl ? (
+                    <div className="tileSquircle tileRecent" aria-hidden>
+                      <img className="tileChosenCover" src={playlist.coverUrl} alt="" loading="lazy" />
+                    </div>
+                  ) : (
+                    <MosaicCover
+                      tracks={playlist.paths.map((p) => byPath.get(p)).filter((t): t is Track => t !== undefined)}
+                      fallback={<ListMusic size={24} />}
+                      tone="tileRecent"
+                    />
+                  )
+                }
+                onOpen={() => onOpenPlaylist(playlist.id)}
               />
             ))}
           </div>

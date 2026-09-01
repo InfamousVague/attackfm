@@ -38,6 +38,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { SharePlaylistDrawer } from './SharePlaylist.tsx';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { fetchPlaylistSuggestions, remotePath } from '../server.ts';
+import { serverLabelFor } from '../servers/serverNames.ts';
 import { formatClock, formatTotal, formatBytes } from '../ux/format.ts';
 import { estimateSetBytes } from '../cache/cacheQuality.ts';
 import { cacheQualityKbps } from '../cache/cacheStore.ts';
@@ -398,9 +399,11 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
 
         <div className="playlistHead__body">
           <Text tone="muted" size="xs" className="playlistHead__kicker">
-            {playlist.role && playlist.role !== 'owner'
-              ? `Shared by ${playlist.ownerName ?? 'a friend'}${playlist.role === 'editor' ? ' · you can edit' : ''}`
-              : 'Playlist'}
+            {playlist.origin
+              ? `Playlist on ${serverLabelFor(playlist.origin) ?? 'another server'}`
+              : playlist.role && playlist.role !== 'owner'
+                ? `Shared by ${playlist.ownerName ?? 'a friend'}${playlist.role === 'editor' ? ' · you can edit' : ''}`
+                : 'Playlist'}
           </Text>
           <h2 className="playlistHead__name">{playlist.name}</h2>
           <Text tone="muted" size="sm">
@@ -489,7 +492,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   Share with friends…
                 </MenuItem>
               )}
-              {!isOwner && leave && (
+              {!isOwner && leave && !playlist.origin && (
                 <MenuItem icon={<LogOut size={15} />} onSelect={() => void leave(playlist.id)}>
                   Leave playlist
                 </MenuItem>

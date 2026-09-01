@@ -11,6 +11,7 @@ import { fetchCurator, trackIdFromPath, type CuratorFeed } from '../server.ts';
 import { MosaicCover } from '../playlists/PlaylistShowcase.tsx';
 import { openMix } from '../nav/openMix.ts';
 import type { Track } from '../core/tauri.ts';
+import { tracksOfHub } from '../server.ts';
 
 /** Blank line the skeleton holds so the card keeps its exact height. */
 const NBSP = ' ';
@@ -74,7 +75,7 @@ function useCuratedHere(): { title: string; blurb: string; tracks: Track[] }[] {
   }, [session?.url]);
   return useMemo(() => {
     const byId = new Map<number, Track>();
-    for (const t of [...tracks, ...forYou]) {
+    for (const t of [...tracksOfHub(tracks, session), ...forYou]) {
       const id = trackIdFromPath(t.path);
       if (id !== null) byId.set(id, t);
     }

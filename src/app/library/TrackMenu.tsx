@@ -18,7 +18,7 @@ import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { SongSelectionContext } from './songSelection.tsx';
 import { WrongSongModal } from './WrongSongModal.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
-import { isHeld, onOfflineChange, pinTrack, unpinTrack } from '../downloads/offline.ts';
+import { isHeld, onOfflineChange, pinTrack, unpinTrack, vaultKey } from '../downloads/offline.ts';
 import { cacheQualityKbps, markPinned } from '../cache/cacheStore.ts';
 import { estimateBytes, extFor, wantedQuality } from '../cache/cacheQuality.ts';
 import { useRadioOptional } from '../player/radio.tsx';
@@ -162,7 +162,7 @@ export function TrackMenu({
             ? Math.floor(estimateBytes(track, quality, 0) * 0.5)
             : 0,
       });
-      if (kept) markPinned(track.path);
+      if (kept) markPinned(vaultKey(track.path));
     } finally {
       setKeeping(false);
     }

@@ -10,6 +10,7 @@ import {
 import { readFeedCache, writeFeedCache } from '../library/feedCache.ts';
 import type { Track } from '../core/tauri.ts';
 import type { ResolvedMix } from './homeCards.tsx';
+import { tracksOfHub } from '../server.ts';
 
 /**
  * The home page's feed machinery: the cached-then-refreshed home and curator
@@ -97,7 +98,7 @@ export function useHomeFeed(
   // has not synced yet simply drop out.
   const byId = useMemo(() => {
     const map = new Map<number, Track>();
-    for (const t of [...tracks, ...forYou]) {
+    for (const t of [...tracksOfHub(tracks, session), ...forYou]) {
       const id = trackIdFromPath(t.path);
       if (id !== null) map.set(id, t);
     }

@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.30
+
+- Playlists from your other servers now show up on the Playlists page, in their own row named after the server. They play through that server; you cannot edit them from here.
+- Sitting on two servers at once no longer mixes up songs that happen to share a number: heavy rotation, a friend's hearts, the stats page and the Discover shelf only resolve songs from the server they came from.
+- Offline songs remember which server they were saved from, so switching your main server can never play the wrong song under the same number.
+
 ## 0.5.29
 
 - Invite links (registry.attack.fm/i/…) now open straight in the app on

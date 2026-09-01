@@ -16,6 +16,7 @@ import onRepeatChip from '../../assets/chip-on-repeat.webp';
 import likedChip from '../../assets/chip-liked.webp';
 import allSongsChip from '../../assets/chip-all-songs.webp';
 import { CoverWall } from '../playlists/CoverWall.tsx';
+import { tracksOfHub } from '../server.ts';
 
 /**
  * A whole collection of songs, opened as its own page - the fullscreen answer
@@ -136,7 +137,7 @@ export function SongPage({
   const onRepeat = useMemo(() => {
     if (!heavyIds) return [];
     const byId = new Map<number, Track>();
-    for (const t of tracks) {
+    for (const t of tracksOfHub(tracks, session)) {
       const id = trackIdFromPath(t.path);
       if (id !== null) byId.set(id, t);
     }

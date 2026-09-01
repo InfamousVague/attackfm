@@ -18,7 +18,7 @@
 import { fetchTranscript } from '../player/transcript.ts';
 import { estimateBytes, extFor, wantedQuality } from '../cache/cacheQuality.ts';
 import { cacheQualityKbps, markPinned } from '../cache/cacheStore.ts';
-import { isHeld, pinTrack, unpinTrack } from './offline.ts';
+import { isHeld, pinTrack, unpinTrack, vaultKey } from './offline.ts';
 import { streamUrl, trackIdFromPath, transcodeUrl } from '../server.ts';
 import type { ServerSession } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
@@ -79,7 +79,7 @@ export async function keepBook(
       });
       // Only on success. A mark for a download that failed protects a file that
       // is not there, and hides it from the count that would have said so.
-      if (kept) markPinned(track.path);
+      if (kept) markPinned(vaultKey(track.path));
       else failed += 1;
     } catch {
       // One section failing is not the book failing: the rest are still worth

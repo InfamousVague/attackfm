@@ -38,6 +38,7 @@ import { ArtChip, GENRE_TONES, Heading, RowArt } from './StatsBits.tsx';
 import { StatsMore } from './StatsMore.tsx';
 import { FriendsThisWeek } from './FriendsThisWeek.tsx';
 import './StatsPage.css';
+import { tracksOfHub } from '../server.ts';
 
 /**
  * Your listening, in numbers.
@@ -111,7 +112,7 @@ export function StatsPage({
   // library's Track rows. One map bridges them for every cover on the page.
   const byId = useMemo(() => {
     const map = new Map<number, Track>();
-    for (const t of tracks) {
+    for (const t of tracksOfHub(tracks, session)) {
       const id = trackIdFromPath(t.path);
       if (id !== null) map.set(id, t);
     }

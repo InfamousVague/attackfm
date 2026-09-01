@@ -33,6 +33,8 @@ import {
   type PlaylistMember,
   type PlaylistRole,
 } from '../server.ts';
+import { allSessions } from '../servers/sessions.ts';
+import { serverLabelFor } from '../servers/serverNames.ts';
 import { fold, titleKey } from '../library/owned.ts';
 import {
   forgetMeta,
@@ -79,6 +81,12 @@ export interface Playlist {
   ownerId?: number;
   ownerName?: string;
   role?: PlaylistRole;
+  /** Set when the list lives on one of the OTHER hubs this account sits on:
+   *  its server's URL. Read-only here (its songs play through that hub via
+   *  their tagged paths), and its id is prefixed with the origin so it cannot
+   *  collide with a same-numbered list on the primary. Absent for the primary
+   *  hub's own lists and for a local library. */
+  origin?: string;
 }
 
 interface PlaylistsContextValue {
@@ -305,6 +313,44 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
   // whole-array PUT) back to the past.
   const editSeq = useRef(0);
 
+  /*
+   * The lists on every OTHER hub this account sits on, read-only. Their
+   * songs are already in the merged library under tagged paths, so a list
+   * from Kevin's server plays through Kevin's server without anything here
+   * knowing; what was missing was the list itself. Fetched on its own slow
+   * heartbeat - a hub that is asleep costs one failed request every few
+   * minutes and keeps whatever it last answered.
+   */
+  const [others, setOthers] = useState<{ session: ServerSession; lists: RemotePlaylist[] }[]>(() =>
+    allSessions()
+      .filter((s) => s.url !== session.url)
+      .map((s) => ({ session: s, lists: readFeedCache<RemotePlaylist[]>(s, 'playlists') ?? [] })),
+  );
+  useEffect(() => {
+    let live = true;
+    const ask = async () => {
+      const secondaries = allSessions().filter((s) => s.url !== session.url);
+      const answers = await Promise.all(
+        secondaries.map(async (s) => {
+          try {
+            const lists = await fetchRemotePlaylists(s);
+            writeFeedCache(s, 'playlists', lists);
+            return { session: s, lists };
+          } catch {
+            return { session: s, lists: readFeedCache<RemotePlaylist[]>(s, 'playlists') ?? [] };
+          }
+        }),
+      );
+      if (live) setOthers(answers);
+    };
+    void ask();
+    const timer = window.setInterval(() => void ask(), 5 * 60_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [session.url]);
+
   const refresh = useCallback(async () => {
     const seqAtAsk = editSeq.current;
     try {
@@ -421,6 +467,29 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         role: p.role,
       };
     });
+    for (const { session: other, lists } of others) {
+      const origin = other.url;
+      const label = serverLabelFor(origin);
+      for (const p of lists) {
+        playlists.push({
+          id: `${origin}#${p.id}`,
+          name: p.name,
+          paths: p.tracks.map((id) => remotePath(id, origin)),
+          createdAt: p.updatedAt,
+          description: p.description ?? '',
+          folder: '',
+          coverUrl: p.cover ? playlistCoverUrl(other, p.id, p.updatedAt) : null,
+          wants: [],
+          ownerId: p.ownerId,
+          ownerName: p.ownerName ?? label ?? undefined,
+          // Never 'owner', whatever the other hub says: the verbs on this
+          // provider all speak to the primary, and a list that cannot find
+          // itself there must not offer to be renamed, filed or deleted.
+          role: p.role === undefined || p.role === 'owner' ? 'viewer' : p.role,
+          origin,
+        });
+      }
+    }
     // A server that sends `role` has the single-track routes; one that does
     // not is from before sharing, and its lists are edited whole as ever.
     const shares = (p: RemotePlaylist) => p.role !== undefined;
@@ -619,7 +688,7 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         await refresh();
       },
     };
-  }, [remote, session, mutate, refresh, metaRev]);
+  }, [remote, others, session, mutate, refresh, metaRev]);
 
   return <PlaylistsContext.Provider value={value}>{children}</PlaylistsContext.Provider>;
 }

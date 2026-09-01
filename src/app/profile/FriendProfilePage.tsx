@@ -28,6 +28,7 @@ import { TrackMenu } from '../library/TrackMenu.tsx';
 import { artworkHue, artworkUrl, genreArtwork } from '../ux/artwork.ts';
 import type { Track } from '../core/tauri.ts';
 import './StatsPage.css';
+import { tracksOfHub } from '../server.ts';
 
 /**
  * One friend, the whole page - by request, after the small stats modal
@@ -109,7 +110,7 @@ export function FriendProfilePage({
   // her top songs into playable rows.
   const byId = useMemo(() => {
     const m = new Map<number, Track>();
-    for (const t of tracks) {
+    for (const t of tracksOfHub(tracks, session)) {
       const id = trackIdFromPath(t.path);
       if (id !== null) m.set(id, t);
     }
