@@ -275,6 +275,62 @@ class MainActivity : TauriActivity() {
         null
       }
 
+    /**
+     * Put a PNG the page drew into the phone's Pictures, under an AttackFM
+     * album, so it shows in Photos and the share sheet at once.
+     *
+     * The page cannot do this itself: a WebView has no Web Share API for
+     * files and ignores an anchor's `download`, so "Save image" was a button
+     * that did nothing. MediaStore is the door - on Android 10+ it needs no
+     * permission at all, and the row is written pending and then published so
+     * a gallery never sees a half-written file. Before 10 (minSdk 24) the
+     * public Pictures folder is written directly and needs the legacy storage
+     * grant; a refusal returns false rather than throwing into the page.
+     */
+    @JavascriptInterface
+    fun saveImage(base64: String, name: String): Boolean =
+      try {
+        val bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
+        val safe = name.ifBlank { "attackfm-invite.png" }
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+          val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, safe)
+            put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(
+              android.provider.MediaStore.Images.Media.RELATIVE_PATH,
+              android.os.Environment.DIRECTORY_PICTURES + "/AttackFM",
+            )
+            put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
+          }
+          val resolver = contentResolver
+          val uri = resolver.insert(
+            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values,
+          ) ?: return false
+          resolver.openOutputStream(uri)?.use { it.write(bytes) } ?: return false
+          values.clear()
+          values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
+          resolver.update(uri, values, null, null)
+          true
+        } else {
+          val dir = java.io.File(
+            android.os.Environment.getExternalStoragePublicDirectory(
+              android.os.Environment.DIRECTORY_PICTURES,
+            ),
+            "AttackFM",
+          )
+          if (!dir.exists() && !dir.mkdirs()) return false
+          val file = java.io.File(dir, safe)
+          file.writeBytes(bytes)
+          // Tell the gallery a new picture exists; it does not watch the disk.
+          sendBroadcast(
+            Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, android.net.Uri.fromFile(file)),
+          )
+          true
+        }
+      } catch (_: Exception) {
+        false
+      }
+
     /** Whether the all-files grant is already in hand. */
     @JavascriptInterface
     fun canBrowseVault(): Boolean =

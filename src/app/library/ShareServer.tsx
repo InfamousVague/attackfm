@@ -1,4 +1,4 @@
-import { Button, Drawer, IconButton, Text } from '@glacier/react';
+import { Button, Drawer, IconButton, Text, useToast } from '@glacier/react';
 import { Check, Copy, Download, RefreshCw, Share2 } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
@@ -122,6 +122,7 @@ function InviteCard({
  */
 export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
   const { session } = useServerSession();
+  const { toast } = useToast();
   const registry = useRegistryOptional();
   const [open, setOpen] = useState(false);
   const [invite, setInvite] = useState<Invite | null>(null);
@@ -217,13 +218,34 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
       // rasterised large, so the picture is sharp rather than a blown-up
       // screenshot. See widget/shot.ts on why the scale lives here.
       const dataUrl = await shoot(node, 320, 560, 3);
-      if (!dataUrl) return;
+      if (!dataUrl) {
+        toast({ message: 'Could not draw the card. Try again in a moment.' });
+        return;
+      }
+      /*
+       * Where it goes, in order of what actually works:
+       *  1. Android: the native bridge writes it into Photos (Pictures/AttackFM)
+       *     through MediaStore. A WebView has no Web Share API for files and
+       *     ignores an anchor's download, so without this the button did
+       *     nothing at all - which is exactly what got reported.
+       *  2. iOS and modern browsers: the share sheet, which carries "Save
+       *     Image" and every messenger.
+       *  3. Desktop and the rest: a plain download.
+       */
+      const native = (window as unknown as {
+        AFMNative?: { saveImage?: (base64: string, name: string) => boolean };
+      }).AFMNative;
+      if (native?.saveImage) {
+        const ok = native.saveImage(dataUrl.slice(dataUrl.indexOf(',') + 1), 'attackfm-invite.png');
+        toast({
+          message: ok
+            ? 'Saved to Photos, in the AttackFM album.'
+            : 'Could not save the picture. Check storage access in Settings.',
+        });
+        return;
+      }
       const blob = await (await fetch(dataUrl)).blob();
       const file = new File([blob], 'attackfm-invite.png', { type: 'image/png' });
-      // On a phone the native share sheet is the right home for this - it
-      // carries "Save image" AND every messenger the person might send it
-      // through. Where it cannot take a file (desktop, most browsers), a plain
-      // download is the honest fallback.
       const shareData = { files: [file], title: `Join ${possessive(owner)} AttackFM server` };
       if (navigator.canShare?.(shareData)) {
         try {
@@ -241,6 +263,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
       a.click();
       a.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      toast({ message: 'Downloaded attackfm-invite.png.' });
     } finally {
       setSaving(false);
     }

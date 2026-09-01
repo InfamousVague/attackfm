@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.20
+
+- "Save image" on the invite card now actually saves on Android - into Photos,
+  in an AttackFM album - and says so. It used to do nothing at all. Needs the
+  0.5.20 app build.
+
 ## 0.5.19
 
 - The invite-a-friend button is now a plain share glyph in the header, just
