@@ -304,6 +304,125 @@ impl Db {
         let _ = c.execute("DELETE FROM friend_requests WHERE id = ?1", [id]);
     }
 
+    // --- songs sent between friends ------------------------------------------
+
+    /// How OWNER answered FROM's first song: Some(true) takes them, Some(false)
+    /// refuses, None has not been asked yet.
+    pub fn share_grant(&self, owner: i64, from: i64) -> Option<bool> {
+        let c = self.conn.lock().unwrap();
+        c.query_row(
+            "SELECT allow FROM share_grants WHERE owner_id = ?1 AND from_id = ?2",
+            [owner, from],
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+        .map(|v| v != 0)
+    }
+
+    /// Decide about a sender. Refusing also puts away whatever they have
+    /// already sent, so a "no" is not followed by a pile of their songs.
+    pub fn set_share_grant(&self, owner: i64, from: i64, allow: bool, now: i64) -> rusqlite::Result<()> {
+        let c = self.conn.lock().unwrap();
+        c.execute(
+            "INSERT INTO share_grants (owner_id, from_id, allow, decided_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(owner_id, from_id) DO UPDATE SET allow = excluded.allow, decided_at = excluded.decided_at",
+            rusqlite::params![owner, from, allow as i64, now],
+        )?;
+        if !allow {
+            c.execute(
+                "UPDATE shares SET dismissed_at = ?3
+                  WHERE to_id = ?1 AND from_id = ?2 AND taken_at = 0 AND dismissed_at = 0",
+                rusqlite::params![owner, from, now],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// How many songs FROM has sent since `since` - the budget the endpoint keeps.
+    pub fn shares_sent_since(&self, from: i64, since: i64) -> i64 {
+        let c = self.conn.lock().unwrap();
+        c.query_row(
+            "SELECT COUNT(*) FROM shares WHERE from_id = ?1 AND created_at > ?2",
+            [from, since],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    }
+
+    pub fn add_share(
+        &self,
+        from: i64,
+        to: i64,
+        artist: &str,
+        title: &str,
+        album: &str,
+        note: &str,
+        now: i64,
+    ) -> rusqlite::Result<i64> {
+        let c = self.conn.lock().unwrap();
+        c.execute(
+            "INSERT INTO shares (from_id, to_id, artist, title, album, note, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![from, to, artist, title, album, note, now],
+        )?;
+        Ok(c.last_insert_rowid())
+    }
+
+    /// Everything waiting for OWNER - not taken, not put away - newest first,
+    /// with who sent it and whether OWNER has decided about them yet.
+    pub fn shares_for(&self, owner: i64) -> Vec<Share> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = match c.prepare(
+            "SELECT s.id, a.id, a.handle, s.artist, s.title, s.album, s.note, s.created_at, g.allow
+               FROM shares s
+               JOIN accounts a ON a.id = s.from_id
+               LEFT JOIN share_grants g ON g.owner_id = s.to_id AND g.from_id = s.from_id
+              WHERE s.to_id = ?1 AND s.taken_at = 0 AND s.dismissed_at = 0
+              ORDER BY s.created_at DESC, s.id DESC
+              LIMIT 200",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map([owner], |r| {
+            Ok(Share {
+                id: r.get(0)?,
+                from_id: r.get(1)?,
+                from_handle: r.get(2)?,
+                artist: r.get(3)?,
+                title: r.get(4)?,
+                album: r.get(5)?,
+                note: r.get(6)?,
+                created_at: r.get(7)?,
+                allowed: r.get::<_, Option<i64>>(8)?.map(|v| v != 0),
+            })
+        });
+        match rows {
+            Ok(it) => it.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// (from_id, to_id) of a share, for the recipient-only checks.
+    pub fn share_parties(&self, id: i64) -> Option<(i64, i64)> {
+        let c = self.conn.lock().unwrap();
+        c.query_row("SELECT from_id, to_id FROM shares WHERE id = ?1", [id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .optional()
+        .ok()
+        .flatten()
+    }
+
+    /// Taken (the recipient's hub has it, or is fetching it) or put away.
+    pub fn settle_share(&self, id: i64, taken: bool, now: i64) {
+        let c = self.conn.lock().unwrap();
+        let col = if taken { "taken_at" } else { "dismissed_at" };
+        let _ = c.execute(&format!("UPDATE shares SET {col} = ?2 WHERE id = ?1"), rusqlite::params![id, now]);
+    }
+
     /// Make a friendship and clear any requests either way between the pair.
     pub fn add_friendship(&self, a: i64, b: i64, now: i64) -> rusqlite::Result<()> {
         let (lo, hi) = Self::pair(a, b);
@@ -658,6 +777,20 @@ impl Db {
     }
 }
 
+/// A song sent between friends, as the recipient's inbox lists it.
+pub struct Share {
+    pub id: i64,
+    pub from_id: i64,
+    pub from_handle: String,
+    pub artist: String,
+    pub title: String,
+    pub album: String,
+    pub note: String,
+    pub created_at: i64,
+    /// The recipient's standing answer about this sender; None until asked.
+    pub allowed: Option<bool>,
+}
+
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
@@ -753,6 +886,34 @@ CREATE TABLE IF NOT EXISTS friendships (
   PRIMARY KEY (a_id, b_id)
 );
 CREATE INDEX IF NOT EXISTS friendships_b ON friendships(b_id);
+
+-- A song one friend sent another: the NAME of a song, not a file. The
+-- recipient's own hub goes and gets it (a pending like there), so nothing
+-- crosses this table but artist and title. Settled rows stay for the sender's
+-- "they took it" glance and the daily budget.
+CREATE TABLE IF NOT EXISTS shares (
+  id           INTEGER PRIMARY KEY,
+  from_id      INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  to_id        INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  artist       TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  album        TEXT NOT NULL DEFAULT '',
+  note         TEXT NOT NULL DEFAULT '',
+  created_at   INTEGER NOT NULL,
+  taken_at     INTEGER NOT NULL DEFAULT 0,
+  dismissed_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS shares_to ON shares(to_id, taken_at, dismissed_at);
+
+-- Whether OWNER takes songs from FROM at all. Asked once, the first time a
+-- friend sends something; no row means "not decided yet", and the share waits.
+CREATE TABLE IF NOT EXISTS share_grants (
+  owner_id   INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  from_id    INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  allow      INTEGER NOT NULL,
+  decided_at INTEGER NOT NULL,
+  PRIMARY KEY (owner_id, from_id)
+);
 
 -- A cached glance of a library's size, announced by the owner's app, so a
 -- friends list shows everyone's numbers without waking everyone's server.

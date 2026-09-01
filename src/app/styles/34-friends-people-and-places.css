@@ -300,3 +300,52 @@
   }
 }
 
+
+/* --- songs sent between friends ------------------------------------------ */
+
+/* The second line on a "Sent to you" card - who, and why. */
+.requestCard__sub {
+  display: block;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sendToFriend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding: 0 var(--glacier-space-4) var(--glacier-space-6);
+}
+
+.sendToFriend__wait {
+  display: grid;
+  place-items: center;
+  padding: var(--glacier-space-6) 0;
+}
+
+.sendToFriend__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sendToFriend__row {
+  align-items: center;
+  display: flex;
+  gap: var(--glacier-space-3);
+  min-width: 0;
+}
+
+.sendToFriend__handle {
+  flex: 1;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

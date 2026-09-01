@@ -16,6 +16,8 @@
 //!     the person.
 
 import { ArtistLink } from '../ux/ArtistLink.tsx';
+import { fetchShares, setShareGrant, settleShare, type Share } from '../servers/registry.ts';
+import { addPendingLike } from '../api/likes.ts';
 import {
   Button,
   Field,
@@ -208,6 +210,8 @@ export function FriendsSection({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // Songs friends have sent, by name, waiting for a yes.
+  const [shares, setShares] = useState<Share[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -215,7 +219,71 @@ export function FriendsSection({
     } catch {
       // Unreachable right now; whatever is on screen stays.
     }
+    try {
+      setShares(await fetchShares(token));
+    } catch {
+      // A registry from before songs could be sent has no inbox to show.
+    }
   }, [token]);
+
+  /**
+   * Take a song a friend sent: ask YOUR OWN hub for it by name. The hub
+   * favourites it at once if it already has a match, and otherwise remembers
+   * the promise for its collector - the same door Discover's heart uses, and
+   * the only way a song ever enters a library. The registry only ever knew
+   * the title.
+   */
+  const takeShare = async (s: Share) => {
+    if (!server) {
+      setNote({ tone: 'bad', text: 'Connect to your server first - that is where the song goes.' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const { landed } = await addPendingLike(server, s.artist, s.title);
+      await settleShare(token, s.id, true);
+      setShares((prev) => prev.filter((x) => x.id !== s.id));
+      setNote({
+        tone: 'ok',
+        text: landed ? `${s.title} is already here - it is in your Liked songs now.` : `${s.title} is on its way; it lands in Liked songs.`,
+      });
+    } catch (e) {
+      setNote({ tone: 'bad', text: e instanceof Error ? e.message : 'That did not go through.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const putAway = async (s: Share) => {
+    setBusy(true);
+    try {
+      await settleShare(token, s.id, false);
+      setShares((prev) => prev.filter((x) => x.id !== s.id));
+    } catch {
+      // Stays on the list; the next tap tries again.
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** The once-per-friend answer: do you take songs from this person at all. */
+  const decideSender = async (handle: string, allow: boolean) => {
+    setBusy(true);
+    try {
+      await setShareGrant(token, handle, allow);
+      setShares((prev) =>
+        allow ? prev.map((x) => (x.from === handle ? { ...x, allowed: true } : x)) : prev.filter((x) => x.from !== handle),
+      );
+    } catch (e) {
+      setNote({ tone: 'bad', text: e instanceof Error ? e.message : 'That did not go through.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // The first song from anyone is a question about THEM, asked once.
+  const senderAsks = [...new Set(shares.filter((s) => s.allowed === null).map((s) => s.from))];
+  const songsSent = shares.filter((s) => s.allowed === true);
 
   useEffect(() => {
     void refresh();
@@ -340,6 +408,56 @@ export function FriendsSection({
                     <Check size={15} /> <span>Accept</span>
                   </Button>
                   <IconButton variant="ghost" size="sm" disabled={busy} aria-label={`Decline ${r.handle}`} onClick={() => void act(() => declineFriendRequest(token, r.id))}>
+                    <X size={15} />
+                  </IconButton>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {senderAsks.length > 0 && (
+        <section className="homeShelf">
+          <h2 className="homeShelfTitle">Wants to send you songs</h2>
+          <div className="requestCards">
+            {senderAsks.map((handle) => (
+              <div key={handle} className="requestCard">
+                <FriendAvatar handle={handle} size="md" />
+                <span className="requestCard__handle">{handle}</span>
+                <span className="requestCard__actions">
+                  <Button variant="solid" size="sm" disabled={busy} onClick={() => void decideSender(handle, true)}>
+                    <Check size={15} /> <span>Take them</span>
+                  </Button>
+                  <IconButton variant="ghost" size="sm" disabled={busy} aria-label={`Do not take songs from ${handle}`} onClick={() => void decideSender(handle, false)}>
+                    <X size={15} />
+                  </IconButton>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {songsSent.length > 0 && (
+        <section className="homeShelf">
+          <h2 className="homeShelfTitle">Sent to you</h2>
+          <div className="requestCards">
+            {songsSent.map((s) => (
+              <div key={s.id} className="requestCard">
+                <FriendAvatar handle={s.from} size="md" />
+                <span className="requestCard__handle">
+                  {s.title}
+                  <Text as="span" tone="muted" size="xs" className="requestCard__sub">
+                    {s.artist} · from {s.from}
+                    {s.note ? ` · “${s.note}”` : ''}
+                  </Text>
+                </span>
+                <span className="requestCard__actions">
+                  <Button variant="solid" size="sm" disabled={busy} onClick={() => void takeShare(s)}>
+                    <Check size={15} /> <span>Get it</span>
+                  </Button>
+                  <IconButton variant="ghost" size="sm" disabled={busy} aria-label={`Put away ${s.title}`} onClick={() => void putAway(s)}>
                     <X size={15} />
                   </IconButton>
                 </span>

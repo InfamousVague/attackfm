@@ -13,8 +13,11 @@ import {
   Trash2,
   CopyCheck,
 } from '@glacier/icons';
+import { Send } from '@glacier/icons';
 import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
+import { SendToFriendDialog } from '../profile/SendToFriend.tsx';
+import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { SongSelectionContext } from './songSelection.tsx';
 import { WrongSongModal } from './WrongSongModal.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
@@ -78,6 +81,7 @@ export function TrackMenu({
   const [filing, setFiling] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [exploring, setExploring] = useState(false);
+  const [sending, setSending] = useState(false);
   // The wrapper is the menu's own target, so the hold resolves to itself: what
   // this adds over the kit's hold is the mouse, and swallowing the release so
   // the song under the menu does not start playing.
@@ -87,8 +91,9 @@ export function TrackMenu({
   // bottom. A ref written during render, which is safe here: it only ever
   // goes false→true, and the render that flips it is the one the matching
   // state flag just re-triggered.
-  const everOpened = useRef({ filing: false, reporting: false, exploring: false, quickQueue: false });
+  const everOpened = useRef({ filing: false, reporting: false, exploring: false, quickQueue: false, sending: false });
   if (filing) everOpened.current.filing = true;
+  if (sending) everOpened.current.sending = true;
   if (reporting) everOpened.current.reporting = true;
   if (exploring) everOpened.current.exploring = true;
   if (quickQueue) everOpened.current.quickQueue = true;
@@ -97,6 +102,9 @@ export function TrackMenu({
   // from a server (a local file is already on this machine).
   const { session } = useServerSession();
   const trackId = trackIdFromPath(track.path);
+  // Sending a song is between accounts on the registry, not between hubs, so
+  // it needs the central sign-in rather than the server one.
+  const registry = useRegistryOptional();
   const canKeep = isTauri() && session !== null && trackId !== null;
   // Replacing the file is a change to the shared library, so it takes the same
   // rank the server asks for; a non-admin would only get a 403 from the menu.
@@ -210,6 +218,12 @@ export function TrackMenu({
             <MenuItem icon={<ListMusic size={15} />} onSelect={() => setFiling(true)}>
               Add to playlist…
             </MenuItem>
+            {/* By name, to a friend's own hub - no file leaves this one. */}
+            {registry?.session && (
+              <MenuItem icon={<Send size={15} />} onSelect={() => setSending(true)}>
+                Send to a friend…
+              </MenuItem>
+            )}
             {/* An endless run in this song's direction. It plays first, and
                 the station keeps the queue fed behind it for as long as it
                 is on - see radio.tsx. */}
@@ -279,6 +293,9 @@ export function TrackMenu({
           open={filing}
           onClose={() => setFiling(false)}
         />
+      )}
+      {(sending || everOpened.current.sending) && (
+        <SendToFriendDialog track={track} open={sending} onClose={() => setSending(false)} />
       )}
       {(reporting || everOpened.current.reporting) && (
         <WrongSongModal

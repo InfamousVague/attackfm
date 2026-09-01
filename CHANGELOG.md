@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.31
+
+- Send a song to a friend: hold a song, choose Send to a friend, pick who. They get the name, and their own server fetches it into their Liked songs - no files change hands. The first song from anyone asks them once whether they take songs from you.
+- Songs friends send you wait on the Friends page under Sent to you, and ring the bell.
+
 ## 0.5.30
 
 - Playlists from your other servers now show up on the Playlists page, in their own row named after the server. They play through that server; you cannot edit them from here.

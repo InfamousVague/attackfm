@@ -946,6 +946,139 @@ async fn set_membership(
     Ok(Json(json!({ "ok": true })))
 }
 
+// --- songs sent between friends ------------------------------------------------
+
+#[derive(Deserialize)]
+struct ShareBody {
+    handle: String,
+    artist: String,
+    title: String,
+    #[serde(default)]
+    album: String,
+    #[serde(default)]
+    note: String,
+}
+
+/// A sender may send this many songs a day, to everyone put together. Enough
+/// for a whole evening of "you have to hear this"; not enough to be a feed.
+const SHARES_PER_DAY: i64 = 40;
+
+/// `POST /v1/shares` - send a friend a song by NAME. Their own hub fetches it;
+/// the registry carries only the title. The first song from anyone waits until
+/// the recipient says they will take songs from that person at all.
+async fn send_share(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<ShareBody>,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let target = state
+        .db
+        .account_by_handle(body.handle.trim())
+        .ok_or((StatusCode::NOT_FOUND, "No one here goes by that handle.".into()))?;
+    if target.id == who.sub {
+        return Err((StatusCode::BAD_REQUEST, "You already have it.".into()));
+    }
+    if !state.db.are_friends(who.sub, target.id) {
+        return Err((StatusCode::FORBIDDEN, "You can only send songs to friends.".into()));
+    }
+    let artist = body.artist.trim();
+    let title = body.title.trim();
+    if artist.is_empty() || title.is_empty() || artist.len() > 200 || title.len() > 200 {
+        return Err((StatusCode::BAD_REQUEST, "A song needs an artist and a title.".into()));
+    }
+    let grant = state.db.share_grant(target.id, who.sub);
+    if grant == Some(false) {
+        return Err((StatusCode::FORBIDDEN, format!("{} is not taking songs from you.", target.handle)));
+    }
+    let now = now_secs();
+    if state.db.shares_sent_since(who.sub, now - 86_400) >= SHARES_PER_DAY {
+        return Err((StatusCode::TOO_MANY_REQUESTS, "That is enough songs for one day.".into()));
+    }
+    let album: String = body.album.trim().chars().take(200).collect();
+    let note: String = body.note.trim().chars().take(280).collect();
+    let id = state
+        .db
+        .add_share(who.sub, target.id, artist, title, &album, &note, now)
+        .map_err(db_err)?;
+    Ok(Json(json!({ "id": id, "pending": grant.is_none() })))
+}
+
+/// `GET /v1/shares` - the songs waiting for you.
+async fn shares(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let inbox: Vec<Value> = state
+        .db
+        .shares_for(who.sub)
+        .iter()
+        .map(|s| {
+            json!({
+                "id": s.id, "fromId": s.from_id, "from": s.from_handle,
+                "artist": s.artist, "title": s.title, "album": s.album, "note": s.note,
+                "createdAt": s.created_at, "allowed": s.allowed,
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "inbox": inbox })))
+}
+
+fn settle_share(state: &AppState, headers: &HeaderMap, id: i64, taken: bool) -> ApiResult {
+    let who = caller(state, headers)?;
+    let (_, to) = state
+        .db
+        .share_parties(id)
+        .ok_or((StatusCode::NOT_FOUND, "No such song.".into()))?;
+    if to != who.sub {
+        return Err((StatusCode::FORBIDDEN, "That was not sent to you.".into()));
+    }
+    state.db.settle_share(id, taken, now_secs());
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `POST /v1/shares/{id}/taken` - your hub has it, or is fetching it.
+async fn share_taken(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> ApiResult {
+    settle_share(&state, &headers, id, true)
+}
+
+/// `POST /v1/shares/{id}/dismiss` - not this one, thanks.
+async fn share_dismiss(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> ApiResult {
+    settle_share(&state, &headers, id, false)
+}
+
+#[derive(Deserialize)]
+struct GrantBody {
+    handle: String,
+    allow: bool,
+}
+
+/// `PUT /v1/shares/grants` - whether you take songs from this friend at all.
+/// Asked once, the first time they send one; refusing also puts away whatever
+/// they have already sent.
+async fn share_grant(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<GrantBody>,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let from = state
+        .db
+        .account_by_handle(body.handle.trim())
+        .ok_or((StatusCode::NOT_FOUND, "No one here goes by that handle.".into()))?;
+    state
+        .db
+        .set_share_grant(who.sub, from.id, body.allow, now_secs())
+        .map_err(db_err)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
 fn db_err(_: rusqlite::Error) -> ApiError {
     (StatusCode::INTERNAL_SERVER_ERROR, "the registry could not save that".into())
 }
@@ -1149,6 +1282,10 @@ async fn main() {
         .route("/v1/friends/requests/{id}/accept", post(accept_request))
         .route("/v1/friends/requests/{id}/decline", post(decline_request))
         .route("/v1/friends/{account_id}", axum::routing::delete(remove_friend))
+        .route("/v1/shares", get(shares).post(send_share))
+        .route("/v1/shares/grants", axum::routing::put(share_grant))
+        .route("/v1/shares/{id}/taken", post(share_taken))
+        .route("/v1/shares/{id}/dismiss", post(share_dismiss))
         .route("/v1/invites", post(create_invite))
         .route("/v1/invites/{code}", get(invite_preview))
         .route("/v1/invites/{code}/redeem", post(redeem_invite))

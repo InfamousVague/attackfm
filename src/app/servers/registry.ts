@@ -151,6 +151,47 @@ export async function removeFriend(token: string, accountId: number): Promise<vo
 // --- invites ---------------------------------------------------------------
 
 /** A server owner mints an invite; the code is what an invite link carries. */
+// --- songs sent between friends ---------------------------------------------
+
+/** A song a friend sent you - the NAME of it. Your own hub fetches it. */
+export interface Share {
+  id: number;
+  fromId: number;
+  from: string;
+  artist: string;
+  title: string;
+  album: string;
+  note: string;
+  createdAt: number;
+  /** Whether you take songs from this person: true, false, or null when
+   *  they have never sent one before and you have not been asked. */
+  allowed: boolean | null;
+}
+
+/** Send a friend a song by name. `pending` when they have not yet said
+ *  whether they take songs from you - it waits on their side. */
+export async function sendShare(
+  token: string,
+  body: { handle: string; artist: string; title: string; album?: string; note?: string },
+): Promise<{ id: number; pending: boolean }> {
+  return call('/v1/shares', { token, method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function fetchShares(token: string): Promise<Share[]> {
+  const out = await call<{ inbox?: Share[] }>('/v1/shares', { token });
+  return out.inbox ?? [];
+}
+
+/** Taken (your hub is fetching it) or put away. */
+export async function settleShare(token: string, id: number, taken: boolean): Promise<void> {
+  await call(`/v1/shares/${id}/${taken ? 'taken' : 'dismiss'}`, { token, method: 'POST' });
+}
+
+/** Whether you take songs from this friend at all - asked once. */
+export async function setShareGrant(token: string, handle: string, allow: boolean): Promise<void> {
+  await call('/v1/shares/grants', { token, method: 'PUT', body: JSON.stringify({ handle, allow }) });
+}
+
 export async function createInvite(
   token: string,
   serverUrl: string,
