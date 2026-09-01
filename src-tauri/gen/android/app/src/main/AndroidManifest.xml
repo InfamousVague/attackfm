@@ -98,6 +98,22 @@
             </intent-filter>
 
             <!--
+              The app's own scheme, attackfm://. The registry's invite landing
+              page offers "Open in AttackFM" as attackfm://i/CODE, and the
+              pairing QR is attackfm://pair?... - and nothing declared the
+              scheme here, so on Android both were dead links. The deep-link
+              plugin only writes host filters (the https ones below); the
+              scheme has to be hand-declared, like spotify: above. HAND-ADDED -
+              keep it when the plugin block regenerates.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="attackfm" />
+            </intent-filter>
+
+            <!--
               The share sheet, which is the door that actually works.
 
               Tapping an https://open.spotify.com link can never reach us while
@@ -116,7 +132,11 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
-            <intent-filter android:autoVerify="true" >
+            <!-- HAND-EDITED: no autoVerify on open.spotify.com. Spotify's
+                 assetlinks will never name this app, and below Android 12 one
+                 unverifiable host fails verification for every host here -
+                 registry.attack.fm included. Re-apply if the plugin rewrites. -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <!-- ChromeOS ARC++ uses a different action for deep links -->
                 <action android:name="org.chromium.arc.intent.action.VIEW" />

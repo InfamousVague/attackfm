@@ -109,6 +109,17 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.mattssoftware.attackfm
+        # Universal Links for invites: https://registry.attack.fm/i/CODE opens
+        # the app's Join screen. Declared HERE and not only in the
+        # .entitlements file, because xcodegen rewrites that file from this
+        # block on every generate - the key had been present by accident (the
+        # CLI wrote it once) and was one regenerate from vanishing. Automatic
+        # signing enables the capability itself; this is not an Apple-granted
+        # entitlement like CarPlay. The registry serves the matching
+        # apple-app-site-association. Spotify's host is deliberately absent:
+        # its AASA will never list this app.
+        com.apple.developer.associated-domains:
+          - applinks:registry.attack.fm
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full

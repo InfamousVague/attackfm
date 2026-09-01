@@ -199,17 +199,12 @@ export async function previewInvite(code: string): Promise<InvitePreview> {
  * `GET /i/{code}` on the registry serves a landing page (invite_landing in
  * crates/registry) - the server's name, who sent it, an "Open in AttackFM"
  * button pointing at `attackfm://i/{code}`, and the code in plain text to
- * paste. The browser is in the middle of that on purpose. For this https link
- * to open the app DIRECTLY, the build needs a
- * `com.apple.developer.associated-domains` entitlement and the registry needs
- * an apple-app-site-association file - and an entitlement the provisioning
- * profile does not grant makes a device build fail to sign, the same trap the
- * CarPlay key sits in. The custom scheme needs no entitlement and no
- * capability, so the button works today at the cost of one tap.
- *
- * The scheme is registered in gen/apple/app_iOS/Info.plist (CFBundleURLTypes).
- * That file is rewritten on every build and loses its XML comments, which is
- * why this explanation lives here instead.
+ * paste. With the app installed the OS opens the https link in the app
+ * DIRECTLY - Android verifies it against the registry's
+ * /.well-known/assetlinks.json, iOS against its apple-app-site-association,
+ * both served by the registry binary - and the page is only what a browser
+ * without the app sees. (An earlier note here called Associated Domains a
+ * provisioning trap like CarPlay; it is not - automatic signing enables it.)
  */
 export function inviteLink(code: string): string {
   return `${REGISTRY_URL}/i/${code}`;

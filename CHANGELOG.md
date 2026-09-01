@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.29
+
+- Invite links (registry.attack.fm/i/…) now open straight in the app on
+  Android and iOS instead of a browser page, and the "Open in AttackFM"
+  button on that page works on Android at last. Needs the 0.5.29 app build.
+
 ## 0.5.28
 
 - Switching between your servers is instant and keeps you signed in

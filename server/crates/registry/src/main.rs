@@ -24,6 +24,7 @@ use axum::http::{HeaderMap, Method, StatusCode};
 use axum::routing::{get, post};
 use axum::response::Html;
 use axum::{Json, Router};
+use axum::response::IntoResponse;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use db::Db;
@@ -1049,6 +1050,49 @@ async fn app_bundle_file(
     Ok(([(axum::http::header::CONTENT_TYPE, mime)], bytes).into_response())
 }
 
+/// The Android app's package and the SHA-256 of the certificate its releases
+/// are signed with. `AFM_ANDROID_CERT_SHA256` overrides (comma-separated for
+/// several - an upload cert and a Play app-signing cert, say); the baked-in
+/// value is the GitHub-release keystore. A wrong fingerprint breaks nothing
+/// visibly: Android silently treats the link as unverified and opens the
+/// browser - the exact behaviour these routes exist to end - so check
+/// `adb shell pm get-app-links com.mattssoftware.attackfm` after a build.
+const ANDROID_PACKAGE: &str = "com.mattssoftware.attackfm";
+const ANDROID_CERT_SHA256: &str = "56:BF:1A:B7:F9:E0:78:A4:E5:DB:24:6B:2B:3C:10:24:E1:0B:23:C7:A9:90:AE:E5:6E:DB:D9:D8:A2:B0:C7:4B";
+/// Apple team + bundle id, for Universal Links onto `/i/*`.
+const APPLE_APP_ID: &str = "F6ZAL7ANAD.com.mattssoftware.attackfm";
+
+async fn assetlinks() -> impl IntoResponse {
+    let certs: Vec<String> = std::env::var("AFM_ANDROID_CERT_SHA256")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .map(|v| v.split(',').map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect())
+        .unwrap_or_else(|| vec![ANDROID_CERT_SHA256.to_string()]);
+    let body = json!([{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {
+            "namespace": "android_app",
+            "package_name": ANDROID_PACKAGE,
+            "sha256_cert_fingerprints": certs,
+        }
+    }]);
+    ([(axum::http::header::CONTENT_TYPE, "application/json")], body.to_string())
+}
+
+async fn apple_site_association() -> impl IntoResponse {
+    let body = json!({
+        "applinks": {
+            "details": [{
+                "appIDs": [APPLE_APP_ID],
+                "components": [{ "/": "/i/*", "comment": "invite links open the app's Join screen" }]
+            }]
+        }
+    });
+    // Apple insists on application/json and no redirect; the file has no
+    // extension on purpose.
+    ([(axum::http::header::CONTENT_TYPE, "application/json")], body.to_string())
+}
+
 #[tokio::main]
 async fn main() {
     let bind = env_or("AFM_REGISTRY_BIND", "127.0.0.1");
@@ -1083,6 +1127,12 @@ async fn main() {
         .allow_headers(Any);
 
     let app = Router::new()
+        // The two files that let an https link open the app instead of a
+        // browser: Android's Digital Asset Links and Apple's site association.
+        // Served from memory, no auth, no redirect - both platforms fetch them
+        // blind and give up on anything but a plain 200 with JSON.
+        .route("/.well-known/assetlinks.json", get(assetlinks))
+        .route("/.well-known/apple-app-site-association", get(apple_site_association))
         .route("/health", get(health))
         .route("/v1/pubkey", get(pubkey))
         .route("/v1/prefs", get(prefs_get).put(prefs_put))
