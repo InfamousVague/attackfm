@@ -129,6 +129,18 @@ impl Db {
                 .collect();
             if !have.iter().any(|c| c == "max_uses") {
                 conn.execute("ALTER TABLE invites ADD COLUMN max_uses INTEGER NOT NULL DEFAULT 1", [])?;
+                // Backfill the ledger from history. Every code already redeemed
+                // before this upgrade has a redeemed_by but no ledger row, and
+                // the cap is now counted FROM the ledger - so without this a
+                // spent one-time code reads as uses_count 0 of 1 and would let a
+                // second person in. One row per past redemption restores the
+                // count. Runs once, in the same breath as the column it repairs.
+                conn.execute(
+                    "INSERT OR IGNORE INTO invite_redemptions (code, account_id, redeemed_at)
+                     SELECT code, redeemed_by, COALESCE(redeemed_at, created_at)
+                     FROM invites WHERE redeemed_by IS NOT NULL",
+                    [],
+                )?;
             }
         }
         Ok(Self { conn: Mutex::new(conn) })
