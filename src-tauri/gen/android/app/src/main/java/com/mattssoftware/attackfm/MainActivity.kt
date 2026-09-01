@@ -288,8 +288,8 @@ class MainActivity : TauriActivity() {
      * grant; a refusal returns false rather than throwing into the page.
      */
     @JavascriptInterface
-    fun saveImage(base64: String, name: String): Boolean =
-      try {
+    fun saveImage(base64: String, name: String): Boolean {
+      return try {
         val bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
         val safe = name.ifBlank { "attackfm-invite.png" }
         if (android.os.Build.VERSION.SDK_INT >= 29) {
@@ -330,6 +330,7 @@ class MainActivity : TauriActivity() {
       } catch (_: Exception) {
         false
       }
+    }
 
     /** Whether the all-files grant is already in hand. */
     @JavascriptInterface
