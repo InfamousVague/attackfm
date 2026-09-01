@@ -526,6 +526,17 @@ export function StorageOverview() {
           </Text>
         </div>
       )}
+      {/* On an Android binary from before the bridge, the row still SHOWS -
+          hiding it entirely read as the feature not existing at all. It says
+          plainly that the app build is what is missing. */}
+      {browsable === null && /Android/i.test(navigator.userAgent) && (
+        <div className="storageBrowsable">
+          <Text size="xs" tone="muted">
+            Cached music can live in a browsable <b>AttackFM</b> folder — that arrives with the
+            next app build (not just an update banner: a reinstall of the app itself).
+          </Text>
+        </div>
+      )}
       {browsable !== null && (
         <div className="storageBrowsable">
           {vaultPath ? (

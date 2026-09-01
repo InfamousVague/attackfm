@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.174
+
+- The browsable-folder row in Storage settings no longer hides on app builds that predate it — it now says plainly that the AttackFM folder arrives with the next app install, instead of looking like a feature that does not exist
+
 ## 0.4.173
 
 - On Android, cached music can live in an AttackFM folder any file manager can browse. Storage settings grow an "Allow the AttackFM folder" button — Android grants this on a settings screen, not a pop-up — and once allowed, everything already held moves itself across. Needs the next app build; until then the button simply is not shown
