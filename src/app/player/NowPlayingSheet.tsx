@@ -1344,7 +1344,9 @@ export function NowPlayingSheet({
         data-arttint={tint ? '' : undefined}
         style={tint ? (tint as CSSProperties) : undefined}
       data-reading={
-        (track?.kind === 'book' && artView === 'chapters' && readingFlow.length > 0) || undefined
+        (track?.kind === 'book' && artView === 'chapters' && readingFlow.length > 0) ||
+        (artView === 'lyrics' && lyricFlow.length > 0) ||
+        undefined
       }
       role="dialog"
       aria-label="Now playing"

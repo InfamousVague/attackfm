@@ -264,13 +264,48 @@
 
 /* The words face owns the whole slot, edge to edge - no card, no square. */
 .npScreen__coverTarget--reading {
+  position: relative;
   aspect-ratio: auto;
   block-size: 100%;
   inline-size: 100%;
 }
 
+/*
+ * A soft gradient blur BEHIND the reading words.
+ *
+ * Lyrics and a book's transcript sit over whatever the sheet is showing -
+ * most testingly a Canvas clip, a moving video the eye keeps chasing. This
+ * layer blurs what is behind the words (backdrop-filter reads the canvas
+ * turning under this whole art layer) and lays a faint dark wash over it, so
+ * a line reads as text and not as caption-over-footage. Masked to fade at the
+ * top and bottom exactly as the words do, which turns a flat pane into the
+ * gradient blur it should be - strongest through the middle where the reading
+ * lives, gone at the edges where lines surface and sink. Decorative and inert:
+ * it paints under the words (they carry z-index 1) and the thumb scrolls
+ * straight through it.
+ */
+.npScreen__coverTarget--reading::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.04),
+    rgba(0, 0, 0, 0.26) 42%,
+    rgba(0, 0, 0, 0.26) 58%,
+    rgba(0, 0, 0, 0.04)
+  );
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
+}
+
 .npBookWords {
   position: relative;
+  z-index: 1;
   inline-size: 100%;
   block-size: 100%;
   /* The meta and scrub rows sit a touch in from the sheet's gutter

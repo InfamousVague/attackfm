@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.11
+
+- The Lyrics face now lays a soft gradient blur behind the words, so a line
+  stays readable over a Spotify Canvas or any busy artwork instead of fighting
+  the video for your eye.
+
 ## 0.5.10
 
 - The "what's new" card no longer breaks a single note across several rows,
