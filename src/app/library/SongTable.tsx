@@ -204,6 +204,7 @@ export function SongTable({
   flow,
   loading,
   plays,
+  defaultSort,
 }: {
   /** Called with the opened track and the full list in its displayed order. */
   onPlay: (track: Track, queue: Track[]) => void;
@@ -228,6 +229,14 @@ export function SongTable({
    *  times each song was played instead of its position - which is the whole
    *  point of a most-played list, where a row number says nothing. */
   plays?: Map<number, number>;
+  /**
+   * What the table opens sorted by. `null` means "the order I was handed" -
+   * which is the right answer whenever the CALLER's order is itself the
+   * information: Liked songs arrive newest-heart-first from the server, and
+   * an alphabetical default threw that away on arrival. Columns stay sortable
+   * either way; this only decides where the table starts.
+   */
+  defaultSort?: DataGridSort | null;
 }) {
   const library = useLibrary();
   const tracks = tracksProp ?? library.tracks;
@@ -253,7 +262,9 @@ export function SongTable({
   // The sort is lifted out of the grid (controlled) for one reason: the play
   // queue has to be the rows as displayed, and only the sort says what that
   // order is.
-  const [sort, setSort] = useState<DataGridSort | null>(DEFAULT_SORT);
+  const [sort, setSort] = useState<DataGridSort | null>(
+    defaultSort === undefined ? DEFAULT_SORT : defaultSort,
+  );
 
   // The grid's rows carry the path as their id; the panel wants the track. One
   // index resolves the one back to the other.

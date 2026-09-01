@@ -224,9 +224,65 @@ pub(crate) fn key_of(artist: &str, title: &str) -> String {
     format!("{}|{}", fold(artist), title_key(title))
 }
 
+/// The same identity keyed on the LEAD credit alone.
+///
+/// A promise carries the artist a catalogue printed ("Czarface"); the file
+/// that lands carries the artist its tags print ("CZARFACE, Frankie
+/// Pulitzer"). Those are not the same key, so the settle pass walked straight
+/// past a song sitting in the library and the heart stayed pending for its
+/// whole thirty-day life. Everything after the first separator is the
+/// collaboration list - exactly the part the two sources disagree about - so
+/// dropping it is what lets them meet. The TITLE still has to match on its own
+/// key: this widens who, never what.
+pub(crate) fn lead_key(artist: &str, title: &str) -> String {
+    let lower = artist.to_lowercase();
+    let mut cut = artist.len();
+    for sep in [",", ";", "&", " feat.", " feat ", " featuring ", " with ", " x ", "/"] {
+        if let Some(i) = lower.find(sep) {
+            if i < cut {
+                cut = i;
+            }
+        }
+    }
+    let lead = artist[..cut].trim();
+    format!("{}|{}", fold(if lead.is_empty() { artist } else { lead }), title_key(title))
+}
+
 #[cfg(test)]
 mod key_tests {
     use super::*;
+
+    #[test]
+    fn a_featured_credit_does_not_hide_the_song() {
+        // The exact case that stranded three hearts: the promise named the
+        // lead, the file named the whole room.
+        assert_ne!(
+            key_of("Czarface", "Grim-Visaged War"),
+            key_of("CZARFACE, Frankie Pulitzer", "Grim-Visaged War")
+        );
+        assert_eq!(
+            lead_key("Czarface", "Grim-Visaged War"),
+            lead_key("CZARFACE, Frankie Pulitzer", "Grim-Visaged War")
+        );
+        // Every separator a credit list is built from.
+        for other in [
+            "Czarface & Friends", "Czarface feat. Someone", "Czarface featuring Someone",
+            "Czarface with Someone", "Czarface x Someone", "Czarface/Someone", "Czarface; Someone",
+        ] {
+            assert_eq!(
+                lead_key("Czarface", "Grim-Visaged War"),
+                lead_key(other, "Grim-Visaged War"),
+                "{other}"
+            );
+        }
+        // It widens WHO, never WHAT: a different song by the same lead stays
+        // a different key, and so does a different lead.
+        assert_ne!(lead_key("Czarface", "Grim-Visaged War"), lead_key("Czarface", "Air Raid"));
+        assert_ne!(lead_key("Czarface", "Grim-Visaged War"), lead_key("MF DOOM", "Grim-Visaged War"));
+        // An artist whose NAME contains a separator keeps its own identity
+        // rather than folding to an empty lead.
+        assert_eq!(lead_key("& Friends", "Song"), lead_key("& Friends", "Song"));
+    }
 
     #[test]
     fn tags_and_catalogue_meet_in_the_middle() {

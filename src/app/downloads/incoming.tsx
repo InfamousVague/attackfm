@@ -62,6 +62,14 @@ export interface IncomingTrack {
    *  it daily): shown as a resting ring and a word, not a spinner pretending
    *  motion over an empty queue. */
   stalled?: boolean;
+  /** The import job for this song FAILED and can be started again. Present
+   *  only when a failed job is actually sitting in the queue to retry, so a
+   *  row never offers a button that would do nothing. */
+  onRetry?: () => void;
+  /** What the failed job said went wrong, first line only - "download stalled"
+   *  reads very differently from "not found", and the person deciding whether
+   *  to retry is the one who wants to know which it was. */
+  failure?: string | null;
   /** This row has LANDED and is on its way out: the library owns it now, and
    *  it is kept in the band a breath longer only so it can animate out while
    *  the real row animates in below. Set by the provider, read by the band to
@@ -85,6 +93,27 @@ const LEAVE_MS = 700;
 /** The one identity string, computed the client side of the server's key_of. */
 export function identityKey(artist: string, title: string): string {
   return `${fold(artist)}|${titleKey(title)}`;
+}
+
+/**
+ * The same identity, but keyed on the LEAD artist alone.
+ *
+ * A heart promised on Discover carries the artist that catalogue printed -
+ * "Czarface" - and the file that lands carries the artist its tags print:
+ * "CZARFACE, Frankie Pulitzer". Those fold to different keys, so the exact
+ * match misses, and a song that is sitting right there in the library stays
+ * on the "still downloading" band for the whole thirty-day life of the
+ * promise. This was not a rare spelling accident: featured credits differ
+ * between a catalogue and a file more often than they agree.
+ *
+ * So the lead credit is the fallback. Everything after the first separator is
+ * a collaboration list, which is exactly the part the two sources disagree
+ * about; the title still has to match on its own key, so this widens WHO by
+ * one credit and never widens WHAT.
+ */
+export function leadKey(artist: string, title: string): string {
+  const lead = artist.split(/\s*(?:,|;|&|\bfeat\.?\b|\bfeaturing\b|\bwith\b|\bx\b|\/)\s*/i)[0] ?? artist;
+  return `${fold(lead.trim() || artist)}|${titleKey(title)}`;
 }
 
 const POLL_MS = 15_000;
@@ -146,10 +175,17 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
     };
   }, [session, refreshNonce]);
 
-  // What the library already holds, by identity - the landed set.
+  /*
+   * What the library already holds, by identity - the landed set. Both keys
+   * for every track: the exact credit, and the lead credit that catches a
+   * file whose tags list collaborators the promise never named.
+   */
   const landed = useMemo(() => {
     const s = new Set<string>();
-    for (const t of tracks) s.add(identityKey(t.artist, t.title));
+    for (const t of tracks) {
+      s.add(identityKey(t.artist, t.title));
+      s.add(leadKey(t.artist, t.title));
+    }
     return s;
   }, [tracks]);
 
@@ -157,8 +193,9 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
   const landedByKey = useMemo(() => {
     const m = new Map<string, Track>();
     for (const t of tracks) {
-      const k = identityKey(t.artist, t.title);
-      if (!m.has(k)) m.set(k, t);
+      for (const k of [identityKey(t.artist, t.title), leadKey(t.artist, t.title)]) {
+        if (!m.has(k)) m.set(k, t);
+      }
     }
     return m;
   }, [tracks]);
@@ -170,7 +207,7 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session) return;
     for (const p of pending) {
-      const t = landedByKey.get(p.k);
+      const t = landedByKey.get(p.k) ?? landedByKey.get(leadKey(p.artist, p.title));
       if (!t) continue;
       if (!isFavorite(t.path)) toggleFavorite(t.path);
       void removePendingLike(session, p.k).catch(() => {});
@@ -180,14 +217,43 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
   const incoming = useMemo<IncomingTrack[]>(() => {
     const out: IncomingTrack[] = [];
     const seen = new Set<string>();
-    const add = (t: IncomingTrack) => {
-      if (landed.has(t.key) || seen.has(t.key)) return;
+    const add = (t: IncomingTrack, alsoLanded?: string) => {
+      // The credit can be the longer one on EITHER side - the promise or the
+      // file - so both keys are offered to the landed test. The row keeps its
+      // own key regardless: that is what the server's ledger is keyed by.
+      if (landed.has(t.key) || (alsoLanded && landed.has(alsoLanded)) || seen.has(t.key)) return;
       seen.add(t.key);
       out.push(t);
     };
 
+    /*
+     * The FAILED jobs, by identity - so a heart that is waiting on a download
+     * which already died can say so and offer the retry, instead of promising
+     * a retry that (until the hub's own daily pass) nobody is going to run.
+     * Same key the settle pass matches on, so a row and its job cannot drift.
+     */
+    const failed = new Map<string, { id: string; error: string | null }>();
+    for (const job of downloads?.jobs ?? []) {
+      if (job.state !== 'error') continue;
+      const record = (artist: string, title: string) => {
+        if (!title) return;
+        // Both keys, for the same reason the landed set carries both: the job
+        // was asked for one spelling of the credit and the promise holds
+        // another.
+        for (const k of [identityKey(artist, title), leadKey(artist, title)]) {
+          if (!failed.has(k)) failed.set(k, { id: job.id, error: job.error });
+        }
+      };
+      if (job.items && job.items.length > 0) {
+        for (const it of job.items) record(it.artist, it.title);
+      } else {
+        record(job.subtitle ?? '', job.currentTrack || job.title);
+      }
+    }
+
     // Likes lead: they are the listener's own deliberate wants.
     for (const p of pending) {
+      const dead = failed.get(p.k) ?? failed.get(leadKey(p.artist, p.title));
       add({
         key: p.k,
         title: p.title,
@@ -196,13 +262,15 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
         progress: null,
         source: 'like',
         stalled: p.downloading === false,
+        failure: dead?.error ?? null,
+        onRetry: dead && downloads ? () => downloads.retry(dead.id) : undefined,
         onCancel: session
           ? () => {
               void removePendingLike(session, p.k).catch(() => {});
               setPending((cur) => cur.filter((x) => x.k !== p.k));
             }
           : undefined,
-      });
+      }, leadKey(p.artist, p.title));
     }
 
     // The collector's finds, still on the wire.

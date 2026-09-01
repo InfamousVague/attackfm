@@ -621,14 +621,19 @@ body:has(.npScreen[data-docked]) .djToast {
 /* Songs on their way in, at the head of a list (IncomingRows) - the whole of
    "invisible downloads" the listener sees. Successor to the old .likedPending
    band, now shared across the library and Liked. */
+/*
+ * The arriving songs are part of the LIST they are arriving into, not a card
+ * parked on top of it.
+ *
+ * They used to sit in a sunken panel with its own padding and corners, which
+ * on a phone read as a separate widget - three songs taking the space of six,
+ * above a table they belong to. Now they are rows: the same rhythm, the same
+ * hairline between them, the caption a quiet label rather than a header.
+ */
 .incomingRows {
   display: flex;
   flex-direction: column;
-  gap: var(--glacier-space-1);
-  margin-block-end: var(--glacier-space-2);
-  padding: var(--glacier-space-2);
-  border-radius: var(--glacier-radius-md);
-  background: var(--glacier-surface-sunken);
+  margin-block-end: var(--glacier-space-1);
 }
 
 .incomingRows__head {
@@ -636,13 +641,42 @@ body:has(.npScreen[data-docked]) .djToast {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--glacier-text-muted);
+  padding-block: var(--glacier-space-1);
 }
 
 .incomingRow {
   display: flex;
   align-items: center;
   gap: var(--glacier-space-2);
-  min-block-size: 2.25rem;
+  min-block-size: 3rem;
+  padding-block: var(--glacier-space-1);
+  border-block-end: 1px solid var(--glacier-border-subtle, var(--glacier-border));
+}
+
+/* The last arriving row runs straight into the table's first real row, so it
+   must not draw a second line on top of that one. */
+.incomingRow:last-child {
+  border-block-end: none;
+}
+
+/*
+ * "Try again" - only ever rendered where a failed job is actually sitting
+ * there to restart, so it is a real offer every time it appears.
+ */
+.incomingRow__retry {
+  flex: none;
+  padding: 0.15rem 0.55rem;
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-medium);
+  color: var(--glacier-text);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.incomingRow__retry:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
 }
 
 .incomingRow__mark {
@@ -666,14 +700,15 @@ body:has(.npScreen[data-docked]) .djToast {
 
 .incomingRow__art {
   flex: none;
-  inline-size: 2rem;
-  block-size: 2rem;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
   border-radius: var(--glacier-radius-sm);
   object-fit: cover;
 }
 
 .incomingRow__art--blank {
   background: var(--glacier-surface-raised);
+  border-radius: var(--glacier-radius-sm);
 }
 
 .incomingRow__text {

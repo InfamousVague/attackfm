@@ -251,6 +251,30 @@ async fn settle_delegated(state: &Arc<AppState>) {
 /// How long a promised heart waits for its song before the promise lapses.
 const PENDING_LIKE_TTL_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
+/// The track a promised key names, if this box holds it.
+///
+/// Exact credit first, lead credit second (discovery::lead_key): a promise
+/// says "Czarface" and the file that lands says "CZARFACE, Frankie Pulitzer",
+/// which are different keys for one song. Matched exactly, the settle pass
+/// walks past a song that is right there and the heart waits out its whole
+/// thirty-day life on a band captioned "still downloading". Two passes, so an
+/// exact match on any row always beats a lead-only match on another.
+fn matching_identity<'a>(
+    identities: &'a [(i64, String, String, i64)],
+    user: i64,
+    k: &str,
+) -> Option<&'a (i64, String, String, i64)> {
+    let mine = |owner: &i64| *owner == 0 || *owner == user;
+    identities
+        .iter()
+        .find(|(_, artist, title, owner)| mine(owner) && crate::discovery::key_of(artist, title) == k)
+        .or_else(|| {
+            identities.iter().find(|(_, artist, title, owner)| {
+                mine(owner) && crate::discovery::lead_key(artist, title) == k
+            })
+        })
+}
+
 /// Keep the hearts promised on Discover: any pending like whose song has
 /// landed - by import, by delegation, by hand - becomes a real favourite.
 /// Matching by folded identity is SAFE here in the way it never was for
@@ -268,9 +292,7 @@ async fn settle_pending_likes(state: &Arc<AppState>) {
             let _ = state.db.pending_like_remove(user, &k);
             continue;
         }
-        let hit = identities.iter().find(|(_, artist, title, owner)| {
-            (*owner == 0 || *owner == user) && crate::discovery::key_of(artist, title) == k
-        });
+        let hit = matching_identity(&identities, user, &k);
         if let Some((id, _, _, _)) = hit {
             let _ = state.db.set_favorite(user, *id, true);
             state.db.promote_curator_track(*id);
@@ -459,9 +481,7 @@ fn try_settle_want(
     k: &str,
     identities: &[(i64, String, String, i64)],
 ) -> bool {
-    let hit = identities.iter().find(|(_, artist, title, owner)| {
-        (*owner == 0 || *owner == user) && crate::discovery::key_of(artist, title) == k
-    });
+    let hit = matching_identity(identities, user, k);
     let Some((id, _, _, _)) = hit else {
         return false;
     };

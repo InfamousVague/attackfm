@@ -21,6 +21,18 @@ import { useIncomingFor } from './incoming.tsx';
  * 'all' in the library. Renders nothing when nothing is incoming, so a caller
  * can drop it in unconditionally.
  */
+/**
+ * The failed job's reason, trimmed to the half a person acts on. The server
+ * sends a sentence and then the provider's own transcript under it; the first
+ * line is the part that says whether trying again is worth anything.
+ */
+function shortFailure(error: string | null | undefined): string {
+  const first = (error ?? '').split('\n')[0]?.trim() ?? '';
+  if (!first) return 'download failed';
+  const cut = first.replace(/\s*Retry to resume\.?$/i, '').trim();
+  return cut.length > 60 ? `${cut.slice(0, 57)}…` : cut || 'download failed';
+}
+
 export function IncomingRows({
   scope,
   heading,
@@ -44,7 +56,10 @@ export function IncomingRows({
   return (
     <div className="incomingRows" role="status" aria-live="polite">
       <p className="incomingRows__head">
-        {heading ?? (scope === 'like' ? 'On the way — liked, still downloading' : 'Arriving in your library')}
+        {/* Not "still downloading": some of these are waiting on a queue and
+            some are waiting on a retry, and each row says which it is. The
+            heading only has to say why they are here. */}
+        {heading ?? (scope === 'like' ? 'On the way — liked' : 'Arriving in your library')}
       </p>
       {rows.map((t) => {
         const cover = artSized(t.artwork, 160);
@@ -69,9 +84,27 @@ export function IncomingRows({
               <span className="incomingRow__song">{t.title}</span>
               <span className="incomingRow__artist">
                 {t.artist}
-                {t.stalled ? ' — not downloading, will retry' : ''}
+                {/* Say which kind of waiting this is. A failed job is not the
+                    same as a queue that has not reached this song yet, and
+                    "will retry" over a download that already died - with
+                    nothing scheduled to touch it - is the sentence that made
+                    these rows look stuck for days. */}
+                {t.stalled
+                  ? t.onRetry
+                    ? ` — ${shortFailure(t.failure)}`
+                    : ' — waiting for its turn'
+                  : ''}
               </span>
             </span>
+            {t.onRetry && !t.leaving && (
+              <button
+                type="button"
+                className="incomingRow__retry"
+                onClick={t.onRetry}
+              >
+                Try again
+              </button>
+            )}
             {t.onCancel && !t.leaving && (
               <button
                 type="button"

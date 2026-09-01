@@ -383,6 +383,10 @@ export function SongPage({
               onPlay={onPlay}
               onOpenArtist={onOpenArtist}
               plays={view === 'onrepeat' && playsById.size > 0 ? playsById : undefined}
+              // Liked songs open in the order they were LIKED, newest first -
+              // the order the server already sends them in, and the one thing
+              // this page knows that an alphabetical sort cannot recover.
+              defaultSort={view === 'liked' ? null : undefined}
             />
               </>
             )}

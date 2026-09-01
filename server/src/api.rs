@@ -535,6 +535,11 @@ pub struct FavoriteBody {
 /// The one matching rule a pending like lives by: the folded identity, and
 /// only rows the caller may actually hold - library, or their own audition.
 fn liked_track_for(state: &Arc<AppState>, user: i64, k: &str) -> Option<i64> {
+    // The exact credit wins; the lead credit is the fallback, because the
+    // promise and the file disagree about featured artists more often than
+    // they agree (see discovery::lead_key). Two passes rather than one so an
+    // exact match is never beaten by a looser one on another row.
+    let mut lead_hit = None;
     for (id, artist, title, audition_owner) in state.db.track_identities() {
         if audition_owner != 0 && audition_owner != user {
             continue;
@@ -542,8 +547,11 @@ fn liked_track_for(state: &Arc<AppState>, user: i64, k: &str) -> Option<i64> {
         if crate::discovery::key_of(&artist, &title) == k {
             return Some(id);
         }
+        if lead_hit.is_none() && crate::discovery::lead_key(&artist, &title) == k {
+            lead_hit = Some(id);
+        }
     }
-    None
+    lead_hit
 }
 
 #[derive(serde::Deserialize)]
