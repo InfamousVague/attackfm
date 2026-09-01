@@ -1,0 +1,166 @@
+/*
+ * The invite card, and the row that opens it.
+ *
+ * The card is a shareable POSTER: it is drawn to a PNG by widget/shot.ts, which
+ * rasterises this very DOM with the app's own stylesheet - so everything here
+ * must sit on SOLID paint. A backdrop-filter has no backdrop inside the SVG the
+ * shot builds and would come out blank, which is why the card wears a real
+ * gradient rather than a blurred one.
+ */
+
+.libraryInvite {
+  display: flex;
+  justify-content: flex-end;
+  margin-block: calc(var(--glacier-space-1) * -1) var(--glacier-space-2);
+}
+
+/* The drawer body: the card, then the actions under it. */
+.inviteSheet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-4);
+  padding-block-end: var(--glacier-space-2);
+}
+
+/*
+ * The poster. A fixed CSS size because the shot is taken at exactly these
+ * dimensions - the numbers here and the width/height handed to shoot() are one
+ * design, and a card that reflowed would photograph at the wrong shape.
+ */
+.inviteCard {
+  inline-size: 320px;
+  block-size: 560px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 22px 20px;
+  border-radius: 24px;
+  color: #fff;
+  /* Explicit sans stack: the PNG is rasterised inside an SVG whose default
+     face is a SERIF, and if the embedded Inter ever fails to load the export
+     would come out in Times. Naming the stack here keeps the picture in the
+     app's own type, or at worst the system sans - never a serif. */
+  font-family: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Solid, so the PNG has something to stand on: the album-accent ramp over a
+     near-black, with a soft top light in the accent. */
+  background:
+    radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--glacier-accent-solid, #ff5e5e) 55%, transparent), transparent 60%),
+    linear-gradient(160deg, #1b1b20 0%, #101014 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.inviteCard__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.inviteCard__logo {
+  block-size: 22px;
+  inline-size: auto;
+}
+
+.inviteCard__kicker {
+  margin-inline-start: auto;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.inviteCard__title {
+  margin-block: 14px 2px;
+  font-size: 24px;
+  line-height: 1.1;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.inviteCard__sub {
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.inviteCard__qrWrap {
+  align-self: center;
+  margin-block: 14px 12px;
+  padding: 10px;
+  background: #fff;
+  border-radius: 16px;
+}
+
+.inviteCard__qr {
+  display: block;
+  inline-size: 132px;
+  block-size: 132px;
+}
+
+.inviteCard__addrLabel {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.inviteCard__addr {
+  margin-block: 3px 0;
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+  color: #fff;
+}
+
+.inviteCard__steps {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inviteCard__step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.inviteCard__n {
+  flex: none;
+  inline-size: 20px;
+  block-size: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: color-mix(in srgb, var(--glacier-accent-solid, #ff5e5e) 82%, #000);
+}
+
+.inviteCard__foot {
+  margin-block-start: auto;
+  padding-block-start: 14px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.inviteSheet__actions {
+  display: flex;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  max-inline-size: 320px;
+}
+
+.inviteSheet__actions > * {
+  flex: 1;
+}

@@ -20,6 +20,7 @@ import { TrackMenu } from './TrackMenu.tsx';
 import { isDesktopApp } from '../core/platform.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { SongTable } from './SongTable.tsx';
+import { ShareServer } from './ShareServer.tsx';
 import type { Track } from '../core/tauri.ts';
 import placeholderArt from '../../assets/attack-wave.png';
 
@@ -282,6 +283,9 @@ export function LibraryView({
     <div className="homePage libraryPage" ref={setRippleRoot}>
       {/* Search, where people look for it: on the page, not behind an icon. */}
       <SearchEntry />
+      {/* Invite a friend onto this server: opens the shareable card. Hides
+          itself when there is no server to join (a local-only library). */}
+      <ShareServer />
       {/* The desktop's copy of the action row. Everywhere else these two live
           in the app header (see App.tsx) - but the desktop has no such header,
           it has a title bar and a rail, so the page keeps them. */}

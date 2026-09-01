@@ -15,6 +15,7 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+<<<<<<< HEAD
 ## 0.5.15
 
 - On a song that has been split into parts, the lyrics screen now floats a karaoke button in the top-right: tap it to drop the vocal and sing along to the line the words are lighting.
@@ -31,6 +32,13 @@ and where that library came from is not the app's story to tell.
 
 - "Made for you" is now a whole shelf, not one item: numbered Daily Mixes built around the corners of what you listen to, mood mixes drawn from your library, and a daylist that changes with the time of day.
 - New Music Mix moves to its own "New music" spot to make room.
+=======
+## 0.5.12
+
+- Library has an "Invite a friend" button: it opens a card with your server's
+  address, a QR code, and three plain steps to sign up and join - and saves as
+  an image you can send anyone.
+>>>>>>> 68e431a (Invite a friend: a shareable card that explains how to join your server)
 
 ## 0.5.11
 
