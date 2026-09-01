@@ -681,6 +681,16 @@ async fn main() {
         // Plan-to-acquire members: songs filed into a list that the box does
         // not own yet. POST files one (and starts fetching it); the keyed
         // routes settle one the instant its download lands, or withdraw it.
+        // Shared lists: who is let in, and the single-track edits collaborators
+        // make (the whole-list PUT stays the owner's, for reordering).
+        .route(
+            "/api/playlists/{id}/members",
+            get(api::playlist_members).post(api::playlist_member_add),
+        )
+        .route("/api/playlists/{id}/members/{user_id}", delete(api::playlist_member_remove))
+        .route("/api/playlists/{id}/membership", delete(api::playlist_leave))
+        .route("/api/playlists/{id}/tracks", post(api::playlist_track_append))
+        .route("/api/playlists/{id}/tracks/{track_id}", delete(api::playlist_track_remove))
         .route("/api/playlists/{id}/wants", post(api::add_playlist_want))
         .route(
             "/api/playlists/{id}/wants/{k}/settle",

@@ -936,9 +936,10 @@ pub async fn export_m3u(
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     // The same ownership rule every playlist edit enforces, same shape of
     // refusal - a probe cannot tell "not yours" from "not there".
-    match state.db.playlist_owner(playlist_id) {
-        Some(owner) if owner == caller.id => {}
-        _ => return Err(bad(StatusCode::NOT_FOUND, "no such playlist")),
+    // Any standing on the list - owner, editor, viewer - may take a copy;
+    // exporting is reading. "Not yours" and "not there" still answer alike.
+    if state.db.playlist_role(playlist_id, caller.id).is_none() {
+        return Err(bad(StatusCode::NOT_FOUND, "no such playlist"));
     }
     let name = state
         .db

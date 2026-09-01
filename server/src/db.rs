@@ -32,6 +32,11 @@ pub struct PlaylistRow {
     /// Separate this list's songs ahead of being asked.
     pub auto_stem: bool,
     pub tracks: Vec<i64>,
+    /// Whose list it is, and what the asking user may do with it: 'owner',
+    /// 'editor' (add and remove songs) or 'viewer' (see and play).
+    pub owner_id: i64,
+    pub owner_name: String,
+    pub role: String,
 }
 
 pub struct Db {
@@ -501,6 +506,20 @@ CREATE TABLE IF NOT EXISTS playlist_wants (
   created_at  INTEGER NOT NULL,
   PRIMARY KEY (playlist_id, k)
 );
+
+-- Who else a playlist is open to. The owner is playlists.user_id and is never
+-- a row here; a row is a friend the owner let in, as a viewer (sees and plays)
+-- or an editor (adds and removes songs too). A NEW table rather than a column
+-- on playlists, because the schema batch never re-runs on a deployed box - a
+-- new column would need the ensure_columns pass, a new table just appears.
+CREATE TABLE IF NOT EXISTS playlist_members (
+  playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role        TEXT NOT NULL DEFAULT 'viewer',
+  added_at    INTEGER NOT NULL,
+  PRIMARY KEY (playlist_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS playlist_members_user ON playlist_members(user_id);
 
 -- Where each listener left off, so a phone can pick up what the desktop
 -- started. One row per user per track.
@@ -2741,18 +2760,34 @@ impl Db {
         Ok(conn.last_insert_rowid())
     }
 
-    /// Every playlist the user owns, each with its track ids in order.
+    /// Every playlist the user can see - their own, and the ones friends let
+    /// them into - each with its track ids in order and the role they hold on
+    /// it. One list, so a shared playlist sits among the user's own on every
+    /// surface without any client having to ask twice.
     pub fn playlists(&self, user_id: i64) -> Vec<PlaylistRow> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT id, name, updated_at, description, folder, cover, auto_stem
-               FROM playlists WHERE user_id = ?1 ORDER BY name",
+            "SELECT p.id, p.name, p.updated_at, p.description, p.folder, p.cover, p.auto_stem,
+                    p.user_id, u.username, 'owner' AS role
+               FROM playlists p JOIN users u ON u.id = p.user_id
+              WHERE p.user_id = ?1
+             UNION ALL
+             SELECT p.id, p.name, p.updated_at, p.description, p.folder, p.cover, p.auto_stem,
+                    p.user_id, u.username, m.role
+               FROM playlist_members m
+               JOIN playlists p ON p.id = m.playlist_id
+               JOIN users u ON u.id = p.user_id
+              WHERE m.user_id = ?1
+              ORDER BY name",
         ) else {
             return Vec::new();
         };
-        let heads: Vec<(i64, String, i64, String, String, String, i64)> = stmt
+        let heads: Vec<(i64, String, i64, String, String, String, i64, i64, String, String)> = stmt
             .query_map(params![user_id], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
+                Ok((
+                    r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?,
+                    r.get(7)?, r.get(8)?, r.get(9)?,
+                ))
             })
             .map(|r| r.filter_map(Result::ok).collect())
             .unwrap_or_default();
@@ -2765,7 +2800,7 @@ impl Db {
         };
         heads
             .into_iter()
-            .map(|(id, name, updated, description, folder, cover, auto_stem)| {
+            .map(|(id, name, updated, description, folder, cover, auto_stem, owner_id, owner_name, role)| {
                 let tracks: Vec<i64> = items
                     .query_map(params![id], |r| r.get(0))
                     .map(|r| r.filter_map(Result::ok).collect())
@@ -2779,9 +2814,111 @@ impl Db {
                     cover,
                     auto_stem: auto_stem != 0,
                     tracks,
+                    owner_id,
+                    owner_name,
+                    role,
                 }
             })
             .collect()
+    }
+
+    /// What `user_id` may do with a playlist: Some("owner") for their own,
+    /// the member row's role for one shared with them, None when it is not
+    /// theirs to see at all. The one predicate every playlist route asks.
+    pub fn playlist_role(&self, playlist_id: i64, user_id: i64) -> Option<String> {
+        let conn = self.lock();
+        let owner: Option<i64> = conn
+            .query_row("SELECT user_id FROM playlists WHERE id = ?1", params![playlist_id], |r| r.get(0))
+            .optional()
+            .ok()
+            .flatten();
+        match owner {
+            None => None,
+            Some(o) if o == user_id => Some("owner".to_string()),
+            Some(_) => conn
+                .query_row(
+                    "SELECT role FROM playlist_members WHERE playlist_id = ?1 AND user_id = ?2",
+                    params![playlist_id, user_id],
+                    |r| r.get(0),
+                )
+                .optional()
+                .ok()
+                .flatten(),
+        }
+    }
+
+    /// Everyone let into a playlist: (user_id, username, role). The owner is
+    /// not among them - callers already know the owner from the row.
+    pub fn playlist_members(&self, playlist_id: i64) -> Vec<(i64, String, String)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT m.user_id, u.username, m.role FROM playlist_members m
+               JOIN users u ON u.id = m.user_id
+              WHERE m.playlist_id = ?1 ORDER BY u.username COLLATE NOCASE",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![playlist_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Let a user in, or change what they may do. Upsert on the pair, so
+    /// promoting a viewer to editor is the same call as adding them.
+    pub fn playlist_member_put(&self, playlist_id: i64, user_id: i64, role: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO playlist_members (playlist_id, user_id, role, added_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(playlist_id, user_id) DO UPDATE SET role = excluded.role",
+            params![playlist_id, user_id, role, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn playlist_member_remove(&self, playlist_id: i64, user_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "DELETE FROM playlist_members WHERE playlist_id = ?1 AND user_id = ?2",
+            params![playlist_id, user_id],
+        )?;
+        Ok(())
+    }
+
+    /// Take ONE track out of a playlist, atomically, and close the gap in the
+    /// positions - the counterpart of playlist_append_track, and for the same
+    /// reason: a collaborator's remove must not be a read-modify-write of the
+    /// whole list that can swallow somebody else's add landing beside it. All
+    /// under one held lock. Returns true when a row actually went.
+    pub fn playlist_remove_track(&self, playlist_id: i64, track_id: i64) -> rusqlite::Result<bool> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let gone = tx.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
+            params![playlist_id, track_id],
+        )?;
+        if gone == 0 {
+            tx.commit()?;
+            return Ok(false);
+        }
+        // Renumber densely so a later append (MAX(position)+1) and the client's
+        // ordered read both keep agreeing about where the tail is.
+        let ids: Vec<i64> = {
+            let mut st = tx.prepare(
+                "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )?;
+            let rows = st.query_map(params![playlist_id], |r| r.get(0))?;
+            rows.filter_map(Result::ok).collect()
+        };
+        for (position, tid) in ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE playlist_tracks SET position = ?3 WHERE playlist_id = ?1 AND track_id = ?2",
+                params![playlist_id, tid, position as i64],
+            )?;
+        }
+        tx.execute(
+            "UPDATE playlists SET updated_at = ?2 WHERE id = ?1",
+            params![playlist_id, now_ms()],
+        )?;
+        tx.commit()?;
+        Ok(true)
     }
 
     /// One playlist's decoration, changed a field at a time.

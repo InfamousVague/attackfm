@@ -708,6 +708,11 @@ pub async fn playlists(State(state): State<Arc<AppState>>, headers: HeaderMap) -
                 "folder": p.folder,
                 "cover": p.cover,
                 "autoStem": p.auto_stem,
+                // Whose it is and what the caller may do - what lets the
+                // client label a shared list and hide the verbs a role lacks.
+                "ownerId": p.owner_id,
+                "ownerName": p.owner_name,
+                "role": p.role,
             })
         })
         .collect();
@@ -749,15 +754,194 @@ pub async fn create_playlist(
     Ok(Json(json!({ "id": id, "name": name })))
 }
 
-/// Refuses any playlist the caller does not own. Ownership is checked on every
-/// edit rather than trusted from the list response - two accounts on one server
-/// should not be able to reach into each other's playlists by guessing an id.
-fn owned_playlist(state: &AppState, caller_id: i64, playlist_id: i64) -> Result<(), ApiError> {
-    match state.db.playlist_owner(playlist_id) {
-        Some(owner) if owner == caller_id => Ok(()),
-        // Same answer either way, so a probe cannot enumerate what exists.
-        _ => Err(bad(StatusCode::NOT_FOUND, "no such playlist")),
+/// How much of a playlist a route needs the caller to hold.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Access {
+    /// See it and play it: the owner, an editor or a viewer.
+    Read,
+    /// Add and remove songs: the owner or an editor.
+    Edit,
+    /// Everything else - rename, reorder, cover, delete, and who is let in.
+    Own,
+}
+
+/// Refuses any playlist the caller has no standing on. Checked on every route
+/// rather than trusted from the list response - two accounts on one server
+/// must not reach into each other's playlists by guessing an id. A viewer or
+/// editor is a row the owner put there (see db::playlist_role); the answer for
+/// "not yours at all" is the same 404 as "does not exist", so a probe cannot
+/// enumerate what is there.
+fn playlist_access(state: &AppState, caller_id: i64, playlist_id: i64, need: Access) -> Result<String, ApiError> {
+    let role = state
+        .db
+        .playlist_role(playlist_id, caller_id)
+        .ok_or_else(|| bad(StatusCode::NOT_FOUND, "no such playlist"))?;
+    let ok = match need {
+        Access::Read => true,
+        Access::Edit => role == "owner" || role == "editor",
+        Access::Own => role == "owner",
+    };
+    if ok {
+        Ok(role)
+    } else {
+        // They can see it, so the list is real to them: say plainly what they
+        // may not do rather than pretend it vanished.
+        Err(bad(StatusCode::FORBIDDEN, "only the owner can do that"))
     }
+}
+
+/// The owner-only check the older handlers still call by name.
+fn owned_playlist(state: &AppState, caller_id: i64, playlist_id: i64) -> Result<(), ApiError> {
+    playlist_access(state, caller_id, playlist_id, Access::Own).map(|_| ())
+}
+
+// --- shared playlists: members, and the single-track edits collaborators make ---
+
+#[derive(Deserialize)]
+pub struct MemberBody {
+    /// Either names the friend; the id is what /api/friends hands out.
+    #[serde(rename = "userId")]
+    pub user_id: Option<i64>,
+    pub username: Option<String>,
+    /// 'viewer' or 'editor'; anything else is refused.
+    pub role: Option<String>,
+}
+
+/// `GET /api/playlists/{id}/members` - who the list is open to. Anyone who
+/// can see the list may see who else can, the way a shared document does.
+pub async fn playlist_members(
+    State(state): State<Arc<AppState>>,
+    Path(playlist_id): Path<i64>,
+    headers: HeaderMap,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    playlist_access(&state, caller.id, playlist_id, Access::Read)?;
+    let members: Vec<_> = state
+        .db
+        .playlist_members(playlist_id)
+        .into_iter()
+        .map(|(id, username, role)| json!({ "userId": id, "username": username, "role": role }))
+        .collect();
+    Ok(Json(json!({ "members": members })))
+}
+
+/// `POST /api/playlists/{id}/members` - let a friend in, or change what they
+/// may do. Owner only, and only a FRIEND on this hub: the friendship is the
+/// consent - a share to a stranger by username would be a way to push a list
+/// at anyone on the box.
+pub async fn playlist_member_add(
+    State(state): State<Arc<AppState>>,
+    Path(playlist_id): Path<i64>,
+    headers: HeaderMap,
+    Json(body): Json<MemberBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    playlist_access(&state, caller.id, playlist_id, Access::Own)?;
+    let role = body.role.as_deref().unwrap_or("viewer");
+    if role != "viewer" && role != "editor" {
+        return Err(bad(StatusCode::BAD_REQUEST, "role must be viewer or editor"));
+    }
+    let target = match (body.user_id, body.username.as_deref().map(str::trim)) {
+        (Some(id), _) => Some(id),
+        (None, Some(name)) if !name.is_empty() => state.db.user_by_username(name).map(|(id, _)| id),
+        _ => None,
+    };
+    let Some(target) = target else {
+        return Err(bad(StatusCode::BAD_REQUEST, "name a friend to share with"));
+    };
+    if target == caller.id {
+        return Err(bad(StatusCode::BAD_REQUEST, "that is your own list"));
+    }
+    if !state.db.are_friends(caller.id, target) {
+        return Err(bad(StatusCode::FORBIDDEN, "you can only share with friends on this server"));
+    }
+    state
+        .db
+        .playlist_member_put(playlist_id, target, role)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true, "userId": target, "role": role })))
+}
+
+/// `DELETE /api/playlists/{id}/members/{user_id}` - the owner shows someone
+/// out, or a member lets themselves out. Nobody removes anybody else.
+pub async fn playlist_member_remove(
+    State(state): State<Arc<AppState>>,
+    Path((playlist_id, user_id)): Path<(i64, i64)>,
+    headers: HeaderMap,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let role = playlist_access(&state, caller.id, playlist_id, Access::Read)?;
+    if role != "owner" && user_id != caller.id {
+        return Err(bad(StatusCode::FORBIDDEN, "only the owner can remove others"));
+    }
+    state
+        .db
+        .playlist_member_remove(playlist_id, user_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `DELETE /api/playlists/{id}/membership` - let yourself out of a list a
+/// friend shared with you. Its own route, rather than `members/{user_id}` with
+/// your own id, because the client never learns its numeric id - sessions carry
+/// a username - and a route that needs it would have to go and ask.
+pub async fn playlist_leave(
+    State(state): State<Arc<AppState>>,
+    Path(playlist_id): Path<i64>,
+    headers: HeaderMap,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let role = playlist_access(&state, caller.id, playlist_id, Access::Read)?;
+    if role == "owner" {
+        return Err(bad(StatusCode::BAD_REQUEST, "this is your own list; delete it instead"));
+    }
+    state
+        .db
+        .playlist_member_remove(playlist_id, caller.id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct TrackBody {
+    #[serde(rename = "trackId")]
+    pub track_id: i64,
+}
+
+/// `POST /api/playlists/{id}/tracks` - append one song. THE route a
+/// collaborator adds through, and the only honest one: the whole-list PUT is
+/// a read-modify-write that loses whichever of two people's adds lands
+/// second, and once a list has two editors that is the ordinary case, not the
+/// edge. Wraps the same atomic append the collector's settle path uses.
+pub async fn playlist_track_append(
+    State(state): State<Arc<AppState>>,
+    Path(playlist_id): Path<i64>,
+    headers: HeaderMap,
+    Json(body): Json<TrackBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    playlist_access(&state, caller.id, playlist_id, Access::Edit)?;
+    let added = state
+        .db
+        .playlist_append_track(playlist_id, body.track_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true, "added": added })))
+}
+
+/// `DELETE /api/playlists/{id}/tracks/{track_id}` - take one song out, the
+/// same way and for the same reason.
+pub async fn playlist_track_remove(
+    State(state): State<Arc<AppState>>,
+    Path((playlist_id, track_id)): Path<(i64, i64)>,
+    headers: HeaderMap,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    playlist_access(&state, caller.id, playlist_id, Access::Edit)?;
+    let removed = state
+        .db
+        .playlist_remove_track(playlist_id, track_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true, "removed": removed })))
 }
 
 pub async fn update_playlist(
@@ -839,7 +1023,7 @@ pub async fn add_playlist_want(
     Json(body): Json<PlaylistWantBody>,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    owned_playlist(&state, caller.id, playlist_id)?;
+    playlist_access(&state, caller.id, playlist_id, Access::Edit)?;
     let artist = body.artist.trim();
     let title = body.title.trim();
     if artist.is_empty() || title.is_empty() {
@@ -875,7 +1059,7 @@ pub async fn settle_playlist_want(
     headers: HeaderMap,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    owned_playlist(&state, caller.id, playlist_id)?;
+    playlist_access(&state, caller.id, playlist_id, Access::Edit)?;
     let settled = crate::collector::settle_want_now(&state, caller.id, playlist_id, &k);
     Ok(Json(json!({ "settled": settled })))
 }
@@ -887,7 +1071,7 @@ pub async fn remove_playlist_want(
     headers: HeaderMap,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    owned_playlist(&state, caller.id, playlist_id)?;
+    playlist_access(&state, caller.id, playlist_id, Access::Edit)?;
     state
         .db
         .playlist_want_remove(playlist_id, &k)

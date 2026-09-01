@@ -1703,6 +1703,7 @@ mod ranking_tests {
             audio_fingerprint: None,
             year: None,
             quarantined: false,
+            ai_moods: Vec::new(),
         }
     }
 

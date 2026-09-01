@@ -1678,7 +1678,9 @@ pub async fn playlist_suggestions(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let caller =
         auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    if state.db.playlist_owner(id) != Some(caller.id) {
+    // Owner, editor or viewer: a shared list's suggestions are for whoever is
+    // filling it. Not a member at all reads as not there, like everywhere else.
+    if state.db.playlist_role(id, caller.id).is_none() {
         return Err((StatusCode::NOT_FOUND, "no such playlist".into()));
     }
 
