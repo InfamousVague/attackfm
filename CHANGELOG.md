@@ -15,10 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
-## 0.5.23
+## 0.5.24
 
 - The invite card drops its blurb; "Join <your name>'s Server" is now a quiet
   line under the mark rather than a headline.
+
+## 0.5.23
+
 - The Lyrics button on Now Playing now lights up while the words are showing, so it is clear at a glance when it is on.
 
 ## 0.5.22
