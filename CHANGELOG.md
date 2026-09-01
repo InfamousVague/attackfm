@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.18
+
+- Share a playlist with friends and build it together: the playlist menu gains
+  "Share with friends…", where each friend on your server can view or edit.
+  A shared list sits among your own, labelled with whose it is; editors add and
+  remove songs, and a guest can leave any time. Needs the server update.
+
 ## 0.5.17
 
 - The invite card now follows the real way in: it mints a live invite code,

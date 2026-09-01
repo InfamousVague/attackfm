@@ -1231,3 +1231,47 @@
   align-self: flex-start;
   max-inline-size: 100%;
 }
+
+/*
+ * The share drawer: one row per friend, three seats to the right. The seat
+ * that is theirs is solid; the rest are ghosts, so the row reads as a state
+ * and not as three equal buttons.
+ */
+.sharePlaylist__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sharePlaylist__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-block: var(--glacier-space-2);
+  border-block-end: 1px solid var(--glacier-border-subtle, var(--glacier-border));
+}
+
+.sharePlaylist__row:last-child {
+  border-block-end: none;
+}
+
+.sharePlaylist__name {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--glacier-font-weight-medium);
+}
+
+.sharePlaylist__seats {
+  display: inline-flex;
+  gap: var(--glacier-space-1);
+  flex: none;
+}
+
+.sharePlaylist__note {
+  padding-block: var(--glacier-space-3);
+}

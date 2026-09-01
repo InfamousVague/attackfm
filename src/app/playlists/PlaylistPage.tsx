@@ -25,6 +25,8 @@ import {
   Plus,
   Trash2,
   X,
+  Users,
+  LogOut,
 } from '@glacier/icons';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
@@ -33,6 +35,7 @@ import { useLibrary } from '../library/library.tsx';
 import { fold, titleKey } from '../library/owned.ts';
 import { PlaylistWantRows } from './PlaylistWantRows.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { SharePlaylistDrawer } from './SharePlaylist.tsx';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { fetchPlaylistSuggestions, remotePath } from '../server.ts';
 import { formatClock, formatTotal, formatBytes } from '../ux/format.ts';
@@ -70,10 +73,11 @@ interface PlaylistPageProps {
  */
 export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageProps) {
   const { tracks } = useLibrary();
-  const { playlists, rename, remove, removeTrack, reorder, addTrack, setMeta, setCover, setAutoStem, removeWant, settleWant } =
+  const { playlists, rename, remove, removeTrack, reorder, addTrack, setMeta, setCover, setAutoStem, removeWant, settleWant, share, leave } =
     usePlaylists();
   const { toast } = useToast();
   const { session } = useServerSession();
+  const [sharing, setSharing] = useState(false);
   // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
   const refreshNonce = useRefreshNonce();
   // What else belongs here, from the server's own scoring of this list. Null
@@ -340,6 +344,12 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     setRenaming(null);
   };
 
+  // What this listener may do here. Undefined role means a local list or a
+  // server from before sharing - yours, either way. An editor adds and
+  // removes songs; the running order and the decoration stay the owner's.
+  const isOwner = !playlist.role || playlist.role === 'owner';
+  const canEdit = isOwner || playlist.role === 'editor';
+
   return (
     <div className="homePage libraryPage playlistPage" ref={pageRef}>
       {/* The cover chooser. A file input rather than anything cleverer: the
@@ -388,7 +398,9 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
 
         <div className="playlistHead__body">
           <Text tone="muted" size="xs" className="playlistHead__kicker">
-            Playlist
+            {playlist.role && playlist.role !== 'owner'
+              ? `Shared by ${playlist.ownerName ?? 'a friend'}${playlist.role === 'editor' ? ' · you can edit' : ''}`
+              : 'Playlist'}
           </Text>
           <h2 className="playlistHead__name">{playlist.name}</h2>
           <Text tone="muted" size="sm">
@@ -406,7 +418,9 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               type="button"
               className="playlistHead__about"
               data-empty={!playlist.description || undefined}
-              onClick={() => setDescribing(playlist.description ?? '')}
+              onClick={() => {
+                if (isOwner) setDescribing(playlist.description ?? '');
+              }}
             >
               {playlist.description || 'Add a description'}
             </button>
@@ -462,15 +476,30 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                 </IconButton>
               }
             >
-              <MenuItem icon={<Pencil size={15} />} onSelect={() => setRenaming(playlist.name)}>
-                Rename
-              </MenuItem>
+              {isOwner && (
+                <MenuItem icon={<Pencil size={15} />} onSelect={() => setRenaming(playlist.name)}>
+                  Rename
+                </MenuItem>
+              )}
+              {/* Sharing, for the owner of a list on a server that can: the
+                  provider leaves `share` out everywhere else. A guest gets the
+                  door out instead. */}
+              {isOwner && share && playlist.role !== undefined && (
+                <MenuItem icon={<Users size={15} />} onSelect={() => setSharing(true)}>
+                  Share with friends…
+                </MenuItem>
+              )}
+              {!isOwner && leave && (
+                <MenuItem icon={<LogOut size={15} />} onSelect={() => void leave(playlist.id)}>
+                  Leave playlist
+                </MenuItem>
+              )}
               {/* Folders live in the menu rather than behind a dialog: there
                   are only ever a handful, and a list of five is faster to
                   choose from than a picker that has to be opened first. The
                   one you are already in is marked rather than hidden, so the
                   menu says where this playlist currently files. */}
-              {folders.map((name) => (
+              {isOwner && folders.map((name) => (
                 <MenuItem
                   key={name}
                   icon={playlist.folder === name ? <Check size={15} /> : <FolderClosed size={15} />}
@@ -481,30 +510,32 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   {name}
                 </MenuItem>
               ))}
-              {playlist.folder && (
+              {isOwner && playlist.folder && (
                 <MenuItem icon={<FolderOpen size={15} />} onSelect={() => setMeta(playlist.id, { folder: '' })}>
                   Take out of {playlist.folder}
                 </MenuItem>
               )}
+              {isOwner && (
               <MenuItem icon={<FolderPlus size={15} />} onSelect={() => setNewFolder('')}>
                 New folder…
               </MenuItem>
+              )}
               {/* Only where a cover can actually be kept - the provider leaves
                   setCover out for a local library and an old server, and a
                   menu item that cannot work is worse than none. */}
-              {setCover && (
+              {isOwner && setCover && (
                 <MenuItem icon={<ImageIcon size={15} />} onSelect={() => coverInput.current?.click()}>
                   {playlist.coverUrl ? 'Change cover…' : 'Choose cover…'}
                 </MenuItem>
               )}
-              {setCover && playlist.coverUrl && (
+              {isOwner && setCover && playlist.coverUrl && (
                 <MenuItem icon={<X size={15} />} onSelect={() => void setCover(playlist.id, null)}>
                   Remove cover
                 </MenuItem>
               )}
               {/* The same item the shelf's tile menu carries, so a playlist
                   offers the same things from both of its doors. */}
-              {setAutoStem && playlist.autoStem !== undefined && (
+              {isOwner && setAutoStem && playlist.autoStem !== undefined && (
                 <MenuItem
                   icon={<AudioLines size={15} />}
                   onSelect={() => setAutoStem(playlist.id, !playlist.autoStem)}
@@ -512,12 +543,20 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   {playlist.autoStem ? 'Stop separating ahead' : 'Separate these ahead'}
                 </MenuItem>
               )}
-              <MenuItem icon={<Trash2 size={15} />} onSelect={() => setConfirmDelete(true)}>
-                Delete playlist
-              </MenuItem>
+              {isOwner && (
+                <MenuItem icon={<Trash2 size={15} />} onSelect={() => setConfirmDelete(true)}>
+                  Delete playlist
+                </MenuItem>
+              )}
             </Menu>
           </div>
         </div>
+        {/* `role` present is the sign this list came from a server that can
+            share; against an older hub the item would open a drawer whose
+            every tap went nowhere. */}
+        {isOwner && share && playlist.role !== undefined && (
+          <SharePlaylistDrawer playlist={playlist} open={sharing} onClose={() => setSharing(false)} />
+        )}
       </header>
       {/* Sits just under the hero: once this leaves the top of the page, the
           hero has gone with it. */}
@@ -576,6 +615,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             items={rows}
             getLabel={(row) => row.track.title}
             /* See QueuePanel: the drop is the moment worth answering. */
+            disabled={!isOwner}
             onReorder={(next) => {
               fireNativeHaptic('medium');
               reorder(playlist.id, next.map((r) => r.id));
@@ -599,6 +639,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                 <span className="songMuted playlistRow__time">
                   {formatClock(row.track.duration, '--:--')}
                 </span>
+                {canEdit && (
                 <IconButton
                   variant="ghost"
                   size="sm"
@@ -606,17 +647,23 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   onClick={() => {
                     // The whole order, captured before the cut: undo restores
                     // through reorder, so the song lands back in ITS seat
-                    // rather than at the end like a re-add would put it.
+                    // rather than at the end like a re-add would put it. The
+                    // order is the owner's to write, so a collaborator's undo
+                    // re-adds instead and the song returns at the tail.
                     const before = [...playlist.paths];
                     removeTrack(playlist.id, row.id);
                     toast({
                       message: `Removed “${row.track.title}” from ${playlist.name}`,
-                      action: { label: 'Undo', onPress: () => reorder(playlist.id, before) },
+                      action: {
+                        label: 'Undo',
+                        onPress: () => (isOwner ? reorder(playlist.id, before) : addTrack(playlist.id, row.id)),
+                      },
                     });
                   }}
                 >
                   <X size={15} />
                 </IconButton>
+                )}
               </div>
               </TrackMenu>
             )}

@@ -25,6 +25,22 @@ export interface RemotePlaylist {
    *  "plan to acquire" members, shown as arriving ghosts until they land.
    *  Absent on a server from before wants existed. */
   wants?: PlaylistWant[];
+  /** Whose list it is and what the caller may do with it. Absent on a server
+   *  from before sharing existed - which reads as "mine, and nobody else's",
+   *  exactly what was true of every list on such a server. `role` present is
+   *  also how the store knows the single-track routes exist. */
+  ownerId?: number;
+  ownerName?: string;
+  role?: PlaylistRole;
+}
+
+export type PlaylistRole = 'owner' | 'editor' | 'viewer';
+
+/** Someone the owner let in. The owner is never among them. */
+export interface PlaylistMember {
+  userId: number;
+  username: string;
+  role: 'editor' | 'viewer';
 }
 
 /** A song filed into a playlist that is not here yet: the playlist twin of a
@@ -170,6 +186,64 @@ export async function uploadPlaylistCover(
 /** Drop a playlist's cover, returning its tile to the song mosaic. */
 export async function removePlaylistCover(session: ServerSession, id: number): Promise<void> {
   await request(session.url, `/api/playlists/${id}/cover`, {
+    method: 'DELETE',
+    token: session.token,
+  });
+}
+
+// --- sharing ---------------------------------------------------------------
+
+export async function fetchPlaylistMembers(session: ServerSession, id: number): Promise<PlaylistMember[]> {
+  const out = await request<{ members?: PlaylistMember[] }>(session.url, `/api/playlists/${id}/members`, {
+    token: session.token,
+  });
+  return out.members ?? [];
+}
+
+/** Let a friend in, or change what they may do. Owner only; the server also
+ *  insists the target is a friend on this hub. */
+export async function addPlaylistMember(
+  session: ServerSession,
+  id: number,
+  target: { userId?: number; username?: string },
+  role: 'editor' | 'viewer',
+): Promise<void> {
+  await request(session.url, `/api/playlists/${id}/members`, {
+    method: 'POST',
+    token: session.token,
+    body: JSON.stringify({ ...target, role }),
+  });
+}
+
+export async function removePlaylistMember(session: ServerSession, id: number, userId: number): Promise<void> {
+  await request(session.url, `/api/playlists/${id}/members/${userId}`, {
+    method: 'DELETE',
+    token: session.token,
+  });
+}
+
+/** Let yourself out of a list somebody shared with you. */
+export async function leavePlaylist(session: ServerSession, id: number): Promise<void> {
+  await request(session.url, `/api/playlists/${id}/membership`, {
+    method: 'DELETE',
+    token: session.token,
+  });
+}
+
+/** Append ONE song - the route a collaborator adds through. Atomic on the
+ *  server, so two people adding at once both land; the whole-list PUT would
+ *  lose whichever arrived second. */
+export async function appendPlaylistTrack(session: ServerSession, id: number, trackId: number): Promise<void> {
+  await request(session.url, `/api/playlists/${id}/tracks`, {
+    method: 'POST',
+    token: session.token,
+    body: JSON.stringify({ trackId }),
+  });
+}
+
+/** Take ONE song out, the same way and for the same reason. */
+export async function removePlaylistTrack(session: ServerSession, id: number, trackId: number): Promise<void> {
+  await request(session.url, `/api/playlists/${id}/tracks/${trackId}`, {
     method: 'DELETE',
     token: session.token,
   });

@@ -24,6 +24,14 @@ import {
   type PlaylistWant,
   type RemotePlaylist,
   type ServerSession,
+  appendPlaylistTrack,
+  removePlaylistTrack,
+  fetchPlaylistMembers,
+  addPlaylistMember,
+  removePlaylistMember,
+  leavePlaylist,
+  type PlaylistMember,
+  type PlaylistRole,
 } from '../server.ts';
 import { fold, titleKey } from '../library/owned.ts';
 import {
@@ -64,6 +72,13 @@ export interface Playlist {
    *  arriving ghosts, dissolving into real rows as they land. Only ever
    *  non-empty on a server library; a local list has nowhere to fetch from. */
   wants?: PlaylistWant[];
+  /** Whose list this is and what you may do with it. Undefined on a local
+   *  library and on a server from before sharing, both of which mean "yours".
+   *  'viewer' sees and plays; 'editor' adds and removes songs too; only the
+   *  owner renames, reorders, decorates, deletes, or decides who is in. */
+  ownerId?: number;
+  ownerName?: string;
+  role?: PlaylistRole;
 }
 
 interface PlaylistsContextValue {
@@ -112,6 +127,19 @@ interface PlaylistsContextValue {
    * that would go nowhere.
    */
   setCover?: (id: string, image: Blob | null) => Promise<void>;
+  /**
+   * Sharing. All server-only and only on a server that knows how (the store
+   * takes `role` on the list response as the sign), so a surface gates on
+   * their presence the way it does for covers and wants.
+   */
+  /** Who else a list is open to. Anyone on the list may ask. */
+  members?: (id: string) => Promise<PlaylistMember[]>;
+  /** Let a friend in, or change their role. Owner only. */
+  share?: (id: string, target: { userId?: number; username?: string }, role: 'editor' | 'viewer') => Promise<void>;
+  /** Show someone out. Owner only. */
+  unshare?: (id: string, userId: number) => Promise<void>;
+  /** Let yourself out of a list a friend shared with you. */
+  leave?: (id: string) => Promise<void>;
 }
 
 const PlaylistsContext = createContext<PlaylistsContextValue | null>(null);
@@ -388,8 +416,14 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         coverUrl: p.cover ? playlistCoverUrl(session, p.id, p.updatedAt) : null,
         autoStem: p.autoStem,
         wants: p.wants ?? [],
+        ownerId: p.ownerId,
+        ownerName: p.ownerName,
+        role: p.role,
       };
     });
+    // A server that sends `role` has the single-track routes; one that does
+    // not is from before sharing, and its lists are edited whole as ever.
+    const shares = (p: RemotePlaylist) => p.role !== undefined;
 
     const byId = (id: string) => remote.find((p) => String(p.id) === id);
 
@@ -431,20 +465,33 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         // A local file's path cannot ride a server playlist; the folder sync
         // is what turns it into a server track first.
         if (!target || trackId === null || target.tracks.includes(trackId)) return;
+        // A viewer has nothing to add with; the server would refuse, and an
+        // optimistic row that then vanishes on refetch reads as a glitch.
+        if (target.role === 'viewer') return;
         const tracks = [...target.tracks, trackId];
         mutate(
           remote.map((p) => (p.id === target.id ? { ...p, tracks } : p)),
-          () => updateRemotePlaylist(session, target.id, { tracks }),
+          // On a sharing server, append ONE row: the whole-list PUT is a
+          // read-modify-write that loses whichever of two people's adds lands
+          // second, and on a shared list two people adding is the ordinary case.
+          () =>
+            shares(target)
+              ? appendPlaylistTrack(session, target.id, trackId)
+              : updateRemotePlaylist(session, target.id, { tracks }),
         );
       },
       removeTrack: (id: string, path: string) => {
         const target = byId(id);
         const trackId = trackIdFromPath(path);
         if (!target || trackId === null) return;
+        if (target.role === 'viewer') return;
         const tracks = target.tracks.filter((t) => t !== trackId);
         mutate(
           remote.map((p) => (p.id === target.id ? { ...p, tracks } : p)),
-          () => updateRemotePlaylist(session, target.id, { tracks }),
+          () =>
+            shares(target)
+              ? removePlaylistTrack(session, target.id, trackId)
+              : updateRemotePlaylist(session, target.id, { tracks }),
         );
       },
       addWant: async (id, target) => {
@@ -494,7 +541,10 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
       },
       reorder: (id: string, paths: readonly string[]) => {
         const target = byId(id);
-        if (!target) return;
+        // The running order is the owner's: a whole-list write from anyone
+        // else is exactly the race the single-track routes exist to avoid,
+        // and the server refuses it anyway.
+        if (!target || (target.role !== undefined && target.role !== 'owner')) return;
         // The new order as ids. Anything that does not resolve is dropped from
         // the write rather than guessed at, and the refetch behind the PUT is
         // what settles the truth either way.
@@ -531,6 +581,30 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         mutate(
           remote.map((p) => (p.id === target.id ? { ...p, ...clean } : p)),
           () => updateRemotePlaylist(session, target.id, clean),
+        );
+      },
+      members: async (id: string) => {
+        const target = byId(id);
+        if (!target || !shares(target)) return [];
+        return fetchPlaylistMembers(session, target.id);
+      },
+      share: async (id, who, role) => {
+        const target = byId(id);
+        if (!target || !shares(target)) return;
+        await addPlaylistMember(session, target.id, who, role);
+      },
+      unshare: async (id, userId) => {
+        const target = byId(id);
+        if (!target || !shares(target)) return;
+        await removePlaylistMember(session, target.id, userId);
+      },
+      leave: async (id) => {
+        const target = byId(id);
+        if (!target || !shares(target) || target.role === 'owner') return;
+        // Gone from the shelf at once; the refetch behind it confirms.
+        mutate(
+          remote.filter((p) => p.id !== target.id),
+          () => leavePlaylist(session, target.id),
         );
       },
       setCover: async (id: string, image: Blob | null) => {
