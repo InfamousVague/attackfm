@@ -72,6 +72,7 @@ import { useListenReporting } from './useListenReporting.ts';
 import { useNpChrome } from './useNpChrome.ts';
 import { usePlayerConnect, type PlayerLiveState } from './usePlayerConnect.ts';
 import { NowPlayingSheet, npArtMenuItems } from './NowPlayingSheet.tsx';
+import { fetchLyrics } from './lyrics.ts';
 import { useArtTint } from './artTint.ts';
 import { useAppearance } from '../settings/appearance.tsx';
 import { PlayerStrip } from './PlayerStrip.tsx';
@@ -336,10 +337,30 @@ export function Player({
       // Storage unavailable - the choice still applies for this session.
     }
   };
+  /*
+   * Whether to OFFER the Lyrics face: the current song has synced lyrics to
+   * read along to. Only synced count - the face lights words as they are sung,
+   * and a plain body has no clock. Fetched here (cached per path in lyrics.ts,
+   * so the sheet's own read of the same lines is free) purely so the chooser
+   * can show or hide the item; the sheet does the reading.
+   */
+  const [songHasLyrics, setSongHasLyrics] = useState(false);
+  useEffect(() => {
+    setSongHasLyrics(false);
+    if (!track || track.kind === 'book') return;
+    let stale = false;
+    void fetchLyrics(track).then((ly) => {
+      if (!stale) setSongHasLyrics(!!ly.synced && ly.synced.length > 0);
+    });
+    return () => {
+      stale = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track?.path]);
   // One menu, three doorways: the strip's square, the sheet's art, and the
   // Canvas clip itself all open this same chooser, so the setting stays one
   // setting no matter where the press lands. (Items live in NowPlayingSheet.)
-  const npArtMenu = npArtMenuItems(wornArtView, chooseArtView, playingBook);
+  const npArtMenu = npArtMenuItems(wornArtView, chooseArtView, playingBook, songHasLyrics);
 
   // The EQ gains ride the graph's filters; kept in a ref so a freshly built
   // meter can be seeded with them without waiting for a render.

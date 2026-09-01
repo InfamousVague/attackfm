@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.9
+
+- Now Playing has a new Lyrics face, beside Spinning CD and Album cover: the
+  song reads itself the way an audiobook does, each word lighting as it is
+  sung, every line a tap to jump there. Hold-press the artwork to pick it. It
+  shows up for songs with synced lyrics.
+
 ## 0.5.8
 
 - Songs still downloading now sit inside the Liked and library lists as real

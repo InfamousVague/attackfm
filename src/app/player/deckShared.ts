@@ -153,13 +153,14 @@ export const SPIN_UP_FADE_MS = 90;
 export const CATCH_FLUSH_MS = 45;
 
 /** How the artwork is worn: a turning CD, the flat cover, the chapter panel
- *  (a book's list laid over its own cover), or - on the big sheet - nothing
- *  at all, letting the canvas and the words have the room.
+ *  (a book's list laid over its own cover), the lyrics reading themselves the
+ *  way a book's transcript does, or - on the big sheet - nothing at all,
+ *  letting the canvas and the words have the room.
  *  The mini strip ignores 'hidden' AND 'chapters' and shows the cover: its
  *  square is also the tap target that lifts this sheet, and a hole (or a
  *  list at postage-stamp size) in the strip reads as a layout bug, not a
  *  preference. */
-export type ArtView = 'cd' | 'cover' | 'chapters' | 'analyser' | 'hidden';
+export type ArtView = 'cd' | 'cover' | 'chapters' | 'lyrics' | 'analyser' | 'hidden';
 
 export const ART_VIEW_KEY = 'attackfm-art-view';
 
@@ -174,7 +175,7 @@ export const BOOK_ART_VIEW_KEY = 'attackfm-art-view-book';
 export function readArtView(): ArtView {
   try {
     const stored = localStorage.getItem(ART_VIEW_KEY);
-    return stored === 'cover' || stored === 'hidden' || stored === 'analyser'
+    return stored === 'cover' || stored === 'hidden' || stored === 'analyser' || stored === 'lyrics'
       ? stored
       : 'cd';
   } catch {

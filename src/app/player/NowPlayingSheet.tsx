@@ -20,7 +20,7 @@ import type { ArtTint } from './artTint.ts';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { Airplay, AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, TableOfContents, Trash2, Volume2 } from '@glacier/icons';
+import { Airplay, AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, TableOfContents, Trash2, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
@@ -33,6 +33,7 @@ import { DevicePicker } from './DevicePicker.tsx';
 import { JamBadge } from './JamBadge.tsx';
 import { VolumeRow } from './VolumeControl.tsx';
 import { LyricsPanel } from './LyricsPanel.tsx';
+import { fetchLyrics, type SyncedLine } from './lyrics.ts';
 import { useTrackShape } from './waveform.ts';
 import type { PauseStyle } from './playback.tsx';
 import {
@@ -88,6 +89,11 @@ export function npArtMenuItems(
   artView: ArtView,
   chooseArtView: (next: ArtView) => void,
   book = false,
+  /** The song carries synced lyrics, so the reading face is worth offering.
+   *  A book never does (it has its Chapters face instead), and a song with
+   *  only plain lyrics keeps the mic popover rather than a read-along that
+   *  could not light a word. */
+  lyrics = false,
 ) {
   return (
     <>
@@ -112,6 +118,15 @@ export function npArtMenuItems(
           onSelect={() => chooseArtView('chapters')}
         >
           Chapters
+        </MenuItem>
+      )}
+      {!book && lyrics && (
+        <MenuItem
+          icon={<MicVocal size={15} />}
+          shortcut={artView === 'lyrics' ? <Check size={14} /> : undefined}
+          onSelect={() => chooseArtView('lyrics')}
+        >
+          Lyrics
         </MenuItem>
       )}
       <MenuItem
@@ -767,6 +782,44 @@ export function NowPlayingSheet({
     // the book's identity, and the notes only depend on that.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookPath]);
+
+  /*
+   * The SONG's lyrics, for the reading face - the same read-along the book
+   * uses, fed by synced lyrics instead of a transcript. Only synced lines
+   * qualify: the face lights the words as they are sung, and a plain body
+   * has no clock to light against, so it stays with the mic popover. Fetched
+   * off the track path (fetchLyrics caches per path), cleared for a book.
+   */
+  const [lyricLines, setLyricLines] = useState<SyncedLine[] | null>(null);
+  useEffect(() => {
+    if (!track || track.kind === 'book') {
+      setLyricLines(null);
+      return;
+    }
+    let stale = false;
+    void fetchLyrics(track).then((ly) => {
+      if (!stale) setLyricLines(ly.synced);
+    });
+    return () => {
+      stale = true;
+    };
+    // Keyed on the path: the track object is a fresh identity every library
+    // refresh, but its lyrics only change when the song does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track?.path]);
+
+  /** The lyrics as a reading flow: one line item per synced line, carrying
+   *  its word clocks where LRCLIB or the hub gave them, so BookWords lights
+   *  the words exactly as it does a narrator's. */
+  const lyricFlow = useMemo<ReadingItem[]>(() => {
+    if (!lyricLines || lyricLines.length === 0) return [];
+    return lyricLines.map((l) => ({
+      kind: 'line' as const,
+      time: l.time,
+      text: l.text,
+      ...(l.words ? { words: l.words } : {}),
+    }));
+  }, [lyricLines]);
 
   /** The hub's note for one chapter slot, looked up by server track id. */
   const noteFor = (path: string, idx: number) => {
@@ -1443,7 +1496,8 @@ export function NowPlayingSheet({
         <ContextMenu
           aria-label="Artwork style"
           className={`npScreen__coverTarget${
-            artView === 'chapters' && readingFlow.length > 0
+            (artView === 'chapters' && readingFlow.length > 0) ||
+            (artView === 'lyrics' && lyricFlow.length > 0)
               ? ' npScreen__coverTarget--reading'
               : artView === 'chapters' && bookFaces.length > 0
                 ? ' npScreen__coverTarget--chapters'
@@ -1451,7 +1505,19 @@ export function NowPlayingSheet({
           }`}
           content={npArtMenu}
         >
-          {artView === 'chapters' && readingFlow.length > 0 ? (
+          {artView === 'lyrics' && lyricFlow.length > 0 ? (
+            /* The song, reading itself - the book's read-along fed by synced
+               lyrics. Words light as they are sung, every line seeks, and a
+               hand on the scroll takes it back for a few seconds. No keep: a
+               lyric is not a bookmark. */
+            <BookWords
+              items={lyricFlow}
+              positionSec={position}
+              playing={playing}
+              stalled={buffering}
+              onJump={commitSeek}
+            />
+          ) : artView === 'chapters' && readingFlow.length > 0 ? (
             <BookWords
               items={readingFlow}
               positionSec={position}
