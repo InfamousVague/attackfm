@@ -24,6 +24,8 @@ import { JamProvider } from '../player/jam.tsx';
 import { MobileAuthGate } from '../servers/MobileAuthGate.tsx';
 import { hapticsImpl } from '../core/haptics.ts';
 import type { Track } from '../core/tauri.ts';
+import { InviteBridge } from '../servers/InviteBridge.tsx';
+import { FriendMirrorBridge } from '../profile/FriendMirrorBridge.tsx';
 
 /**
  * The provider pyramid App renders inside, extracted whole. The nesting ORDER
@@ -82,6 +84,9 @@ export function AppProviders({
                 shows nothing else until one is connected. Desktop keeps its
                 local library and passes straight through. */}
             <MobileAuthGate>
+            {/* A tapped invite link raises Join on top of whatever page is up. */}
+            <InviteBridge />
+            <FriendMirrorBridge />
             {/* Who is running sits above the library while the plugins' own
                 providers mount inside it, so a plugin (the importer, say) can
                 read and rescan the library. */}

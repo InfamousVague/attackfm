@@ -1,4 +1,5 @@
 import { fireFelt } from '../core/haptics.ts';
+import { originFromPath } from '../server.ts';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { useRef, useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from 'react';
@@ -49,6 +50,7 @@ import {
   type ArtView,
 } from './deckShared.ts';
 import type { Track } from '../core/tauri.ts';
+import { useOriginLabeler } from '../servers/serverNames.ts';
 
 /**
  * The docked strip along the bottom of the window: the kit's PlayerBar plus
@@ -336,6 +338,7 @@ export function PlayerStrip({
   // kit's bar on the desktop and the phone's own row. A right-click (or a long
   // press) offers the turning CD or the flat cover; a track without art gets
   // the station mark, so the square is never empty.
+  const originLabel = useOriginLabeler();
   const playerArtwork = (
         <ContextMenu
           aria-label="Artwork style"
@@ -426,7 +429,10 @@ export function PlayerStrip({
             // A door on desktop, where the strip is the only chrome and the
             // dock may be dismissed; on mobile its stopPropagation simply
             // beats the shell's open-the-sheet tap, and the page appears.
-            <ArtistLink artist={track.artist} />
+            <>
+              <ArtistLink artist={track.artist} />
+              {originLabel(originFromPath(track.path)) ? ` · ${originLabel(originFromPath(track.path))}` : ''}
+            </>
           ) : (
             'Kevin MacLeod'
           )

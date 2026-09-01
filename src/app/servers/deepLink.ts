@@ -113,6 +113,13 @@ export function clearSpotifyLink(): void {
   pendingLink = null;
 }
 
+/** Taken once, like a Spotify link: an invite handled is an invite spent,
+ *  and replaying it to every later subscriber re-opened Join for the life of
+ *  the process. */
+export function clearInvite(): void {
+  pending = null;
+}
+
 /** Be told when an invite arrives - now, or the moment one does. Replays the
  *  last one on subscribe, so a screen that mounts after the link still gets it. */
 export function onInvite(handler: (code: string) => void): () => void {

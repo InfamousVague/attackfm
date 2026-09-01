@@ -1,4 +1,5 @@
-import { trackIdFromPath, type ServerSession } from '../server.ts';
+import { originFromPath, trackIdFromPath, type ServerSession } from '../server.ts';
+import { normalise, sessionForOrigin } from '../servers/sessions.ts';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -26,6 +27,11 @@ import type { Track } from '../core/tauri.ts';
  */
 
 export interface ListenEvent {
+  /** The server the track lives on. A song from Kevin's hub is logged to
+   *  Kevin's hub - this is what stops a listen being credited to whatever
+   *  server happened to be current. Absent on events written before origins
+   *  existed, which flush to the current session as they always did. */
+  origin?: string;
   trackId: number;
   startedAt: number;
   msListened: number;
@@ -90,22 +96,39 @@ function enqueue(event: ListenEvent): void {
 async function flush(session: ServerSession, keepalive = false): Promise<void> {
   const outbox = readOutbox();
   if (outbox.length === 0) return;
-  const batch = outbox.slice(0, 100);
-  try {
-    const res = await fetch(`${session.url}/api/listens`, {
-      method: 'POST',
-      keepalive,
-      headers: {
-        authorization: `Bearer ${session.token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ events: batch }),
-    });
-    if (res.ok || (res.status >= 400 && res.status < 500)) {
-      writeOutbox(readOutbox().slice(batch.length));
+  /*
+   * One batch per SERVER. Events carry the origin of the track they describe;
+   * each group goes to that server's own session (or the current one for
+   * legacy events with none). A server this device no longer holds a session
+   * for keeps its events in the outbox rather than misfiling them elsewhere.
+   */
+  const current = normalise(session.url);
+  const groups = new Map<string, ListenEvent[]>();
+  for (const e of outbox) {
+    const key = e.origin ? normalise(e.origin) : current;
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push(e);
+  }
+  for (const [origin, events] of groups) {
+    const target = origin === current ? session : sessionForOrigin(origin);
+    if (!target || normalise(target.url) !== origin) continue;
+    const batch = events.slice(0, 100);
+    try {
+      const res = await fetch(`${target.url}/api/listens`, {
+        method: 'POST',
+        keepalive,
+        headers: {
+          authorization: `Bearer ${target.token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ events: batch.map(({ origin: _o, ...rest }) => rest) }),
+      });
+      if (res.ok || (res.status >= 400 && res.status < 500)) {
+        const sent = new Set(batch);
+        writeOutbox(readOutbox().filter((e) => !sent.has(e) && !batch.some((b) => b.startedAt === e.startedAt && b.trackId === e.trackId && (b.origin ?? '') === (e.origin ?? ''))));
+      }
+    } catch {
+      // Offline; the outbox holds.
     }
-  } catch {
-    // Offline; the outbox holds.
   }
 }
 
@@ -126,6 +149,7 @@ export interface ListenSnapshot {
 
 interface Sitting {
   path: string;
+  origin: string | null;
   trackId: number;
   startedAt: number;
   ms: number;
@@ -145,6 +169,7 @@ export function createListenReporter(read: () => ListenSnapshot): { dispose: () 
     if (!read().record) return;
     const done = s.durationMs !== null && s.ms >= s.durationMs * DONE_SHARE;
     enqueue({
+      ...(s.origin ? { origin: s.origin } : {}),
       trackId: s.trackId,
       startedAt: s.startedAt,
       msListened: Math.round(s.ms),
@@ -167,7 +192,11 @@ export function createListenReporter(read: () => ListenSnapshot): { dispose: () 
 
     if (sitting && sitting.path !== path) finalize();
     if (!sitting && path !== null && id !== null) {
-      sitting = { path, trackId: id, startedAt: Date.now(), ms: 0, durationMs: null };
+      // The origin the path names, or the current server for a bare one -
+      // captured at the START of the sitting, so a switch mid-song still
+      // credits the box the song came from.
+      const origin = originFromPath(path) ?? snap.session?.url ?? null;
+      sitting = { path, origin, trackId: id, startedAt: Date.now(), ms: 0, durationMs: null };
     }
     if (sitting) {
       if (snap.audible) sitting.ms += dt;

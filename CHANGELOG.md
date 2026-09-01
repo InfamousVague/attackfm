@@ -20,6 +20,15 @@ and where that library came from is not the app's story to tell.
 - One invite can now let in a whole group. When you share your server, choose
   how many people the code admits — Once, 5, 25, or Unlimited — so a single
   card can bring in a crowd instead of a single friend.
+- Songs say which server they live on - "on Kevin's server" under the
+  artist - whenever more than one server is signed in; Now Playing and the
+  bar say it too.
+- A heart or a listen on a song from a friend's server now goes to THAT
+  server; both used to land on whichever server you were on.
+- Playlist sharing with friends actually works: the server learns your
+  attack.fm friends. Friend-request notices now watch attack.fm, where they
+  land. Tapping an invite link opens Join from any screen.
+- Signing out no longer leaves the player holding a dead session.
 
 ## 0.5.25
 

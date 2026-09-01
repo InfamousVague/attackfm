@@ -34,6 +34,10 @@ fn bad(status: StatusCode, message: &str) -> ApiError {
 pub async fn server_info(State(state): State<Arc<AppState>>) -> ApiResult {
     Ok(Json(json!({
         "name": state.server_name,
+        // Whose box this is - what an app labels songs from here with
+        // ("Matt's server"). A username is not a secret on a box you are a
+        // member of, and the invite that got you here already named it.
+        "owner": state.db.owner_display_name(),
         "version": env!("CARGO_PKG_VERSION"),
         "api": 1,
         // No users yet: whoever registers first becomes the admin.

@@ -14,6 +14,8 @@ import {
   normalise,
   sessionsSnapshot,
   subscribeSessions,
+  sessionForOrigin,
+  primarySession,
 } from '../servers/sessions.ts';
 import {
   defaultMusicDir,
@@ -36,10 +38,12 @@ import {
   trackIdFromPath,
   type RemoteTrack,
   type ServerSession,
+  originFromPath,
 } from '../server.ts';
 import { nudgeSweep } from '../downloads/autoCache.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { pushCarPlayLibrary } from '../player/carplay.ts';
+import { learnServerName } from '../servers/serverNames.ts';
 
 /** Where the chosen music folder lives. Exported because librarySync watches
  *  the same folder - two literals of this key once drifted a rename away from
@@ -361,6 +365,13 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
   const [syncing, setSyncing] = useState(true);
   const [synced, setSynced] = useState(0);
   const [favorites, setFavorites] = useState<number[]>([]);
+  /*
+   * Hearts on the OTHER servers, keyed by normalised url. A heart is a row
+   * on one hub; a song from Kevin's hub is liked ON Kevin's hub. Before this,
+   * the heart dropped the origin and wrote favourite #42 on whichever server
+   * was current - silently, since nothing could show it.
+   */
+  const [otherFavorites, setOtherFavorites] = useState<Record<string, number[]>>({});
   const [error, setError] = useState<string | null>(null);
 
   const passToken = useRef(0);
@@ -449,6 +460,10 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
   // devices - and the last successful answer lives on THIS device, so a
   // server that is dark at launch costs freshness, not the whole Liked page.
   useEffect(() => {
+    learnServerName(session);
+  }, [session]);
+
+  useEffect(() => {
     let live = true;
     const cacheKey = `attackfm-remote-favorites:${session.url}`;
     try {
@@ -511,8 +526,13 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
     const pass = async () => {
       for (const other of others) {
         if (cancelled) return;
+        learnServerName(other);
         try {
           await syncLibrary(other, { signal: controller.signal });
+          // Their hearts too, so the Liked page and the heart on a row agree
+          // about a song that lives there.
+          const ids = await fetchRemoteFavorites(other);
+          if (!cancelled) setOtherFavorites((prev) => ({ ...prev, [normalise(other.url)]: ids }));
         } catch {
           // Another person's server being unreachable is normal, not a fault.
         }
@@ -595,11 +615,36 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
   }, [tracks, favorites]);
 
   const value = useMemo<LibraryContextValue>(() => {
+    const primaryKey = normalise(session.url);
     const favoriteSet = new Set(favorites);
-    const byId = new Map(tracks.map((t) => [trackIdFromPath(t.path), t] as const));
-    const favoriteTracks = favorites
-      .map((id) => byId.get(id))
+    const otherSets = new Map(Object.entries(otherFavorites).map(([k, ids]) => [k, new Set(ids)] as const));
+    /*
+     * Tracks by id, PER SERVER. One flat map collided the moment a second
+     * hub was live: its #42 and ours shared a key, last write won, and a
+     * secondary song could shadow a primary one in Liked.
+     */
+    const byHub = new Map<string, Map<number, Track>>();
+    for (const t of tracks) {
+      const id = trackIdFromPath(t.path);
+      if (id === null) continue;
+      const hub = normalise(originFromPath(t.path) ?? session.url);
+      let m = byHub.get(hub);
+      if (!m) byHub.set(hub, (m = new Map()));
+      if (!m.has(id)) m.set(id, t);
+    }
+    const primaryById = byHub.get(primaryKey) ?? new Map<number, Track>();
+    const favoriteTracks: Track[] = favorites
+      .map((id) => primaryById.get(id))
       .filter((t): t is Track => t !== undefined);
+    for (const [hub, ids] of Object.entries(otherFavorites)) {
+      const m = byHub.get(hub);
+      if (!m) continue;
+      for (const id of ids) {
+        const t = m.get(id);
+        if (t) favoriteTracks.push(t);
+      }
+    }
+    const hubOf = (path: string) => normalise(originFromPath(path) ?? session.url);
 
     return {
       source: 'server',
@@ -614,11 +659,30 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
       favoriteTracks,
       isFavorite: (path: string) => {
         const id = trackIdFromPath(path);
-        return id !== null && favoriteSet.has(id);
+        if (id === null) return false;
+        const hub = hubOf(path);
+        return hub === primaryKey ? favoriteSet.has(id) : (otherSets.get(hub)?.has(id) ?? false);
       },
       toggleFavorite: (path: string) => {
         const id = trackIdFromPath(path);
         if (id === null) return;
+        const hub = hubOf(path);
+        // A heart on a song from another server goes TO that server, with
+        // that server's own session.
+        if (hub !== primaryKey) {
+          const owner = sessionForOrigin(hub);
+          if (!owner || normalise(owner.url) !== hub) return;
+          const had = otherSets.get(hub)?.has(id) ?? false;
+          const put = (on: boolean) =>
+            setOtherFavorites((prev) => {
+              const cur = prev[hub] ?? [];
+              return { ...prev, [hub]: on ? [id, ...cur.filter((f) => f !== id)] : cur.filter((f) => f !== id) };
+            });
+          put(!had);
+          void setRemoteFavorite(owner, id, !had).catch(() => put(had));
+          nudgeSweep();
+          return;
+        }
         const nowFavorite = !favoriteSet.has(id);
         // Optimistic: the heart answers the press at once, and a server that
         // refuses puts it back.

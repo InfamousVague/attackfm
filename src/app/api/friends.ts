@@ -64,3 +64,21 @@ export async function removeFriend(session: ServerSession, userId: number): Prom
     method: 'DELETE',
   });
 }
+
+/**
+ * Hand the hub this account's registry friends, by handle. The hub files a
+ * request to each one who is a member here; crossed requests become
+ * friendships. Older hubs 404 - swallowed, since a hub that cannot mirror
+ * simply keeps an empty friend list as before.
+ */
+export async function mirrorFriendsToHub(session: ServerSession, handles: string[]): Promise<void> {
+  try {
+    await request(session.url, '/api/friends/mirror', {
+      method: 'POST',
+      token: session.token,
+      body: JSON.stringify({ handles }),
+    });
+  } catch {
+    // See above.
+  }
+}

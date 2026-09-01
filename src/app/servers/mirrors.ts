@@ -20,6 +20,7 @@ import type { RemoteTrack, ServerSession } from '../server.ts';
 import { loadCachedIndex, syncLibrary } from '../server.ts';
 import { fold } from '../core/fold.ts';
 import { describeFailure, recordDiag } from '../diag/diagLog.ts';
+import { rememberServerName } from './serverNames.ts';
 
 const KEY = 'attackfm-mirrors';
 
@@ -143,7 +144,18 @@ export async function probe(url: string, signal?: AbortSignal): Promise<number |
     // Read as JSON rather than discarding the bytes: the body still has to be
     // consumed for the timing to mean anything, and it carries whether this
     // box downloads - which decides where an import can be sent.
-    const info = (await res.json().catch(() => null)) as { imports?: unknown } | null;
+    const info = (await res.json().catch(() => null)) as
+      | { imports?: unknown; name?: unknown; owner?: unknown }
+      | null;
+    // The same body carries the box's name and its owner; the label resolver
+    // (serverNames.ts) learns them here for free, once a second, for every
+    // server the app watches.
+    if (info && (typeof info.name === 'string' || typeof info.owner === 'string')) {
+      rememberServerName(url, {
+        name: typeof info.name === 'string' ? info.name : undefined,
+        owner: typeof info.owner === 'string' ? info.owner : undefined,
+      });
+    }
     const sample = performance.now() - started;
     const prior = health.get(url);
     const smoothed =

@@ -107,6 +107,62 @@ pub async fn request(
     Ok(Json(json!({ "ok": true, "friends": false })))
 }
 
+#[derive(serde::Deserialize)]
+pub struct MirrorBody {
+    /// Registry handles of the caller's friends, as the app read them off
+    /// attack.fm.
+    pub handles: Vec<String>,
+}
+
+/// `POST /api/friends/mirror` - the app hands over its REGISTRY friends, and
+/// the hub keeps the ones who are members here.
+///
+/// Friends live on attack.fm; this table gates what is shared inside these
+/// walls (playlist members, profiles) and nothing ever filled it - the Friends
+/// tab is entirely the registry - so every friendship check here failed for
+/// everyone. Rather than trust one client's word about who its friends are,
+/// each handle becomes a friend REQUEST from the caller; when the other person's
+/// app posts the caller back, the crossed requests settle into a friendship,
+/// exactly as two people asking each other would. Symmetric, and no more
+/// power than the existing request route.
+pub async fn mirror(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<MirrorBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let mut befriended = 0usize;
+    let mut asked = 0usize;
+    for handle in body.handles.iter().take(500) {
+        let handle = handle.trim().trim_start_matches('@');
+        if handle.is_empty() {
+            continue;
+        }
+        let Some((target_id, _, _, _)) = state.db.member_by_handle(handle) else { continue };
+        if target_id == caller.id || state.db.are_friends(caller.id, target_id) {
+            continue;
+        }
+        let crossed = state
+            .db
+            .incoming_requests(caller.id)
+            .into_iter()
+            .find(|(_, uid, _)| *uid == target_id);
+        if let Some((request_id, _, _)) = crossed {
+            if state.db.add_friendship(caller.id, target_id).is_ok() {
+                let _ = state.db.delete_friend_request(request_id);
+                befriended += 1;
+            }
+            continue;
+        }
+        // add_friend_request answers the standing request's id when one
+        // already exists, so repeated passes file nothing new.
+        if state.db.add_friend_request(caller.id, target_id).is_ok() {
+            asked += 1;
+        }
+    }
+    Ok(Json(json!({ "ok": true, "befriended": befriended, "asked": asked })))
+}
+
 /// `POST /api/friends/requests/{id}/accept` - only the person asked may.
 pub async fn accept(
     State(state): State<Arc<AppState>>,

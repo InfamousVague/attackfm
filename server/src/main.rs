@@ -717,6 +717,7 @@ async fn main() {
         .route("/api/artist-top", get(home::artist_top))
         .route("/api/friends", get(friends::list))
         .route("/api/friends/requests", post(friends::request))
+        .route("/api/friends/mirror", post(friends::mirror))
         .route("/api/friends/requests/{id}/accept", post(friends::accept))
         .route("/api/friends/requests/{id}/decline", post(friends::decline))
         .route("/api/friends/{user_id}", delete(friends::remove))

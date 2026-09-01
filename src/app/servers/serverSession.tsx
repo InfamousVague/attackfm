@@ -29,7 +29,11 @@ import {
   type ServerSession,
 } from '../server.ts';
 import { originFromPath } from '../api/library.ts';
-import { rememberSession, sessionForOrigin } from './sessions.ts';
+import {
+  rememberSession,
+  sessionForOrigin,
+  forgetSession,
+} from './sessions.ts';
 import { effectsParam } from '../player/effects.ts';
 import { fxChainParam } from '../player/fxChain.ts';
 import { setRemoteAudioResolver } from '../core/tauri.ts';
@@ -416,6 +420,11 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback(async () => {
     const live = sessionRef.current;
+    // Out of the multi-server set FIRST. Leaving it there kept a session
+    // whose token the server was about to delete, still marked primary - and
+    // the audio resolver prefers the set's primary over a null current
+    // session, so a signed-out app was pointed at revoked credentials.
+    if (live) forgetSession(live.url);
     persist(null);
     if (live) await serverLogout(live);
   }, [persist]);

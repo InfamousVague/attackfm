@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { useServerSession } from '../servers/serverSession.tsx';
-import { fetchFriends } from '../api/friends.ts';
+import { fetchFriends as fetchRegistryFriends } from '../servers/registry.ts';
+import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { dismissNotice, noteNotice } from './notices.ts';
 
 /**
@@ -39,7 +39,11 @@ const POLL_MS = 90_000;
 const raised = new Set<string>();
 
 export function FriendNotices() {
-  const { session } = useServerSession();
+  // Friend requests land on the REGISTRY (attack.fm), where friends live;
+  // this used to poll the hub's own table, which nothing fills - so it never
+  // fired for anyone.
+  const registry = useRegistryOptional();
+  const session = registry?.session ?? null;
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -57,7 +61,7 @@ export function FriendNotices() {
       // a pending request is still pending when it comes back.
       if (document.visibilityState === 'hidden') return;
       try {
-        const feed = await fetchFriends(session);
+        const feed = await fetchRegistryFriends(session.token);
         if (!alive) return;
         const open = new Set<string>();
         for (const ask of feed.incoming) {
@@ -67,7 +71,7 @@ export function FriendNotices() {
           noteNotice({
             id,
             kind: 'friends',
-            title: `${ask.username} wants to be friends`,
+            title: `@${ask.handle} wants to be friends`,
             body: 'Open Friends to answer.',
             art: null,
             door: 'friends',

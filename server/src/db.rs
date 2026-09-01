@@ -1929,6 +1929,34 @@ impl Db {
 
     /// Whether this server has any admin at all - false only on a brand-new
     /// server, where the first person through the door becomes the owner.
+    /// The name to hang on this box in front of a friend: the registry owner's
+    /// handle when the hub was claimed through the registry, else the first
+    /// admin's username. Public through /api/server so an app can say
+    /// "Matt's server" for songs that come from here.
+    pub fn owner_display_name(&self) -> Option<String> {
+        let conn = self.lock();
+        let owner: Option<String> = conn
+            .query_row(
+                "SELECT handle FROM registry_members WHERE role = 'owner' ORDER BY joined_at LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        if let Some(h) = owner.filter(|h| !h.trim().is_empty()) {
+            return Some(h);
+        }
+        conn.query_row(
+            "SELECT username FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
     pub fn has_any_admin(&self) -> bool {
         let conn = self.lock();
         conn.query_row("SELECT 1 FROM users WHERE is_admin = 1 LIMIT 1", [], |_| {

@@ -15,7 +15,8 @@ import { hasLocalLibrary } from '../core/platform.ts';
 import { useDockedSheet, useNarrowViewport } from '../ux/useNarrowViewport.ts';
 import { TrackMenu } from './TrackMenu.tsx';
 import { isTauri, type Track } from '../core/tauri.ts';
-import { artSized, trackIdFromPath } from '../server.ts';
+import { artSized, originFromPath, trackIdFromPath } from '../server.ts';
+import { useOriginLabeler } from '../servers/serverNames.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
 import placeholderArt from '../../assets/attack-wave.png';
 import { usePrefetchArt } from '../ux/artPrefetch.ts';
@@ -384,6 +385,9 @@ export function SongTable({
   const onDevice = useOnDevice();
   const justLanded = useJustLanded();
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
+  // "on Kevin's server" under the artist, only when more than one server is
+  // live - the row's id IS the path, so the origin is free here.
+  const originLabel = useOriginLabeler();
 
   /*
    * The arriving songs, pinned to the top of THIS grid rather than a card
@@ -526,6 +530,9 @@ export function SongTable({
                       ) : (
                         <span className="songArtist">{row.artist as string}</span>
                       )}
+                      {originLabel(originFromPath(row.id as string)) && (
+                        <span className="songOrigin">{originLabel(originFromPath(row.id as string))}</span>
+                      )}
                     </div>
                   </div>
                 </SongTitleMenu>
@@ -543,7 +550,7 @@ export function SongTable({
     // onDevice belongs here and was missing: the columns READ it, so without it
     // a download landing rebuilt nothing and the mark only appeared later, when
     // some unrelated dependency happened to change.
-    [onOpenArtist, narrow, byPath, plays, onDevice, justLanded, incomingById],
+    [onOpenArtist, narrow, byPath, plays, onDevice, justLanded, incomingById, originLabel],
   );
 
   // Memoized on the library, not rebuilt per render: the grid memoizes its

@@ -775,6 +775,12 @@
   border-radius: 999px;
 }
 
+.npScreen__origin {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  margin-block-start: 0.1rem;
+}
+
 .npScreen__chapter {
   margin-block-start: 0.15rem;
   font-size: var(--glacier-font-size-sm, 0.875rem);

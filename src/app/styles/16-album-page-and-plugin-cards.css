@@ -492,3 +492,14 @@
     animation: none;
   }
 }
+
+/* Which server a song lives on - a third, quieter line under the artist,
+   present only when more than one server is live. */
+.songOrigin {
+  display: block;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -53,7 +53,10 @@ import { formatTotal } from '../ux/format.ts';
 import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
 import { subscribeGestures } from './deviceMotion.ts';
 import { isTauri, tauriCall } from '../core/tauri.ts';
-import { trackIdFromPath } from '../server.ts';
+import {
+  trackIdFromPath,
+  originFromPath,
+} from '../server.ts';
 import { stemStatus } from '../api/stems.ts';
 import type { ServerSession } from '../api/http.ts';
 import { isStemDropped, noteStemsFor, setStemDropped, stemsKnownFor, useStemDrop } from './stemDrop.ts';
@@ -63,6 +66,7 @@ import { CatchMeUp, CatchMeUpRow } from './CatchMeUp.tsx';
 import { fetchTranscript, type BookLine } from './transcript.ts';
 import npPlaceholderArt from '../../assets/attack-wave.png';
 import type { Track } from '../core/tauri.ts';
+import { useOriginLabeler } from '../servers/serverNames.ts';
 
 /**
  * The wire name a scan recorded, dressed for a pill. lofty's file types are
@@ -859,6 +863,7 @@ export function NowPlayingSheet({
   /** The face the lyrics button replaced, so switching it off restores it
    *  instead of dumping the listener on the default. Defaults to the disc. */
   const lyricsReturnRef = useRef<ArtView>('cd');
+  const originLabel = useOriginLabeler();
   const [lyricLines, setLyricLines] = useState<SyncedLine[] | null>(null);
   useEffect(() => {
     if (!track || track.kind === 'book') {
@@ -1677,6 +1682,11 @@ export function NowPlayingSheet({
             </button>
           ) : (
             <span className="npScreen__artist">{track?.artist ?? ''}</span>
+          )}
+          {/* Which server this song lives on - shown only with more than one
+              live, where it is the answer to a question a person has. */}
+          {track && originLabel(originFromPath(track.path)) && (
+            <span className="npScreen__origin">{originLabel(originFromPath(track.path))}</span>
           )}
           {/* Say whose speakers this is coming out of. The strip has carried
               this since Connect shipped; the full screen showed no sign at
