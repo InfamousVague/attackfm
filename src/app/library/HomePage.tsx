@@ -101,6 +101,8 @@ export function HomePage({
     curated,
     stations,
     madeForYou,
+    madeForYouShelf,
+    daylist,
     jumpBack,
     topArtists,
     quiet,
@@ -180,6 +182,110 @@ export function HomePage({
           download queue - see LibraryView. */}
       {/* "Worth adding" (curator finds from outside the library) lives on the
           Discover page now — a library surface should show what you HAVE. */}
+
+      {/* The daylist: one card that moves with the clock. Its heading is the
+          live daypart ("Tuesday morning"); its face is the mood it draws on.
+          Chosen client-side from the four UTC cards the server wrote. */}
+      {showCurator && !skelCurator && daylist && (
+        <Shelf title={daylist.title} count={1}>
+          <ContextMenu
+            key={daylist.id}
+            {...mixHold}
+            aria-label={`${daylist.subtitle} actions`}
+            className="mixCardMenuTarget"
+            content={
+              <>
+                <MenuItem
+                  icon={<ListStart size={15} />}
+                  onSelect={() => [...daylist.tracks].reverse().forEach((t) => playNext(t))}
+                >
+                  Play next
+                </MenuItem>
+                <MenuItem
+                  icon={<ListEnd size={15} />}
+                  onSelect={() => daylist.tracks.forEach((t) => addToQueue(t))}
+                >
+                  Add to queue
+                </MenuItem>
+              </>
+            }
+          >
+            <button
+              type="button"
+              className="mixCard"
+              onClick={() => openMix(daylist.subtitle, daylist.tracks, 'This mix came up empty.')}
+            >
+              <span className="mixCardCoverWrap">
+                <MixCover
+                  tracks={daylist.tracks}
+                  art={mixArt(daylist.subtitle, { id: daylist.id, curated: true })}
+                />
+              </span>
+              <span className="mixCardTitle">{daylist.subtitle}</span>
+              <span className="mixCardBlurb">{daylist.blurb}</span>
+            </button>
+          </ContextMenu>
+        </Shelf>
+      )}
+
+      {/* "Made for you": the numbered Daily Mixes, the ai-vibe mood mixes, and
+          the audio-character activity mixes, as one shelf. Same card and held
+          verbs as the stations shelf below. */}
+      {showCurator && !skelCurator && madeForYouShelf.length > 0 && (
+        <Shelf title="Made for you" count={madeForYouShelf.length}>
+          {madeForYouShelf.map((mix) => (
+            <ContextMenu
+              key={mix.id}
+              {...mixHold}
+              aria-label={`${mix.title} actions`}
+              className="mixCardMenuTarget"
+              content={
+                <>
+                  <MenuItem
+                    icon={<Play size={15} />}
+                    onSelect={() => mix.tracks.length > 0 && onPlay(mix.tracks[0]!, mix.tracks)}
+                  >
+                    Play
+                  </MenuItem>
+                  <MenuItem
+                    icon={<Shuffle size={15} />}
+                    onSelect={() => {
+                      const order = [...mix.tracks].sort(() => Math.random() - 0.5);
+                      if (order.length > 0) onPlay(order[0]!, order);
+                    }}
+                  >
+                    Shuffle
+                  </MenuItem>
+                  <MenuItem
+                    icon={<ListStart size={15} />}
+                    onSelect={() => [...mix.tracks].reverse().forEach((t) => playNext(t))}
+                  >
+                    Play next
+                  </MenuItem>
+                  <MenuItem
+                    icon={<ListEnd size={15} />}
+                    onSelect={() => mix.tracks.forEach((t) => addToQueue(t))}
+                  >
+                    Add to queue
+                  </MenuItem>
+                </>
+              }
+            >
+              <button
+                type="button"
+                className="mixCard"
+                onClick={() => openMix(mix.title, mix.tracks, 'This mix came up empty.')}
+              >
+                <span className="mixCardCoverWrap">
+                  <MixCover tracks={mix.tracks} art={mixArt(mix.title, { id: mix.id, curated: true })} />
+                </span>
+                <span className="mixCardTitle">{mix.title}</span>
+                <span className="mixCardBlurb">{mix.blurb}</span>
+              </button>
+            </ContextMenu>
+          ))}
+        </Shelf>
+      )}
 
       {showCurator && (skelCurator || skelFeed ? (
         <ShelfSkeleton title="Made from your library" kind="mix" count={4} />

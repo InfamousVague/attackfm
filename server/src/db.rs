@@ -5033,6 +5033,7 @@ impl Db {
                 genre: r.get(4)?,
                 ai_genres: canonical.as_ref().map(|p| p.genres.clone()).filter(|v| !v.is_empty())
                     .unwrap_or(comma_terms(r.get(22)?)),
+                ai_moods: canonical.as_ref().map(|p| p.moods.clone()).unwrap_or_default(),
                 ai_specific_tags: canonical.as_ref().map(|p| p.specific_tags.clone()).unwrap_or_default(),
                 ai_sonic_traits: canonical.as_ref().map(|p| p.musical_traits.clone()).filter(|v| !v.is_empty())
                     .unwrap_or(comma_terms(r.get(23)?)),
@@ -8850,6 +8851,9 @@ pub struct TrackFeatures {
     pub lyric_vec: Option<Vec<f32>>,
     pub genre: String,
     pub ai_genres: Vec<String>,
+    /// The controlled mood vocabulary for this track (canonical.moods) - what
+    /// the ai-vibe mood mixes group by. Empty until the enricher reaches it.
+    pub ai_moods: Vec<String>,
     pub ai_specific_tags: Vec<String>,
     pub ai_sonic_traits: Vec<String>,
     pub artist: String,

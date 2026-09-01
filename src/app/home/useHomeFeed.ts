@@ -146,7 +146,44 @@ export function useHomeFeed(
    * Library shelf is the only place a person actually meets them.
    */
   const stations = allCurated.filter((l) => l.id.startsWith('curated-station-'));
-  const curated = allCurated.filter((l) => !l.id.startsWith('curated-station-'));
+  // The "Made for you" shelf: numbered Daily Mixes + the ai-vibe mood mixes +
+  // the audio-character activity mixes (chill/workout/late-night/focus, all
+  // `mood-*`). Split off the way stations are, so they read as one coherent
+  // shelf of "here is your music, arranged" rather than scattering into the
+  // grab-bag below.
+  const madeForYouShelf = allCurated.filter(
+    (l) => l.id.startsWith('curated-daily-') || l.id.startsWith('curated-mood-'),
+  );
+  // Everything ELSE stays in "Made from your library". Daylists are excluded
+  // from it too - they surface only as the single live lead card (below), one
+  // of the four UTC cards the server wrote, chosen for the local daypart.
+  const curated = allCurated.filter(
+    (l) =>
+      !l.id.startsWith('curated-station-') &&
+      !l.id.startsWith('curated-daily-') &&
+      !l.id.startsWith('curated-mood-') &&
+      !l.id.startsWith('curated-daylist-'),
+  );
+
+  // The daylist: one card that moves with the clock. The server has no
+  // timezone, so it wrote four cards keyed to UTC quarter-days; here we pick
+  // the one for the listener's OWN current daypart and retitle it live
+  // ("Tuesday morning"). Recomputed each render off a fresh Date, so the title
+  // and the chosen card follow the day with no refetch.
+  const daylist = useMemo(() => {
+    const now = new Date();
+    // The server keyed daylist-{0..3} to real UTC quarter-day windows
+    // (MoodCluster.hours is UTC), so the card for right-now is simply the
+    // current UTC bucket - no timezone arithmetic. The listener's LOCAL time
+    // is used only to word the heading ("Tuesday morning").
+    const utc = Math.floor(now.getUTCHours() / 6);
+    const l = allCurated.find((x) => x.id === `curated-daylist-${utc}`);
+    if (!l || l.tracks.length < 4) return null;
+    const localBucket = Math.floor(now.getHours() / 6); // 0 night, 1 morning, 2 afternoon, 3 evening
+    const parts = ['night', 'morning', 'afternoon', 'evening'];
+    const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
+    return { ...l, title: `${weekday} ${parts[localBucket]}`, subtitle: l.title };
+  }, [allCurated]);
 
   // One shelf, not two. "From your curator" and "Made for you" were two rails
   // of identical cards that differed only in WHICH PROCESS built them - a
@@ -156,6 +193,13 @@ export function useHomeFeed(
   const madeForYou = useMemo(() => {
     const out: { mix: ResolvedMix; curated: boolean }[] = [];
     const seen = new Set<string>();
+    // Suppress a home-feed mix whose title already shows on the "Made for you"
+    // shelf or as the daylist - those used to live in `curated` and seed this
+    // set; now that they are split off, seed it explicitly so the AI path
+    // (which can emit a "Chill"/"Daily Mix N"-titled mix) cannot double a card
+    // across two shelves.
+    for (const l of madeForYouShelf) seen.add(l.title.trim().toLowerCase());
+    if (daylist) seen.add(daylist.subtitle.trim().toLowerCase());
     for (const mix of curated) {
       seen.add(mix.title.trim().toLowerCase());
       out.push({ mix, curated: true });
@@ -165,7 +209,7 @@ export function useHomeFeed(
       out.push({ mix, curated: false });
     }
     return out;
-  }, [curated, mixes]);
+  }, [curated, mixes, madeForYouShelf, daylist]);
 
   // Jump back in: each album arrives as its own ordered id list (the server
   // grouped by album artist and sorted by disc/track), so the client just
@@ -212,6 +256,8 @@ export function useHomeFeed(
     curated,
     stations,
     madeForYou,
+    madeForYouShelf,
+    daylist,
     jumpBack,
     topArtists,
     quiet,

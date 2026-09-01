@@ -48,6 +48,7 @@ mod fx;
 mod db;
 mod discover;
 mod discovery;
+mod mixes;
 mod mood;
 mod programmer;
 mod trending;

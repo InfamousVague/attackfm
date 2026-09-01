@@ -131,6 +131,17 @@ pub async fn cycle(state: &Arc<AppState>) {
      */
     let heard_since = crate::db::now_ms() - 21 * 86_400_000;
     for user in &users {
+        // One-time re-file: New Music Mix used to sit in a "Made for you"
+        // folder of exactly one item. That name is now a Home shelf of the
+        // personalized mixes (daily/mood/daylist - see mixes.rs), so the
+        // playlist moves to its own honest "New music" folder. Idempotent:
+        // after the move nothing matches the old folder, so it is a no-op on
+        // every later cycle.
+        for p in state.db.playlists(*user) {
+            if p.folder == "Made for you" && p.name == "New Music Mix" {
+                let _ = state.db.set_playlist_meta(p.id, None, Some("New music"), None);
+            }
+        }
         let (auditions, arrivals) = state.db.new_mix_candidates(*user, heard_since);
         let heard: HashSet<i64> = state
             .db
@@ -147,7 +158,7 @@ pub async fn cycle(state: &Arc<AppState>) {
                 break;
             }
         }
-        refresh_for(state, *user, "new-music-mix", "New Music Mix", "Made for you", MIX_BLURB, &ids);
+        refresh_for(state, *user, "new-music-mix", "New Music Mix", "New music", MIX_BLURB, &ids);
     }
 }
 

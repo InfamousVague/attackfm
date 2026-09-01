@@ -241,12 +241,12 @@ const CURATE_EVERY_MS: i64 = 30 * 60 * 1000;
 /// The listening window that counts as "lately".
 const WINDOW_30D_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// Tracks per curated list.
-const LIST_LEN: usize = 30;
+pub(crate) const LIST_LEN: usize = 30;
 /// At most this many by one artist in a list, so a favourite cannot fill it.
 const PER_ARTIST_CAP: usize = 2;
 
 /// "shoegaze" -> "Shoegaze", for list names built from folded tags.
-fn title_case(word: &str) -> String {
+pub(crate) fn title_case(word: &str) -> String {
     let mut chars = word.chars();
     match chars.next() {
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
@@ -939,7 +939,7 @@ pub(crate) fn score(f: &TrackFeatures, taste: &Taste) -> f32 {
 }
 
 /// Picks the best `n`, never more than `PER_ARTIST_CAP` from one artist.
-fn take_spread(mut ranked: Vec<(f32, &TrackFeatures)>, n: usize) -> Vec<i64> {
+pub(crate) fn take_spread(mut ranked: Vec<(f32, &TrackFeatures)>, n: usize) -> Vec<i64> {
     ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     let mut per_artist: HashMap<String, usize> = HashMap::new();
     let mut out = Vec::new();
@@ -1375,34 +1375,18 @@ async fn curate_cycle(state: &Arc<AppState>) {
             }
         }
 
-        // Daily mixes: one per neighbourhood of what you play. The clusters
-        // are the top genre words of your rotation (tags split on commas, so
-        // "Shoegaze, Alternative" feeds both camps), each mix drawn from what
-        // you have NOT been playing lately - a mix that mirrors the last week
-        // back is a playlist you already made yourself.
-        // Already split and already signed: `favourite_tags` hands back the
-        // tags this listener actually leans toward, strongest first, and omits
-        // the ones they push away. The comma-splitting that used to happen
-        // here was undoing a whole-string genre key that no longer exists.
-        let top_camps: Vec<(String, f32)> = taste.favourite_tags(6);
-        for (n, (camp, _)) in top_camps.iter().take(3).enumerate() {
-            let ranked: Vec<(f32, &TrackFeatures)> = fresh
-                .iter()
-                .filter(|(_, f)| f.genre.to_lowercase().contains(camp.as_str()))
-                .cloned()
-                .collect();
-            let ids = take_spread(ranked, LIST_LEN);
-            if ids.len() >= 8 {
-                let title = title_case(camp);
-                let _ = state.db.put_curated(
-                    user,
-                    &format!("mix-{}", n + 1),
-                    &format!("{title} mix"),
-                    &format!("A daily mix from your {title} neighbourhood."),
-                    &ids,
-                );
-            }
+        // Numbered Daily Mixes + a time-of-day Daylist, plus mood mixes from
+        // the ai-vibe vocabulary - the "Made for you" shelf. Organised from the
+        // mood profile the discovery cycle already persisted (no re-cluster),
+        // reusing this loop's `all`/`by_id`/`taste` so no extra scan is taken.
+        // These replace the old genre-camp `mix-1..3` lists, which were a
+        // whole-string genre `contains` over the fresh pool; build_daily sweeps
+        // the stale `mix-*` slugs. See mixes.rs.
+        if let Some(mp) = crate::mood::load(state, user) {
+            crate::mixes::build_daily(state, user, &all, &mp, &taste);
+            crate::mixes::build_daylist(state, user, &all, &mp);
         }
+        crate::mixes::build_moods(state, user, &all, &by_id, &taste);
 
         // The decade station: where your rotation lives in time, heard tracks
         // welcome - a station is a place, not a surprise.
