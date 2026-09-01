@@ -8,12 +8,6 @@
  * gradient rather than a blurred one.
  */
 
-.libraryInvite {
-  display: flex;
-  justify-content: flex-end;
-  margin-block: calc(var(--glacier-space-1) * -1) var(--glacier-space-2);
-}
-
 /* The drawer body: the card, then the actions under it. */
 .inviteSheet {
   display: flex;

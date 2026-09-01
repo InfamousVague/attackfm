@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.19
+
+- The invite-a-friend button is now a plain share glyph in the header, just
+  right of the notification bell, instead of a labelled button on the Library.
+
 ## 0.5.18
 
 - Share a playlist with friends and build it together: the playlist menu gains

@@ -37,6 +37,7 @@ import { DownloadNotices } from './notify/DownloadNotices.tsx';
 import { VerboseNotices } from './notify/VerboseNotices.tsx';
 import { FriendNotices } from './notify/FriendNotices.tsx';
 import { NotifyBell } from './notify/NotifyBell.tsx';
+import { ShareServer } from './library/ShareServer.tsx';
 import { CarPlayBridge } from './player/CarPlayBridge.tsx';
 import { installSheetDismiss } from './player/playerDismiss.ts';
 import { ConnectPlayRouter, PlayerHost } from './player/PlayerHost.tsx';
@@ -636,6 +637,9 @@ export function App() {
                       onOpenDownloads={openDownloads}
                       onOpenFriends={() => goTab('friends')}
                     />
+                    {/* Invite a friend: the shareable join card, at the bell's right hand -
+                        a glyph beside a glyph. Hides itself with no server to join. */}
+                    <ShareServer iconSize={16} />
                     <IconButton
                       variant="ghost"
                       size="sm"
@@ -700,6 +704,9 @@ export function App() {
                     onOpenDownloads={openDownloads}
                     onOpenFriends={() => goTab('friends')}
                   />
+                  {/* Invite a friend: the shareable join card, at the bell's right hand -
+                      a glyph beside a glyph. Hides itself with no server to join. */}
+                  <ShareServer iconSize={18} />
                 </span>
               </header>
             )}

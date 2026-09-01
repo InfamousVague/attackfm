@@ -1,4 +1,4 @@
-import { Button, Drawer, Text } from '@glacier/react';
+import { Button, Drawer, IconButton, Text } from '@glacier/react';
 import { Check, Copy, Download, RefreshCw, Share2 } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
@@ -116,7 +116,11 @@ function InviteCard({
   );
 }
 
-export function ShareServer() {
+/**
+ * Lives in the header, at the bell's right hand - one glyph, no caption, the
+ * way the bell itself is. `iconSize` matches whichever chrome mounts it.
+ */
+export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
   const { session } = useServerSession();
   const registry = useRegistryOptional();
   const [open, setOpen] = useState(false);
@@ -244,12 +248,14 @@ export function ShareServer() {
 
   return (
     <>
-      <div className="libraryInvite">
-        <Button variant="soft" size="sm" onClick={() => setOpen(true)}>
-          <Share2 size={15} />
-          Invite a friend
-        </Button>
-      </div>
+      <IconButton
+        variant="ghost"
+        aria-label="Invite a friend"
+        title="Invite a friend"
+        onClick={() => setOpen(true)}
+      >
+        <Share2 size={iconSize} />
+      </IconButton>
 
       <Drawer
         open={open}
