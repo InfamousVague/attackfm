@@ -15,6 +15,15 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.8
+
+- Songs still downloading now sit inside the Liked and library lists as real
+  rows at the top, not a separate card above them - a spinner where the count
+  goes, the reason underneath, and Try again on one that failed. When a song
+  finishes it simply becomes an ordinary row in place.
+- The Music Date count on the library refreshes the moment you come back from
+  a sitting, instead of showing the number that was true before you started.
+
 ## 0.5.7
 
 - Fixed liked songs that stayed stuck on "still downloading" forever: when the

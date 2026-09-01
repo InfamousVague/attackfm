@@ -30,6 +30,7 @@ import {
   snippetStart,
   writePassed,
 } from './datePassed.ts';
+import { bumpDateActivity } from './dateActivity.ts';
 import { CardFace } from './DateCardFace.tsx';
 import { loadAudioUrl, type Track } from '../core/tauri.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
@@ -738,6 +739,10 @@ export function DatePage() {
       // card is interactive at once) and the sound (so its play() carries the
       // gesture's autoplay permission). Only the fling animation waits.
       setGone((prev) => new Set(prev).add(track.path));
+      // One verdict fewer waiting: nudge the library's Music Date chip to
+      // re-read its count, so returning from a sitting shows the smaller pool
+      // rather than the number that was true when you opened it.
+      bumpDateActivity();
       if (!isPreview) {
         setUndos((prev) => [...prev, { track, dir, favorited }].slice(-UNDO_DEPTH));
       }

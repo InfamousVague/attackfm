@@ -2,8 +2,9 @@ import { type CSSProperties } from 'react';
 import dateChip from '../../assets/chip-music-date.webp';
 import { Button } from '@glacier/react';
 import { useMyAuditions } from './myAuditions.ts';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { fetchDateCandidates } from '../api/curator.ts';
+import { dateActivityVersion, subscribeDateActivity } from '../date/dateActivity.ts';
 import { LibChipMosaic, LibChipStat } from './LibChipFace.tsx';
 import { musicDateDoorOpen, openMusicDate } from '../nav/musicDateDoor.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -26,18 +27,30 @@ export function MusicDateChip() {
   // The pool's preview dates count too, or this chip promises six while the
   // deck deals hundreds - the mismatch got reported within a day.
   const [poolCount, setPoolCount] = useState(0);
+  // Re-read the pool total whenever a date is judged. Owned auditions already
+  // move in real time (the passed ledger drives `mine`), but the preview pool
+  // is the server's number, and a preview verdict changes it there with
+  // nothing local to subtract - so we just re-ask. `activity` bumps once per
+  // swipe; a trailing debounce means a fast run of verdicts costs one fetch on
+  // the way out, not one per card.
+  const activity = useSyncExternalStore(subscribeDateActivity, dateActivityVersion, dateActivityVersion);
   useEffect(() => {
     if (!session) return;
     let live = true;
-    void fetchDateCandidates(session, 1)
-      .then(({ total }) => {
-        if (live) setPoolCount(total);
-      })
-      .catch(() => {});
+    const run = () =>
+      void fetchDateCandidates(session, 1)
+        .then(({ total }) => {
+          if (live) setPoolCount(total);
+        })
+        .catch(() => {});
+    // First read is immediate (chip just mounted); a read prompted by activity
+    // waits a beat so a burst of swipes settles into one request.
+    const t = activity === 0 ? (run(), 0) : window.setTimeout(run, 500);
     return () => {
       live = false;
+      window.clearTimeout(t);
     };
-  }, [session]);
+  }, [session, activity]);
 
   // Nothing to open, so nothing to show. Same rule the banner had: a door onto
   // an empty room is worse than no door.

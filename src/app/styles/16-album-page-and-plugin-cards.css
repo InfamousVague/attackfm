@@ -212,6 +212,67 @@
   white-space: nowrap;
 }
 
+/*
+ * Arriving rows, IN the grid.
+ *
+ * A song on its way in is a row of the same table as the songs already here -
+ * the leading column carries its progress ring where a number would be, the
+ * length column carries its actions, and the whole row sits a touch quieter
+ * so the eye reads "coming" without a card drawing a border around it.
+ */
+.incomingCell__mark {
+  display: grid;
+  place-items: center;
+  color: var(--glacier-accent-solid);
+}
+
+/* A determinate ring for a job that reports a fraction; the indeterminate
+   .artistAlbumSpin carries everything delegated (see its own rule). */
+.incomingCell__ring {
+  inline-size: 0.9rem;
+  block-size: 0.9rem;
+  border-radius: 50%;
+  background: conic-gradient(currentColor var(--p, 0%), var(--glacier-border) 0);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 62%, #000 64%);
+  mask: radial-gradient(circle closest-side, transparent 62%, #000 64%);
+}
+
+/* The status line under an arriving song's name - "downloading", "waiting for
+   its turn", or the reason a failed one can be retried. A shade quieter than a
+   real artist line, because it is a state, not a name. */
+.songArtist--status {
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  font-style: italic;
+}
+
+.songTitleCell[data-incoming] .songArt {
+  opacity: 0.72;
+}
+
+.incomingCell__actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.15rem;
+}
+
+.incomingCell__act {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  color: var(--glacier-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  cursor: pointer;
+}
+
+.incomingCell__act:hover {
+  color: var(--glacier-text);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
 /* The artist reads as a link into its own page: a bare button that underlines
    on hover, no button chrome. */
 .songArtistLink {

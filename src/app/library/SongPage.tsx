@@ -8,7 +8,6 @@ import { SongTable } from './SongTable.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
 import { EmptyArt, HeroArt, type HeroArtName } from '../ux/EmptyArt.tsx';
 import { fetchHome, trackIdFromPath } from '../server.ts';
-import { IncomingRows } from '../downloads/IncomingRows.tsx';
 import { useIncomingFor } from '../downloads/incoming.tsx';
 import type { Track } from '../core/tauri.ts';
 import { formatTotal } from '../ux/format.ts';
@@ -206,7 +205,8 @@ export function SongPage({
   // state when the only thing to say is "these are coming".
   const incomingScope: 'all' | 'like' | null =
     view === 'liked' ? 'like' : view === 'onrepeat' ? null : 'all';
-  const hasIncoming = useIncomingFor(incomingScope ?? 'like').length > 0 && incomingScope != null;
+  const incomingHere = useIncomingFor(incomingScope ?? 'like');
+  const hasIncoming = incomingHere.length > 0 && incomingScope != null;
 
   /**
    * Whether the hero has scrolled out of the way.
@@ -357,8 +357,6 @@ export function SongPage({
         </div>
       )}
 
-      {incomingScope && <IncomingRows scope={incomingScope} />}
-
       {empty && !loading && !hasIncoming ? (
         <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name={meta.art} />
@@ -383,6 +381,11 @@ export function SongPage({
               onPlay={onPlay}
               onOpenArtist={onOpenArtist}
               plays={view === 'onrepeat' && playsById.size > 0 ? playsById : undefined}
+              // The arriving songs are rows of this grid, pinned to its top -
+              // not a card above it. Suppressed while filtering, since a ghost
+              // does not match a title search and would sit oddly over "no
+              // results". `incomingScope` gates the whole feature off On repeat.
+              incoming={incomingScope && !filtering ? incomingHere : undefined}
               // Liked songs open in the order they were LIKED, newest first -
               // the order the server already sends them in, and the one thing
               // this page knows that an alphabetical sort cannot recover.

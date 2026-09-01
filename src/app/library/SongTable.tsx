@@ -4,9 +4,9 @@ import {
   type DataGridRow,
   type DataGridSort,
 } from '@glacier/react';
-import { ArrowDownToLine, CircleCheck, Clock } from '@glacier/icons';
+import { ArrowDownToLine, CircleCheck, Clock, RotateCcw, X } from '@glacier/icons';
 import { useOnDevice } from '../downloads/useOnDevice.ts';
-import { identityKey, useJustLanded } from '../downloads/incoming.tsx';
+import { identityKey, useJustLanded, type IncomingTrack } from '../downloads/incoming.tsx';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { SelectionBar, SongSelectionContext } from './songSelection.tsx';
@@ -110,6 +110,107 @@ function SongArt({ artwork }: { artwork: string | null }) {
 // already the sort.
 const NARROW_HIDDEN = new Set(['album', 'addedAt']);
 
+/**
+ * The failed job's reason, trimmed to the half a person acts on - the server
+ * appends its own transcript under the first line, and the first line is the
+ * part that says whether trying again is worth anything.
+ */
+export function shortFailure(error: string | null | undefined): string {
+  const first = (error ?? '').split('\n')[0]?.trim() ?? '';
+  if (!first) return 'download failed';
+  const cut = first.replace(/\s*Retry to resume\.?$/i, '').trim();
+  return cut.length > 48 ? `${cut.slice(0, 45)}\u2026` : cut || 'download failed';
+}
+
+/** The one line under an arriving song's name: what it is waiting on. */
+export function incomingStatus(t: IncomingTrack): string {
+  if (!t.stalled) return t.artist ? `${t.artist} \u2014 downloading` : 'downloading';
+  const why = t.onRetry ? shortFailure(t.failure) : 'waiting for its turn';
+  return t.artist ? `${t.artist} \u2014 ${why}` : why;
+}
+
+/**
+ * Give a resolved column a second life for arriving rows. A real row falls
+ * straight through to the column's own renderer; a ghost (id `incoming:<key>`)
+ * gets the cell that fits its column. Everything an arriving row cannot answer
+ * - album, date, on-device - draws nothing, exactly as a blank should.
+ */
+export function wrapIncomingCell(
+  col: DataGridColumn,
+  incomingById: Map<string, IncomingTrack>,
+): DataGridColumn {
+  const base = col.render;
+  return {
+    ...col,
+    render: (row, rowIndex) => {
+      const t = incomingById.get(row.id as string);
+      if (!t) return base ? base(row, rowIndex) : (row[col.key] as ReactNode);
+      switch (col.key) {
+        case 'index':
+          return (
+            <span className="incomingCell__mark" aria-hidden>
+              {t.progress != null ? (
+                <span
+                  className="incomingCell__ring"
+                  style={{ ['--p' as string]: `${Math.round(t.progress * 100)}%` }}
+                />
+              ) : (
+                <span className="artistAlbumSpin" data-still={t.stalled || undefined} />
+              )}
+            </span>
+          );
+        case 'title':
+          return (
+            <div className="songTitleCell" data-incoming>
+              <SongArt artwork={t.artwork} />
+              <div className="songTitleText">
+                <span className="songTitle">
+                  <span className="songTitle__name">{t.title}</span>
+                </span>
+                <span className="songArtist songArtist--status">{incomingStatus(t)}</span>
+              </div>
+            </div>
+          );
+        case 'duration':
+          return (
+            <span className="incomingCell__actions">
+              {t.onRetry && (
+                <button
+                  type="button"
+                  className="incomingCell__act"
+                  aria-label={`Try downloading ${t.title} again`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    t.onRetry?.();
+                  }}
+                >
+                  <RotateCcw size={15} />
+                </button>
+              )}
+              {t.onCancel && (
+                <button
+                  type="button"
+                  className="incomingCell__act"
+                  aria-label={`Stop waiting for ${t.title}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    t.onCancel?.();
+                  }}
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </span>
+          );
+        default:
+          // album, date, on-device: an arriving song has no answer, and a
+          // blank is the honest one.
+          return null;
+      }
+    },
+  };
+}
+
 // The columns mirror the classic library table: an index, the title block with
 // artwork and artist, album, when it was added, and the running time.
 const COLUMNS: DataGridColumn[] = [
@@ -205,6 +306,7 @@ export function SongTable({
   loading,
   plays,
   defaultSort,
+  incoming,
 }: {
   /** Called with the opened track and the full list in its displayed order. */
   onPlay: (track: Track, queue: Track[]) => void;
@@ -229,6 +331,17 @@ export function SongTable({
    *  times each song was played instead of its position - which is the whole
    *  point of a most-played list, where a row number says nothing. */
   plays?: Map<number, number>;
+  /**
+   * Songs on their way in, pinned to the TOP of this same grid.
+   *
+   * Not a separate card above the table - rows of the table, in its columns,
+   * with its hairlines. A song downloading and a song downloaded belong to one
+   * list, and when the download lands the ghost simply drops while the real
+   * row (already in `tracks` by then) is right there under it: the list flows,
+   * nothing hands off between two surfaces. Live rows only - a landed ghost's
+   * exit is the arriving real row's own highlight, not a duplicate row.
+   */
+  incoming?: IncomingTrack[];
   /**
    * What the table opens sorted by. `null` means "the order I was handed" -
    * which is the right answer whenever the CALLER's order is itself the
@@ -272,6 +385,23 @@ export function SongTable({
   const justLanded = useJustLanded();
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
 
+  /*
+   * The arriving songs, pinned to the top of THIS grid rather than a card
+   * above it. Only the LIVE ones - a leaving ghost's exit is the real row's
+   * own arrival highlight, so drawing it here too would be the same song
+   * twice for a beat. Selection mode drops them: you cannot select a song
+   * that is not here yet. Keyed `incoming:<key>` so a render can tell a ghost
+   * from a track, and looked up by that id.
+   */
+  const incomingLive = useMemo(
+    () => (selecting ? [] : (incoming ?? []).filter((t) => !t.leaving)),
+    [incoming, selecting],
+  );
+  const incomingById = useMemo(
+    () => new Map(incomingLive.map((t) => [`incoming:${t.key}`, t] as const)),
+    [incomingLive],
+  );
+
   // A narrow COLUMN has room for the song and its length, and nothing else.
   // Album and the date added are dropped rather than squeezed - the title cell
   // already carries the artist, and five columns in a phone's width overlap
@@ -309,7 +439,7 @@ export function SongTable({
           // for every row - a whole column of dashes saying nothing.
           (col.key !== 'onDevice' || isTauri()) &&
           (!narrow || !NARROW_HIDDEN.has(col.key)),
-      ).map((col) =>
+      ).map((col): DataGridColumn =>
         // Narrow, the title gives its 50% back and takes what is left instead.
         //
         // That 50% exists to stop a wide table's title being starved by a
@@ -402,11 +532,18 @@ export function SongTable({
               ),
             }
           : col,
-      ),
+      )
+        // The arriving rows share these columns, so each cell learns to draw
+        // a ghost: the leading column carries its progress ring in place of a
+        // number, the title carries its name and a line saying why it waits,
+        // the length column carries its actions (cancel, or retry when the
+        // job failed), and the rest stay blank. Wrapped here, once, so no
+        // column definition above has to know incoming rows exist.
+        .map((col) => wrapIncomingCell(col, incomingById)),
     // onDevice belongs here and was missing: the columns READ it, so without it
     // a download landing rebuilt nothing and the mark only appeared later, when
     // some unrelated dependency happened to change.
-    [onOpenArtist, narrow, byPath, plays, onDevice, justLanded],
+    [onOpenArtist, narrow, byPath, plays, onDevice, justLanded, incomingById],
   );
 
   // Memoized on the library, not rebuilt per render: the grid memoizes its
@@ -449,6 +586,45 @@ export function SongTable({
   // Re-runs on a re-sort, which is exactly when the top of the list changes.
   usePrefetchArt(displayed.map((t) => artSized(t.artwork, 160)));
 
+  /*
+   * The grid's data, in the exact order it is shown: arriving songs pinned to
+   * the top, then the library in the sorted order computed above. The grid is
+   * told `manualSort` so it renders this order verbatim and never re-sorts the
+   * ghosts down into the list - it still reports header clicks, which drive the
+   * `sort` that `displayed` reads. One list, one set of hairlines, the arriving
+   * rows part of it rather than a card floating over it.
+   */
+  const incomingGridRows = useMemo<DataGridRow[]>(
+    () =>
+      incomingLive.map((t) => ({
+        id: `incoming:${t.key}`,
+        title: t.title,
+        artist: t.artist,
+        album: '',
+        addedAt: 0,
+        duration: null,
+        artwork: t.artwork,
+      })),
+    [incomingLive],
+  );
+  const displayedRows = useMemo<DataGridRow[]>(
+    () =>
+      displayed.map((track) => ({
+        id: track.path,
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        addedAt: track.addedAt,
+        duration: track.duration,
+        artwork: track.artwork,
+      })),
+    [displayed],
+  );
+  const gridData = useMemo(
+    () => (incomingGridRows.length ? [...incomingGridRows, ...displayedRows] : displayedRows),
+    [incomingGridRows, displayedRows],
+  );
+
   return (
     <SongSelectionContext.Provider value={selectionEntry}>
     <DataGrid
@@ -456,9 +632,13 @@ export function SongTable({
       {...hold}
       className={flow ? 'songTable songTable--flow' : 'songTable'}
       columns={columns}
-      data={rows}
+      data={gridData}
       sort={sort}
       onSortChange={setSort}
+      // The data is handed over already in sort order (displayed), with the
+      // arriving rows pinned ahead of it - so the grid renders it verbatim and
+      // its own sorter never pulls a ghost down among the songs.
+      manualSort
       density="comfortable"
       // In flow mode the page is the scroller, so the grid's own sticky
       // header would pin to the page and collide with the collapsed page
@@ -483,6 +663,8 @@ export function SongTable({
       // with the displayed order alongside as the queue it plays through. In
       // selection mode the same tap toggles membership instead.
       onRowActivate={(id) => {
+        // A ghost is not a track: tapping one does nothing but wait with you.
+        if (typeof id === 'string' && id.startsWith('incoming:')) return;
         if (selecting) {
           const path = String(id);
           setSelected((prev) =>
