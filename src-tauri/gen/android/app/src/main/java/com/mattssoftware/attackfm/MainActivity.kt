@@ -251,6 +251,59 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface
     fun audiobooksDir(): String? = booksDir
 
+    /**
+     * The BROWSABLE vault: /storage/emulated/0/AttackFM/Music, the folder any
+     * file manager can walk into - by request, so cached music can be browsed
+     * and pruned by hand. Android/data (the audiobooks folder's compromise
+     * above) has been walled off from file managers since Android 11; the
+     * shared root is the only place that is genuinely browsable, and writing
+     * there needs the all-files grant below. Null until that grant exists -
+     * the web layer falls back to the private vault and nothing changes.
+     */
+    @JavascriptInterface
+    fun vaultDir(): String? =
+      try {
+        if (!android.os.Environment.isExternalStorageManager()) null
+        else {
+          val dir = java.io.File(
+            android.os.Environment.getExternalStorageDirectory(),
+            "AttackFM/Music",
+          )
+          if (!dir.exists() && !dir.mkdirs()) null else dir.absolutePath
+        }
+      } catch (_: Exception) {
+        null
+      }
+
+    /** Whether the all-files grant is already in hand. */
+    @JavascriptInterface
+    fun canBrowseVault(): Boolean =
+      try {
+        android.os.Environment.isExternalStorageManager()
+      } catch (_: Exception) {
+        false
+      }
+
+    /**
+     * Open the system's all-files-access page for this app. A SETTINGS SCREEN,
+     * not a dialog - Android gives this permission no runtime prompt - so the
+     * web layer says where the person is being taken before calling this.
+     */
+    @JavascriptInterface
+    fun requestVaultAccess() {
+      try {
+        val intent = Intent(
+          android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+          android.net.Uri.parse("package:$packageName"),
+        )
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+      } catch (_: Exception) {
+        // A build without the screen (some forks): the toggle lives under
+        // Settings > Apps > Special access > All files access instead.
+      }
+    }
+
     @JavascriptInterface
     fun transportReady() {
       runOnUiThread { flushTransport() }

@@ -183,6 +183,20 @@ export function StorageOverview() {
     }
   };
 
+  /*
+   * The browsable folder, Android only. Three states: not Android (row absent),
+   * grant missing (a button that walks to the system's all-files screen - it
+   * is a settings page, not a dialog, so the copy says where it leads), and
+   * granted (the path, stated, so a file manager can be pointed at it).
+   * The grant is read fresh per render - returning from the settings screen
+   * re-renders this pane, which is when the answer changes.
+   */
+  const native = (window as unknown as {
+    AFMNative?: { canBrowseVault?: () => boolean; vaultDir?: () => string | null; requestVaultAccess?: () => void };
+  }).AFMNative;
+  const browsable = native?.canBrowseVault ? native.canBrowseVault() : null;
+  const vaultPath = browsable ? native?.vaultDir?.() : null;
+
   if (!isTauri()) {
     return (
       <Text size="sm" tone="muted">
@@ -510,6 +524,31 @@ export function StorageOverview() {
             {plan.some((e) => e.state === 'downloading') ? ' · downloading now' : ''}
             {plan.length > 96 ? ` · showing 96` : ''}
           </Text>
+        </div>
+      )}
+      {browsable !== null && (
+        <div className="storageBrowsable">
+          {vaultPath ? (
+            <Text size="xs" tone="muted">
+              Cached music lives in <b>AttackFM/Music</b> on this phone's storage — open any file
+              manager to browse or prune it by hand.
+            </Text>
+          ) : (
+            <>
+              <Text size="xs" tone="muted">
+                Keep cached music in an <b>AttackFM</b> folder a file manager can browse. Android
+                grants this on a settings screen, not a pop-up — the button below opens it; flip
+                the switch for AttackFM and come back.
+              </Text>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => native?.requestVaultAccess?.()}
+              >
+                Allow the AttackFM folder
+              </Button>
+            </>
+          )}
         </div>
       )}
     </>

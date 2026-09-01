@@ -54,6 +54,21 @@ export function onOfflineChange(fn: () => void): () => void {
  */
 export async function hydrateOffline(): Promise<void> {
   if (hydrated) return;
+  /*
+   * BEFORE the first list: point the vault at the browsable AttackFM folder
+   * when Android's all-files grant already exists. The bridge method and the
+   * command are both optional by design - a browser, iOS, desktop, or an
+   * older Android binary answers null somewhere along this chain and the
+   * vault stays app-private exactly as it always was. Anything already held
+   * migrates inside the command, before the list below reads the folder.
+   */
+  try {
+    const native = (window as unknown as { AFMNative?: { vaultDir?: () => string | null } }).AFMNative;
+    const root = native?.vaultDir?.();
+    if (root) await tauriCall('offline_set_root', { root });
+  } catch {
+    // The private vault is a fine vault.
+  }
   for (const delay of [0, 1500, 5000]) {
     if (delay > 0) await new Promise((r) => setTimeout(r, delay));
     const list = await tauriCall<OfflineEntry[]>('offline_list');

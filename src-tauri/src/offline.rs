@@ -44,7 +44,70 @@ fn from_hex(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
+/// A browsable root the web layer handed over (Android: the AttackFM folder in
+/// shared storage, where a file manager can walk). None means the app-private
+/// default - the only possibility until the all-files grant exists, and the
+/// permanent state everywhere but Android.
+static ROOT_OVERRIDE: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// `offline_set_root` - point the vault at a browsable folder.
+///
+/// Called by the web layer at boot once Android's all-files grant exists, with
+/// the folder MainActivity's `vaultDir()` made. Anything already held in the
+/// private vault MIGRATES immediately: copy-then-delete, because the private
+/// and shared halves of Android storage are different filesystems and a rename
+/// will not cross them. An OPTIONAL command by design - an older binary simply
+/// refuses the invoke, the web layer shrugs, and the vault stays private - so
+/// this does not bump NATIVE_GENERATION (the airplay commands set the rule).
+#[tauri::command]
+pub fn offline_set_root(app: tauri::AppHandle, root: String) -> Result<usize, String> {
+    let new_root = PathBuf::from(&root);
+    std::fs::create_dir_all(&new_root)
+        .map_err(|e| format!("cannot create {}: {e}", new_root.display()))?;
+    // Music indexers would list every cached song twice in the system's media
+    // library; the vault is the app's cache, not a contribution to the phone's
+    // gallery of ringtones.
+    let _ = std::fs::write(new_root.join(".nomedia"), b"");
+
+    let old = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("no app data dir: {e}"))?
+        .join("offline");
+    let mut moved = 0usize;
+    if old.is_dir() && old != new_root {
+        if let Ok(entries) = std::fs::read_dir(&old) {
+            for entry in entries.flatten() {
+                let from = entry.path();
+                if !from.is_file() {
+                    continue;
+                }
+                let to = new_root.join(entry.file_name());
+                if to.exists() {
+                    let _ = std::fs::remove_file(&from);
+                    continue;
+                }
+                if std::fs::copy(&from, &to).is_ok() {
+                    let _ = std::fs::remove_file(&from);
+                    moved += 1;
+                } else {
+                    // A copy that failed mid-file must not stand as a track:
+                    // the reader treats presence as wholeness.
+                    let _ = std::fs::remove_file(&to);
+                }
+            }
+        }
+    }
+    *ROOT_OVERRIDE.lock().unwrap() = Some(new_root);
+    Ok(moved)
+}
+
 fn dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if let Some(root) = ROOT_OVERRIDE.lock().unwrap().clone() {
+        std::fs::create_dir_all(&root)
+            .map_err(|e| format!("cannot create {}: {e}", root.display()))?;
+        return Ok(root);
+    }
     let base = app
         .path()
         .app_data_dir()

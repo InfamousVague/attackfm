@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.173
+
+- On Android, cached music can live in an AttackFM folder any file manager can browse. Storage settings grow an "Allow the AttackFM folder" button — Android grants this on a settings screen, not a pop-up — and once allowed, everything already held moves itself across. Needs the next app build; until then the button simply is not shown
+
 ## 0.4.172
 
 - Press and hold any song — in search, on an artist's Popular list, or among the songs missing from your albums — for a menu that can add it to a playlist, even songs you don't own yet.

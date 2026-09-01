@@ -20,6 +20,10 @@
          halves its runtime request needs to exist. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- The browsable vault: cached music at /storage/emulated/0/AttackFM so a
+         file manager can walk it. Granted on a system settings screen, never a
+         dialog; unset, the vault stays in app-private storage as before. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
