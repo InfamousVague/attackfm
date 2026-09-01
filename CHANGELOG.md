@@ -15,6 +15,23 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.25
+
+- Listening on your phone while the music plays on another device now works
+  properly. The Now Playing screen shows the song that is actually playing,
+  its real length, and a clock that keeps up - and it says which device it is
+  coming out of.
+- The play, skip and scrub controls on that screen now reach the device with
+  the music instead of quietly doing nothing. Skip forward and back are no
+  longer greyed out.
+- The lock screen, Control Centre, CarPlay, Android Auto, your headphone
+  buttons and the home-screen widget follow the same song, and their buttons
+  reach the same place.
+- A phone can now name what another device is playing even when it is an
+  audiobook or a song from a Music Date.
+- Pausing on one device is no longer missed by the others.
+- The DJ button wears a robot head.
+
 ## 0.5.24
 
 - The invite card drops its blurb; "Join <your name>'s Server" is now a quiet
