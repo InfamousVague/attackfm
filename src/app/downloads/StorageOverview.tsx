@@ -23,7 +23,7 @@ import {
   setCacheQualityKbps,
   sweepCache,
 } from './autoCache.ts';
-import { offlineSpace, onOfflineChange } from './offline.ts';
+import { adoptVaultRoot, offlineSpace, onOfflineChange } from './offline.ts';
 import { isTauri } from '../core/tauri.ts';
 import { networkKindNow, onNetworkChange, type NetworkKind } from '../core/network.ts';
 import { setWifiOnlyDownloads, wifiOnlyDownloads } from '../settings/behaviourPrefs.ts';
@@ -194,8 +194,38 @@ export function StorageOverview() {
   const native = (window as unknown as {
     AFMNative?: { canBrowseVault?: () => boolean; vaultDir?: () => string | null; requestVaultAccess?: () => void };
   }).AFMNative;
+  /*
+   * The grant lands on a SYSTEM screen and nothing about coming back re-renders
+   * React - the pane sat on the "Allow" button after the person had already
+   * allowed. Window focus is the one signal the return fires; a tick makes the
+   * grant checks below re-run on it.
+   */
+  const [, setGrantTick] = useState(0);
+  useEffect(() => {
+    const poke = () => setGrantTick((t) => t + 1);
+    window.addEventListener('focus', poke);
+    document.addEventListener('visibilitychange', poke);
+    return () => {
+      window.removeEventListener('focus', poke);
+      document.removeEventListener('visibilitychange', poke);
+    };
+  }, []);
   const browsable = native?.canBrowseVault ? native.canBrowseVault() : null;
   const vaultPath = browsable ? native?.vaultDir?.() : null;
+  /*
+   * ADOPT the folder the moment the grant exists - not on the next cold
+   * start. Boot-only adoption is why "the folder got created but nothing
+   * caches into it": the process that was already running never told the
+   * vault about its new home. Idempotent (the command re-points and finds
+   * nothing left to move), so re-running on every focus costs a stat.
+   */
+  const [migrated, setMigrated] = useState<number | null>(null);
+  useEffect(() => {
+    if (!vaultPath) return;
+    void adoptVaultRoot().then((moved) => {
+      if (moved !== null && moved > 0) setMigrated(moved);
+    });
+  }, [vaultPath]);
 
   if (!isTauri()) {
     return (
@@ -543,6 +573,7 @@ export function StorageOverview() {
             <Text size="xs" tone="muted">
               Cached music lives in <b>AttackFM/Music</b> on this phone's storage — open any file
               manager to browse or prune it by hand.
+              {migrated !== null ? ` ${migrated.toLocaleString()} files just moved in.` : ''}
             </Text>
           ) : (
             <>

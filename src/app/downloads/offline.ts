@@ -52,23 +52,46 @@ export function onOfflineChange(fn: () => void): () => void {
  * airplane-mode shape. Three attempts with widening gaps cover a plugin that
  * was not ready in the first second of boot.
  */
-export async function hydrateOffline(): Promise<void> {
-  if (hydrated) return;
-  /*
-   * BEFORE the first list: point the vault at the browsable AttackFM folder
-   * when Android's all-files grant already exists. The bridge method and the
-   * command are both optional by design - a browser, iOS, desktop, or an
-   * older Android binary answers null somewhere along this chain and the
-   * vault stays app-private exactly as it always was. Anything already held
-   * migrates inside the command, before the list below reads the folder.
-   */
+/**
+ * Point the vault at the browsable AttackFM folder, when Android's all-files
+ * grant exists RIGHT NOW - and re-read the ledger afterwards, because a
+ * migration moves every held file and the map's remembered paths die with it.
+ *
+ * Called from boot (below) AND from the Storage pane when the grant lands
+ * mid-session. The second caller is the fix for a real hole: the grant flow
+ * is open-app -> settings -> grant -> return, which means the app process
+ * that boots after the grant is usually days away - the folder appeared (the
+ * pane's own vaultDir() call creates it) while every download kept landing in
+ * the private vault. Adoption has to chase the grant, not the next cold start.
+ *
+ * Returns how many files migrated, or null when there is nothing to adopt -
+ * every step optional by design (browser, iOS, desktop, an older binary).
+ */
+export async function adoptVaultRoot(): Promise<number | null> {
   try {
     const native = (window as unknown as { AFMNative?: { vaultDir?: () => string | null } }).AFMNative;
     const root = native?.vaultDir?.();
-    if (root) await tauriCall('offline_set_root', { root });
+    if (!root) return null;
+    const moved = await tauriCall<number>('offline_set_root', { root });
+    if (moved === null) return null;
+    // Paths changed under the map: read the new folder as the truth.
+    const list = await tauriCall<OfflineEntry[]>('offline_list');
+    if (list) {
+      hydrated = true;
+      held = new Map(list.map((e) => [e.key, e.path]));
+      announce();
+    }
+    return moved;
   } catch {
-    // The private vault is a fine vault.
+    return null;
   }
+}
+
+export async function hydrateOffline(): Promise<void> {
+  if (hydrated) return;
+  // BEFORE the first list: adopt the browsable folder when the grant already
+  // exists, so the list below reads the folder the files now live in.
+  await adoptVaultRoot();
   for (const delay of [0, 1500, 5000]) {
     if (delay > 0) await new Promise((r) => setTimeout(r, delay));
     const list = await tauriCall<OfflineEntry[]>('offline_list');
