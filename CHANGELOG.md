@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.5
+
+- Now Playing wears a small format pill - FLAC, MP3, ALAC, OGG - under the
+  artist, so what your copy actually is sits right on the screen.
+
 ## 0.5.4
 
 - The AttackFM folder is now a record collection: cached songs file themselves

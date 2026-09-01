@@ -673,6 +673,25 @@
 
 /* Where you are in a book, under the author line: the skip buttons walk these
    chapters, and this says which one you are in. Quiet - a locator, not a title. */
+/*
+ * The format pill: a fact, not a control. currentColor at low opacity for the
+ * border so it sits correctly on every album's accent without its own theme
+ * bookkeeping, and tabular tracking because FLAC and MP3 should read at the
+ * same weight as a stamp, not a word.
+ */
+.npScreen__codec {
+  align-self: flex-start;
+  margin-block-start: 0.2rem;
+  padding: 0.08rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 999px;
+}
+
 .npScreen__chapter {
   margin-block-start: 0.15rem;
   font-size: var(--glacier-font-size-sm, 0.875rem);

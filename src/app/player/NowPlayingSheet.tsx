@@ -61,6 +61,25 @@ import npPlaceholderArt from '../../assets/attack-wave.png';
 import type { Track } from '../core/tauri.ts';
 
 /**
+ * The wire name a scan recorded, dressed for a pill. lofty's file types are
+ * containers, not codecs, so the MP4 family splits on what else the row
+ * knows: a bit depth means ALAC, a book means M4B, otherwise AAC.
+ */
+function codecLabel(track: Track): string | null {
+  const c = (track.codec || '').toLowerCase();
+  if (!c) return null;
+  switch (c) {
+    case 'flac': return 'FLAC';
+    case 'mpeg': return 'MP3';
+    case 'mp4': return track.kind === 'book' ? 'M4B' : track.lossless ? 'ALAC' : 'AAC';
+    case 'vorbis': return 'OGG';
+    case 'opus': return 'OPUS';
+    case 'wavpack': return 'WV';
+    default: return c.toUpperCase();
+  }
+}
+
+/**
  * One menu, three doorways: the strip's square, the sheet's art, and the
  * Canvas clip itself all open this same chooser, so the setting stays one
  * setting no matter where the press lands.
@@ -1514,6 +1533,12 @@ export function NowPlayingSheet({
             </button>
           ) : (
             <span className="npScreen__artist">{track?.artist ?? ''}</span>
+          )}
+          {/* What the file IS - FLAC, MP3, ALAC - because on a self-hosted
+              library the format is a fact about YOUR copy, not the service's
+              tier. Absent when the tags never said (old scans). */}
+          {track && codecLabel(track) && (
+            <span className="npScreen__codec">{codecLabel(track)}</span>
           )}
           {/* A caption now, not a door: chapter select moved into the
               transport, where the thumb already is. */}
