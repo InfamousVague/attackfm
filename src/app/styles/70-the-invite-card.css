@@ -9,12 +9,25 @@
  */
 
 /* The drawer body: the card, then the actions under it. */
-.inviteSheet {
+.inviteSheet .glassSheet__body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--glacier-space-4);
-  padding-block-end: var(--glacier-space-2);
+  gap: var(--glacier-space-3);
+}
+
+.inviteSheet__title {
+  margin: 0;
+  align-self: stretch;
+  font-size: var(--glacier-font-size-lg, 1.125rem);
+  font-weight: 700;
+}
+
+.inviteSheet__desc {
+  margin: calc(var(--glacier-space-2) * -1) 0 var(--glacier-space-1);
+  align-self: stretch;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
 }
 
 /*
@@ -23,12 +36,14 @@
  * design, and a card that reflowed would photograph at the wrong shape.
  */
 .inviteCard {
-  inline-size: 320px;
-  block-size: 560px;
+  /* Fluid to the sheet's width, capped where a phone-sized poster stops
+     reading as one; the shot is taken at whatever this resolves to. */
+  inline-size: min(100%, 420px);
+  block-size: auto;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  padding: 24px 22px 20px;
+  padding: 28px 26px 24px;
   border-radius: 24px;
   color: #fff;
   /* Explicit sans stack: the PNG is rasterised inside an SVG whose default
@@ -65,8 +80,8 @@
 }
 
 .inviteCard__title {
-  margin-block: 14px 2px;
-  font-size: 24px;
+  margin-block: 16px 4px;
+  font-size: 27px;
   line-height: 1.1;
   font-weight: 750;
   letter-spacing: -0.01em;
@@ -74,8 +89,8 @@
 }
 
 .inviteCard__sub {
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 14px;
+  line-height: 1.45;
   color: rgba(255, 255, 255, 0.66);
 }
 
@@ -89,8 +104,8 @@
 
 .inviteCard__qr {
   display: block;
-  inline-size: 132px;
-  block-size: 132px;
+  inline-size: 168px;
+  block-size: 168px;
 }
 
 .inviteCard__addrLabel {
@@ -113,8 +128,8 @@
    so it is set large, spaced, and in tabular figures a reader cannot
    misgroup. */
 .inviteCard__code {
-  font-size: 24px;
-  letter-spacing: 0.12em;
+  font-size: 30px;
+  letter-spacing: 0.14em;
   line-height: 1.1;
 }
 
@@ -131,8 +146,8 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  font-size: 12.5px;
-  line-height: 1.35;
+  font-size: 13.5px;
+  line-height: 1.4;
   color: rgba(255, 255, 255, 0.82);
 }
 
@@ -150,8 +165,8 @@
 }
 
 .inviteCard__foot {
-  margin-block-start: auto;
-  padding-block-start: 14px;
+  margin-block-start: 18px;
+  padding-block-start: 0;
   font-size: 11px;
   letter-spacing: 0.06em;
   color: rgba(255, 255, 255, 0.4);

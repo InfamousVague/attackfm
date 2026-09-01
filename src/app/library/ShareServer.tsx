@@ -1,4 +1,5 @@
-import { Button, Drawer, IconButton, Text, useToast } from '@glacier/react';
+import { Button, IconButton, Text, useToast } from '@glacier/react';
+import { GlassSheet } from '../ux/GlassSheet.tsx';
 import { Check, Copy, Download, RefreshCw, Share2 } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
@@ -177,7 +178,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
     let live = true;
     void QRCode.toDataURL(inviteLink(invite.code), {
       margin: 0,
-      width: 300,
+      width: 1000,
       color: { dark: '#101014ff', light: '#ffffffff' },
     })
       .then((url) => {
@@ -217,7 +218,13 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
       // Three device pixels per CSS pixel: the card is designed small and
       // rasterised large, so the picture is sharp rather than a blown-up
       // screenshot. See widget/shot.ts on why the scale lives here.
-      const dataUrl = await shoot(node, 320, 560, 3);
+      // At the size it is actually drawn - the card is fluid up to its cap,
+      // so a hardcoded pair would photograph a narrow phone's card wrong.
+      const box = node.getBoundingClientRect();
+      // Five device pixels per CSS pixel: a ~400px card becomes a ~2000px
+      // poster, sharp on any screen it is sent to. The QR below is rendered
+      // at 1000px for the same reason - a 300px code scaled up came out soft.
+      const dataUrl = await shoot(node, Math.round(box.width), Math.round(box.height), 5);
       if (!dataUrl) {
         toast({ message: 'Could not draw the card. Try again in a moment.' });
         return;
@@ -280,15 +287,9 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
         <Share2 size={iconSize} />
       </IconButton>
 
-      <Drawer
-        open={open}
-        onClose={() => setOpen(false)}
-        side="bottom"
-        size="lg"
-        title="Invite a friend"
-        description={`Share how to join ${possessive(owner)} server.`}
-        className="inviteSheet"
-      >
+      <GlassSheet open={open} onClose={() => setOpen(false)} label="Invite a friend" className="inviteSheet">
+        <h2 className="inviteSheet__title">Invite a friend</h2>
+        <p className="inviteSheet__desc">Share how to join {possessive(owner)} server.</p>
         {!identity ? (
           /* An invite is minted against an AttackFM account, and this device
              has none yet. Say where to get one rather than offering a card
@@ -328,7 +329,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
             {minting ? 'Making…' : 'New code'}
           </Button>
         )}
-      </Drawer>
+      </GlassSheet>
     </>
   );
 }

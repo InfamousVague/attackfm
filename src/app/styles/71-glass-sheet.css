@@ -1,0 +1,86 @@
+/*
+ * GlassSheet - the search summon's material (09-summoned-search.css), made a
+ * component. Same top line (under the header, so the mark peeks), same glass,
+ * same shoulders and hairline, same handle; a drag rides --sheet-drag and the
+ * spring home is the transition, which the gesture suspends while a finger is
+ * down so the sheet never lags the hand.
+ */
+.glassSheet__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: rgba(0, 0, 0, 0.35);
+  animation: glassSheetScrim 0.2s ease-out;
+}
+
+@keyframes glassSheetScrim {
+  from { opacity: 0; }
+}
+
+.glassSheet {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  top: max(
+    var(--app-content-top, 0px),
+    var(--app-header-height, calc(3.25rem + var(--app-safe-top, 0px)))
+  );
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--glacier-glass-thick);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border-start-start-radius: var(--glacier-radius-xl, 1.25rem);
+  border-start-end-radius: var(--glacier-radius-xl, 1.25rem);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  translate: 0 var(--sheet-drag, 0px);
+  transition: translate var(--glacier-duration-normal) var(--glacier-ease-out);
+  animation: glassSheetDrop 0.26s var(--glacier-ease-out);
+  touch-action: pan-y;
+}
+
+.glassSheet[data-dragging] {
+  transition: none;
+}
+
+@keyframes glassSheetDrop {
+  from {
+    opacity: 0;
+    translate: 0 24px;
+  }
+}
+
+/* The pill: affordance for the pull, and a tap target for those who tap. */
+.glassSheet__handle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  block-size: 1.75rem;
+  background: transparent;
+  border: none;
+  cursor: grab;
+}
+
+.glassSheet__handle > span {
+  inline-size: 2.5rem;
+  block-size: 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 30%, transparent);
+}
+
+.glassSheet__body {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 0 var(--glacier-space-4) calc(var(--glacier-space-6) + var(--app-safe-bottom, 0px));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glassSheet,
+  .glassSheet__scrim {
+    animation: none;
+    transition: none;
+  }
+}
