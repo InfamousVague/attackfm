@@ -12,7 +12,21 @@
      without it this climbs over the header (fixed once already in 0.3.140). */
   inset-inline: 0;
   bottom: 0;
-  top: var(--app-content-top, calc(env(safe-area-inset-top, 0px) + var(--app-header-height, 3.25rem)));
+  /* Never climb over the header - the header must always peek at the top so the
+     sheet reads as dismissable. `--app-content-top` is the measured line the
+     content column starts at (under the header), but on some devices it was
+     being published as 0 (measured a beat before layout), and a bare
+     `var(x, fallback)` uses the fallback ONLY when x is UNSET, not when it is a
+     wrong 0 - so the sheet climbed to the top of the screen, over the logo.
+     The `max` floors it at the header's own height instead: the header sits at
+     the top of the viewport, so its height IS the content-top line (and it
+     already carries the notch via --app-safe-top - see .mobileHeader - so there
+     is no safe-area term to add and double-count). The default covers the one
+     pre-measurement frame before the header's height is published. */
+  top: max(
+    var(--app-content-top, 0px),
+    var(--app-header-height, calc(3.25rem + var(--app-safe-top, 0px)))
+  );
   z-index: 60;
   display: flex;
   flex-direction: column;
