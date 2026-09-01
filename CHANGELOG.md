@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.3
+
+- Cached songs now live under their own names - "Artist - Title.flac" instead
+  of a wall of hex - so the AttackFM folder reads like a music folder in any
+  file browser. Needs the 0.5.3 app build; everything already cached gets
+  renamed in place on the next cache pass.
+
 ## 0.5.2
 
 - The AttackFM folder now takes over the moment you allow it - granting

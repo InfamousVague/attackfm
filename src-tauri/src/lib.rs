@@ -242,6 +242,7 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         offline::offline_unpin,
         offline::offline_clear,
         offline::offline_space,
+        offline::offline_rebrand,
         network::network_kind,
         nearby::nearby_start,
         nearby::nearby_stop,
@@ -287,6 +288,7 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         offline::offline_unpin,
         offline::offline_clear,
         offline::offline_space,
+        offline::offline_rebrand,
         // The one that matters most on this handler: iOS has no
         // navigator.connection, so without this the Wi-Fi-only switch would
         // have nothing to read on the device that actually pays for data.

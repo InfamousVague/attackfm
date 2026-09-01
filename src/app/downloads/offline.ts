@@ -212,7 +212,11 @@ export async function pinTrack(
   // whose failure somebody is standing there trying to diagnose. Swallowing
   // here is why a wall of 147 red tiles once carried no reasons at all.
   const { invoke } = await import('@tauri-apps/api/core');
-  const entry = (await invoke('offline_pin', { key: track.path, url, ext })) as OfflineEntry | null;
+  // The vault names the file with this - "Artist - Title" is what a person
+  // browsing AttackFM/Music in a file manager should see. Optional end to
+  // end: a binary from the hex era ignores the argument entirely.
+  const name = [track.artist, track.title].filter(Boolean).join(' - ') || undefined;
+  const entry = (await invoke('offline_pin', { key: track.path, url, ext, name })) as OfflineEntry | null;
   if (!entry) return false;
   // A transcode arrives with no Content-Length, and the Rust side only refuses a
   // download of exactly zero bytes - so an encoder that died mid-song hands back
@@ -227,6 +231,33 @@ export async function pinTrack(
   held.set(entry.key, entry.path);
   announce();
   return true;
+}
+
+/** Hex-encode a key the way the vault's legacy filenames did. */
+function hexOf(key: string): string {
+  return Array.from(new TextEncoder().encode(key), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** True when a held file still wears its hex-era name and deserves better. */
+export function heldNameIsHex(key: string): boolean {
+  const path = held.get(key);
+  if (!path) return false;
+  const base = path.split('/').pop() ?? '';
+  return base.startsWith(hexOf(key));
+}
+
+/**
+ * Rename hex-era files to "Artist - Title" in one batch. Purely cosmetic to
+ * the player - the vault's ledger keeps the keys - but it is the difference
+ * between a browsable folder and a wall of hex for anything cached before the
+ * readable era. Swallowed on binaries too old to know the command.
+ */
+export async function rebrandHeld(items: { key: string; name: string }[]): Promise<void> {
+  if (items.length === 0) return;
+  const renamed = await tauriCall<OfflineEntry[]>('offline_rebrand', { items });
+  if (!renamed || renamed.length === 0) return;
+  for (const entry of renamed) held.set(entry.key, entry.path);
+  announce();
 }
 
 export async function unpinTrack(path: string): Promise<void> {

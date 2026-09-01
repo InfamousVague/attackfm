@@ -8,14 +8,130 @@
 //! music app has this; it is the thing a self-hosted one needs most, because
 //! the hub is a box in a house rather than a datacentre.
 //!
-//! The disk IS the index. A pinned track is stored under the app's data
-//! directory as `<hex of its library path>.<ext>`, so listing the folder
-//! recovers exactly which tracks are held without a second ledger to fall out
-//! of step with the files. A download lands on a `.part` and is renamed only
-//! once complete, so an interrupted pin leaves nothing that looks finished.
+//! The disk is STILL the index, but the files wear their own names. A pinned
+//! track is stored as `Artist - Title.<ext>` so a person browsing the AttackFM
+//! folder in a file manager sees music, not hex - and a hidden
+//! `.attackfm-index.json` beside the files maps each filename back to its
+//! library key, because a readable name cannot encode one losslessly. The
+//! index is a convenience, not an authority: a file it has forgotten is simply
+//! not held (the sweep re-fetches it), a file the person deleted by hand is
+//! gone the way deleting is supposed to work, and files from the pre-readable
+//! era - `<hex of key>.<ext>` - decode straight from their stem exactly as
+//! before, so both generations list without a migration step. A download
+//! lands on a `.part` and is renamed only once complete, so an interrupted
+//! pin leaves nothing that looks finished.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tauri::Manager;
+
+/// The filename -> key map, hidden beside the music it describes.
+const INDEX_FILE: &str = ".attackfm-index.json";
+
+fn load_index(base: &std::path::Path) -> BTreeMap<String, String> {
+    std::fs::read_to_string(base.join(INDEX_FILE))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Written whole via a temp file so a death mid-write cannot leave half a
+/// ledger; the fallback for a lost index is re-downloading, which is safe but
+/// not free.
+fn save_index(base: &std::path::Path, index: &BTreeMap<String, String>) {
+    let Ok(body) = serde_json::to_string_pretty(index) else { return };
+    let tmp = base.join(format!("{INDEX_FILE}.tmp"));
+    if std::fs::write(&tmp, body).is_ok() {
+        let _ = std::fs::rename(&tmp, base.join(INDEX_FILE));
+    }
+}
+
+/// A display name made safe for every filesystem the app ships to: the
+/// characters FAT and its emulated Android cousins refuse become spaces,
+/// runs of whitespace collapse, and the result is capped well under the
+/// 255-byte filename limit (the extension still has to fit). None means the
+/// name had nothing usable in it and the hex form should stand.
+fn sanitize_stem(name: &str) -> Option<String> {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => ' ',
+            c if (c as u32) < 0x20 => ' ',
+            c => c,
+        })
+        .collect();
+    let mut s = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    s = s.trim_matches(|c: char| c == '.' || c == ' ').to_string();
+    while s.len() > 120 {
+        s.pop();
+    }
+    let s = s.trim_end_matches(|c: char| c == '.' || c == ' ').to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// Six hex characters that stay the same for a key forever - the suffix that
+/// keeps two different songs called "Intro" from fighting over one filename.
+fn short_tag(key: &str) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in key.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{:06x}", h & 0xff_ffff)
+}
+
+/// The filename a (key, ext) pair stores under. An existing mapping wins so
+/// resumes and re-pins stay stable; otherwise the readable name, unless a
+/// DIFFERENT song already answers to it (case-insensitively - Android's
+/// shared storage does not distinguish), in which case the key's tag breaks
+/// the tie.
+fn decide_filename(
+    index: &BTreeMap<String, String>,
+    key: &str,
+    ext: &str,
+    name: Option<&str>,
+) -> String {
+    let suffix = format!(".{ext}");
+    for (f, k) in index {
+        if k == key && f.to_ascii_lowercase().ends_with(&suffix) {
+            return f.clone();
+        }
+    }
+    let stem = name.and_then(sanitize_stem).unwrap_or_else(|| to_hex(key));
+    let plain = format!("{stem}{suffix}");
+    let taken = index.iter().any(|(f, k)| k != key && f.eq_ignore_ascii_case(&plain));
+    if taken { format!("{stem} ({}){suffix}", short_tag(key)) } else { plain }
+}
+
+/// A finished, non-empty file already holding this (key, ext) - through the
+/// index or as a legacy hex name.
+fn held_file(
+    base: &std::path::Path,
+    index: &BTreeMap<String, String>,
+    key: &str,
+    ext: &str,
+) -> Option<OfflineEntry> {
+    let suffix = format!(".{ext}");
+    let mut candidates: Vec<String> = index
+        .iter()
+        .filter(|(f, k)| *k == key && f.to_ascii_lowercase().ends_with(&suffix))
+        .map(|(f, _)| f.clone())
+        .collect();
+    candidates.push(format!("{}{suffix}", to_hex(key)));
+    for f in candidates {
+        let path = base.join(&f);
+        if let Ok(meta) = std::fs::metadata(&path) {
+            if meta.is_file() && meta.len() > 0 {
+                return Some(OfflineEntry {
+                    key: key.to_string(),
+                    path: path.to_string_lossy().into_owned(),
+                    bytes: meta.len(),
+                });
+            }
+        }
+    }
+    None
+}
 
 #[derive(serde::Serialize, Clone)]
 pub struct OfflineEntry {
@@ -76,11 +192,23 @@ pub fn offline_set_root(app: tauri::AppHandle, root: String) -> Result<usize, St
         .join("offline");
     let mut moved = 0usize;
     if old.is_dir() && old != new_root {
+        // The two folders may each have a ledger; a blind copy would pick a
+        // winner and orphan the loser's files under their readable names.
+        // Union them - the destination's claims stand where they collide.
+        let mut merged = load_index(&new_root);
+        for (f, k) in load_index(&old) {
+            merged.entry(f).or_insert(k);
+        }
+        save_index(&new_root, &merged);
+        let _ = std::fs::remove_file(old.join(INDEX_FILE));
         if let Ok(entries) = std::fs::read_dir(&old) {
             for entry in entries.flatten() {
                 let from = entry.path();
                 if !from.is_file() {
                     continue;
+                }
+                if entry.file_name().to_string_lossy().starts_with(INDEX_FILE) {
+                    continue; // merged above; the .tmp form is never worth moving
                 }
                 let to = new_root.join(entry.file_name());
                 if to.exists() {
@@ -121,13 +249,21 @@ fn dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(base)
 }
 
-fn entry_of(path: &std::path::Path) -> Option<OfflineEntry> {
-    let stem = path.file_stem()?.to_str()?;
+fn entry_of(path: &std::path::Path, index: &BTreeMap<String, String>) -> Option<OfflineEntry> {
+    let filename = path.file_name()?.to_str()?;
+    // The ledger, .nomedia, and any other dotfile are bookkeeping, not music.
+    if filename.starts_with('.') {
+        return None;
+    }
     // A half-finished download is not an entry; the extension keeps it out.
     if path.extension().and_then(|e| e.to_str()) == Some("part") {
         return None;
     }
-    let key = from_hex(stem)?;
+    // Readable names answer through the ledger; legacy hex names decode from
+    // their own stem. A file that is neither - something a person dropped in
+    // the folder themselves - is left alone, unlisted and unevictable.
+    let stem = path.file_stem()?.to_str()?;
+    let key = index.get(filename).cloned().or_else(|| from_hex(stem))?;
     let bytes = std::fs::metadata(path).ok()?.len();
     Some(OfflineEntry { key, path: path.to_string_lossy().into_owned(), bytes })
 }
@@ -136,12 +272,13 @@ fn entry_of(path: &std::path::Path) -> Option<OfflineEntry> {
 #[tauri::command]
 pub async fn offline_list(app: tauri::AppHandle) -> Result<Vec<OfflineEntry>, String> {
     let base = dir(&app)?;
+    let index = load_index(&base);
     let mut out = Vec::new();
     let Ok(read) = std::fs::read_dir(&base) else {
         return Ok(out);
     };
     for item in read.flatten() {
-        if let Some(entry) = entry_of(&item.path()) {
+        if let Some(entry) = entry_of(&item.path(), &index) {
             out.push(entry);
         }
     }
@@ -156,6 +293,7 @@ pub async fn offline_pin(
     key: String,
     url: String,
     ext: String,
+    name: Option<String>,
 ) -> Result<OfflineEntry, String> {
     let base = dir(&app)?;
     let ext = ext.trim().trim_start_matches('.').to_ascii_lowercase();
@@ -164,15 +302,18 @@ pub async fn offline_pin(
     } else {
         ext
     };
-    let target = base.join(format!("{}.{}", to_hex(&key), ext));
-    if let Ok(meta) = std::fs::metadata(&target) {
-        if meta.len() > 0 {
-            return Ok(OfflineEntry {
-                key,
-                path: target.to_string_lossy().into_owned(),
-                bytes: meta.len(),
-            });
-        }
+    let mut index = load_index(&base);
+    if let Some(entry) = held_file(&base, &index, &key, &ext) {
+        return Ok(entry);
+    }
+    let filename = decide_filename(&index, &key, &ext, name.as_deref());
+    let target = base.join(&filename);
+    // The ledger learns the claim BEFORE the download, so an unpin can find
+    // and delete the fragment of a pin that never finished. A claim whose
+    // file never appears is inert: listing walks real files, not the ledger.
+    if index.get(&filename).map(String::as_str) != Some(key.as_str()) {
+        index.insert(filename.clone(), key.clone());
+        save_index(&base, &index);
     }
 
     /*
@@ -191,7 +332,7 @@ pub async fn offline_pin(
      * `entry_of` is unaffected: it skips on `extension() == "part"`, which is
      * still true, and a hex stem still contains no dot of its own.
      */
-    let part = base.join(format!("{}.{}.part", to_hex(&key), ext));
+    let part = base.join(format!("{filename}.part"));
     // A client with a connect timeout, and a watchdog on every chunk. The old
     // body was reqwest::get + bytes() - no timeout anywhere, the whole file
     // buffered in memory - so one wedged connection hung its worker forever.
@@ -266,6 +407,12 @@ pub async fn offline_pin(
     }
     // Renamed only once whole, so an interrupted pin never looks finished.
     std::fs::rename(&part, &target).map_err(|e| format!("rename failed: {e}"))?;
+    // A fragment from the hex-named era can only rot now that downloads land
+    // under readable names; the finished pin retires it.
+    let legacy_part = base.join(format!("{}.{}.part", to_hex(&key), ext));
+    if legacy_part != part {
+        let _ = std::fs::remove_file(&legacy_part);
+    }
     Ok(OfflineEntry { key, path: target.to_string_lossy().into_owned(), bytes: total })
 }
 
@@ -327,6 +474,18 @@ fn free_bytes(path: &std::path::Path) -> Option<u64> {
 #[tauri::command]
 pub async fn offline_unpin(app: tauri::AppHandle, key: String) -> Result<(), String> {
     let base = dir(&app)?;
+    let mut index = load_index(&base);
+    let claimed: Vec<String> =
+        index.iter().filter(|(_, k)| **k == key).map(|(f, _)| f.clone()).collect();
+    if !claimed.is_empty() {
+        for f in &claimed {
+            let _ = std::fs::remove_file(base.join(f));
+            // The fragment of an unfinished pin sits at `<filename>.part`.
+            let _ = std::fs::remove_file(base.join(format!("{f}.part")));
+            index.remove(f);
+        }
+        save_index(&base, &index);
+    }
     let want = to_hex(&key);
     let Ok(read) = std::fs::read_dir(&base) else {
         return Ok(());
@@ -351,14 +510,153 @@ pub async fn offline_clear(app: tauri::AppHandle) -> Result<(), String> {
     let base = dir(&app)?;
     if let Ok(read) = std::fs::read_dir(&base) {
         for item in read.flatten() {
+            // .nomedia survives the purge - without it the first song cached
+            // into the emptied folder joins the phone's music library.
+            if item.file_name().to_string_lossy() == ".nomedia" {
+                continue;
+            }
             let _ = std::fs::remove_file(item.path());
         }
     }
     Ok(())
 }
 
+#[derive(serde::Deserialize)]
+pub struct RebrandItem {
+    pub key: String,
+    pub name: String,
+}
+
+/// Rename held files from the hex era into readable names, in one batch so a
+/// vault of thousands costs one ledger write, not thousands. The web layer
+/// sends (key, "Artist - Title") pairs for entries whose filename it can see
+/// is still hex; anything already readable is skipped by construction.
+///
+/// Optional the way `offline_set_root` is: an older binary refuses the
+/// invoke, the files stay hex-named and perfectly functional, and no
+/// NATIVE_GENERATION bump is owed.
+#[tauri::command]
+pub async fn offline_rebrand(
+    app: tauri::AppHandle,
+    items: Vec<RebrandItem>,
+) -> Result<Vec<OfflineEntry>, String> {
+    let base = dir(&app)?;
+    let mut index = load_index(&base);
+    let mut out = Vec::new();
+    let mut dirty = false;
+    for item in &items {
+        let Some(stem) = sanitize_stem(&item.name) else { continue };
+        let hex = to_hex(&item.key);
+        // Every finished file this key holds, whatever its quality: ledger
+        // claims plus on-disk legacy hex names.
+        let mut current: Vec<String> =
+            index.iter().filter(|(_, k)| **k == item.key).map(|(f, _)| f.clone()).collect();
+        if let Ok(read) = std::fs::read_dir(&base) {
+            for f in read.flatten() {
+                let n = f.file_name().to_string_lossy().into_owned();
+                if n.ends_with(".part") || n.starts_with('.') {
+                    continue;
+                }
+                if n.split('.').next() == Some(hex.as_str()) && !current.contains(&n) {
+                    current.push(n);
+                }
+            }
+        }
+        for f in current {
+            let ext = f.rsplit('.').next().unwrap_or("audio").to_string();
+            let plain = format!("{stem}.{ext}");
+            let desired = if index.iter().any(|(g, k)| *k != item.key && g.eq_ignore_ascii_case(&plain))
+            {
+                format!("{stem} ({}).{ext}", short_tag(&item.key))
+            } else {
+                plain
+            };
+            if f == desired {
+                continue;
+            }
+            let from = base.join(&f);
+            let to = base.join(&desired);
+            if !from.is_file() || to.exists() {
+                continue;
+            }
+            if std::fs::rename(&from, &to).is_ok() {
+                index.remove(&f);
+                index.insert(desired, item.key.clone());
+                dirty = true;
+                if let Ok(meta) = std::fs::metadata(&to) {
+                    out.push(OfflineEntry {
+                        key: item.key.clone(),
+                        path: to.to_string_lossy().into_owned(),
+                        bytes: meta.len(),
+                    });
+                }
+            }
+        }
+    }
+    if dirty {
+        save_index(&base, &index);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn stems_come_out_browsable() {
+        assert_eq!(sanitize_stem("Daft Punk - One More Time"), Some("Daft Punk - One More Time".into()));
+        // The filesystem's forbidden characters become spaces, then collapse.
+        assert_eq!(sanitize_stem("AC/DC: Back?"), Some("AC DC Back".into()));
+        // Nothing usable in the name means the hex form should stand instead.
+        assert_eq!(sanitize_stem("///"), None);
+        assert_eq!(sanitize_stem("  . "), None);
+        // Long names stop under the filename limit, never mid-codepoint, and
+        // never on a trailing dot Windows would strip.
+        let long = sanitize_stem(&"ノ".repeat(200)).unwrap();
+        assert!(long.len() <= 120 && long.chars().all(|c| c == 'ノ'));
+    }
+
+    #[test]
+    fn filenames_stay_stable_and_collision_free() {
+        let mut index = BTreeMap::new();
+        // First claim: the readable name, plain.
+        assert_eq!(decide_filename(&index, "afm://1", "flac", Some("Intro")), "Intro.flac");
+        index.insert("Intro.flac".to_string(), "afm://1".to_string());
+        // Same key again answers with its existing filename, not a rename.
+        assert_eq!(decide_filename(&index, "afm://1", "flac", Some("Intro (live)")), "Intro.flac");
+        // A DIFFERENT song called Intro gets the tag - case-insensitively,
+        // because Android's shared storage cannot tell intro from Intro.
+        let clash = decide_filename(&index, "afm://2", "flac", Some("intro"));
+        assert_eq!(clash, format!("intro ({}).flac", short_tag("afm://2")));
+        // No name at all falls back to the hex era's form.
+        assert_eq!(decide_filename(&index, "afm://3", "flac", None), format!("{}.flac", to_hex("afm://3")));
+    }
+
+    #[test]
+    fn listing_reads_both_generations_and_skips_bookkeeping() {
+        let dir = std::env::temp_dir().join(format!("afm-vault-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Joji - YEAH RIGHT.flac"), b"x").unwrap();
+        std::fs::write(dir.join(format!("{}.flac", to_hex("afm://old"))), b"x").unwrap();
+        std::fs::write(dir.join("Joji - Glimpse.flac.part"), b"x").unwrap();
+        std::fs::write(dir.join(INDEX_FILE), b"{}").unwrap();
+        std::fs::write(dir.join(".nomedia"), b"").unwrap();
+        std::fs::write(dir.join("somebody-elses.mp3"), b"x").unwrap();
+        let mut index = BTreeMap::new();
+        index.insert("Joji - YEAH RIGHT.flac".to_string(), "afm://42".to_string());
+        let mut keys: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter_map(|f| entry_of(&f.path(), &index))
+            .map(|e| e.key)
+            .collect();
+        keys.sort();
+        assert_eq!(keys, vec!["afm://42".to_string(), "afm://old".to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The exact predicate `offline_unpin` uses, so the two cannot drift.
     fn matches(stem: &str, want: &str) -> bool {
         stem == want || stem.starts_with(&format!("{want}."))

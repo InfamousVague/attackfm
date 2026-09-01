@@ -25,7 +25,7 @@
 import { clearArtCache, rememberArt } from './artCache.ts';
 import { clearCanvasCache, ensureCanvas } from './canvasCache.ts';
 import { artSized, artUrl, fetchCanvas, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, transcodeUrl, type RemoteTrack, type ServerSession } from '../server.ts';
-import { heldPath, offlineEntries, offlineSpace, pinTrack, unpinTrack } from '../downloads/offline.ts';
+import { heldNameIsHex, heldPath, offlineEntries, offlineSpace, pinTrack, rebrandHeld, unpinTrack } from '../downloads/offline.ts';
 import { pickSource } from '../servers/mirrors.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
 import {
@@ -251,6 +251,19 @@ export async function sweepCache(
   const keys = ranked.filter((key) => !denied.has(key));
   const index = loadCachedIndex(session.url);
   const byId = new Map(index.tracks.map((t) => [t.id, t] as const));
+
+  // Files cached before the readable-name era still sit on disk as hex; now
+  // that the library index is in hand, hand the vault their real names. One
+  // batched call per sweep, and only for files that are actually still hex.
+  const rebrands = onDisk
+    .filter((e) => heldNameIsHex(e.key))
+    .map((e) => {
+      const remote = byId.get(trackIdFromPath(e.key) ?? -1);
+      if (!remote) return null;
+      return { key: e.key, name: [remote.artist, remote.title].filter(Boolean).join(' - ') };
+    })
+    .filter((r): r is { key: string; name: string } => r !== null && r.name !== '');
+  await rebrandHeld(rebrands);
 
   // Fill the budget in rank order. A song already pinned by hand is skipped
   // rather than counted: it is held either way, and charging the cache for it
