@@ -92,10 +92,9 @@ function InviteCard({
         <span className="inviteCard__kicker">You're invited</span>
       </div>
 
-      <h2 className="inviteCard__title">Join {possessive(owner)} Server</h2>
-      <p className="inviteCard__sub">
-        Music and audiobooks, streamed from a box at home. One free account, every device.
-      </p>
+      {/* Whose server, as a quiet line under the mark - not a headline. The
+          code and the QR are the card's subject; the name is context. */}
+      <p className="inviteCard__sub">Join {possessive(owner)} Server</p>
 
       <div className="inviteCard__qrWrap">
         {qr ? (

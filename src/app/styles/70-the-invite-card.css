@@ -96,7 +96,8 @@
 }
 
 .inviteCard__sub {
-  font-size: 14px;
+  margin-block: 14px 0;
+  font-size: 15px;
   line-height: 1.45;
   color: rgba(255, 255, 255, 0.66);
 }

@@ -17,7 +17,12 @@ and where that library came from is not the app's story to tell.
 
 ## 0.5.23
 
+<<<<<<< HEAD
 - The Lyrics button on Now Playing now lights up while the words are showing, so it is clear at a glance when it is on.
+=======
+- The invite card drops its blurb; "Join <your name>'s Server" is now a quiet
+  line under the mark rather than a headline.
+>>>>>>> 496146a (Invite card: no blurb, the server's name as a quiet line)
 
 ## 0.5.22
 
