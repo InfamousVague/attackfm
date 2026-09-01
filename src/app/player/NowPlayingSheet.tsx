@@ -853,6 +853,9 @@ export function NowPlayingSheet({
    * has no clock to light against, so it stays with the mic popover. Fetched
    * off the track path (fetchLyrics caches per path), cleared for a book.
    */
+  /** The face the lyrics button replaced, so switching it off restores it
+   *  instead of dumping the listener on the default. Defaults to the disc. */
+  const lyricsReturnRef = useRef<ArtView>('cd');
   const [lyricLines, setLyricLines] = useState<SyncedLine[] | null>(null);
   useEffect(() => {
     if (!track || track.kind === 'book') {
@@ -1940,7 +1943,28 @@ export function NowPlayingSheet({
             nothing obvious for singing along to - and a microphone is a strange
             glyph for "show me the words" once something else on the row
             genuinely is a microphone. */}
-        <IconButton variant="ghost" aria-label="Lyrics" onClick={() => setNpLyrics(true)}>
+        {/* The lyrics button TOGGLES the Lyrics face - the words where the
+            album cover goes - rather than raising the full-sheet panel. Off
+            again returns to whatever face was showing before. A song with
+            only plain (untimed) lyrics has nothing the face can light, so it
+            keeps the panel, which is the one surface that can show them. */}
+        <IconButton
+          variant="ghost"
+          aria-label="Lyrics"
+          aria-pressed={artView === 'lyrics'}
+          onClick={() => {
+            if (lyricFlow.length === 0) {
+              setNpLyrics(true);
+              return;
+            }
+            if (artView === 'lyrics') {
+              chooseArtView(lyricsReturnRef.current);
+            } else {
+              lyricsReturnRef.current = artView;
+              chooseArtView('lyrics');
+            }
+          }}
+        >
           <BookOpenText size={20} />
         </IconButton>
         {/* Whatever wants to act on the song playing right now. */}

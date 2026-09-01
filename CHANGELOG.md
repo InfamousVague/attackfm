@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.17
+
+- The invite card now follows the real way in: it mints a live invite code,
+  prints it large beside the QR, and reads "Join <your name>'s Server" - get
+  the app and your free account first, then scan or enter the code.
+- The lyrics button on Now Playing now toggles the words in place of the album
+  cover, and back again, instead of raising the full lyrics panel.
+
 ## 0.5.16
 
 - Library has an "Invite a friend" button: it opens a card with your server's

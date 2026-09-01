@@ -115,6 +115,15 @@
   color: #fff;
 }
 
+/* The invite code: the one thing on the card a thumb might have to type,
+   so it is set large, spaced, and in tabular figures a reader cannot
+   misgroup. */
+.inviteCard__code {
+  font-size: 24px;
+  letter-spacing: 0.12em;
+  line-height: 1.1;
+}
+
 .inviteCard__steps {
   margin: 14px 0 0;
   padding: 0;
@@ -163,4 +172,12 @@
 
 .inviteSheet__actions > * {
   flex: 1;
+}
+
+/* The drawer's word when there is no card to show: no account to mint from,
+   a mint in flight, or a mint that failed. */
+.inviteSheet__note {
+  max-inline-size: 320px;
+  text-align: center;
+  padding-block: var(--glacier-space-4);
 }
