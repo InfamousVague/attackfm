@@ -483,6 +483,25 @@ CREATE TABLE IF NOT EXISTS playlist_tracks (
   PRIMARY KEY (playlist_id, position)
 );
 
+-- Songs a listener has filed into a playlist that this box does NOT own yet -
+-- the "plan to acquire" members of a playlist. Kept apart from playlist_tracks
+-- (which is a hard FK to a real track) exactly the way pending_likes is kept
+-- apart from favourites: keyed by the same folded identity the discovery layer
+-- settles on (k = fold(artist)|titleKey(title) == key_of), per playlist. The
+-- moment a matching track lands, the collector's sweep appends its real id to
+-- playlist_tracks and deletes the want here, so the ghost dissolves into an
+-- ordinary row. Additive - no existing table is touched.
+CREATE TABLE IF NOT EXISTS playlist_wants (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+  k           TEXT NOT NULL,
+  title       TEXT NOT NULL DEFAULT '',
+  artist      TEXT NOT NULL DEFAULT '',
+  url         TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL,
+  PRIMARY KEY (playlist_id, k)
+);
+
 -- Where each listener left off, so a phone can pick up what the desktop
 -- started. One row per user per track.
 CREATE TABLE IF NOT EXISTS play_state (
@@ -2862,6 +2881,55 @@ impl Db {
             params![playlist_id, now_ms()],
         )?;
         tx.commit()
+    }
+
+    /// Append ONE track to a playlist's tail, atomically, without disturbing
+    /// any other row. Returns true when it was newly added, false when the
+    /// track was already there.
+    ///
+    /// This exists instead of "read the ids, push one, set the whole list"
+    /// because that read-modify-write is two separate lock acquisitions with
+    /// nothing serialising them - a concurrent edit landing in between is lost
+    /// when the wholesale rewrite reinserts the stale snapshot. It is also why
+    /// the settle path uses THIS and not set_playlist_tracks: a wholesale
+    /// rewrite is built from the deleted=0 view, so a track that is momentarily
+    /// soft-deleted (a file mid-rename during a scan) would be pruned from the
+    /// list for good. Appending one row touches nothing else, so neither hazard
+    /// applies. The whole read-check-insert runs under one held lock.
+    pub fn playlist_append_track(
+        &self,
+        playlist_id: i64,
+        track_id: i64,
+    ) -> rusqlite::Result<bool> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let present: bool = tx
+            .query_row(
+                "SELECT 1 FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2 LIMIT 1",
+                params![playlist_id, track_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if present {
+            tx.commit()?;
+            return Ok(false);
+        }
+        let next: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+            params![playlist_id, track_id, next],
+        )?;
+        tx.execute(
+            "UPDATE playlists SET updated_at = ?2 WHERE id = ?1",
+            params![playlist_id, now_ms()],
+        )?;
+        tx.commit()?;
+        Ok(true)
     }
 
     /// A playlist's current name - what the mirror compares against to notice
@@ -5694,6 +5762,75 @@ impl Db {
         self.lock().execute(
             "DELETE FROM pending_likes WHERE user_id = ?1 AND k = ?2",
             params![user_id, k],
+        )?;
+        Ok(())
+    }
+
+    // --- playlist wants (planned, not-yet-owned playlist members) ----------
+
+    /// Files a not-yet-owned song into a playlist. Idempotent per (playlist, k);
+    /// a re-add refreshes the title/artist/url in case a later sighting knows
+    /// them better but does not disturb the created order.
+    pub fn playlist_want_put(
+        &self,
+        user_id: i64,
+        playlist_id: i64,
+        k: &str,
+        title: &str,
+        artist: &str,
+        url: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO playlist_wants (user_id, playlist_id, k, title, artist, url, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(playlist_id, k) DO UPDATE SET
+               title = excluded.title, artist = excluded.artist, url = excluded.url",
+            params![user_id, playlist_id, k, title, artist, url, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// One playlist's wants, oldest first (they were filed in an order):
+    /// (k, title, artist, url, created_at).
+    pub fn playlist_wants_for(
+        &self,
+        playlist_id: i64,
+    ) -> Vec<(String, String, String, String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT k, title, artist, url, created_at FROM playlist_wants
+             WHERE playlist_id = ?1 ORDER BY created_at ASC",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![playlist_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Every want across a user's playlists: (user_id, playlist_id, k, title,
+    /// artist, created_at). The collector's settle sweep reads this to know
+    /// which lists a just-landed key belongs to, and to age wants out.
+    pub fn playlist_wants_all(&self) -> Vec<(i64, i64, String, String, String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT user_id, playlist_id, k, title, artist, created_at FROM playlist_wants",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    pub fn playlist_want_remove(&self, playlist_id: i64, k: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "DELETE FROM playlist_wants WHERE playlist_id = ?1 AND k = ?2",
+            params![playlist_id, k],
         )?;
         Ok(())
     }

@@ -678,11 +678,24 @@ pub async fn playlists(State(state): State<Arc<AppState>>, headers: HeaderMap) -
             // the client already refetches this on every heartbeat, and a
             // description that arrived a request later would paint in after the
             // name it belongs under.
+            // The songs filed into this list that the box does not own yet -
+            // the "plan to acquire" members. They ride the same response as
+            // the owned track ids so the client can draw the arriving ghosts
+            // in order without a second request per list.
+            let wants: Vec<_> = state
+                .db
+                .playlist_wants_for(p.id)
+                .into_iter()
+                .map(|(k, title, artist, url, created_at)| {
+                    json!({ "k": k, "title": title, "artist": artist, "url": url, "createdAt": created_at })
+                })
+                .collect();
             json!({
                 "id": p.id,
                 "name": p.name,
                 "updatedAt": p.updated_at,
                 "tracks": p.tracks,
+                "wants": wants,
                 "description": p.description,
                 "folder": p.folder,
                 "cover": p.cover,
@@ -790,6 +803,87 @@ pub async fn delete_playlist(
         let _ = std::fs::remove_file(state.data_dir.join("playlist-covers").join(name));
     }
     let _ = state.db.delete_playlist(playlist_id);
+    Ok(Json(json!({ "ok": true })))
+}
+
+// --- playlist wants (plan-to-acquire members) -----------------------------
+
+#[derive(Deserialize)]
+pub struct PlaylistWantBody {
+    pub artist: String,
+    pub title: String,
+    /// The catalogue link, when the caller has one - handed straight to the
+    /// importer if it is fetchable, so the download starts without a second
+    /// name search. Optional: the sweep can always resolve by name.
+    #[serde(default)]
+    pub url: String,
+}
+
+/// `POST /api/playlists/:id/wants` - file a song this box does not own yet into
+/// a playlist and start fetching it. If it turns out we already own it, it is
+/// added to the list at once and no want is left behind. Otherwise the want is
+/// recorded (the sweep retries it and files it on land) and the download is
+/// kicked off now so it begins arriving immediately.
+pub async fn add_playlist_want(
+    State(state): State<Arc<AppState>>,
+    Path(playlist_id): Path<i64>,
+    headers: HeaderMap,
+    Json(body): Json<PlaylistWantBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    owned_playlist(&state, caller.id, playlist_id)?;
+    let artist = body.artist.trim();
+    let title = body.title.trim();
+    if artist.is_empty() || title.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "name the song".into()));
+    }
+    let k = crate::discovery::key_of(artist, title);
+    let url = body.url.trim().to_string();
+    state
+        .db
+        .playlist_want_put(caller.id, playlist_id, &k, title, artist, &url)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Already here? File it now - no ghost, no download. settle_want_now writes
+    // the track into the list and clears the want it just wrote.
+    if crate::collector::settle_want_now(&state, caller.id, playlist_id, &k) {
+        return Ok(Json(json!({ "landed": true, "k": k })));
+    }
+    // Start the fetch now rather than waiting out the sweep's grace period; the
+    // sweep and the client reconcile file it into the list when it lands.
+    let st = state.clone();
+    let (t, a, u, user) = (title.to_string(), artist.to_string(), url, caller.id);
+    tokio::spawn(async move {
+        crate::collector::kick_want_download(&st, user, &t, &a, &u).await;
+    });
+    Ok(Json(json!({ "landed": false, "k": k })))
+}
+
+/// `POST /api/playlists/:id/wants/:k/settle` - the client noticed this want's
+/// song is now in the library and asks the box to file it into the list at once
+/// rather than wait for the next sweep.
+pub async fn settle_playlist_want(
+    State(state): State<Arc<AppState>>,
+    Path((playlist_id, k)): Path<(i64, String)>,
+    headers: HeaderMap,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    owned_playlist(&state, caller.id, playlist_id)?;
+    let settled = crate::collector::settle_want_now(&state, caller.id, playlist_id, &k);
+    Ok(Json(json!({ "settled": settled })))
+}
+
+/// `DELETE /api/playlists/:id/wants/:k` - the want withdrawn before it landed.
+pub async fn remove_playlist_want(
+    State(state): State<Arc<AppState>>,
+    Path((playlist_id, k)): Path<(i64, String)>,
+    headers: HeaderMap,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    owned_playlist(&state, caller.id, playlist_id)?;
+    state
+        .db
+        .playlist_want_remove(playlist_id, &k)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
 }
 

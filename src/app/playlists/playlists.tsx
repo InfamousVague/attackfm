@@ -9,18 +9,23 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  addPlaylistWant,
   createRemotePlaylist,
   deleteRemotePlaylist,
   fetchRemotePlaylists,
   playlistCoverUrl,
   remotePath,
   removePlaylistCover,
+  removePlaylistWant,
+  settlePlaylistWant,
   trackIdFromPath,
   updateRemotePlaylist,
   uploadPlaylistCover,
+  type PlaylistWant,
   type RemotePlaylist,
   type ServerSession,
 } from '../server.ts';
+import { fold, titleKey } from '../library/owned.ts';
 import {
   forgetMeta,
   metaFor,
@@ -55,6 +60,10 @@ export interface Playlist {
   /** Whether the server separates this list's songs ahead of being asked.
    *  Undefined on a local library and on servers that predate the flag. */
   autoStem?: boolean;
+  /** Songs filed into this list that the box does not own yet - shown as
+   *  arriving ghosts, dissolving into real rows as they land. Only ever
+   *  non-empty on a server library; a local list has nowhere to fetch from. */
+  wants?: PlaylistWant[];
 }
 
 interface PlaylistsContextValue {
@@ -71,6 +80,19 @@ interface PlaylistsContextValue {
   /** Appends a track; already-present paths are left where they are. */
   addTrack: (id: string, path: string) => void;
   removeTrack: (id: string, path: string) => void;
+  /**
+   * File a song this box does not own yet into a playlist and start fetching
+   * it: it shows as an arriving ghost and becomes a real row when it lands.
+   * Server-only (a local library has nowhere to fetch from), so absent when
+   * signed out - callers gate on its presence to know a not-owned add is
+   * possible here. Resolves once the want is filed.
+   */
+  addWant?: (id: string, target: { artist: string; title: string; url?: string }) => Promise<void>;
+  /** Withdraw a not-yet-landed want. Server-only. */
+  removeWant?: (id: string, k: string) => void;
+  /** The library now owns this want's song; file it into the list at once
+   *  rather than wait for the server's sweep. Server-only. */
+  settleWant?: (id: string, k: string) => void;
   /** Sets the whole running order - what a drag in the playlist page commits. */
   reorder: (id: string, paths: readonly string[]) => void;
   /**
@@ -365,6 +387,7 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         folder: p.folder ?? fallback?.folder ?? '',
         coverUrl: p.cover ? playlistCoverUrl(session, p.id, p.updatedAt) : null,
         autoStem: p.autoStem,
+        wants: p.wants ?? [],
       };
     });
 
@@ -422,6 +445,51 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         mutate(
           remote.map((p) => (p.id === target.id ? { ...p, tracks } : p)),
           () => updateRemotePlaylist(session, target.id, { tracks }),
+        );
+      },
+      addWant: async (id, target) => {
+        const pl = byId(id);
+        const artist = target.artist.trim();
+        const title = target.title.trim();
+        if (!pl || !artist || !title) return;
+        // An OPTIMISTIC key for the ghost we show until the refetch. It usually
+        // matches the server's key_of, but the two fold implementations have
+        // drifted at the edges (client titleKey strips "mono"/"stereo", accent
+        // folding differs on characters with no canonical decomposition), so
+        // this is not guaranteed byte-equal. It does not need to be: the server
+        // computes the real key_of for storage and settling, and the refetch
+        // right after replaces this ghost with the server's own want. The only
+        // cost of a mismatch is that the client fast-path reconcile may miss
+        // such a song, and the server sweep files it instead.
+        const k = `${fold(artist)}|${titleKey(title)}`;
+        // Already filed (a double-tap) - leave the earlier want where it is.
+        if ((pl.wants ?? []).some((w) => w.k === k)) return;
+        const want: PlaylistWant = { k, title, artist, url: target.url ?? '', createdAt: Date.now() };
+        mutate(
+          remote.map((p) => (p.id === pl.id ? { ...p, wants: [...(p.wants ?? []), want] } : p)),
+          () => addPlaylistWant(session, pl.id, { artist, title, url: target.url }),
+        );
+      },
+      removeWant: (id, k) => {
+        const pl = byId(id);
+        if (!pl) return;
+        mutate(
+          remote.map((p) =>
+            p.id === pl.id ? { ...p, wants: (p.wants ?? []).filter((w) => w.k !== k) } : p,
+          ),
+          () => removePlaylistWant(session, pl.id, k),
+        );
+      },
+      settleWant: (id, k) => {
+        const pl = byId(id);
+        if (!pl) return;
+        // Drop the ghost locally and ask the box to file the real row; the
+        // refetch behind it brings the track into the list either way.
+        mutate(
+          remote.map((p) =>
+            p.id === pl.id ? { ...p, wants: (p.wants ?? []).filter((w) => w.k !== k) } : p,
+          ),
+          () => settlePlaylistWant(session, pl.id, k),
         );
       },
       reorder: (id: string, paths: readonly string[]) => {

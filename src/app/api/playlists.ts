@@ -21,6 +21,23 @@ export interface RemotePlaylist {
   /** Separate this list's songs ahead of being asked. Absent on a server
    *  from before per-list separation, which reads as "not opted in". */
   autoStem?: boolean;
+  /** Songs filed into this list that the box does not own yet - the
+   *  "plan to acquire" members, shown as arriving ghosts until they land.
+   *  Absent on a server from before wants existed. */
+  wants?: PlaylistWant[];
+}
+
+/** A song filed into a playlist that is not here yet: the playlist twin of a
+ *  pending like. Identified by the same folded key the server settles on
+ *  (`k = fold(artist)|titleKey(title)`), so a landed download can be matched
+ *  to it. Dissolves into an ordinary track the moment its download lands. */
+export interface PlaylistWant {
+  k: string;
+  title: string;
+  artist: string;
+  /** The catalogue link, when one was known when it was filed. '' otherwise. */
+  url: string;
+  createdAt: number;
 }
 
 export async function fetchRemotePlaylists(session: ServerSession): Promise<RemotePlaylist[]> {
@@ -64,6 +81,52 @@ export async function updateRemotePlaylist(
 export async function deleteRemotePlaylist(session: ServerSession, id: number): Promise<void> {
   await request(session.url, `/api/playlists/${id}`, {
     method: 'DELETE',
+    token: session.token,
+  });
+}
+
+// --- playlist wants (plan-to-acquire members) -------------------------------
+
+/**
+ * File a song this box does not own yet into a playlist, and start fetching it.
+ * The server records the want, kicks off the download, and files the real track
+ * into the list when it lands. `landed` is true when the song was already here
+ * and joined the list at once (no want, no download).
+ */
+export async function addPlaylistWant(
+  session: ServerSession,
+  id: number,
+  target: { artist: string; title: string; url?: string },
+): Promise<{ landed: boolean; k: string }> {
+  return request(session.url, `/api/playlists/${id}/wants`, {
+    method: 'POST',
+    token: session.token,
+    body: JSON.stringify({ artist: target.artist, title: target.title, url: target.url ?? '' }),
+  });
+}
+
+/** Withdraw a want before it has landed. */
+export async function removePlaylistWant(
+  session: ServerSession,
+  id: number,
+  k: string,
+): Promise<void> {
+  await request(session.url, `/api/playlists/${id}/wants/${encodeURIComponent(k)}`, {
+    method: 'DELETE',
+    token: session.token,
+  });
+}
+
+/** Ask the box to file a want into its list NOW because its song has just
+ *  landed in the library - the fast path the client takes rather than waiting
+ *  for the server's own settle sweep. Returns whether it settled. */
+export async function settlePlaylistWant(
+  session: ServerSession,
+  id: number,
+  k: string,
+): Promise<{ settled: boolean }> {
+  return request(session.url, `/api/playlists/${id}/wants/${encodeURIComponent(k)}/settle`, {
+    method: 'POST',
     token: session.token,
   });
 }

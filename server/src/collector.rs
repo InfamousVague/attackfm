@@ -137,6 +137,7 @@ pub fn spawn(state: Arc<AppState>) {
             crate::ai::flush_last_runs(&state.db);
             pull_cycle(&state).await;
             settle_pending_likes(&state).await;
+            settle_playlist_wants(&state).await;
             // The standing chart playlists ride the same loop; their own
             // daily clock makes this a cheap no-op almost every pass.
             crate::chartlists::cycle(&state).await;
@@ -354,6 +355,185 @@ async fn retry_pending_like(state: &Arc<AppState>, user: i64, k: &str, created_a
         state, &found.url, &title, &artist, "track", user, &via,
     )
     .await;
+}
+
+// --- playlist wants (planned, not-yet-owned playlist members) --------------
+//
+// A want is the playlist twin of a pending like: a song filed into a list that
+// this box does not own yet. The machinery mirrors settle_pending_likes almost
+// exactly - land it, or bounded-retry its download - with two deliberate
+// differences: it files the landed track into its PLAYLIST rather than into
+// Liked, and it never touches favourites (the listener filed it somewhere on
+// purpose; auto-liking everything they queue would flood Liked).
+
+/// Whether a link is one the importer takes directly - the same rule the client
+/// uses (see resolveImport.ts `importable`). A Deezer/other link needs resolving
+/// to its Spotify twin first.
+fn importable_url(url: &str) -> bool {
+    url.contains("open.spotify.com/") || url.starts_with("spotify:")
+}
+
+/// Whether a queued/running job is already fetching this key. Shared by the
+/// pending-like and want retries so neither piles a second job on a live one.
+async fn job_moving_for(state: &Arc<AppState>, k: &str) -> bool {
+    let jobs = state.imports.jobs.lock().await;
+    jobs.iter().any(|j| {
+        (j.state == "queued" || j.state == "downloading")
+            && j.subtitle
+                .as_deref()
+                .map(|a| crate::discovery::key_of(a, &j.title) == k)
+                .unwrap_or(false)
+    })
+}
+
+/// Resolve a song to a fetchable catalogue link by name, then enqueue it. The
+/// same path the collector's own buys and the pending-like retry use.
+async fn resolve_and_enqueue(
+    state: &Arc<AppState>,
+    user: i64,
+    title: &str,
+    artist: &str,
+    via_label: &str,
+) {
+    let query = format!("{artist} {title}");
+    let rows = crate::search::spotify_catalog(state, &query).await;
+    let hit = rows.iter().find(|r| {
+        r.kind == "track" && same_artist(&r.subtitle, artist) && same_title(&r.title, title)
+    });
+    let Some(found) = hit else { return };
+    let via = state
+        .db
+        .user_by_id(user)
+        .map(|u| format!("{via_label} · for {}", u.username))
+        .unwrap_or_else(|| via_label.to_string());
+    let _ =
+        crate::imports::enqueue_internal(state, &found.url, title, artist, "track", user, &via)
+            .await;
+}
+
+/// Start a want's download NOW - what the add endpoint spawns so the song
+/// begins arriving the moment it is filed, rather than waiting for the sweep's
+/// grace period. Uses the client's link straight when it is fetchable, else
+/// resolves the twin by name. No stamp and no grace: this is the deliberate
+/// first ask, not a retry.
+pub async fn kick_want_download(
+    state: &Arc<AppState>,
+    user: i64,
+    title: &str,
+    artist: &str,
+    url: &str,
+) {
+    // This is a person choosing a specific song to fetch - the same class the
+    // pasted-link door refuses when the box is not a downloader. Respect that
+    // door here too: on a CollectorOnly/Off box the immediate fetch is skipped
+    // (the want is still recorded, and the bounded settle-retry - the
+    // collector keeping a promise, like the pending-like retry - carries it).
+    if crate::imports::imports_mode() != crate::imports::ImportsMode::On {
+        return;
+    }
+    let k = crate::discovery::key_of(artist, title);
+    if job_moving_for(state, &k).await {
+        return;
+    }
+    if !url.is_empty() && importable_url(url) {
+        let via = state
+            .db
+            .user_by_id(user)
+            .map(|u| format!("a playlist song · for {}", u.username))
+            .unwrap_or_else(|| "a playlist song".to_string());
+        let _ = crate::imports::enqueue_internal(state, url, title, artist, "track", user, &via)
+            .await;
+        return;
+    }
+    resolve_and_enqueue(state, user, title, artist, "a playlist song").await;
+}
+
+/// If a track matching this want's key is now owned, append it to the playlist
+/// (tail, order preserved, no duplicate) and drop the want. Returns true when
+/// the want is settled. `identities` is the shared snapshot the caller already
+/// holds. Idempotent: a want already gone is a no-op the caller treats as done.
+fn try_settle_want(
+    state: &Arc<AppState>,
+    user: i64,
+    playlist_id: i64,
+    k: &str,
+    identities: &[(i64, String, String, i64)],
+) -> bool {
+    let hit = identities.iter().find(|(_, artist, title, owner)| {
+        (*owner == 0 || *owner == user) && crate::discovery::key_of(artist, title) == k
+    });
+    let Some((id, _, _, _)) = hit else {
+        return false;
+    };
+    // Atomic single-row append - NOT read-ids + set-whole-list, which would
+    // race concurrent edits and prune soft-deleted members. See the note on
+    // Db::playlist_append_track.
+    let _ = state.db.playlist_append_track(playlist_id, *id);
+    let _ = state.db.playlist_want_remove(playlist_id, k);
+    true
+}
+
+/// The client's fast path: it noticed a want's key land in the library and asks
+/// the box to file it at once rather than wait for the next sweep. Returns
+/// whether it settled. Ownership is the caller's to check.
+pub fn settle_want_now(state: &Arc<AppState>, user: i64, playlist_id: i64, k: &str) -> bool {
+    let identities = state.db.track_identities();
+    try_settle_want(state, user, playlist_id, k, &identities)
+}
+
+/// The sweep: file every landed want into its list, age out the stale, and
+/// bounded-retry the downloads that died. Rides the same loop as
+/// settle_pending_likes.
+async fn settle_playlist_wants(state: &Arc<AppState>) {
+    let rows = state.db.playlist_wants_all();
+    if rows.is_empty() {
+        return;
+    }
+    let identities = state.db.track_identities();
+    let now = now_ms();
+    for (user, playlist_id, k, title, artist, created_at) in rows {
+        if now - created_at > PENDING_LIKE_TTL_MS {
+            let _ = state.db.playlist_want_remove(playlist_id, &k);
+            continue;
+        }
+        if try_settle_want(state, user, playlist_id, &k, &identities) {
+            continue;
+        }
+        retry_want_download(state, user, &k, &title, &artist, created_at, now).await;
+    }
+}
+
+/// One bounded re-ask for a want whose download died - the pending-like retry,
+/// filed to a playlist instead of a heart. Same bounds: past grace, not already
+/// moving, at most once a day per want.
+async fn retry_want_download(
+    state: &Arc<AppState>,
+    user: i64,
+    k: &str,
+    title: &str,
+    artist: &str,
+    created_at: i64,
+    now: i64,
+) {
+    const GRACE_MS: i64 = 10 * 60 * 1000;
+    const RETRY_EVERY_MS: i64 = 24 * 60 * 60 * 1000;
+    if now - created_at < GRACE_MS {
+        return;
+    }
+    if job_moving_for(state, k).await {
+        return;
+    }
+    let stamp_key = format!("playlist_want.retry.{user}.{k}");
+    let stamped = state
+        .db
+        .meta_get(&stamp_key)
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0);
+    if now - stamped < RETRY_EVERY_MS {
+        return;
+    }
+    let _ = state.db.meta_set(&stamp_key, &now.to_string());
+    resolve_and_enqueue(state, user, title, artist, "a playlist song, retried").await;
 }
 
 /// One buying pass: for each current listener with the collector on, consider

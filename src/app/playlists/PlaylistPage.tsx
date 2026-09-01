@@ -30,6 +30,8 @@ import { fireNativeHaptic } from '../core/haptics.ts';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { useLibrary } from '../library/library.tsx';
+import { fold, titleKey } from '../library/owned.ts';
+import { PlaylistWantRows } from './PlaylistWantRows.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { fetchPlaylistSuggestions, remotePath } from '../server.ts';
@@ -66,7 +68,7 @@ interface PlaylistPageProps {
  */
 export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageProps) {
   const { tracks } = useLibrary();
-  const { playlists, rename, remove, removeTrack, reorder, addTrack, setMeta, setCover, setAutoStem } =
+  const { playlists, rename, remove, removeTrack, reorder, addTrack, setMeta, setCover, setAutoStem, removeWant, settleWant } =
     usePlaylists();
   const { toast } = useToast();
   const { session } = useServerSession();
@@ -158,6 +160,38 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       })
       .filter((r): r is { id: string; track: Track } => r !== null);
   }, [playlist, byPath]);
+
+  // The songs filed into this list that the box does not own yet. A want whose
+  // song the library now holds has LANDED - it is dropped from the arriving
+  // band and (below) filed into the list as a real row. The rest show as
+  // ghosts until they arrive.
+  const ownedKeys = useMemo(
+    () => new Set(tracks.map((t) => `${fold(t.artist)}|${titleKey(t.title)}`)),
+    [tracks],
+  );
+  const wants = playlist?.wants ?? [];
+  const arriving = useMemo(() => wants.filter((w) => !ownedKeys.has(w.k)), [wants, ownedKeys]);
+  // Reconcile the fast path: the moment a want's song is in the library, ask
+  // the box to file it into this list rather than wait for its own sweep. The
+  // key list is a stable string so this fires on a genuine landing, not every
+  // render of the fresh-each-time playlist object.
+  const landedKeys = wants.filter((w) => ownedKeys.has(w.k)).map((w) => w.k).join(',');
+  // Each landed key is asked to settle AT MOST ONCE per page mount. settleWant
+  // refreshes, which churns its own identity and the remote array, so without
+  // this guard a want that refuses to settle (or a key collision the library
+  // holds a different recording for) would loop settle+refresh forever. A
+  // genuine landing settles on the first ask; the server sweep is the backstop
+  // for anything the one client ask does not carry.
+  const settleAsked = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!playlistId || !settleWant || landedKeys === '') return;
+    for (const k of landedKeys.split(',')) {
+      if (settleAsked.current.has(k)) continue;
+      settleAsked.current.add(k);
+      settleWant(playlistId, k);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- landedKeys is the stable stand-in for the landed wants
+  }, [playlistId, landedKeys, settleWant]);
 
   // The header's artwork: the list's first distinct covers, sized and deduped
   // by mosaicArts. Four make the quadrant mosaic and load as ONE artwork -
@@ -475,16 +509,20 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
           hero has gone with it. */}
       <div ref={sentinelRef} className="songPageHead__sentinel" aria-hidden />
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && arriving.length === 0 ? (
         <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name="playlist" />
           <Text tone="muted">
-            Nothing here yet. Right-click a song in the library — long-press on a phone — and
-            choose “Add to playlist”. The song that is playing can be filed from the player too.
+            Nothing here yet. Right-click a song — long-press on a phone — and choose “Add to
+            playlist”. Songs you don’t own yet can go in too: they download and fill in on their
+            own. The song that is playing can be filed from the player too.
           </Text>
         </div>
       ) : (
         <div className="playlistPageScroll">
+          {/* Songs on their way into this list - filed to acquire, not here
+              yet. They dissolve into real rows above as they land. */}
+          <PlaylistWantRows wants={arriving} onDismiss={(k) => removeWant?.(playlistId!, k)} />
           {/* Finding one song in four hundred. Only where it could ever be
               needed: a list short enough to see whole has nothing to find. */}
           {rows.length > 15 && (

@@ -677,6 +677,18 @@ async fn main() {
             "/api/playlists/{id}",
             put(api::update_playlist).delete(api::delete_playlist),
         )
+        // Plan-to-acquire members: songs filed into a list that the box does
+        // not own yet. POST files one (and starts fetching it); the keyed
+        // routes settle one the instant its download lands, or withdraw it.
+        .route("/api/playlists/{id}/wants", post(api::add_playlist_want))
+        .route(
+            "/api/playlists/{id}/wants/{k}/settle",
+            post(api::settle_playlist_want),
+        )
+        .route(
+            "/api/playlists/{id}/wants/{k}",
+            delete(api::remove_playlist_want),
+        )
         // The cover is its own route because it is BYTES, not JSON - putting an
         // image through the playlist body would base64 it onto every edit.
         .route(

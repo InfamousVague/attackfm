@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
+import { CatalogTrackMenu } from '../library/CatalogTrackMenu.tsx';
 import { artSized, type CatalogTrack, type ServerSession } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
 import type { Track } from '../core/tauri.ts';
@@ -19,6 +20,9 @@ function CatalogArt({ src }: { src: string }) {
 
 interface ArtistPopularProps {
   popular: PopularRow[];
+  /** Whose page this is - the artist a not-owned row is filed under when it is
+   *  added to a playlist (the want's key is this name folded with the title). */
+  artist: string;
   adding: AddingState;
   addSong: (t: CatalogTrack) => Promise<void>;
   /** Love a catalogue song: download it and promise the like. */
@@ -36,6 +40,7 @@ interface ArtistPopularProps {
 /** The Popular shelf: the catalogue's ranking of their best-known songs. */
 export function ArtistPopular({
   popular,
+  artist,
   adding,
   addSong,
   loveSong,
@@ -197,6 +202,19 @@ export function ArtistPopular({
             <TrackMenu key={t.id} track={mine} className="catalogTrackMenu">
               {row}
             </TrackMenu>
+          ) : t.catalogue ? (
+            // A catalogue row gets its own long-press menu - the not-owned
+            // twin, whose reason to exist is "file it into a playlist to
+            // acquire". Add and Love are the same acts as the row's buttons.
+            <CatalogTrackMenu
+              key={t.id}
+              target={{ artist, title: t.title, url: t.catalogue.url }}
+              onAdd={() => void addSong(t.catalogue!)}
+              onLike={() => loveSong(t.catalogue!)}
+              liked={loved.has(t.id)}
+            >
+              {row}
+            </CatalogTrackMenu>
           ) : (
             row
           );

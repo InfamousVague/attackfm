@@ -1,6 +1,7 @@
 import { Check, Disc3, Plus, X } from '@glacier/icons';
 import type { AlbumGap } from '../server.ts';
 import type { AddingState } from './artistAcquire.ts';
+import { CatalogTrackMenu } from '../library/CatalogTrackMenu.tsx';
 
 interface ArtistGapsProps {
   gaps: AlbumGap[] | 'old' | null;
@@ -62,7 +63,12 @@ export function ArtistGaps({ gaps, adding, addMissing }: ArtistGapsProps) {
                 const key = `gap:${gap.album}:${row.position}`;
                 const state = adding[key];
                 return (
-                  <li key={key} className="albumGap__row" data-state={state}>
+                  <CatalogTrackMenu
+                    key={key}
+                    target={{ artist: gap.artist, title: row.title, url: row.url }}
+                    onAdd={() => void addMissing(gap, row)}
+                  >
+                  <li className="albumGap__row" data-state={state}>
                     <span className="albumGap__no">{row.position}</span>
                     <span className="albumGap__name">{row.title}</span>
                     <button
@@ -98,6 +104,7 @@ export function ArtistGaps({ gaps, adding, addMissing }: ArtistGapsProps) {
                       )}
                     </button>
                   </li>
+                  </CatalogTrackMenu>
                 );
               })}
             </ol>

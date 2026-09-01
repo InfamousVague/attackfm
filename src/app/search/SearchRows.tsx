@@ -3,6 +3,7 @@ import { BookAudio, Check, ChevronRight, Disc3, Heart, ListEnd, ListMusic, ListS
 import type { ReactNode } from 'react';
 import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
+import { CatalogTrackMenu } from '../library/CatalogTrackMenu.tsx';
 import type { QueueControls } from '../player/queueControls.tsx';
 import type { AcquireValue } from '../../plugins/runtime.tsx';
 import { PROBE_URL } from './resolveImport.ts';
@@ -307,22 +308,33 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
       // visible - this verb exists for a thumb, not a hovering pointer.
       if (!isArtist && item.result.kind === 'track' && can && !have) {
         const liked = state === 'liked';
+        // Long-press for the not-owned menu, whose reason to exist is "file
+        // this into a playlist to acquire". Add and Love are the same acts as
+        // the tap and the heart, offered to the thumb that held the row.
         return (
-          <div key={item.id} className="searchRowSeat searchRowSeat--slim">
-            {row}
-            <span className="searchRow__verbs" data-always>
-              <button
-                type="button"
-                className="searchVerb searchVerb--heart"
-                title="Like and download"
-                aria-label={`Like ${item.result.title} and download it`}
-                aria-pressed={liked}
-                onClick={() => like(item)}
-              >
-                <Heart size={15} fill={liked ? 'currentColor' : 'none'} />
-              </button>
-            </span>
-          </div>
+          <CatalogTrackMenu
+            key={item.id}
+            target={{ artist: item.result.subtitle, title: item.result.title, url: item.result.url }}
+            onAdd={() => open(item)}
+            onLike={() => like(item)}
+            liked={liked}
+          >
+            <div className="searchRowSeat searchRowSeat--slim">
+              {row}
+              <span className="searchRow__verbs" data-always>
+                <button
+                  type="button"
+                  className="searchVerb searchVerb--heart"
+                  title="Like and download"
+                  aria-label={`Like ${item.result.title} and download it`}
+                  aria-pressed={liked}
+                  onClick={() => like(item)}
+                >
+                  <Heart size={15} fill={liked ? 'currentColor' : 'none'} />
+                </button>
+              </span>
+            </div>
+          </CatalogTrackMenu>
         );
       }
       return row;

@@ -266,6 +266,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
 
       <ArtistPopular
         popular={popular}
+        artist={artist}
         adding={adding}
         addSong={addSong}
         loveSong={loveSong}
