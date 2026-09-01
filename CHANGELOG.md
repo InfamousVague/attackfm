@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.14
+
+- The soft blur behind the lyrics now runs the full width of the screen, instead of stopping short with a sharp strip down each side.
+
 ## 0.5.13
 
 - Search opens as a sheet with the header still showing above it, so it is clearly a panel you can pull down to dismiss — it no longer covers the whole screen.
