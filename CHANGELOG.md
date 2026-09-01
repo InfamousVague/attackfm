@@ -15,6 +15,16 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.28
+
+- Switching between your servers is instant and keeps you signed in
+  everywhere: the app now holds a live session for every server you belong
+  to, and "Switch" just changes which one is in front.
+- Adding another server (or connecting a saved one) now adds its music to
+  your library, not just a faster route for the same songs.
+- Every server's stream token renews on time, so a second server no longer
+  goes dark a week in.
+
 ## 0.5.27
 
 - Songs say which server they live on - "on Kevin's server" under the

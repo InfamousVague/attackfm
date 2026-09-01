@@ -111,7 +111,11 @@ pub async fn register(
 
 /// `POST /api/auth/login` - a session token plus the stream token that lets a
 /// media element fetch bytes.
-pub async fn login(State(state): State<Arc<AppState>>, Json(body): Json<Credentials>) -> ApiResult {
+pub async fn login(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<Credentials>,
+) -> ApiResult {
     let user = state
         .db
         .user_by_name(body.username.trim())
@@ -123,7 +127,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Json(body): Json<Credenti
     let token = auth::random_token();
     state
         .db
-        .create_token(&token, user.id)
+        .create_token_for(&token, user.id, &auth::device_label(&headers))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let stream_token = auth::mint_stream_token(&state.stream_secret, user.id, user.stream_epoch);
 

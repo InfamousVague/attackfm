@@ -42,6 +42,18 @@ export class ServerError extends Error {
   }
 }
 
+/** A short, honest name for this device: platform, nothing identifying. */
+export function deviceLabel(): string {
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
+  if (/Android/i.test(ua)) return 'Android';
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/iPad|Macintosh.*Mobile/i.test(ua)) return 'iPad';
+  if (/Mac OS X/i.test(ua)) return 'macOS';
+  if (/Windows/i.test(ua)) return 'Windows';
+  if (/Linux/i.test(ua)) return 'Linux';
+  return 'web';
+}
+
 export async function request<T>(
   url: string,
   path: string,
@@ -50,6 +62,9 @@ export async function request<T>(
   const { token, timeoutMs = 30_000, ...rest } = init;
   const headers = new Headers(rest.headers);
   if (token) headers.set('authorization', `Bearer ${token}`);
+  // What this device is, for the session it may be asking for - so a hub can
+  // list "iPhone" and "macOS" as two sessions and let you end one of them.
+  if (!headers.has('x-afm-device')) headers.set('x-afm-device', deviceLabel());
   if (rest.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
 
   // Every request gets a deadline. A phone hopping networks mid-flight can

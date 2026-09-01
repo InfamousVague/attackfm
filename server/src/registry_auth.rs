@@ -97,11 +97,11 @@ pub async fn prime_verifier(state: Arc<AppState>) {
 
 /// The session an entering account gets - the exact shape `/api/auth/login`
 /// returns, so the client machinery downstream is unchanged.
-fn session_json(state: &AppState, user: &crate::db::User) -> Result<Value, ApiError> {
+fn session_json(state: &AppState, user: &crate::db::User, device: &str) -> Result<Value, ApiError> {
     let token = auth::random_token();
     state
         .db
-        .create_token(&token, user.id)
+        .create_token_for(&token, user.id, device)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let stream_token = auth::mint_stream_token(&state.stream_secret, user.id, user.stream_epoch);
     Ok(json!({
@@ -256,15 +256,18 @@ pub async fn enter(
     // Already a member: in as themselves, no invite needed.
     if let Some((user_id, _role)) = state.db.registry_member(sub) {
         if let Some(user) = state.db.user_by_id(user_id) {
-            return Ok(Json(session_json(&state, &user)?));
+            return Ok(Json(session_json(&state, &user, &auth::device_label(&headers))?));
         }
         // The local user was deleted out from under the membership; re-admit.
     }
 
-    // A server with no owner yet crowns its first arrival.
-    if !state.db.has_any_admin() {
+    // A server with NO ACCOUNTS AT ALL crowns its first arrival. Not "no
+    // admin": a box whose only admin was deleted still has members, and must
+    // not hand ownership to whoever next arrives with a registry token. The
+    // password door (api::register) uses the same predicate.
+    if state.db.user_count() == 0 {
         let user = admit(&state, sub, &handle, true)?;
-        return Ok(Json(session_json(&state, &user)?));
+        return Ok(Json(session_json(&state, &user, &auth::device_label(&headers))?));
     }
 
     // Borrowed membership: a box told to trust another admits that one's
@@ -272,7 +275,7 @@ pub async fn enter(
     // ordinary case for a pair of servers needs no code at all.
     if vouched_for(sub).await {
         let user = admit(&state, sub, &handle, false)?;
-        return Ok(Json(session_json(&state, &user)?));
+        return Ok(Json(session_json(&state, &user, &auth::device_label(&headers))?));
     }
 
     // Established server: invite-only.
@@ -356,7 +359,7 @@ pub async fn enter(
         .send()
         .await;
 
-    Ok(Json(session_json(&state, &user)?))
+    Ok(Json(session_json(&state, &user, &auth::device_label(&headers))?))
 }
 
 #[cfg(test)]

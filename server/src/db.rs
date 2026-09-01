@@ -1769,6 +1769,18 @@ impl Db {
                 conn.execute(&format!("ALTER TABLE playlists ADD COLUMN {decl}"), [])?;
             }
         }
+        // Which DEVICE a session belongs to, so one phone can be signed out of
+        // one hub without every other device of the same person going with it.
+        // Same runtime ALTER as above: the schema batch never re-runs on a
+        // deployed box.
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('tokens')")?
+            .query_map([], |r| r.get(0))?
+            .filter_map(Result::ok)
+            .collect();
+        if !have.iter().any(|c| c == "device") {
+            conn.execute("ALTER TABLE tokens ADD COLUMN device TEXT NOT NULL DEFAULT ''", [])?;
+        }
         Ok(())
     }
 
@@ -2103,10 +2115,25 @@ impl Db {
     // --- session tokens ---------------------------------------------------
 
     pub fn create_token(&self, token: &str, user_id: i64) -> rusqlite::Result<()> {
+        self.create_token_for(token, user_id, "")
+    }
+
+    /// Mint a session, labelled with the device that asked, and reap the dead.
+    ///
+    /// Sessions never expired and every entry minted a new row, so a person on
+    /// three hubs left a row behind every time they switched - forever. A row
+    /// unused for ninety days is a device that is gone; it goes here, on the
+    /// one write every sign-in already makes, so no sweep is needed.
+    pub fn create_token_for(&self, token: &str, user_id: i64, device: &str) -> rusqlite::Result<()> {
         let now = now_ms();
-        self.lock().execute(
-            "INSERT INTO tokens (token, user_id, created_at, last_seen) VALUES (?1, ?2, ?3, ?3)",
-            params![token, user_id, now],
+        let conn = self.lock();
+        let _ = conn.execute(
+            "DELETE FROM tokens WHERE last_seen < ?1",
+            params![now - 90 * 24 * 3600 * 1000],
+        );
+        conn.execute(
+            "INSERT INTO tokens (token, user_id, created_at, last_seen, device) VALUES (?1, ?2, ?3, ?3, ?4)",
+            params![token, user_id, now, device.chars().take(80).collect::<String>()],
         )?;
         Ok(())
     }

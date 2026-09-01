@@ -33,6 +33,10 @@ import {
   rememberSession,
   sessionForOrigin,
   forgetSession,
+  allSessions,
+  primarySession,
+  normalise,
+  sessionsSnapshot,
 } from './sessions.ts';
 import { effectsParam } from '../player/effects.ts';
 import { fxChainParam } from '../player/fxChain.ts';
@@ -73,6 +77,8 @@ interface ServerSessionValue {
   /** Adopts an already-minted session (the device-pairing / QR path), the same
    *  as a fresh sign-in but with the token pair already in hand. */
   applySession: (session: ServerSession) => void;
+  /** Switch to a server already held, with no network. False if not held. */
+  pivot: (url: string) => boolean;
   disconnect: () => Promise<void>;
   /** Re-mints the stream token, e.g. after media URLs start returning 401. */
   renew: () => Promise<void>;
@@ -83,7 +89,11 @@ const ServerSessionContext = createContext<ServerSessionValue | null>(null);
 function readSession(): ServerSession | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
+    // The multi-server set is the truth now; the single key is a view of its
+    // primary. An install whose single key is gone but whose set still holds
+    // sessions (a sign-out of one server among several, an older build's
+    // cleanup) comes back on the set's primary rather than signed out.
+    if (!raw) return primarySession();
     const parsed = JSON.parse(raw) as Partial<ServerSession>;
     if (
       typeof parsed.url !== 'string' ||
@@ -239,29 +249,56 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   // woke up, and the cached library is still worth showing.
   useEffect(() => {
     let live = true;
+    /*
+     * EVERY server this device is signed in to, not only the one it is on. A
+     * secondary hub's seven-day stream token used to lapse in silence: its
+     * background library sync started failing, its covers went dark, and its
+     * Connect socket died behind its retry backoff - with nothing to say so.
+     * The primary is renewed into the single key (and state) as before; the
+     * others into the set.
+     */
     const renewIfNeeded = async (first: boolean) => {
       const stored = readSession();
-      if (!stored) {
+      const primaryKey = stored ? normalise(stored.url) : '';
+      const all = allSessions();
+      if (stored && !all.some((o) => normalise(o.url) === primaryKey)) all.push(stored);
+      if (all.length === 0) {
         if (first) setRestoring(false);
         return;
       }
-      const remaining = streamTokenExpiresAt(stored.streamToken) - Date.now();
-      if (remaining > 48 * 60 * 60 * 1000) {
-        if (first) setRestoring(false);
-        return;
+      let firstDone = false;
+      const settle = () => {
+        if (live && first && !firstDone) {
+          firstDone = true;
+          setRestoring(false);
+        }
+      };
+      for (const one of all) {
+        const remaining = streamTokenExpiresAt(one.streamToken) - Date.now();
+        const isPrimary = normalise(one.url) === primaryKey;
+        if (remaining > 48 * 60 * 60 * 1000) {
+          if (isPrimary) settle();
+          continue;
+        }
+        try {
+          const streamToken = await refreshStreamToken(one);
+          if (!live) return;
+          const renewed = { ...one, streamToken };
+          if (isPrimary) {
+            setSession(renewed);
+            localStorage.setItem(SESSION_KEY, JSON.stringify(renewed));
+            rememberSession(renewed, true);
+          } else {
+            rememberSession(renewed, false);
+          }
+        } catch {
+          // Offline, or that session is genuinely dead. The stored credentials
+          // stay put; the next deliberate action there will find out which.
+        } finally {
+          if (isPrimary) settle();
+        }
       }
-      try {
-        const streamToken = await refreshStreamToken(stored);
-        if (!live) return;
-        const renewed = { ...stored, streamToken };
-        setSession(renewed);
-        localStorage.setItem(SESSION_KEY, JSON.stringify(renewed));
-      } catch {
-        // Offline, or the session is genuinely dead. Either way the stored
-        // credentials stay put; the next deliberate action will find out which.
-      } finally {
-        if (live && first) setRestoring(false);
-      }
+      settle();
     };
     void renewIfNeeded(true);
     /*
@@ -418,6 +455,23 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
 
   const applySession = useCallback((next: ServerSession) => persist(next), [persist]);
 
+  /**
+   * Make a server this device already holds a session for the one it is on -
+   * locally, instantly, with no re-login. This is what "switch" should have
+   * been all along: the set had every session and `setPrimary` had no
+   * callers, so every switch was a fresh mint over the network and a full
+   * teardown. False when the server is not held, and the caller enters it.
+   */
+  const pivot = useCallback(
+    (url: string): boolean => {
+      const held = sessionsSnapshot().byUrl[normalise(url)];
+      if (!held) return false;
+      persist(held);
+      return true;
+    },
+    [persist],
+  );
+
   const disconnect = useCallback(async () => {
     const live = sessionRef.current;
     // Out of the multi-server set FIRST. Leaving it there kept a session
@@ -456,8 +510,8 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<ServerSessionValue>(
-    () => ({ session, restoring, settings, updateSettings, connect, applySession, disconnect, renew }),
-    [session, restoring, settings, updateSettings, connect, applySession, disconnect, renew],
+    () => ({ session, restoring, settings, updateSettings, connect, applySession, pivot, disconnect, renew }),
+    [session, restoring, settings, updateSettings, connect, applySession, pivot, disconnect, renew],
   );
 
   return (

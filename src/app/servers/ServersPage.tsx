@@ -30,6 +30,7 @@ import {
   trackKey,
   type Mirror,
 } from './mirrors.ts';
+import { rememberSession } from './sessions.ts';
 
 /**
  * Where the music comes from, and what it costs to keep it there.
@@ -415,6 +416,10 @@ function AddServer({ onAdded }: { onAdded: () => void }) {
         username: session.username,
         isAdmin: session.isAdmin,
       });
+      // A MEMBER session too, kept beside the current one, so this hub's own
+      // songs join the library. A mirror is only a byte route joined by
+      // artist+title; on its own it never showed a song the primary lacked.
+      rememberSession({ url: withScheme, token: session.token, streamToken: session.streamToken, username: session.username, isAdmin: session.isAdmin }, false);
       await refreshHoldings({ ...session, addedAt: Date.now() } as Mirror);
       setOpen(false);
       setUrl('');
@@ -557,6 +562,7 @@ function SavedServers({ linked, onLinked }: { linked: string[]; onLinked: () => 
         isAdmin: next.isAdmin,
         name: m.serverName || undefined,
       });
+      rememberSession({ url: m.serverUrl, token: next.token, streamToken: next.streamToken, username: next.username, isAdmin: next.isAdmin }, false);
       await refreshHoldings({ ...next, addedAt: Date.now() } as Mirror);
       onLinked();
     } catch (e) {

@@ -266,3 +266,14 @@ pub fn require_admin(db: &Db, headers: &axum::http::HeaderMap) -> Result<Caller,
     }
     Ok(caller)
 }
+
+/// What the app says it is, for the session it is asking for - a short label
+/// ("android", "iPhone", "macOS") sent as `x-afm-device`. Empty when absent;
+/// never trusted for anything but a name in a list.
+pub fn device_label(headers: &axum::http::HeaderMap) -> String {
+    headers
+        .get("x-afm-device")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim().chars().take(80).collect())
+        .unwrap_or_default()
+}

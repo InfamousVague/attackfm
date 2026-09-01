@@ -40,7 +40,7 @@ function hostOf(url: string): string {
  * and join another with an invite.
  */
 export function WhereYouListen() {
-  const { session, applySession } = useServerSession();
+  const { session, applySession, pivot } = useServerSession();
   const { session: registry, account } = useRegistry();
 
   const [saved, setSaved] = useState<KnownServer[]>(() => knownServers());
@@ -101,8 +101,12 @@ export function WhereYouListen() {
       setBusyUrl(url);
       setNote(null);
       try {
-        const next = await enterServer(url, registry.token);
-        applySession(next);
+        // A server this device already holds is a local pivot - no round
+        // trip, no fresh token, nothing torn down that need not be.
+        if (!pivot(url)) {
+          const next = await enterServer(url, registry.token);
+          applySession(next);
+        }
         refresh();
         setNote({ tone: 'ok', text: `Listening from ${hostOf(url)} now.` });
       } catch (err) {
@@ -111,7 +115,7 @@ export function WhereYouListen() {
         setBusyUrl(null);
       }
     },
-    [registry, applySession],
+    [registry, applySession, pivot],
   );
 
   // A friend's card said "visit": the page lands the attempt here, where the
