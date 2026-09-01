@@ -20,6 +20,10 @@ and where that library came from is not the app's story to tell.
 - Your song list opens A to Z instead of newest first. Anything that arrived today used to sit in a block across the whole top of All songs, which pushed the rest of the library below the fold; now a new song lands where its name puts it, next to everything else. Sorting by date added is still one tap on the column, and Recently added still has its own shelf and its own page
 - Titles sort the way you would look for them. Leading punctuation and brackets are ignored, so "Slut!" files under S and (It Goes Like) Nanana under I, a leading The or A is skipped, and accents sort with their plain letters
 - Covers arrive with the page instead of after it. The artwork for what you are about to see is fetched ahead of time, so a shelf or a list is not a grid of grey squares filling in behind your scroll
+## 0.5.0
+
+- A new app build for every platform. On Android it carries the browsable AttackFM folder: Settings → Storage grows an "Allow the AttackFM folder" button, and once Android grants it, cached music moves to an AttackFM/Music folder any file manager can walk
+- Everything since the last build rides along: the mic that lets you talk to the DJ, speed-compensated volume for driving, the notification tap that starts the song, genre charts, the New music DJ chip, and the launch wave through the wordmark
 
 ## 0.4.174
 
