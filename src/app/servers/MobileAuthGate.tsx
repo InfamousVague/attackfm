@@ -1,6 +1,6 @@
 import { Banner, Button, Field, Input, Text } from '@glacier/react';
 import { ArrowLeft, Cloud, KeyRound, QrCode, User } from '@glacier/icons';
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   enterServer,
   fetchServerInfo,
@@ -14,7 +14,7 @@ import type { Membership } from './registry.ts';
 import { DEFAULT_SERVER } from './defaultServer.ts';
 import { useServerSession } from './serverSession.tsx';
 import { useRegistry } from './registrySession.tsx';
-import { login as registryLogin, signup as registrySignup } from './registry.ts';
+import { AccountForm } from './AccountForm.tsx';
 import { JoinServer } from './JoinServer.tsx';
 import { parsePairPayload } from './pairing.ts';
 import { QrScanner } from './QrScanner.tsx';
@@ -119,33 +119,6 @@ function OnboardAccount({
   onSkip: () => void;
 }) {
   const { apply } = useRegistry();
-  const [mode, setMode] = useState<'create' | 'signin'>('signin');
-  const [handle, setHandle] = useState('');
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // The 8-character floor is a rule about CHOOSING a password; applying it to
-  // sign-in would refuse to submit a shorter one that already exists and is
-  // correct, with a disabled button and no explanation.
-  const ready =
-    handle.trim().length >= 3 && password.length >= (mode === 'create' ? 8 : 1) && !busy;
-
-  const go = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!ready) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const s = mode === 'create'
-        ? await registrySignup(handle.trim(), password)
-        : await registryLogin(handle.trim(), password);
-      apply(s);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'That did not work.');
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <div className="loginGate">
@@ -159,52 +132,22 @@ function OnboardAccount({
           Lossless audio streaming
         </Text>
       </div>
-      <form className="loginGate__form" onSubmit={go}>
-        <Field label="Handle" hint={mode === 'create' ? '3-24 letters, digits, . _ or -' : undefined}>
-          <Input
-            value={handle}
-            onChange={(e) => setHandle(e.currentTarget.value)}
-            placeholder="yourname"
-            aria-label="Handle"
-            leadingIcon={<User size={16} />}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            autoComplete="username"
-          />
-        </Field>
-        <Field label="Password" hint={mode === 'create' ? 'At least 8 characters.' : undefined}>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.currentTarget.value)}
-            aria-label="Password"
-            leadingIcon={<KeyRound size={16} />}
-            autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
-          />
-        </Field>
-        {error && <Banner tone="danger">{error}</Banner>}
-        <Button type="submit" variant="solid" size="lg" className="loginGate__submit" disabled={!ready}>
-          {busy ? 'Just a moment…' : mode === 'create' ? 'Create account' : 'Sign in'}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="md"
-          onClick={() => {
-            setMode((m) => (m === 'create' ? 'signin' : 'create'));
-            setError(null);
-          }}
-        >
-          {mode === 'create' ? 'I already have an account' : 'Create an account instead'}
-        </Button>
-      </form>
+      {/* The one account form (AccountForm.tsx); this door only frames it. */}
+      <AccountForm
+        defaultMode="signin"
+        onDone={apply}
+        icons
+        errorAs="banner"
+        className="loginGate__form"
+        submitClassName="loginGate__submit"
+      />
       <div className="loginGate__alts">
         <Button variant="ghost" size="sm" onClick={onConnectServer}>
           Sign into a server directly
         </Button>
+        {/* Honest about what it is: not a later, a without. */}
         <Button variant="ghost" size="sm" onClick={onSkip}>
-          Skip for now
+          Use without an account
         </Button>
       </div>
     </div>
@@ -340,7 +283,7 @@ function OnboardServer({
           Sign into a server directly
         </Button>
         <Button variant="ghost" size="sm" onClick={onSkip}>
-          Skip for now
+          Use without a server
         </Button>
       </div>
     </div>

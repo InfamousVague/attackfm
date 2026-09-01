@@ -5,6 +5,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { HouseholdSection, LinkDeviceSection } from '../servers/ServerSettings.tsx';
 import { WhereYouListen } from '../profile/WhereYouListen.tsx';
 import { DevicesSettings } from './DevicesSettings.tsx';
+import { RecoveryCodesSection } from './RecoveryCodes.tsx';
 import { SettingsNavContext } from './settingsShared.ts';
 import { PaneHero, PaneSection, SettingsEmpty } from './kit/settingsKit.tsx';
 
@@ -33,7 +34,7 @@ export function AccountPane() {
         <SettingsEmpty
           icon={<CircleUserRound size={22} />}
           title="Not signed in"
-          body="An account lives on a server: sign into one and your devices, your household and every server saved to your account appear here."
+          body="Your AttackFM account is the one key: it lives at attack.fm, not on any server. Sign in and every server saved to it, your devices and your household appear here."
           action={goTo ? { label: 'Set up under Servers', onPress: () => goTo('server') } : undefined}
         />
       </div>
@@ -59,6 +60,8 @@ export function AccountPane() {
           }
         />
       </PaneSection>
+
+      <RecoveryCodesSection />
 
       <section className="serversSettings__part">
         <header className="serversSettings__partHead">

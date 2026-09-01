@@ -12,6 +12,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { refresh as apiRefresh, type RegistryAccount, type RegistrySession } from './registry.ts';
+import { RegistryError } from './registry.ts';
+import { deviceLogin } from './deviceKey.ts';
 
 /** Where the registry session lives. Exported because serverSync reads the
  *  token straight from storage (it runs outside React) - a second literal of
@@ -78,8 +80,14 @@ export function RegistrySessionProvider({ children }: { children: ReactNode }) {
       try {
         const renewed = await apiRefresh(stored.token);
         if (live) persist(renewed);
-      } catch {
-        // Offline, or genuinely expired; leave the stored session in place.
+      } catch (err) {
+        // Offline: leave the stored session in place. Genuinely expired: this
+        // device may hold a key the account knows (deviceKey.ts), in which
+        // case it signs back in by itself and nobody types a password.
+        if (err instanceof RegistryError && err.status === 401) {
+          const again = await deviceLogin(stored.account.handle);
+          if (again && live) persist(again);
+        }
       }
     })();
     return () => {

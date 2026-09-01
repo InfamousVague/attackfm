@@ -16,6 +16,7 @@
 //!     the person.
 
 import { ArtistLink } from '../ux/ArtistLink.tsx';
+import { AccountForm } from '../servers/AccountForm.tsx';
 import { fetchShares, setShareGrant, settleShare, type Share } from '../servers/registry.ts';
 import { addPendingLike } from '../api/likes.ts';
 import {
@@ -39,10 +40,8 @@ import {
   announce,
   declineFriendRequest,
   fetchFriends,
-  login,
   removeFriend,
   sendFriendRequest,
-  signup,
   type FriendsFeed,
   type RegistryFriend,
 } from '../servers/registry.ts';
@@ -109,77 +108,23 @@ function weekGlance(f: RegistryFriend): string | null {
 // --- account setup ----------------------------------------------------------
 
 export function AccountSetup({ onDone }: { onDone: (s: import('../servers/registry.ts').RegistrySession) => void }) {
-  const [mode, setMode] = useState<'create' | 'signin'>('create');
-  const [handle, setHandle] = useState('');
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const ready = handle.trim().length >= 3 && password.length >= 8 && !busy;
-
-  const go = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!ready) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const s = mode === 'create' ? await signup(handle.trim(), password) : await login(handle.trim(), password);
-      onDone(s);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'That did not work.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="registrySetup">
       <div className="emptyState">
         <EmptyArt name="friends" />
         <p className="emptyState__text">
-          {mode === 'create'
-            ? 'Create your AttackFM account to add friends and be invited to their servers. One account works everywhere.'
-            : 'Sign in to your AttackFM account.'}
+          Your AttackFM account is the one key: friends, invitations to their servers, and every
+          server you belong to, on every device.
         </p>
       </div>
-      <form className="registrySetup__form" onSubmit={go}>
-        <Field label="Handle" hint={mode === 'create' ? '3-24 letters, digits, . _ or -' : undefined}>
-          <Input
-            value={handle}
-            onChange={(e) => setHandle(e.currentTarget.value)}
-            placeholder="yourname"
-            aria-label="Handle"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            autoComplete="username"
-          />
-        </Field>
-        <Field label="Password" hint={mode === 'create' ? 'At least 8 characters.' : undefined}>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.currentTarget.value)}
-            aria-label="Password"
-            autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
-          />
-        </Field>
-        {error && <Text tone="danger" size="sm">{error}</Text>}
-        <Button type="submit" variant="solid" size="lg" disabled={!ready} className="registrySetup__submit">
-          {busy ? 'Just a moment…' : mode === 'create' ? 'Create account' : 'Sign in'}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            setMode((m) => (m === 'create' ? 'signin' : 'create'));
-            setError(null);
-          }}
-        >
-          {mode === 'create' ? 'I already have an account' : 'Create an account instead'}
-        </Button>
-      </form>
+      {/* The one account form (servers/AccountForm.tsx); this door only frames
+          it. Sign-in first here too: a returning listener is the common case. */}
+      <AccountForm
+        defaultMode="signin"
+        onDone={onDone}
+        className="registrySetup__form"
+        submitClassName="registrySetup__submit"
+      />
     </div>
   );
 }

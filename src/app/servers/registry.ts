@@ -75,6 +75,44 @@ export async function refresh(token: string): Promise<RegistrySession> {
   return call<RegistrySession>('/v1/refresh', { method: 'POST', token });
 }
 
+// --- this device's key (see deviceKey.ts) ------------------------------------
+
+/** Step one of a passwordless sign-in: a one-time nonce to sign. */
+export async function challenge(handle: string): Promise<{ nonce: string }> {
+  return call('/v1/login/challenge', { method: 'POST', body: JSON.stringify({ handle }) });
+}
+
+/** Step two: the signed nonce, for a session - if the account knows the key. */
+export async function loginDevice(handle: string, nonce: string, signature: string): Promise<RegistrySession> {
+  return call<RegistrySession>('/v1/login/device', {
+    method: 'POST',
+    body: JSON.stringify({ handle, nonce, signature }),
+  });
+}
+
+/** Register a device's public key on the signed-in account. */
+export async function addDevice(token: string, devicePublicKey: string, label: string): Promise<void> {
+  await call('/v1/device', { token, method: 'POST', body: JSON.stringify({ devicePublicKey, label }) });
+}
+
+// --- recovery codes ----------------------------------------------------------
+
+/** Mint a fresh set of one-time recovery codes, replacing any earlier set.
+ *  Shown once; the registry keeps only hashes. */
+export async function mintRecoveryCodes(token: string): Promise<string[]> {
+  const out = await call<{ codes?: string[] }>('/v1/recovery', { token, method: 'POST' });
+  return out.codes ?? [];
+}
+
+/** Sign in with a recovery code - the way back in when the password is gone
+ *  and no device holds a key. The code is spent by the attempt. */
+export async function loginRecovery(handle: string, code: string): Promise<RegistrySession> {
+  return call<RegistrySession>('/v1/login/recovery', {
+    method: 'POST',
+    body: JSON.stringify({ handle, code }),
+  });
+}
+
 /** Tell the registry where this account's library answers and how big it is,
  *  so friends see numbers and can reach it without waking it. */
 export async function announce(

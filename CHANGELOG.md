@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.32
+
+- Your account is the one key. The first sign-in on a device registers that device with your account, so when the session ages out the app signs itself back in - no password on a phone keyboard, ever again.
+- Recovery codes: Settings → Account & devices mints eight one-time codes. Lose the password and every device, and one of them still gets you in.
+- One account form everywhere (the front door and the Friends page used to each have their own), and honest labels on the ways past it: "Use without an account", "Use without a server".
+
 ## 0.5.31
 
 - Send a song to a friend: hold a song, choose Send to a friend, pick who. They get the name, and their own server fetches it into their Liked songs - no files change hands. The first song from anyone asks them once whether they take songs from you.

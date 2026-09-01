@@ -304,6 +304,46 @@ impl Db {
         let _ = c.execute("DELETE FROM friend_requests WHERE id = ?1", [id]);
     }
 
+    // --- recovery codes --------------------------------------------------------
+
+    /// A fresh set replaces the old one whole: a person who mints again has
+    /// lost the last sheet, and codes from it must not keep working.
+    pub fn replace_recovery_codes(&self, account_id: i64, hashes: &[String], now: i64) -> rusqlite::Result<()> {
+        let mut c = self.conn.lock().unwrap();
+        let tx = c.transaction()?;
+        tx.execute("DELETE FROM recovery_codes WHERE account_id = ?1", [account_id])?;
+        for h in hashes {
+            tx.execute(
+                "INSERT INTO recovery_codes (account_id, code_hash, created_at) VALUES (?1, ?2, ?3)",
+                rusqlite::params![account_id, h, now],
+            )?;
+        }
+        tx.commit()
+    }
+
+    /// Spend a code. True exactly once per code: the UPDATE only lands on an
+    /// unused row, so two racing attempts cannot both get in on it.
+    pub fn consume_recovery_code(&self, account_id: i64, hash: &str, now: i64) -> bool {
+        let c = self.conn.lock().unwrap();
+        c.execute(
+            "UPDATE recovery_codes SET used_at = ?3 WHERE account_id = ?1 AND code_hash = ?2 AND used_at = 0",
+            rusqlite::params![account_id, hash, now],
+        )
+        .map(|n| n == 1)
+        .unwrap_or(false)
+    }
+
+    /// How many unspent codes an account still holds - for the settings row.
+    pub fn recovery_codes_left(&self, account_id: i64) -> i64 {
+        let c = self.conn.lock().unwrap();
+        c.query_row(
+            "SELECT COUNT(*) FROM recovery_codes WHERE account_id = ?1 AND used_at = 0",
+            [account_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    }
+
     // --- songs sent between friends ------------------------------------------
 
     /// How OWNER answered FROM's first song: Some(true) takes them, Some(false)
@@ -904,6 +944,16 @@ CREATE TABLE IF NOT EXISTS shares (
   dismissed_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS shares_to ON shares(to_id, taken_at, dismissed_at);
+
+-- One-time codes that get an account back when the password is gone and no
+-- device holds a key. Only the hash is kept; the codes are shown once.
+CREATE TABLE IF NOT EXISTS recovery_codes (
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  code_hash  TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  used_at    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (account_id, code_hash)
+);
 
 -- Whether OWNER takes songs from FROM at all. Asked once, the first time a
 -- friend sends something; no row means "not decided yet", and the share waits.

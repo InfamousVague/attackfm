@@ -946,6 +946,77 @@ async fn set_membership(
     Ok(Json(json!({ "ok": true })))
 }
 
+// --- recovery codes --------------------------------------------------------------
+
+/// Eight codes of twelve characters from an alphabet with no 0/O or 1/I, shown
+/// as XXXX-XXXX-XXXX. Sixty bits each; the sheet is the thing to guard, not
+/// the alphabet.
+const RECOVERY_CODES: usize = 8;
+const RECOVERY_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+fn make_recovery_code() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let raw: String = (0..12)
+        .map(|_| RECOVERY_ALPHABET[rng.gen_range(0..RECOVERY_ALPHABET.len())] as char)
+        .collect();
+    format!("{}-{}-{}", &raw[0..4], &raw[4..8], &raw[8..12])
+}
+
+/// The stored form: uppercase, letters and digits only (so a code typed with
+/// or without its dashes, or in lowercase, is the same code), then SHA-256.
+fn recovery_hash(code: &str) -> String {
+    use sha2::Digest;
+    let norm: String = code
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
+    let digest = sha2::Sha256::digest(norm.as_bytes());
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// `POST /v1/recovery` - a fresh sheet of one-time codes for the signed-in
+/// account, replacing any earlier sheet. Returned exactly once.
+async fn mint_recovery(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let codes: Vec<String> = (0..RECOVERY_CODES).map(|_| make_recovery_code()).collect();
+    let hashes: Vec<String> = codes.iter().map(|c| recovery_hash(c)).collect();
+    state
+        .db
+        .replace_recovery_codes(who.sub, &hashes, now_secs())
+        .map_err(db_err)?;
+    Ok(Json(json!({ "codes": codes })))
+}
+
+/// `GET /v1/recovery` - how many codes are left unspent, for the settings row.
+async fn recovery_left(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    Ok(Json(json!({ "left": state.db.recovery_codes_left(who.sub) })))
+}
+
+#[derive(Deserialize)]
+struct RecoveryLoginBody {
+    handle: String,
+    code: String,
+}
+
+/// `POST /v1/login/recovery` - in with a code, which is spent by the attempt.
+/// The generic error is deliberate, as with passwords.
+async fn login_recovery(State(state): State<Arc<AppState>>, Json(body): Json<RecoveryLoginBody>) -> ApiResult {
+    let now = now_secs();
+    let account = state
+        .db
+        .account_by_handle(body.handle.trim())
+        .filter(|a| state.db.consume_recovery_code(a.id, &recovery_hash(&body.code), now))
+        .ok_or((StatusCode::UNAUTHORIZED, "Wrong handle or code, or a code already used.".into()))?;
+    state.db.touch_seen(account.id, now);
+    Ok(Json(json!({
+        "token": issue_token(&state, account.id, &account.handle),
+        "account": account_json(&account),
+    })))
+}
+
 // --- songs sent between friends ------------------------------------------------
 
 #[derive(Deserialize)]
@@ -1274,6 +1345,8 @@ async fn main() {
         .route("/v1/login", post(login))
         .route("/v1/login/challenge", post(challenge))
         .route("/v1/login/device", post(login_device))
+        .route("/v1/login/recovery", post(login_recovery))
+        .route("/v1/recovery", get(recovery_left).post(mint_recovery))
         .route("/v1/device", post(add_device))
         .route("/v1/refresh", post(refresh))
         .route("/v1/announce", post(announce))
