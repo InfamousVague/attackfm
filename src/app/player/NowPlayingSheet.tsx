@@ -20,7 +20,7 @@ import type { ArtTint } from './artTint.ts';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { Airplay, AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, TableOfContents, Trash2, Volume2 } from '@glacier/icons';
+import { Airplay, AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, TableOfContents, Trash2, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
@@ -54,6 +54,9 @@ import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
 import { subscribeGestures } from './deviceMotion.ts';
 import { isTauri, tauriCall } from '../core/tauri.ts';
 import { trackIdFromPath } from '../server.ts';
+import { stemStatus } from '../api/stems.ts';
+import type { ServerSession } from '../api/http.ts';
+import { isStemDropped, noteStemsFor, setStemDropped, stemsKnownFor, useStemDrop } from './stemDrop.ts';
 import { motionGesturesEnabled } from '../settings/behaviourPrefs.ts';
 import { fetchChapterNotes, type BookNotes } from './chapterNotes.ts';
 import { CatchMeUp, CatchMeUpRow } from './CatchMeUp.tsx';
@@ -481,6 +484,66 @@ function BookWords({
   );
 }
 
+
+/**
+ * Karaoke: a floating toggle over the lyrics that drops the vocal stem, so you
+ * sing the line the words are lighting. It only appears on a song the server
+ * has separated into parts (there is nothing to drop otherwise), and it reuses
+ * the same stem-drop the sound console does - the drop is a playback setting on
+ * the stream, and the player reloads in place when it flips (see stemDrop.ts).
+ *
+ * Probing the song's parts on mount does double duty: it decides whether to
+ * show the button AND records `applies` for this track, so the very first tap
+ * takes the vocal out at once rather than on the next reload.
+ */
+function KaraokeToggle({ session, trackId }: { session: ServerSession | null; trackId: number | null }) {
+  const [hasVocals, setHasVocals] = useState(false);
+  // Subscribe so the button re-renders (and the icon flips) when the drop does,
+  // including from the sound console's own faders.
+  useStemDrop();
+  useEffect(() => {
+    setHasVocals(false);
+    if (!session || trackId === null) return;
+    // The store already learned this one (a queue that loops asks once).
+    const known = stemsKnownFor(trackId);
+    if (known !== undefined) {
+      setHasVocals(known);
+      return;
+    }
+    const ctrl = new AbortController();
+    void stemStatus(session, trackId, ctrl.signal)
+      .then((s) => {
+        const has = s.stems.length > 0;
+        noteStemsFor(trackId, has);
+        setHasVocals(has);
+      })
+      .catch(() => {
+        // Unreachable or unknown track: no button rather than a dead one.
+      });
+    return () => ctrl.abort();
+  }, [session, trackId]);
+  if (!hasVocals) return null;
+  const off = isStemDropped('vocals');
+  return (
+    <button
+      type="button"
+      className="npKaraoke"
+      data-on={off || undefined}
+      aria-pressed={off}
+      aria-label={off ? 'Karaoke on - vocals off; tap to bring them back' : 'Karaoke - drop the vocals to sing'}
+      title={off ? 'Vocals off - karaoke' : 'Karaoke: drop the vocals'}
+      onClick={(e) => {
+        // The lyrics area is itself a press-target for the artwork chooser -
+        // keep a tap on the toggle from opening that.
+        e.stopPropagation();
+        fireNativeHaptic('light');
+        setStemDropped('vocals', !off);
+      }}
+    >
+      {off ? <MicOff size={16} /> : <MicVocal size={16} />}
+    </button>
+  );
+}
 
 /** One row of the chapter panel, whatever form the book arrived in. */
 interface ChapterFace {
@@ -1511,14 +1574,18 @@ export function NowPlayingSheet({
             /* The song, reading itself - the book's read-along fed by synced
                lyrics. Words light as they are sung, every line seeks, and a
                hand on the scroll takes it back for a few seconds. No keep: a
-               lyric is not a bookmark. */
-            <BookWords
-              items={lyricFlow}
-              positionSec={position}
-              playing={playing}
-              stalled={buffering}
-              onJump={commitSeek}
-            />
+               lyric is not a bookmark. The karaoke toggle floats top-right and
+               drops the vocal when the song has been separated. */
+            <>
+              <BookWords
+                items={lyricFlow}
+                positionSec={position}
+                playing={playing}
+                stalled={buffering}
+                onJump={commitSeek}
+              />
+              <KaraokeToggle session={bookSession} trackId={hereId} />
+            </>
           ) : artView === 'chapters' && readingFlow.length > 0 ? (
             <BookWords
               items={readingFlow}

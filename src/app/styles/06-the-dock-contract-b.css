@@ -311,6 +311,46 @@
   mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
 }
 
+/* Karaoke: the toggle that drops the vocal, floating at the top-right of the
+   lyrics. Above the words (z-index 1) and the blur (0); a glass pill at rest,
+   the accent when the vocal is out so "singing now" reads at a glance. Shown
+   only on a separated song (the component returns nothing otherwise).
+
+   Scoped as `.npScreen__coverTarget > .npKaraoke` on purpose: it is a direct
+   child of the art slot, and `.npScreen__coverTarget > *` (below) stretches
+   every child to fill the slot and fades it in as the hero art - which would
+   blow this pill up to the whole reading area and animate it on every track.
+   The extra class outweighs that universal rule, and `animation: none` opts
+   the button out of the face-in. */
+.npScreen__coverTarget > .npKaraoke {
+  position: absolute;
+  inset-block-start: var(--glacier-space-2);
+  inset-inline-end: var(--glacier-space-2);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  animation: none;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-glass-thick);
+  -webkit-backdrop-filter: blur(var(--glacier-blur-md, 8px)) saturate(var(--glacier-glass-saturate));
+  backdrop-filter: blur(var(--glacier-blur-md, 8px)) saturate(var(--glacier-glass-saturate));
+  color: var(--glacier-text);
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.npScreen__coverTarget > .npKaraoke[data-on] {
+  background: var(--glacier-accent-solid);
+  border-color: transparent;
+  color: var(--glacier-accent-contrast);
+}
+
 .npBookWords {
   position: relative;
   z-index: 1;
