@@ -54,6 +54,12 @@ const MAX_CANDIDATES: usize = 5;
 /// person listening.
 const SAME_TAKE_MS: i64 = 2000;
 
+/// A candidate download that stages no new bytes for this long is wedged, not
+/// slow, and is killed so the hunt can settle. The same budget imports uses for
+/// its own SpotiFLAC runs, and long enough that a real multi-provider ladder
+/// negotiating between services is never mistaken for a stall.
+const STALL_SECS: u64 = 420;
+
 type ApiError = (StatusCode, String);
 type ApiResult<T> = Result<T, ApiError>;
 
@@ -181,6 +187,28 @@ fn probe(path: &Path) -> (Option<i64>, bool, String, u64) {
     ) || (matches!(file_type, lofty::file::FileType::Mp4) && props.bit_depth().is_some());
     let codec = format!("{file_type:?}").to_lowercase();
     (duration, lossless, codec, size)
+}
+
+/// Total bytes staged under a directory - the progress signal the stall
+/// watchdog in fetch_one reads. Any movement (a growing partial included)
+/// counts as the download still being alive.
+fn dir_bytes(dir: &Path) -> u64 {
+    let mut total = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if let Ok(m) = entry.metadata() {
+                total += m.len();
+            }
+        }
+    }
+    total
 }
 
 /// The first audio file under a directory, wherever the downloader chose to
@@ -368,7 +396,7 @@ async fn fetch_one(
         }
     }
 
-    let out = tokio::process::Command::new(&program)
+    let mut child = tokio::process::Command::new(&program)
         .args(&args)
         .env("HOME", state.imports.sf_home())
         // A real stdin: Python dies in init_sys_streams on a closed fd 0.
@@ -377,11 +405,67 @@ async fn fetch_one(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
-        .output()
-        .await
+        .spawn()
         .map_err(|e| format!("SpotiFLAC would not start: {e}"))?;
 
-    find_audio(dir).ok_or_else(|| explain(&out.stderr))
+    // Drain stdout so a full pipe can never wedge the child (a blocked write
+    // reads as a stall below), and collect stderr for the failure message.
+    if let Some(mut out) = child.stdout.take() {
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut sink = Vec::new();
+            let _ = out.read_to_end(&mut sink).await;
+        });
+    }
+    let stderr_task = child.stderr.take().map(|mut err| {
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut buf = Vec::new();
+            let _ = err.read_to_end(&mut buf).await;
+            buf
+        })
+    });
+
+    // The wall-clock backstop this caller lacked, and the whole reason a hunt
+    // could never finish. `--timeout` above is only a REQUEST to SpotiFLAC; a
+    // wedged download or a dead provider relay can ignore it, and then the
+    // child never exits - `.output().await` never returned, fetch_one never
+    // resolved, and hunt()'s join awaited it forever, so the job stayed
+    // 'hunting' and the modal spun with no error, for every song. Bound it as a
+    // STALL (no new bytes staged for STALL_SECS) rather than a hard cap, so the
+    // legitimate multi-service ladder - minutes per provider - is never cut off
+    // while it is still making progress. Mirrors imports::run_job's watchdog;
+    // start_kill + kill_on_drop reap the child.
+    let mut last_bytes = 0u64;
+    let mut last_progress = std::time::Instant::now();
+    let mut stalled = false;
+    loop {
+        match tokio::time::timeout(std::time::Duration::from_secs(2), child.wait()).await {
+            Ok(_) => break,
+            Err(_) => {
+                let bytes = dir_bytes(dir);
+                if bytes != last_bytes {
+                    last_bytes = bytes;
+                    last_progress = std::time::Instant::now();
+                }
+                if last_progress.elapsed() >= std::time::Duration::from_secs(STALL_SECS) {
+                    let _ = child.start_kill();
+                    let _ = child.wait().await;
+                    stalled = true;
+                    break;
+                }
+            }
+        }
+    }
+    if stalled {
+        return Err(format!("no progress for {STALL_SECS}s — the provider looks stuck"));
+    }
+
+    let stderr = match stderr_task {
+        Some(t) => t.await.unwrap_or_default(),
+        None => Vec::new(),
+    };
+    find_audio(dir).ok_or_else(|| explain(&stderr))
 }
 
 /// Why a candidate did not arrive, in words worth showing someone.
