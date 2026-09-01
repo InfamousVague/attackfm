@@ -18,12 +18,57 @@ import { isTauri, type Track } from '../core/tauri.ts';
 import { artSized, trackIdFromPath } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
 import placeholderArt from '../../assets/attack-wave.png';
+import { usePrefetchArt } from '../ux/artPrefetch.ts';
 import { formatClock } from '../ux/format.ts';
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
-// The order the table opens in: newest additions first.
-const DEFAULT_SORT: DataGridSort = { columnKey: 'addedAt', direction: 'desc' };
+/*
+ * The order the table opens in.
+ *
+ * It used to be newest-added first, which quietly made the library a feed.
+ * Anything that arrived today outranked everything ever collected, so a run of
+ * collector downloads sat as a slab across the top of All songs and pushed the
+ * library proper below the fold - the songs were IN the list, they were simply
+ * all at the front of it.
+ *
+ * Alphabetical is the honest default for a shelf: a new song lands where its
+ * name puts it, next to the rest of the library, and finding something you
+ * already own does not depend on remembering when it arrived. Recency is still
+ * one click away on the Date added column, and still has its own shelf and its
+ * own page for the times that is the question being asked.
+ */
+const DEFAULT_SORT: DataGridSort = { columnKey: 'title', direction: 'asc' };
+
+/**
+ * What a title sorts as.
+ *
+ * Sorting on the raw string opens the library on punctuation: `?`, `.`,
+ * `"Slut!"`, `(It Goes Like) Nanana`, `→unfinished→` were the actual first
+ * five rows. Every one is correctly placed and the whole screenful is useless,
+ * because leading punctuation says nothing about where a person expects to
+ * find a song.
+ *
+ * So the key is the title with the noise taken off the front: leading
+ * punctuation and brackets, then a leading article. `The National` files under
+ * N the way it does on a shelf. Accents fold too, so `Ámbar` sits with the A's
+ * rather than after Z.
+ *
+ * The original string is what gets DRAWN - this only decides order. A title
+ * that is nothing but punctuation keeps it and still sorts first, which is
+ * the honest answer for a song actually called `?`.
+ */
+function sortKey(title: string): string {
+  const folded = title
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+  const bare = folded.replace(/^[^\p{L}\p{N}]+/u, '');
+  const noArticle = bare.replace(/^(the|a|an)\s+/, '');
+  // Never return empty: a title of pure punctuation must still order stably.
+  return noArticle || bare || folded;
+}
 
 /** From wherever a press lands in the grid, the title cell's menu wrapper on
  *  the same row - the one element per row that actually wears the menu. */
@@ -84,7 +129,7 @@ const COLUMNS: DataGridColumn[] = [
     // the moment the pane narrows - which is how it ended up one letter wide.
     width: '50%',
     sortable: true,
-    sortValue: (row) => String(row.title).toLowerCase(),
+    sortValue: (row) => sortKey(String(row.title)),
     render: (row) => (
       <div className="songTitleCell">
         <SongArt artwork={row.artwork as string | null} />
@@ -387,6 +432,11 @@ export function SongTable({
       .map((pair) => pair.track);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rows derives from tracks
   }, [tracks, sort]);
+
+  // Warm the thumbs for the top of the list as it stands, so the first
+  // screenful is already held rather than each row fetching as it scrolls in.
+  // Re-runs on a re-sort, which is exactly when the top of the list changes.
+  usePrefetchArt(displayed.map((t) => artSized(t.artwork, 160)));
 
   return (
     <SongSelectionContext.Provider value={selectionEntry}>

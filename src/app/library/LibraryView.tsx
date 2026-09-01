@@ -1,4 +1,6 @@
 import { SearchEntry } from '../search/SearchEntry.tsx';
+import { usePrefetchArt } from '../ux/artPrefetch.ts';
+import { artSized } from '../server.ts';
 import { CuratorShelves } from './HomePage.tsx';
 import { ForYouShelf } from './ForYouShelf.tsx';
 import { NewMusicShelf } from './NewMusicShelf.tsx';
@@ -240,6 +242,25 @@ export function LibraryView({
     }
     return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 20);
   }, [tracks]);
+
+  /*
+   * Warm the shelf covers before they are scrolled to.
+   *
+   * The shelves draw the 640px variant, and the server BUILDS each size on the
+   * first request that asks for it, so an unwarmed shelf pays for a resize as
+   * well as a download the moment a card comes into view. These three lists
+   * are the whole visible top of the page, and they are short - twenty each -
+   * so warming them is bounded and is exactly the set about to be drawn.
+   */
+  usePrefetchArt(
+    useMemo(
+      () => [
+        ...recentlyAdded.map((t) => artSized(t.artwork, 640)),
+        ...artists.map((a) => artSized(a.cover, 640)),
+      ],
+      [recentlyAdded, artists],
+    ),
+  );
 
   // Albums, newest arrival first, each a representative track for play-through.
   const albums = useMemo(() => {
