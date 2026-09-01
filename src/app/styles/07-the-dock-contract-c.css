@@ -77,7 +77,8 @@
 
 /* The active shuffle/repeat wear the accent; the play button is the one big
    thing, a solid accent circle. */
-.npScreen__transport [data-on] {
+.npScreen__transport [data-on],
+.npScreen__actions [data-on] {
   color: var(--glacier-accent-solid);
 }
 

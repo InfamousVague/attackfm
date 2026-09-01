@@ -1952,6 +1952,7 @@ export function NowPlayingSheet({
           variant="ghost"
           aria-label="Lyrics"
           aria-pressed={artView === 'lyrics'}
+          data-on={artView === 'lyrics' || undefined}
           onClick={() => {
             if (lyricFlow.length === 0) {
               setNpLyrics(true);
