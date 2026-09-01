@@ -53,9 +53,21 @@ function possessive(name: string): string {
  *  picture explains its own dead code. The registry stamps milliseconds; a
  *  seconds stamp is tolerated in case that ever changes under us. */
 function untilLabel(expiresAt: number): string {
+  // 0 is the registry's mark for a standing invite: no expiry, and not used up
+  // by the first person through, so one card can admit a whole group.
+  if (expiresAt === 0) return 'code never expires';
   const ms = expiresAt < 1e12 ? expiresAt * 1000 : expiresAt;
-  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `code valid until ${new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
+
+/** The lifetimes on offer. Seconds, or 0 for a standing (never-expiring,
+ *  reusable) code. A week is the registry's own default and the middle seat. */
+const LIVES: { label: string; ttl: number }[] = [
+  { label: '1 day', ttl: 24 * 3600 },
+  { label: '1 week', ttl: 7 * 24 * 3600 },
+  { label: '1 month', ttl: 30 * 24 * 3600 },
+  { label: 'Never expires', ttl: 0 },
+];
 
 interface Invite {
   code: string;
@@ -112,7 +124,7 @@ function InviteCard({
         </li>
       </ol>
 
-      <p className="inviteCard__foot">attack.fm · code valid until {untilLabel(invite.expiresAt)}</p>
+      <p className="inviteCard__foot">attack.fm · {untilLabel(invite.expiresAt)}</p>
     </div>
   );
 }
@@ -132,6 +144,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
   const [qr, setQr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [life, setLife] = useState<number>(7 * 24 * 3600);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
   const identity = registry?.session ?? null;
@@ -144,7 +157,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
    * member may mint; the server checks the code with the registry when it is
    * spent, so a code on a picture is no more power than a code in a message.
    */
-  const mint = async () => {
+  const mint = async (ttl: number = life) => {
     if (!identity || !session || minting) return;
     setMinting(true);
     setMintError(null);
@@ -153,6 +166,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
         identity.token,
         session.url,
         session.username ? `${session.username}'s AttackFM` : 'AttackFM',
+        ttl === 0 ? { standing: true } : { ttlSecs: ttl },
       );
       setInvite({ code: made.code, expiresAt: made.expiresAt });
       setCopied(false);
@@ -290,6 +304,28 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
       <GlassSheet open={open} onClose={() => setOpen(false)} label="Invite a friend" className="inviteSheet">
         <h2 className="inviteSheet__title">Invite a friend</h2>
         <p className="inviteSheet__desc">Share how to join {possessive(owner)} server.</p>
+        {identity && (
+          <div className="inviteSheet__life" role="radiogroup" aria-label="How long the code lasts">
+            <span className="inviteSheet__lifeLabel">Code lasts</span>
+            {LIVES.map((l) => (
+              <Button
+                key={l.ttl}
+                size="sm"
+                variant={life === l.ttl ? 'solid' : 'ghost'}
+                aria-pressed={life === l.ttl}
+                disabled={minting}
+                onClick={() => {
+                  if (life === l.ttl) return;
+                  setLife(l.ttl);
+                  // A different life is a different code.
+                  void mint(l.ttl);
+                }}
+              >
+                {l.label}
+              </Button>
+            ))}
+          </div>
+        )}
         {!identity ? (
           /* An invite is minted against an AttackFM account, and this device
              has none yet. Say where to get one rather than offering a card

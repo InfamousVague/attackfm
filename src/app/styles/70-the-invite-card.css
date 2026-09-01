@@ -40,6 +40,13 @@
      reading as one; the shot is taken at whatever this resolves to. */
   inline-size: min(100%, 420px);
   block-size: auto;
+  /* NEVER a flex item that shrinks. The sheet's body is a column flexbox of a
+     fixed height, and an overflow:hidden child's min-height resolves to zero
+     there - so flexbox squashed the card to whatever room was left, the
+     corners clipped everything past the code label, the body no longer
+     overflowed and so never scrolled, and the shot measured the squashed
+     box. The card keeps its content height; the sheet does the scrolling. */
+  flex: none;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -173,6 +180,7 @@
 }
 
 .inviteSheet__actions {
+  flex: none;
   display: flex;
   gap: var(--glacier-space-2);
   inline-size: 100%;
@@ -189,4 +197,22 @@
   max-inline-size: 320px;
   text-align: center;
   padding-block: var(--glacier-space-4);
+}
+
+/* The lifetime chooser: a row of seats above the card, one solid. */
+.inviteSheet__life {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  flex-wrap: wrap;
+}
+
+.inviteSheet__lifeLabel {
+  font-size: var(--glacier-font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+  margin-inline-end: var(--glacier-space-1);
 }

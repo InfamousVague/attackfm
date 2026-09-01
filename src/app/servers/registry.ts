@@ -155,11 +155,17 @@ export async function createInvite(
   token: string,
   serverUrl: string,
   serverName: string,
+  /** How long the code lives (`ttlSecs`, clamped by the registry to an hour
+   *  .. ninety days; a week when absent), or `standing` for one that never
+   *  expires and is never used up. A registry from before `ttlSecs` ignores
+   *  it and mints the week it always did - the reply's expiresAt is the truth
+   *  either way, which is what every surface prints. */
+  life: { ttlSecs?: number; standing?: boolean } = {},
 ): Promise<{ code: string; serverUrl: string; expiresAt: number }> {
   return call('/v1/invites', {
     method: 'POST',
     token,
-    body: JSON.stringify({ serverUrl, serverName }),
+    body: JSON.stringify({ serverUrl, serverName, ...life }),
   });
 }
 

@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.22
+
+- Fixed the invite card getting cut off after the code label and the sheet
+  not scrolling - the card was being squeezed to fit the screen.
+- Choose how long an invite code lasts - a day, a week, a month, or never -
+  right above the card. A new code is made when you change it.
+
 ## 0.5.21
 
 - The invite card opens in the same pull-down glass sheet as search, is wider

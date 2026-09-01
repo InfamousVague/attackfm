@@ -615,7 +615,17 @@ struct CreateInviteBody {
     /// note, or anywhere a link has to keep working for whoever arrives.
     #[serde(default)]
     standing: bool,
+    /// How long a single-use code lives, in seconds. Absent means the week it
+    /// always was; the app offers a day, a week, a month. Clamped to an hour
+    /// and ninety days so a typo cannot mint a code that is dead on arrival or
+    /// good until the heat death. Ignored when `standing`.
+    #[serde(default, rename = "ttlSecs")]
+    ttl_secs: Option<i64>,
 }
+
+const INVITE_TTL_MIN_SECS: i64 = 3600;
+const INVITE_TTL_DEFAULT_SECS: i64 = 7 * 24 * 3600;
+const INVITE_TTL_MAX_SECS: i64 = 90 * 24 * 3600;
 
 /// The alphabet invite codes are drawn from: uppercase letters and digits with
 /// the look-alikes removed (no 0/O, 1/I/L, U), so a code reads cleanly aloud and
@@ -667,9 +677,13 @@ async fn create_invite(
     }
     let role = if body.role.trim().is_empty() { "member" } else { body.role.trim() };
     let code = invite_code();
-    // A week to use it - or no expiry at all, which is also what marks it as
-    // standing (see is_standing).
-    let expires = if body.standing { 0 } else { now_secs() + 7 * 24 * 3600 };
+    // The asked-for life, clamped - a week by default - or no expiry at all,
+    // which is also what marks it as standing (see is_standing).
+    let ttl = body
+        .ttl_secs
+        .unwrap_or(INVITE_TTL_DEFAULT_SECS)
+        .clamp(INVITE_TTL_MIN_SECS, INVITE_TTL_MAX_SECS);
+    let expires = if body.standing { 0 } else { now_secs() + ttl };
     state
         .db
         .create_invite(&code, body.server_url.trim(), body.server_name.trim(), who.sub, role, expires, now_secs())
