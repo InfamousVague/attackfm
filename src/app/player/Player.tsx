@@ -207,7 +207,14 @@ export function Player({
   // The strip is built from the music list, so there is nothing settled to show
   // until the folder is resolved and its files have been walked. The whole bar
   // loads as a skeleton until then.
-  const { loading: libraryLoading, scanning, isFavorite, toggleFavorite, tracks: libraryTracks } = useLibrary();
+  const {
+    loading: libraryLoading,
+    scanning,
+    isFavorite,
+    toggleFavorite,
+    tracks: libraryTracks,
+    allTracks,
+  } = useLibrary();
   const { toast } = useToast();
   // The listening room this device is in, if any. Optional: the Player also
   // renders in trees without the provider.
@@ -239,8 +246,7 @@ export function Player({
    * told otherwise. It is React state tied to the session, so a fresh launch
    * starts null (local, correct) and a reconnect replaces it with the truth.
    */
-  const remoteOnly =
-    connect.activeDeviceId != null && connect.activeDeviceId !== connect.thisDeviceId;
+  const remoteOnly = connect.activeElsewhere;
   /** A remote whose socket is down cannot command anything - see the transport. */
   const remoteAdrift = remoteOnly && !connect.connected;
   const remoteOnlyRef = useRef(remoteOnly);
@@ -278,21 +284,27 @@ export function Player({
   // way IN. Un-hearting stays silent in the hand but leaves a way back on
   // screen: the heart is small, the thumb is not, and a like taken by
   // accident should cost one tap rather than a hunt through the library.
-  const toggleFavoriteFelt = () => {
-    if (!track) return;
-    const path = track.path;
-    if (!favorite) {
+  const toggleFavoriteFor = (t: Track | null) => () => {
+    if (!t) return;
+    const path = t.path;
+    const on = isFavorite(path);
+    if (!on) {
       heartbeatHaptic();
       popHeart();
     }
     toggleFavorite(path);
-    if (favorite) {
+    if (on) {
       toast({
-        message: `Removed “${track.title}” from Liked`,
+        message: `Removed “${t.title}” from Liked`,
         action: { label: 'Undo', onPress: () => toggleFavorite(path) },
       });
     }
   };
+  // Takes a target because the heart is not always over this device's deck:
+  // while mirroring another device the Now Playing screen shows THAT song, and
+  // hearting it must save the song on screen rather than whatever this phone
+  // last played.
+  const toggleFavoriteFelt = toggleFavoriteFor(track);
 
   // The artwork read fresh from the library rather than off the snapshot: a
   // rescan revokes every previous pass's object URLs, so a queue held across
@@ -302,6 +314,62 @@ export function Player({
   // freshly cached row's null art falls back to the station mark downstream).
   const liveTrack = track ? libraryTracks.find((t) => t.path === track.path) : undefined;
   const artwork = liveTrack ? liveTrack.artwork : (track?.artwork ?? TRACK_ART);
+
+  /*
+   * What is actually playing, wherever it is playing - the one pair of facts
+   * every surface in this component should be reading.
+   *
+   * This device is either the ACTIVE one or a REMOTE mirroring another. These
+   * `disp` values are that distinction resolved once: on the active device
+   * they ARE the local deck, and on a remote they are the hub's session,
+   * with the position carried forward from the last report.
+   *
+   * They are derived HERE, at the top, rather than down beside the strip
+   * where they used to live, because everything below needs them and half of
+   * it runs first. `useSystemNowPlaying` is the reason: the lock screen,
+   * Control Center, CarPlay, Android Auto, the headphone buttons and the home
+   * -screen widget all hang off it, it is called long before the old
+   * derivation existed, and so every one of those surfaces was showing this
+   * phone's own last-played song while the music came out of the desktop.
+   */
+  const activeElsewhere = remoteOnly;
+  const remoteTrack =
+    activeElsewhere && connect.session?.trackId != null
+      ? (allTracks.find((t) => trackIdFromPath(t.path) === connect.session!.trackId) ?? null)
+      : null;
+  const activeDeviceName = activeElsewhere
+    ? (connect.devices.find((d) => d.id === connect.session?.activeDeviceId)?.name ??
+      'another device')
+    : null;
+
+  // A remote's clock ticks locally between hub updates: the active device
+  // reports only on discontinuities, so the seconds in between are ours to
+  // count. Re-rendering once a second is enough for a bar and a readout.
+  const [, setRemoteTick] = useState(0);
+  useEffect(() => {
+    if (!activeElsewhere || !connect.session?.playing) return;
+    const iv = window.setInterval(() => setRemoteTick((t) => t + 1), 1000);
+    return () => window.clearInterval(iv);
+  }, [activeElsewhere, connect.session?.playing, connect.session?.updatedAt]);
+  const remotePosition = (() => {
+    const sess = connect.session;
+    if (!sess) return 0;
+    const base = sess.positionMs / 1000;
+    // updatedAt is hub-clock; Date.now() is this device's. The skew stamp
+    // (measured when the frame arrived) converts ours to theirs, so the
+    // elapsed term no longer inherits whatever this phone's clock believes.
+    const serverNow = Date.now() - (sess.clockSkewMs ?? 0);
+    return sess.playing ? base + Math.max(0, (serverNow - sess.updatedAt) / 1000) : base;
+  })();
+
+  const dispTrack = activeElsewhere ? (remoteTrack ?? track) : track;
+  const dispPlaying = activeElsewhere ? !!connect.session?.playing : playing;
+  const dispPosition = activeElsewhere ? remotePosition : position;
+  const dispDuration = activeElsewhere ? (remoteTrack?.duration ?? 0) : duration;
+  const dispArtwork = activeElsewhere ? (remoteTrack?.artwork ?? TRACK_ART) : artwork;
+  /** The heart, over the song on screen rather than the one in this deck. */
+  const dispFavorite = dispTrack ? isFavorite(dispTrack.path) : false;
+  const dispToggleFavoriteFelt = toggleFavoriteFor(dispTrack);
 
   // Whether the square wears the disc or the flat cover; a right-click on it
   // offers the switch, and the choice persists like the rest of the app's
@@ -1467,17 +1535,30 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     return `Chapter ${n} of ${marks.length}`;
   })();
 
+  /* The lock screen, Control Center, CarPlay, Android Auto, the headphone
+     buttons and the widget are all one surface as far as this app is
+     concerned, and it must show what is PLAYING - which, while this device
+     mirrors another, is not this device's deck. It was fed the local track
+     throughout, so a phone watching the desktop put its own last-played song
+     on the lock screen, with a clock that was not moving. */
   const { carPlayControls, positionRef } = useSystemNowPlaying({
-    track,
-    playing,
+    track: dispTrack,
+    playing: dispPlaying,
     rate: wantedRate,
+    // The DECK's clock, because `positionRef` comes back out of here and the
+    // Player's other side channels read it as this deck's position.
     position,
     coarsePosition,
-    duration,
-    artwork,
-    audible,
+    // ...and the clock the lock screen is shown, which while mirroring is the
+    // other device's.
+    displayPosition: dispPosition,
+    duration: dispDuration,
+    artwork: dispArtwork,
+    // "Is sound coming out" - which for a remote is the other device's answer,
+    // not this silent one's.
+    audible: activeElsewhere ? dispPlaying : audible,
     line: widgetLine,
-    favourite: favorite,
+    favourite: dispFavorite,
   });
 
   // Push EQ edits onto the live filters as they happen.
@@ -3339,20 +3420,6 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     void resumeInPlace(to);
   };
 
-  // The car's handles on this player, refreshed every render so the listener
-  // above always acts through current closures. Skips deliberately reuse the
-  // strip's own handlers: a press on the steering wheel and a press on the
-  // strip must do the identical thing, manners and all.
-  carPlayControls.current = {
-    setPlaying: setPlayingState,
-    next: skipForward,
-    previous: skipBack,
-    seek: commitSeek,
-    // The widget's heart presses the app's own, haptics and undo included -
-    // the same handler the sheet's heart calls.
-    favourite: toggleFavoriteFelt,
-  };
-
   // The listening log - play counts, listen events, and the audiobook
   // bookmark - reads the deck through the same refs the deck writes; see
   // useListenReporting. Called here so commitSeek exists to hand it.
@@ -3407,12 +3474,12 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const liveRef = useRef<PlayerLiveState>({
     playing, position, duration, track, shuffle, repeat, volume, queue,
     setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
-    libraryTracks, onTrackChange, onQueueChange, deckOwned,
+    allTracks, onTrackChange, onQueueChange, deckOwned,
   });
   liveRef.current = {
     playing, position, duration, track, shuffle, repeat, volume, queue,
     setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
-    libraryTracks, onTrackChange, onQueueChange, deckOwned,
+    allTracks, onTrackChange, onQueueChange, deckOwned,
   };
   // ── Across an update ──────────────────────────────────────────────────────
   //
@@ -3463,7 +3530,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // remembered seek+play is applied once it has actually loaded (in the hook).
   const resumeRef = useRef<{ trackId: number; positionMs: number; play: boolean } | null>(null);
 
-  const { remoteTrack, activeDeviceName, remotePosition } = usePlayerConnect({
+  usePlayerConnect({
     connect,
     jam,
     liveRef,
@@ -3478,16 +3545,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     queue,
     seekTick,
     duration,
-    remoteOnly,
-    libraryTracks,
     commitSeek,
     setPlayingState,
   });
 
-  // Playback lives on another device: this one is a remote. It shows that
-  // device's now-playing (resolved from the library) and its transport sends
-  // commands rather than driving local audio.
-  const activeElsewhere = remoteOnly;
 
   // Becoming a remote pauses local audio, even if the explicit release did not
   // arrive (a seat claimed out from under this device).
@@ -3612,14 +3673,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on each TV report; everything else is read through refs
   }, [casting, cast.media?.positionMs]);
 
-  // What the strip shows and what its controls do, swapped by mode. Active (or
-  // alone): local track, local handlers. Remote: the other device's track, and
-  // controls that send commands to it.
-  const dispTrack = activeElsewhere ? (remoteTrack ?? track) : track;
-  const dispPlaying = activeElsewhere ? !!connect.session?.playing : playing;
-  const dispPosition = activeElsewhere ? remotePosition : position;
-  const dispDuration = activeElsewhere ? (remoteTrack?.duration ?? 0) : duration;
-  const dispArtwork = activeElsewhere ? (remoteTrack?.artwork ?? TRACK_ART) : artwork;
+  // What the strip's controls DO, swapped by mode. Active (or alone): the
+  // local handlers. Remote: commands to whoever is playing. The values they
+  // act on (dispTrack, dispPosition, ...) are derived at the top of the
+  // component - see the note there for why they cannot live down here.
   // Paused, the strip can be pushed off the bottom of the screen; it comes
   // back by itself with the next sound. Reads dispPlaying rather than the
   // local deck so a remote's playback holds the bar here too.
@@ -3657,6 +3714,55 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       : (s: number) => connect.sendCommand({ action: 'seek', positionMs: Math.round(s * 1000) })
     : commitSeek;
   const onScrubDisp = activeElsewhere ? () => {} : onScrub;
+
+  /*
+   * The same swap, for the Now Playing SCREEN.
+   *
+   * The strip has had all of this since Connect shipped; the full screen never
+   * got it. It was handed the raw local `track`, `position`, `duration` and
+   * every local handler, so on a phone mirroring the desktop it showed that
+   * phone's own last-played song, ran a clock that was not moving with the
+   * music, and skipped a queue that was not playing. That is the whole of
+   * "the devices do not stay in sync": the docked pane on the desktop is
+   * gated on `deckOwned` and so hid itself, which left the one surface a
+   * PHONE actually looks at as the only one still wired to the wrong deck.
+   *
+   * Nothing inside the sheet needs to know. Every use of these props is
+   * transport-shaped - a seek to a bookmark, a chapter jump, a lyric tap, the
+   * flick gestures, the buttons - so pointing them at the remote's commands
+   * is right for all of them at once.
+   */
+  /** A remote can always skip: the queue that matters is the active device's,
+   *  not this one's. `canSkip` asks about the LOCAL queue, which on a phone
+   *  that is only watching is empty - that is why the buttons were dead. */
+  const dispCanSkip = activeElsewhere ? !remoteAdrift : canSkip;
+  const noRemote = () => {};
+  const dispSkipBack = onSkipBackDisp ?? noRemote;
+  const dispSkipForward = onSkipForwardDisp ?? noRemote;
+  const dispSetPlaying = onPlayingChangeDisp ?? noRemote;
+
+  /*
+   * The car's handles on this player - and the lock screen's, Control
+   * Centre's, the headphone buttons' and the widget's, which all arrive
+   * through this one ref. Refreshed every render so the listener always acts
+   * through current closures.
+   *
+   * Skips reuse the STRIP's handlers, which was always the stated intent: a
+   * press on the steering wheel and a press on the strip must do the
+   * identical thing, manners and all. They were reaching for the LOCAL ones
+   * only because this assignment sat above the point where the remote-aware
+   * versions were defined - so on a phone mirroring the desktop, every
+   * system press drove a deck with nothing in it. It now sits below them.
+   */
+  carPlayControls.current = {
+    setPlaying: dispSetPlaying,
+    next: dispSkipForward,
+    previous: dispSkipBack,
+    seek: onSeekEndDisp,
+    // The widget's heart presses the app's own, haptics and undo included -
+    // the same handler the sheet's heart calls, over the same song.
+    favourite: dispToggleFavoriteFelt,
+  };
 
   return (
     <>
@@ -3744,11 +3850,12 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           chooseArtView={chooseArtView}
           bookSpeed={bookSpeed}
           chooseBookSpeed={chooseBookSpeed}
-          track={track}
-          artwork={artwork}
+          track={dispTrack}
+          artwork={dispArtwork}
           tint={songTint}
           dispArtwork={dispArtwork}
           activeElsewhere={activeElsewhere}
+          activeDeviceName={activeDeviceName}
           dispPlaying={dispPlaying}
           playing={playing}
           audible={audible}
@@ -3764,22 +3871,22 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           chapterLabel={chapterLabel}
           chapters={chapters}
           bookRemaining={bookLeft}
-          onSeekChapter={(startMs) => commitSeek(startMs / 1000)}
-          favorite={favorite}
-          toggleFavoriteFelt={toggleFavoriteFelt}
-          duration={duration}
-          position={position}
+          onSeekChapter={(startMs) => onSeekEndDisp(startMs / 1000)}
+          favorite={dispFavorite}
+          toggleFavoriteFelt={dispToggleFavoriteFelt}
+          duration={dispDuration}
+          position={dispPosition}
           volume={volume}
           muted={muted}
           systemVolume={systemVolume}
-          onScrub={onScrub}
-          commitSeek={commitSeek}
+          onScrub={onScrubDisp}
+          commitSeek={onSeekEndDisp}
           shuffle={shuffle}
             cycleShuffle={cycleShuffle}
-          canSkip={canSkip}
-          skipBack={skipBack}
-          skipForward={skipForward}
-          setPlayingState={setPlayingState}
+          canSkip={dispCanSkip}
+          skipBack={dispSkipBack}
+          skipForward={dispSkipForward}
+          setPlayingState={dispSetPlaying}
           repeat={repeat}
           cycleRepeat={cycleRepeat}
           narrowEq={narrowEq}

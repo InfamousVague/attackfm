@@ -412,14 +412,15 @@ async fn on_state(
     // A device reporting state claims active when the seat is empty (this is how
     // playback starts cold - press play, become active). If another device is
     // active, a non-active reporter is ignored: only the authority writes.
-    match &hub.session.active_device_id {
+    let claimed = match &hub.session.active_device_id {
         None => {
             hub.session.active_device_id = Some(device.to_string());
             hub.session.epoch += 1;
+            true
         }
-        Some(active) if active == device => {}
+        Some(active) if active == device => false,
         Some(_) => return,
-    }
+    };
 
     let s = &mut hub.session;
     s.track_id = track_id;
@@ -443,13 +444,29 @@ async fn on_state(
         dev.last_seen = s.updated_at;
     }
 
-    // Remotes get the new state; the active device already knows it. The device
-    // list rides along only when the active seat just changed (epoch tells us).
+    // Remotes get the new state; the active device already knows what it just
+    // told us. The device list rides along only when the seat actually moved -
+    // it was going out with EVERY report, which is a second frame per report
+    // for a list that had not changed, and on the client each one is a fresh
+    // `devices` array that re-makes the whole Connect context object.
+    //
+    // The one exception is the device that just CLAIMED the seat, and it
+    // matters more than it looks. A cold start is "press play, report, become
+    // active" - and excluding the reporter meant the claimer was never sent a
+    // frame naming it active. Its own `activeDeviceId` stayed at whatever it
+    // last heard, so `ownsPlayback` was false on the very device that owned
+    // playback. The report gate is `playing || ownsPlayback`, which then
+    // collapses to `playing` - and the moment that device paused, the gate
+    // went false and THE PAUSE WAS NEVER SENT. Every other device sat there
+    // showing a song still running. So the claimer is told, once, here.
     let state_msg = state_message(hub);
     let devices_msg = devices_message(hub);
     for (dev_id, conn) in hub.conns.iter() {
-        if dev_id != device {
+        let mine = dev_id == device;
+        if !mine || claimed {
             let _ = conn.tx.send(state_msg.clone());
+        }
+        if claimed {
             let _ = conn.tx.send(devices_msg.clone());
         }
     }

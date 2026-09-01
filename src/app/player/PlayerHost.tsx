@@ -48,14 +48,18 @@ export function PlayerHost({
   hidden?: boolean;
 }) {
   const connect = useConnect();
-  const { tracks } = useLibrary();
-  const elsewhere =
-    connect.session?.activeDeviceId != null &&
-    connect.session.activeDeviceId !== connect.thisDeviceId;
+  // `allTracks`, not `tracks`: the other device may be playing a book or a
+  // Music Date audition, and neither is on the music shelf. See library.tsx.
+  const { allTracks } = useLibrary();
+  // The provider's definition, not a second one of our own: this read used
+  // `session.activeDeviceId` while the Player used `activeDeviceId`, and the
+  // two are written by different message types - so the strip and the deck
+  // inside it could disagree about whether this device was a remote.
+  const elsewhere = connect.activeElsewhere;
   const remoteId = elsewhere ? connect.session?.trackId : null;
   const remoteTrack =
     remoteId != null
-      ? (tracks.find((t) => trackIdFromPath(t.path) === remoteId) ?? null)
+      ? (allTracks.find((t) => trackIdFromPath(t.path) === remoteId) ?? null)
       : null;
   // A local track always wins: this device's own deck is what its transport
   // drives once it has one.
@@ -117,11 +121,17 @@ export function ConnectPlayRouter({
   const connect = useConnect();
   useEffect(() => {
     routeRef.current = (track, context) => {
-      const activeElsewhere =
-        connect.connected &&
-        connect.session?.activeDeviceId != null &&
-        connect.session.activeDeviceId !== connect.thisDeviceId;
-      if (!activeElsewhere) return false;
+      // Same definition as everywhere else. This one additionally required
+      // `connected`, so a remote whose socket had merely blipped answered "no
+      // other device is playing", fell through to a LOCAL play - and the deck
+      // then refused to load it, because the Player still (correctly) knew it
+      // was a remote. The pick vanished: nothing here, nothing there.
+      //
+      // Dropping the gate is safe because the socket already handles this:
+      // `command()` holds the latest command for three seconds and forces the
+      // reconnect itself (connect.ts), so a pick made during a blip lands on
+      // the device that is actually playing a moment later.
+      if (!connect.activeElsewhere) return false;
       const list = context ?? [track];
       const ids = list
         .map((t) => trackIdFromPath(t.path))

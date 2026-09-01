@@ -86,6 +86,20 @@ interface LibraryContextValue {
    * They come out on their own shelf instead.
    */
   books: Track[];
+  /**
+   * Everything this device knows, for RESOLVING AN ID TO A ROW - never for
+   * drawing a list.
+   *
+   * `tracks` is deliberately narrow: music only, and only what has been
+   * adopted. That is right for shelves and wrong for identity. AttackFM
+   * Connect hands a remote a bare track id and asks "what is this?", and
+   * asking `tracks` meant the answer was NOTHING whenever the other device
+   * was playing an audiobook or a Music Date audition - so the phone showed
+   * its own last song while the desktop played, and a handover of one landed
+   * in silence. Use this to answer "which row is id N", and `tracks`,
+   * `forYou` or `books` to decide what belongs on screen.
+   */
+  allTracks: Track[];
   /** The favourited tracks that are present in the current library, newest first. */
   favoriteTracks: Track[];
   /** Whether a track (by path) is favourited. */
@@ -277,6 +291,10 @@ function LocalLibrary({ children }: { children: ReactNode }) {
       // A local folder has no collector: everything in it was put there.
       forYou: [],
       books: [],
+      // Nothing is held back from a local scan, so resolution and display are
+      // the same set. (Connect needs a server, so nothing here reads this -
+      // but an empty answer to "what do you know" would still be a lie.)
+      allTracks: tracks,
       favoriteTracks,
       isFavorite: (path: string) => favorites.includes(path),
       toggleFavorite: (path: string) =>
@@ -592,6 +610,7 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
       tracks,
       forYou,
       books,
+      allTracks: mapped,
       favoriteTracks,
       isFavorite: (path: string) => {
         const id = trackIdFromPath(path);

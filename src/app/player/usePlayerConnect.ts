@@ -28,7 +28,11 @@ export interface PlayerLiveState {
   skipBack: () => void;
   commitSeek: (to: number) => void;
   setVolumeState: (next: number) => void;
-  libraryTracks: Track[];
+  /** Everything this device knows, for turning a hub track id into a row -
+   *  books and unadopted auditions included. See library.tsx's `allTracks`:
+   *  the music shelf is the wrong set to ask, because the other device may
+   *  well be playing something that is not on it. */
+  allTracks: Track[];
   onTrackChange: ((track: Track) => void) | undefined;
   onQueueChange: ((tracks: Track[]) => void) | undefined;
   /** Whether `track` is this device's own deck or a mirror of the one that
@@ -68,8 +72,6 @@ export function usePlayerConnect({
   queue,
   seekTick,
   duration,
-  remoteOnly,
-  libraryTracks,
   commitSeek,
   setPlayingState,
 }: {
@@ -87,18 +89,12 @@ export function usePlayerConnect({
   queue: Track[];
   seekTick: number;
   duration: number;
-  remoteOnly: boolean;
-  libraryTracks: Track[];
   commitSeek: (to: number) => void;
   setPlayingState: (next: boolean) => void;
-}): {
-  remoteTrack: Track | null;
-  activeDeviceName: string | null;
-  remotePosition: number;
-} {
+}): void {
   useEffect(() => {
     const findByConnectId = (id: number) =>
-      liveRef.current.libraryTracks.find((t) => trackIdFromPath(t.path) === id) ?? null;
+      liveRef.current.allTracks.find((t) => trackIdFromPath(t.path) === id) ?? null;
     connect.registerController({
       play: () => liveRef.current.setPlayingState(true),
       pause: () => liveRef.current.setPlayingState(false),
@@ -241,7 +237,7 @@ export function usePlayerConnect({
           const now = liveRef.current;
           const have = new Set(now.queue.map((t: Track) => t.path));
           const add = additions
-            .map((aid) => now.libraryTracks.find((t: Track) => trackIdFromPath(t.path) === aid))
+            .map((aid) => now.allTracks.find((t: Track) => trackIdFromPath(t.path) === aid))
             .filter((t): t is Track => !!t && !have.has(t.path));
           if (add.length) now.onQueueChange?.([...now.queue, ...add]);
         });
@@ -264,7 +260,7 @@ export function usePlayerConnect({
     const currentId = live.track ? trackIdFromPath(live.track.path) : null;
 
     if (currentId !== wanted) {
-      const t = live.libraryTracks.find((x) => trackIdFromPath(x.path) === wanted);
+      const t = live.allTracks.find((x) => trackIdFromPath(x.path) === wanted);
       // Not in this listener's library: nothing to play, so the room simply
       // moves on without them rather than the app inventing a track.
       if (!t) return;
@@ -328,37 +324,4 @@ export function usePlayerConnect({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- discontinuities only; position rides refs
   }, [shouldReport, track, playing, shuffle, repeat, volume, seekTick]);
 
-  // Playback lives on another device: this one is a remote. It shows that
-  // device's now-playing (resolved from the library) and its transport sends
-  // commands rather than driving local audio.
-  const activeElsewhere = remoteOnly;
-  const remoteTrack =
-    activeElsewhere && connect.session?.trackId != null
-      ? (libraryTracks.find((t) => trackIdFromPath(t.path) === connect.session!.trackId) ?? null)
-      : null;
-  const activeDeviceName =
-    activeElsewhere
-      ? (connect.devices.find((d) => d.id === connect.session?.activeDeviceId)?.name ?? 'another device')
-      : null;
-
-  // A remote's clock ticks locally between hub updates, extrapolated from the
-  // last true position while the shared state says it is playing.
-  const [, setRemoteTick] = useState(0);
-  useEffect(() => {
-    if (!activeElsewhere || !connect.session?.playing) return;
-    const iv = window.setInterval(() => setRemoteTick((t) => t + 1), 1000);
-    return () => window.clearInterval(iv);
-  }, [activeElsewhere, connect.session?.playing, connect.session?.updatedAt]);
-  const remotePosition = (() => {
-    const s = connect.session;
-    if (!s) return 0;
-    const base = s.positionMs / 1000;
-    // updatedAt is hub-clock; Date.now() is this device's. The skew stamp
-    // (measured when the frame arrived) converts ours to theirs, so the
-    // elapsed term no longer inherits whatever this phone's clock believes.
-    const serverNow = Date.now() - (s.clockSkewMs ?? 0);
-    return s.playing ? base + Math.max(0, (serverNow - s.updatedAt) / 1000) : base;
-  })();
-
-  return { remoteTrack, activeDeviceName, remotePosition };
 }

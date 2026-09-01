@@ -46,6 +46,7 @@ export function useSystemNowPlaying({
   rate = 1,
   position,
   coarsePosition,
+  displayPosition,
   duration,
   artwork,
   audible,
@@ -59,6 +60,17 @@ export function useSystemNowPlaying({
   rate?: number;
   position: number;
   coarsePosition: number;
+  /**
+   * Where the song ON SCREEN is, which is not this deck when the device is
+   * mirroring another over Connect. Defaults to `position`.
+   *
+   * Kept apart from `positionRef` deliberately. That ref is shared back to
+   * the Player and read by its other side channels - the Connect report, the
+   * jam beat, the audiobook bookmark - and every one of those means THIS
+   * deck. Only the system surfaces (lock screen, Control Center, CarPlay,
+   * Android Auto) want the mirrored clock, so only they get it.
+   */
+  displayPosition?: number;
   duration: number;
   artwork: string | null;
   audible: boolean;
@@ -82,6 +94,9 @@ export function useSystemNowPlaying({
   const carPlayControls = useRef<SystemTransportControls | null>(null);
   const positionRef = useRef(position);
   positionRef.current = position;
+  /** What the system is told the clock reads - see `displayPosition`. */
+  const shownRef = useRef(position);
+  shownRef.current = displayPosition ?? position;
   const playingLiveRef = useRef(playing);
   playingLiveRef.current = playing;
   // Where the last push left the clock, so a seek (a jump the extrapolated
@@ -141,14 +156,14 @@ export function useSystemNowPlaying({
   // it is the standing fallback for the moments WebKit holds no claim.
   useEffect(() => {
     if (!track) return;
-    carPlaySentPos.current = positionRef.current;
+    carPlaySentPos.current = shownRef.current;
     updateMediaSessionMetadata({
       title: track.title,
       artist: track.artist,
       album: track.album,
       artwork: artwork?.startsWith('http') ? artwork : null,
     });
-    updateMediaSessionState({ duration, position: positionRef.current, playing, rate });
+    updateMediaSessionState({ duration, position: shownRef.current, playing, rate });
     // Android's half of the same sentence: a WebView does not publish the
     // page's mediaSession to the system, so without this the lock screen, the
     // notification and an Android Auto dashboard know nothing. No-ops
@@ -179,7 +194,7 @@ export function useSystemNowPlaying({
        */
       setNativeArtwork(artwork ?? null);
     }
-    setNativePlaybackState(playing, positionRef.current);
+    setNativePlaybackState(playing, shownRef.current);
     if (isIOS) {
       void pushCarPlayNowPlaying({
         title: track.title,
@@ -187,7 +202,7 @@ export function useSystemNowPlaying({
         album: track.album,
         artUrl: artwork?.startsWith('http') ? artwork : '',
         duration,
-        position: positionRef.current,
+        position: shownRef.current,
         playing,
       });
     }

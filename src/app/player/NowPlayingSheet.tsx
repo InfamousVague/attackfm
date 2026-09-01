@@ -666,6 +666,7 @@ export function NowPlayingSheet({
   tint,
   dispArtwork,
   activeElsewhere,
+  activeDeviceName,
   dispPlaying,
   playing,
   audible,
@@ -736,6 +737,8 @@ export function NowPlayingSheet({
   tint: ArtTint | null;
   dispArtwork: string | null;
   activeElsewhere: boolean;
+  /** Whose deck this screen is driving, while it drives another's. */
+  activeDeviceName: string | null;
   dispPlaying: boolean;
   playing: boolean;
   audible: boolean;
@@ -1614,9 +1617,12 @@ export function NowPlayingSheet({
               spinning={activeElsewhere ? dispPlaying : audible}
               spooling={buffering || downloading}
               beat={beat}
-              onScratchStart={onScratchBegin}
-              onScratch={onScratch}
-              onScratchEnd={onScratchEnd}
+              /* The platter is an instrument played on THIS deck's tape. A
+                 device that is only mirroring has no tape to scratch, so the
+                 gestures are withheld rather than left to rub at silence. */
+              onScratchStart={activeElsewhere ? undefined : onScratchBegin}
+              onScratch={activeElsewhere ? undefined : onScratch}
+              onScratchEnd={activeElsewhere ? undefined : onScratchEnd}
 
               spinUpMs={
                 pauseStyle === 'turntable'
@@ -1671,6 +1677,16 @@ export function NowPlayingSheet({
             </button>
           ) : (
             <span className="npScreen__artist">{track?.artist ?? ''}</span>
+          )}
+          {/* Say whose speakers this is coming out of. The strip has carried
+              this since Connect shipped; the full screen showed no sign at
+              all, so a phone driving the desktop looked exactly like a phone
+              playing to itself - right up until you wondered why the room
+              was silent. */}
+          {activeElsewhere && (
+            <span className="npScreen__codec">
+              Playing on {activeDeviceName ?? 'another device'}
+            </span>
           )}
           {/* What the file IS - FLAC, MP3, ALAC - because on a self-hosted
               library the format is a fact about YOUR copy, not the service's
@@ -1811,14 +1827,19 @@ export function NowPlayingSheet({
         <IconButton variant="ghost" aria-label="Previous" disabled={!canSkip} onClick={skipBack}>
           <SkipBack size={26} fill="currentColor" />
         </IconButton>
+        {/* `dispPlaying`, not `playing`: while this device mirrors another the
+            button stands for THAT device's playback, and reading the local
+            deck showed a Play glyph over music that was already running - and
+            then sent a play command to start what was never stopped. The two
+            are the same value whenever this device owns its own audio. */}
         <button
           type="button"
           className="npScreen__play"
-          aria-label={downloading ? 'Downloading' : playing ? 'Pause' : 'Play'}
+          aria-label={downloading ? 'Downloading' : dispPlaying ? 'Pause' : 'Play'}
           disabled={downloading}
-          onClick={() => setPlayingState(!playing)}
+          onClick={() => setPlayingState(!dispPlaying)}
         >
-          {playing ? <Pause size={30} fill="currentColor" /> : <Play size={30} fill="currentColor" />}
+          {dispPlaying ? <Pause size={30} fill="currentColor" /> : <Play size={30} fill="currentColor" />}
         </button>
         <IconButton variant="ghost" aria-label="Next" disabled={!canSkip} onClick={skipForward}>
           <SkipForward size={26} fill="currentColor" />

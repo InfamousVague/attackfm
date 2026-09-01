@@ -61,6 +61,20 @@ interface PlaybackSyncValue {
   activeDeviceId: string | null;
   /** True when THIS device owns audio (or no device does - we play locally). */
   isActiveHere: boolean;
+  /**
+   * True when ANOTHER device holds the seat: this one mirrors it and its
+   * transport sends commands instead of driving audio.
+   *
+   * The one definition. There were three - Player derived it from
+   * `activeDeviceId`, PlayerHost from `session.activeDeviceId`, and the pick
+   * router from `activeDeviceId` AND `connected` - which is how the same
+   * phone could believe it was a remote for the purpose of drawing the strip
+   * and a local player for the purpose of playing a song. Not the same as
+   * `!isActiveHere`, which is also true before any device has claimed the
+   * seat; that case is LOCAL, and getting it wrong in either direction is
+   * either a silent app or two devices playing at once.
+   */
+  activeElsewhere: boolean;
   /** The shared now-playing, for remote-control rendering. */
   session: ConnectSession | null;
   /** Hand playback to a device (its id). */
@@ -184,6 +198,7 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
       // claims the seat when it reports. So "active here" is true both when we
       // hold the seat and when nobody does.
       isActiveHere: activeDeviceId === null || activeDeviceId === me,
+      activeElsewhere: activeDeviceId !== null && activeDeviceId !== me,
       session: shared,
       transfer: (id: string) => socketRef.current?.transfer(id),
       sendCommand: (command: ConnectCommand) => socketRef.current?.command(command),

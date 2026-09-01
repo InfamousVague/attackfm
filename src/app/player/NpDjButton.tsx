@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, IconButton, Popover, Spinner, Text } from '@glacier/react';
-import { Disc3, Sparkles } from '@glacier/icons';
+import { Bot, Sparkles } from '@glacier/icons';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { usePlayNowOptional } from './playNow.tsx';
@@ -117,8 +117,14 @@ export function NpDjButton() {
       open={open}
       onOpenChange={setOpen}
       trigger={
+        /* A robot head, not a record. Every other disc in the app means an
+           ALBUM (the library tiles, the Booth platter, the notification for a
+           new record), so the one control that summons the AI voice was
+           wearing the same glyph as the thing it plays. The DJ is a machine
+           that talks - say so, and the seat stops reading as "another album
+           button" on a row where the neighbours are a book and a microphone. */
         <IconButton variant="ghost" aria-label="Start a DJ set">
-          <Disc3 size={20} />
+          <Bot size={20} />
         </IconButton>
       }
     >
