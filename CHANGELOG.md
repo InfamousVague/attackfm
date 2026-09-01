@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.15
+
+- On a song that has been split into parts, the lyrics screen now floats a karaoke button in the top-right: tap it to drop the vocal and sing along to the line the words are lighting.
+
 ## 0.5.14
 
 - The soft blur behind the lyrics now runs the full width of the screen, instead of stopping short with a sharp strip down each side.
