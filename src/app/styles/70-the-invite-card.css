@@ -182,14 +182,18 @@
 
 .inviteSheet__actions {
   flex: none;
+  align-self: stretch;
   display: flex;
   gap: var(--glacier-space-2);
   inline-size: 100%;
-  max-inline-size: 320px;
 }
 
+/* Equal halves that fill the sheet: flex-basis 0 so the two buttons split the
+   row evenly regardless of their label lengths, rather than each sizing to its
+   own text. */
 .inviteSheet__actions > * {
-  flex: 1;
+  flex: 1 1 0;
+  min-inline-size: 0;
 }
 
 /* The drawer's word when there is no card to show: no account to mint from,
@@ -200,20 +204,19 @@
   padding-block: var(--glacier-space-4);
 }
 
-/* The lifetime chooser: a row of seats above the card, one solid. */
-.inviteSheet__life {
+/* The two choosers above the card: lifetime and uses, side by side, each a
+   labelled dropdown. A two-column grid so they always share the row evenly and
+   the labels sit directly above their own select. */
+.inviteSheet__pickers {
   flex: none;
   align-self: stretch;
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-1);
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--glacier-space-3);
 }
 
-.inviteSheet__lifeLabel {
-  font-size: var(--glacier-font-size-xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--glacier-text-muted);
-  margin-inline-end: var(--glacier-space-1);
+/* The Field wrappers must not overflow their grid track - a long option label
+   would otherwise push the column wider than its half. */
+.inviteSheet__pickers > * {
+  min-inline-size: 0;
 }

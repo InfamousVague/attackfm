@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.33
+
+- The Invite a friend card is tidier: how long the code lasts and how many
+  people it admits are now two dropdowns side by side, and the Copy link and
+  Save image buttons share the row evenly.
+
 ## 0.5.32
 
 - Your account is the one key. The first sign-in on a device registers that device with your account, so when the session ages out the app signs itself back in - no password on a phone keyboard, ever again.

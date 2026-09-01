@@ -1,4 +1,4 @@
-import { Button, IconButton, Text, useToast } from '@glacier/react';
+import { Button, Field, IconButton, Select, Text, useToast } from '@glacier/react';
 import { GlassSheet } from '../ux/GlassSheet.tsx';
 import { Check, Copy, Download, RefreshCw, Share2 } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
@@ -328,61 +328,49 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
         <h2 className="inviteSheet__title">Invite a friend</h2>
         <p className="inviteSheet__desc">Share how to join {possessive(owner)} server.</p>
         {identity && (
-          <div className="inviteSheet__life" role="radiogroup" aria-label="How long the code lasts">
-            <span className="inviteSheet__lifeLabel">Code lasts</span>
-            {LIVES.map((l) => (
-              <Button
-                key={l.ttl}
-                size="sm"
-                variant={life === l.ttl ? 'solid' : 'ghost'}
-                aria-pressed={life === l.ttl}
+          // Two dropdowns side by side, each labelled above. They still snap
+          // each other: "Never expires" and "Unlimited" are the one standing
+          // code, and a use cap needs a real lifetime, so the pair that cannot
+          // exist (never-expires AND capped) can never be selected.
+          <div className="inviteSheet__pickers">
+            <Field label="Code lasts">
+              <Select
+                fullWidth
+                aria-label="How long the code lasts"
                 disabled={minting}
-                onClick={() => {
-                  if (life === l.ttl) return;
-                  setLife(l.ttl);
-                  // Never-expires and Unlimited are the same standing code, so
-                  // picking one snaps the other; leaving Never-expires with a
-                  // still-unlimited cap would be an impossible pair, so it
-                  // drops back to a one-time code.
+                value={String(life)}
+                options={LIVES.map((l) => ({ value: String(l.ttl), label: l.label }))}
+                onValueChange={(v) => {
+                  const ttl = Number(v);
+                  if (ttl === life) return;
+                  setLife(ttl);
                   let u = uses;
-                  if (l.ttl === 0) u = 0;
+                  if (ttl === 0) u = 0;
                   else if (uses === 0) u = 1;
                   if (u !== uses) setUses(u);
-                  // A different life is a different code.
-                  void mint(l.ttl, u);
+                  void mint(ttl, u);
                 }}
-              >
-                {l.label}
-              </Button>
-            ))}
-          </div>
-        )}
-        {identity && (
-          <div className="inviteSheet__life" role="radiogroup" aria-label="How many people can join">
-            <span className="inviteSheet__lifeLabel">Uses</span>
-            {USES.map((u) => (
-              <Button
-                key={u.n}
-                size="sm"
-                variant={uses === u.n ? 'solid' : 'ghost'}
-                aria-pressed={uses === u.n}
+              />
+            </Field>
+            <Field label="Uses">
+              <Select
+                fullWidth
+                aria-label="How many people can join"
                 disabled={minting}
-                onClick={() => {
-                  if (uses === u.n) return;
-                  setUses(u.n);
-                  // Mirror of the coupling above: Unlimited is a standing,
-                  // never-expiring code; any cap needs a real lifetime, so a
-                  // capped pick nudges "Never expires" back to a week.
+                value={String(uses)}
+                options={USES.map((u) => ({ value: String(u.n), label: u.label }))}
+                onValueChange={(v) => {
+                  const n = Number(v);
+                  if (n === uses) return;
+                  setUses(n);
                   let ttl = life;
-                  if (u.n === 0) ttl = 0;
+                  if (n === 0) ttl = 0;
                   else if (life === 0) ttl = WEEK_TTL;
                   if (ttl !== life) setLife(ttl);
-                  void mint(ttl, u.n);
+                  void mint(ttl, n);
                 }}
-              >
-                {u.label}
-              </Button>
-            ))}
+              />
+            </Field>
           </div>
         )}
         {!identity ? (
@@ -408,11 +396,11 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
 
         {identity && (
           <div className="inviteSheet__actions">
-            <Button variant="ghost" onClick={copyLink} disabled={!link}>
+            <Button variant="ghost" fullWidth onClick={copyLink} disabled={!link}>
               {copied ? <Check size={16} /> : <Copy size={16} />}
               {copied ? 'Copied' : 'Copy link'}
             </Button>
-            <Button variant="solid" onClick={() => void saveImage()} disabled={saving || !invite}>
+            <Button variant="solid" fullWidth onClick={() => void saveImage()} disabled={saving || !invite}>
               <Download size={16} />
               {saving ? 'Saving…' : 'Save image'}
             </Button>
