@@ -212,11 +212,20 @@ export async function pinTrack(
   // whose failure somebody is standing there trying to diagnose. Swallowing
   // here is why a wall of 147 red tiles once carried no reasons at all.
   const { invoke } = await import('@tauri-apps/api/core');
-  // The vault names the file with this - "Artist - Title" is what a person
-  // browsing AttackFM/Music in a file manager should see. Optional end to
-  // end: a binary from the hex era ignores the argument entirely.
+  // The vault shelves the file with these - Artist/Album/Title.<ext> is what
+  // a person browsing AttackFM/Music in a file manager should walk. Optional
+  // end to end: the flat-name binary uses only `name`, and the hex-era binary
+  // ignores all of it.
   const name = [track.artist, track.title].filter(Boolean).join(' - ') || undefined;
-  const entry = (await invoke('offline_pin', { key: track.path, url, ext, name })) as OfflineEntry | null;
+  const entry = (await invoke('offline_pin', {
+    key: track.path,
+    url,
+    ext,
+    name,
+    artist: track.artist || undefined,
+    album: track.album || undefined,
+    title: track.title || undefined,
+  })) as OfflineEntry | null;
   if (!entry) return false;
   // A transcode arrives with no Content-Length, and the Rust side only refuses a
   // download of exactly zero bytes - so an encoder that died mid-song hands back
@@ -238,21 +247,33 @@ function hexOf(key: string): string {
   return Array.from(new TextEncoder().encode(key), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** True when a held file still wears its hex-era name and deserves better. */
-export function heldNameIsHex(key: string): boolean {
+/**
+ * True when a held file is not on its shelf yet: still wearing its hex-era
+ * name, or sitting flat at the vault root (its parent is the root folder -
+ * `Music` on Android's browsable vault, `offline` in the private one) from
+ * the era before folders. An artist literally named Music or offline would
+ * be re-offered every sweep and no-op in the vault; harmless.
+ */
+export function heldNeedsShelving(key: string): boolean {
   const path = held.get(key);
   if (!path) return false;
-  const base = path.split('/').pop() ?? '';
-  return base.startsWith(hexOf(key));
+  const parts = path.split('/');
+  const base = parts.pop() ?? '';
+  if (base.startsWith(hexOf(key))) return true;
+  const parent = parts.pop() ?? '';
+  return parent === 'Music' || parent === 'offline';
 }
 
 /**
- * Rename hex-era files to "Artist - Title" in one batch. Purely cosmetic to
- * the player - the vault's ledger keeps the keys - but it is the difference
- * between a browsable folder and a wall of hex for anything cached before the
- * readable era. Swallowed on binaries too old to know the command.
+ * Move held files onto their shelves - Artist/Album/Title - in one batch.
+ * Purely cosmetic to the player (the vault's ledger keeps the keys), but it
+ * is the difference between a record collection and a flat wall for anything
+ * cached before the folder era. Swallowed on binaries too old to know the
+ * command; the flat-name generation renames without shelving.
  */
-export async function rebrandHeld(items: { key: string; name: string }[]): Promise<void> {
+export async function rebrandHeld(
+  items: { key: string; name: string; artist?: string; album?: string; title?: string }[],
+): Promise<void> {
   if (items.length === 0) return;
   const renamed = await tauriCall<OfflineEntry[]>('offline_rebrand', { items });
   if (!renamed || renamed.length === 0) return;

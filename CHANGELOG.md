@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.4
+
+- The AttackFM folder is now a record collection: cached songs file themselves
+  into Artist/Album folders instead of one flat list, and empty shelves fold
+  away when their last song leaves. Needs the 0.5.4 app build; existing files
+  sort themselves onto their shelves on the next cache pass.
+
 ## 0.5.3
 
 - Cached songs now live under their own names - "Artist - Title.flac" instead

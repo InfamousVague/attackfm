@@ -25,7 +25,7 @@
 import { clearArtCache, rememberArt } from './artCache.ts';
 import { clearCanvasCache, ensureCanvas } from './canvasCache.ts';
 import { artSized, artUrl, fetchCanvas, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, transcodeUrl, type RemoteTrack, type ServerSession } from '../server.ts';
-import { heldNameIsHex, heldPath, offlineEntries, offlineSpace, pinTrack, rebrandHeld, unpinTrack } from '../downloads/offline.ts';
+import { heldNeedsShelving, heldPath, offlineEntries, offlineSpace, pinTrack, rebrandHeld, unpinTrack } from '../downloads/offline.ts';
 import { pickSource } from '../servers/mirrors.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
 import {
@@ -252,17 +252,23 @@ export async function sweepCache(
   const index = loadCachedIndex(session.url);
   const byId = new Map(index.tracks.map((t) => [t.id, t] as const));
 
-  // Files cached before the readable-name era still sit on disk as hex; now
-  // that the library index is in hand, hand the vault their real names. One
-  // batched call per sweep, and only for files that are actually still hex.
+  // Files cached before the folder era sit on disk as hex or flat at the
+  // root; now that the library index is in hand, hand the vault their shelf
+  // positions. One batched call per sweep, only for files actually adrift.
   const rebrands = onDisk
-    .filter((e) => heldNameIsHex(e.key))
+    .filter((e) => heldNeedsShelving(e.key))
     .map((e) => {
       const remote = byId.get(trackIdFromPath(e.key) ?? -1);
       if (!remote) return null;
-      return { key: e.key, name: [remote.artist, remote.title].filter(Boolean).join(' - ') };
+      return {
+        key: e.key,
+        name: [remote.artist, remote.title].filter(Boolean).join(' - '),
+        artist: remote.artist || undefined,
+        album: remote.album || undefined,
+        title: remote.title || undefined,
+      };
     })
-    .filter((r): r is { key: string; name: string } => r !== null && r.name !== '');
+    .filter((r): r is NonNullable<typeof r> => r !== null && r.name !== '');
   await rebrandHeld(rebrands);
 
   // Fill the budget in rank order. A song already pinned by hand is skipped

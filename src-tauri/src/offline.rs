@@ -8,11 +8,13 @@
 //! music app has this; it is the thing a self-hosted one needs most, because
 //! the hub is a box in a house rather than a datacentre.
 //!
-//! The disk is STILL the index, but the files wear their own names. A pinned
-//! track is stored as `Artist - Title.<ext>` so a person browsing the AttackFM
-//! folder in a file manager sees music, not hex - and a hidden
-//! `.attackfm-index.json` beside the files maps each filename back to its
-//! library key, because a readable name cannot encode one losslessly. The
+//! The disk is STILL the index, but the files wear their own names and sit on
+//! shelves. A pinned track is stored as `Artist/Album/Title.<ext>` (artist
+//! only when the track names no album) so a person browsing the AttackFM
+//! folder in a file manager walks a record collection, not a flat wall - and
+//! a hidden `.attackfm-index.json` at the root maps each relative path back
+//! to its library key, because a readable name cannot encode one losslessly.
+//! The
 //! index is a convenience, not an authority: a file it has forgotten is simply
 //! not held (the sweep re-fetches it), a file the person deleted by hand is
 //! gone the way deleting is supposed to work, and files from the pre-readable
@@ -80,31 +82,116 @@ fn short_tag(key: &str) -> String {
     format!("{:06x}", h & 0xff_ffff)
 }
 
-/// The filename a (key, ext) pair stores under. An existing mapping wins so
-/// resumes and re-pins stay stable; otherwise the readable name, unless a
-/// DIFFERENT song already answers to it (case-insensitively - Android's
-/// shared storage does not distinguish), in which case the key's tag breaks
-/// the tie.
-fn decide_filename(
+/// The shelf a track sits on: `Artist/Album/`, `Artist/` when it names no
+/// album, or the vault root when it names no artist. Each segment is
+/// sanitized on its own, so a slash inside a band name cannot invent a
+/// deeper folder.
+fn shelf_of(artist: Option<&str>, album: Option<&str>) -> String {
+    let artist = artist.and_then(sanitize_stem);
+    let album = album.and_then(sanitize_stem);
+    match (artist, album) {
+        (Some(ar), Some(al)) => format!("{ar}/{al}/"),
+        (Some(ar), None) => format!("{ar}/"),
+        (None, _) => String::new(),
+    }
+}
+
+/// The relative path a (key, ext) pair stores under. When `respect_existing`
+/// an existing mapping wins so resumes and re-pins stay stable; the organize
+/// pass turns that off, because its whole point is computing where the file
+/// SHOULD be. Otherwise the readable shelf and title, unless a DIFFERENT song
+/// already answers to that exact path (case-insensitively - Android's shared
+/// storage does not distinguish), in which case the key's tag breaks the tie.
+#[allow(clippy::too_many_arguments)]
+fn decide_relpath(
     index: &BTreeMap<String, String>,
     key: &str,
     ext: &str,
+    artist: Option<&str>,
+    album: Option<&str>,
+    title: Option<&str>,
     name: Option<&str>,
+    respect_existing: bool,
 ) -> String {
     let suffix = format!(".{ext}");
-    for (f, k) in index {
-        if k == key && f.to_ascii_lowercase().ends_with(&suffix) {
-            return f.clone();
+    if respect_existing {
+        for (f, k) in index {
+            if k == key && f.to_ascii_lowercase().ends_with(&suffix) {
+                return f.clone();
+            }
         }
     }
-    let stem = name.and_then(sanitize_stem).unwrap_or_else(|| to_hex(key));
-    let plain = format!("{stem}{suffix}");
+    let shelf = shelf_of(artist, album);
+    // Inside an artist's folder the title alone is the name; with no shelf to
+    // stand on, "Artist - Title" (the flat `name`) carries the context, and
+    // with nothing readable at all the hex era's form still works.
+    let stem = if shelf.is_empty() {
+        name.or(title).and_then(sanitize_stem).unwrap_or_else(|| to_hex(key))
+    } else {
+        title.and_then(sanitize_stem).or_else(|| name.and_then(sanitize_stem)).unwrap_or_else(|| to_hex(key))
+    };
+    let plain = format!("{shelf}{stem}{suffix}");
     let taken = index.iter().any(|(f, k)| k != key && f.eq_ignore_ascii_case(&plain));
-    if taken { format!("{stem} ({}){suffix}", short_tag(key)) } else { plain }
+    if taken { format!("{shelf}{stem} ({}){suffix}", short_tag(key)) } else { plain }
+}
+
+/// Every file under the vault, as (relative path with `/` separators,
+/// absolute path). Depth-capped so a runaway symlink cannot walk the phone,
+/// and dot-entries are bookkeeping at every level.
+fn walk(base: &std::path::Path) -> Vec<(String, PathBuf)> {
+    fn rec(base: &std::path::Path, dir: &std::path::Path, depth: u8, out: &mut Vec<(String, PathBuf)>) {
+        if depth > 3 {
+            return;
+        }
+        let Ok(read) = std::fs::read_dir(dir) else { return };
+        for item in read.flatten() {
+            let path = item.path();
+            let n = item.file_name().to_string_lossy().into_owned();
+            if n.starts_with('.') {
+                continue;
+            }
+            if path.is_dir() {
+                rec(base, &path, depth + 1, out);
+            } else if path.is_file() {
+                let rel = path
+                    .strip_prefix(base)
+                    .map(|r| r.to_string_lossy().replace('\\', "/"))
+                    .unwrap_or(n);
+                out.push((rel, path));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    rec(base, base, 0, &mut out);
+    out
+}
+
+/// After deletes and moves: fold up the shelves nothing sits on any more, so
+/// unpinning an album does not strand an empty folder in the file manager.
+fn prune_empty_dirs(base: &std::path::Path) {
+    fn rec(dir: &std::path::Path, is_root: bool) -> bool {
+        let Ok(read) = std::fs::read_dir(dir) else { return false };
+        let mut empty = true;
+        for item in read.flatten() {
+            let path = item.path();
+            if path.is_dir() {
+                if !rec(&path, false) {
+                    empty = false;
+                }
+            } else {
+                empty = false;
+            }
+        }
+        if empty && !is_root {
+            return std::fs::remove_dir(dir).is_ok();
+        }
+        empty && is_root
+    }
+    let _ = rec(base, true);
 }
 
 /// A finished, non-empty file already holding this (key, ext) - through the
-/// index or as a legacy hex name.
+/// index or as a legacy hex name at the root.
 fn held_file(
     base: &std::path::Path,
     index: &BTreeMap<String, String>,
@@ -201,30 +288,25 @@ pub fn offline_set_root(app: tauri::AppHandle, root: String) -> Result<usize, St
         }
         save_index(&new_root, &merged);
         let _ = std::fs::remove_file(old.join(INDEX_FILE));
-        if let Ok(entries) = std::fs::read_dir(&old) {
-            for entry in entries.flatten() {
-                let from = entry.path();
-                if !from.is_file() {
-                    continue;
-                }
-                if entry.file_name().to_string_lossy().starts_with(INDEX_FILE) {
-                    continue; // merged above; the .tmp form is never worth moving
-                }
-                let to = new_root.join(entry.file_name());
-                if to.exists() {
-                    let _ = std::fs::remove_file(&from);
-                    continue;
-                }
-                if std::fs::copy(&from, &to).is_ok() {
-                    let _ = std::fs::remove_file(&from);
-                    moved += 1;
-                } else {
-                    // A copy that failed mid-file must not stand as a track:
-                    // the reader treats presence as wholeness.
-                    let _ = std::fs::remove_file(&to);
-                }
+        for (rel, from) in walk(&old) {
+            let to = new_root.join(&rel);
+            if to.exists() {
+                let _ = std::fs::remove_file(&from);
+                continue;
+            }
+            if let Some(parent) = to.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if std::fs::copy(&from, &to).is_ok() {
+                let _ = std::fs::remove_file(&from);
+                moved += 1;
+            } else {
+                // A copy that failed mid-file must not stand as a track:
+                // the reader treats presence as wholeness.
+                let _ = std::fs::remove_file(&to);
             }
         }
+        prune_empty_dirs(&old);
     }
     *ROOT_OVERRIDE.lock().unwrap() = Some(new_root);
     Ok(moved)
@@ -249,21 +331,16 @@ fn dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(base)
 }
 
-fn entry_of(path: &std::path::Path, index: &BTreeMap<String, String>) -> Option<OfflineEntry> {
-    let filename = path.file_name()?.to_str()?;
-    // The ledger, .nomedia, and any other dotfile are bookkeeping, not music.
-    if filename.starts_with('.') {
-        return None;
-    }
+fn entry_of(rel: &str, path: &std::path::Path, index: &BTreeMap<String, String>) -> Option<OfflineEntry> {
     // A half-finished download is not an entry; the extension keeps it out.
     if path.extension().and_then(|e| e.to_str()) == Some("part") {
         return None;
     }
-    // Readable names answer through the ledger; legacy hex names decode from
+    // Readable paths answer through the ledger; legacy hex names decode from
     // their own stem. A file that is neither - something a person dropped in
     // the folder themselves - is left alone, unlisted and unevictable.
     let stem = path.file_stem()?.to_str()?;
-    let key = index.get(filename).cloned().or_else(|| from_hex(stem))?;
+    let key = index.get(rel).cloned().or_else(|| from_hex(stem))?;
     let bytes = std::fs::metadata(path).ok()?.len();
     Some(OfflineEntry { key, path: path.to_string_lossy().into_owned(), bytes })
 }
@@ -274,11 +351,8 @@ pub async fn offline_list(app: tauri::AppHandle) -> Result<Vec<OfflineEntry>, St
     let base = dir(&app)?;
     let index = load_index(&base);
     let mut out = Vec::new();
-    let Ok(read) = std::fs::read_dir(&base) else {
-        return Ok(out);
-    };
-    for item in read.flatten() {
-        if let Some(entry) = entry_of(&item.path(), &index) {
+    for (rel, path) in walk(&base) {
+        if let Some(entry) = entry_of(&rel, &path, &index) {
             out.push(entry);
         }
     }
@@ -288,12 +362,16 @@ pub async fn offline_list(app: tauri::AppHandle) -> Result<Vec<OfflineEntry>, St
 /// Fetch one track and keep it. Idempotent: a track already held answers with
 /// what is on disk rather than downloading it twice.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn offline_pin(
     app: tauri::AppHandle,
     key: String,
     url: String,
     ext: String,
     name: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    title: Option<String>,
 ) -> Result<OfflineEntry, String> {
     let base = dir(&app)?;
     let ext = ext.trim().trim_start_matches('.').to_ascii_lowercase();
@@ -306,8 +384,21 @@ pub async fn offline_pin(
     if let Some(entry) = held_file(&base, &index, &key, &ext) {
         return Ok(entry);
     }
-    let filename = decide_filename(&index, &key, &ext, name.as_deref());
+    let filename = decide_relpath(
+        &index,
+        &key,
+        &ext,
+        artist.as_deref(),
+        album.as_deref(),
+        title.as_deref(),
+        name.as_deref(),
+        true,
+    );
     let target = base.join(&filename);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    }
     // The ledger learns the claim BEFORE the download, so an unpin can find
     // and delete the fragment of a pin that never finished. A claim whose
     // file never appears is inert: listing walks real files, not the ledger.
@@ -427,13 +518,9 @@ pub async fn offline_pin(
 pub async fn offline_space(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let base = dir(&app)?;
     let mut held: u64 = 0;
-    if let Ok(read) = std::fs::read_dir(&base) {
-        for entry in read.flatten() {
-            if let Ok(meta) = entry.metadata() {
-                if meta.is_file() {
-                    held += meta.len();
-                }
-            }
+    for (_, path) in walk(&base) {
+        if let Ok(meta) = std::fs::metadata(&path) {
+            held += meta.len();
         }
     }
     Ok(serde_json::json!({
@@ -487,11 +574,7 @@ pub async fn offline_unpin(app: tauri::AppHandle, key: String) -> Result<(), Str
         save_index(&base, &index);
     }
     let want = to_hex(&key);
-    let Ok(read) = std::fs::read_dir(&base) else {
-        return Ok(());
-    };
-    for item in read.flatten() {
-        let path = item.path();
+    for (_, path) in walk(&base) {
         // `<hex>.<ext>` matches on the stem; `<hex>.<ext>.part` has the stem
         // `<hex>.<ext>`, so it needs the prefix arm. Without it this stops
         // deleting fragments entirely and the vault leaks `.part` files for
@@ -501,6 +584,7 @@ pub async fn offline_unpin(app: tauri::AppHandle, key: String) -> Result<(), Str
             let _ = std::fs::remove_file(&path);
         }
     }
+    prune_empty_dirs(&base);
     Ok(())
 }
 
@@ -508,33 +592,36 @@ pub async fn offline_unpin(app: tauri::AppHandle, key: String) -> Result<(), Str
 #[tauri::command]
 pub async fn offline_clear(app: tauri::AppHandle) -> Result<(), String> {
     let base = dir(&app)?;
-    if let Ok(read) = std::fs::read_dir(&base) {
-        for item in read.flatten() {
-            // .nomedia survives the purge - without it the first song cached
-            // into the emptied folder joins the phone's music library.
-            if item.file_name().to_string_lossy() == ".nomedia" {
-                continue;
-            }
-            let _ = std::fs::remove_file(item.path());
-        }
+    for (_, path) in walk(&base) {
+        let _ = std::fs::remove_file(&path);
     }
+    // walk() never yields dot-entries, so .nomedia survives the purge on its
+    // own - without it the first song cached into the emptied folder would
+    // join the phone's music library. The ledger describes nothing now.
+    let _ = std::fs::remove_file(base.join(INDEX_FILE));
+    prune_empty_dirs(&base);
     Ok(())
 }
 
 #[derive(serde::Deserialize)]
 pub struct RebrandItem {
     pub key: String,
+    /// The flat "Artist - Title" fallback, kept for root-level files.
     pub name: String,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub title: Option<String>,
 }
 
-/// Rename held files from the hex era into readable names, in one batch so a
-/// vault of thousands costs one ledger write, not thousands. The web layer
-/// sends (key, "Artist - Title") pairs for entries whose filename it can see
-/// is still hex; anything already readable is skipped by construction.
+/// Move held files to where the shelves say they belong - hex-era names,
+/// flat readable names from the shelfless era, all of it - in one batch so a
+/// vault of thousands costs one walk and one ledger write. The web layer
+/// sends (key, names) pairs for files it can see are not shelved yet;
+/// anything already in place no-ops here.
 ///
 /// Optional the way `offline_set_root` is: an older binary refuses the
-/// invoke, the files stay hex-named and perfectly functional, and no
-/// NATIVE_GENERATION bump is owed.
+/// invoke (or, one generation back, renames flat), the files stay playable
+/// either way, and no NATIVE_GENERATION bump is owed.
 #[tauri::command]
 pub async fn offline_rebrand(
     app: tauri::AppHandle,
@@ -542,35 +629,38 @@ pub async fn offline_rebrand(
 ) -> Result<Vec<OfflineEntry>, String> {
     let base = dir(&app)?;
     let mut index = load_index(&base);
+    // One walk up front: relpath -> hex stem, for finding legacy files
+    // without touching the disk once per item.
+    let on_disk = walk(&base);
     let mut out = Vec::new();
     let mut dirty = false;
     for item in &items {
-        let Some(stem) = sanitize_stem(&item.name) else { continue };
         let hex = to_hex(&item.key);
         // Every finished file this key holds, whatever its quality: ledger
         // claims plus on-disk legacy hex names.
         let mut current: Vec<String> =
             index.iter().filter(|(_, k)| **k == item.key).map(|(f, _)| f.clone()).collect();
-        if let Ok(read) = std::fs::read_dir(&base) {
-            for f in read.flatten() {
-                let n = f.file_name().to_string_lossy().into_owned();
-                if n.ends_with(".part") || n.starts_with('.') {
-                    continue;
-                }
-                if n.split('.').next() == Some(hex.as_str()) && !current.contains(&n) {
-                    current.push(n);
-                }
+        for (rel, path) in &on_disk {
+            if path.extension().and_then(|e| e.to_str()) == Some("part") {
+                continue;
+            }
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if stem == hex && !current.contains(rel) {
+                current.push(rel.clone());
             }
         }
         for f in current {
             let ext = f.rsplit('.').next().unwrap_or("audio").to_string();
-            let plain = format!("{stem}.{ext}");
-            let desired = if index.iter().any(|(g, k)| *k != item.key && g.eq_ignore_ascii_case(&plain))
-            {
-                format!("{stem} ({}).{ext}", short_tag(&item.key))
-            } else {
-                plain
-            };
+            let desired = decide_relpath(
+                &index,
+                &item.key,
+                &ext,
+                item.artist.as_deref(),
+                item.album.as_deref(),
+                item.title.as_deref(),
+                Some(&item.name),
+                false,
+            );
             if f == desired {
                 continue;
             }
@@ -578,6 +668,9 @@ pub async fn offline_rebrand(
             let to = base.join(&desired);
             if !from.is_file() || to.exists() {
                 continue;
+            }
+            if let Some(parent) = to.parent() {
+                let _ = std::fs::create_dir_all(parent);
             }
             if std::fs::rename(&from, &to).is_ok() {
                 index.remove(&f);
@@ -595,6 +688,7 @@ pub async fn offline_rebrand(
     }
     if dirty {
         save_index(&base, &index);
+        prune_empty_dirs(&base);
     }
     Ok(out)
 }
@@ -617,43 +711,82 @@ mod tests {
         assert!(long.len() <= 120 && long.chars().all(|c| c == 'ノ'));
     }
 
-    #[test]
-    fn filenames_stay_stable_and_collision_free() {
-        let mut index = BTreeMap::new();
-        // First claim: the readable name, plain.
-        assert_eq!(decide_filename(&index, "afm://1", "flac", Some("Intro")), "Intro.flac");
-        index.insert("Intro.flac".to_string(), "afm://1".to_string());
-        // Same key again answers with its existing filename, not a rename.
-        assert_eq!(decide_filename(&index, "afm://1", "flac", Some("Intro (live)")), "Intro.flac");
-        // A DIFFERENT song called Intro gets the tag - case-insensitively,
-        // because Android's shared storage cannot tell intro from Intro.
-        let clash = decide_filename(&index, "afm://2", "flac", Some("intro"));
-        assert_eq!(clash, format!("intro ({}).flac", short_tag("afm://2")));
-        // No name at all falls back to the hex era's form.
-        assert_eq!(decide_filename(&index, "afm://3", "flac", None), format!("{}.flac", to_hex("afm://3")));
+    fn rel(
+        index: &BTreeMap<String, String>,
+        key: &str,
+        artist: Option<&str>,
+        album: Option<&str>,
+        title: Option<&str>,
+        name: Option<&str>,
+    ) -> String {
+        decide_relpath(index, key, "flac", artist, album, title, name, true)
     }
 
     #[test]
-    fn listing_reads_both_generations_and_skips_bookkeeping() {
+    fn shelves_read_like_a_record_collection() {
+        let mut index = BTreeMap::new();
+        // The full shelf: artist folder, album folder, title-only filename.
+        assert_eq!(
+            rel(&index, "afm://1", Some("Joji"), Some("BALLADS 1"), Some("YEAH RIGHT"), Some("Joji - YEAH RIGHT")),
+            "Joji/BALLADS 1/YEAH RIGHT.flac"
+        );
+        index.insert("Joji/BALLADS 1/YEAH RIGHT.flac".to_string(), "afm://1".to_string());
+        // Same key again answers with its existing path, not a move.
+        assert_eq!(
+            rel(&index, "afm://1", Some("Joji"), Some("Ballads One"), Some("Yeah Right?"), None),
+            "Joji/BALLADS 1/YEAH RIGHT.flac"
+        );
+        // No album: the song sits in the artist's folder directly.
+        assert_eq!(
+            rel(&index, "afm://2", Some("Joji"), None, Some("Glimpse"), None),
+            "Joji/Glimpse.flac"
+        );
+        // No artist at all: the flat "Artist - Title" name carries the context
+        // at the root, and slashes inside names cannot invent folders.
+        assert_eq!(
+            rel(&index, "afm://3", None, None, Some("Intro"), Some("AC/DC - Intro")),
+            "AC DC - Intro.flac"
+        );
+        // A DIFFERENT song on the same shelf with the same title gets the tag -
+        // case-insensitively, because Android's storage cannot tell them apart.
+        let clash = rel(&index, "afm://4", Some("joji"), Some("ballads 1"), Some("yeah right"), None);
+        assert_eq!(clash, format!("joji/ballads 1/yeah right ({}).flac", short_tag("afm://4")));
+        // Nothing readable anywhere falls back to the hex era's form.
+        assert_eq!(rel(&index, "afm://5", None, None, None, None), format!("{}.flac", to_hex("afm://5")));
+        // The organize pass ignores the existing claim - that is how a flat
+        // file learns where its shelf is.
+        assert_eq!(
+            decide_relpath(&index, "afm://1", "flac", Some("Joji"), Some("BALLADS 1"), Some("YEAH RIGHT"), None, false),
+            "Joji/BALLADS 1/YEAH RIGHT.flac"
+        );
+    }
+
+    #[test]
+    fn listing_walks_shelves_and_both_generations() {
         let dir = std::env::temp_dir().join(format!("afm-vault-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("Joji - YEAH RIGHT.flac"), b"x").unwrap();
+        std::fs::create_dir_all(dir.join("Joji/BALLADS 1")).unwrap();
+        std::fs::write(dir.join("Joji/BALLADS 1/YEAH RIGHT.flac"), b"x").unwrap();
         std::fs::write(dir.join(format!("{}.flac", to_hex("afm://old"))), b"x").unwrap();
-        std::fs::write(dir.join("Joji - Glimpse.flac.part"), b"x").unwrap();
+        std::fs::write(dir.join("Joji/BALLADS 1/Glimpse.flac.part"), b"x").unwrap();
         std::fs::write(dir.join(INDEX_FILE), b"{}").unwrap();
         std::fs::write(dir.join(".nomedia"), b"").unwrap();
         std::fs::write(dir.join("somebody-elses.mp3"), b"x").unwrap();
         let mut index = BTreeMap::new();
-        index.insert("Joji - YEAH RIGHT.flac".to_string(), "afm://42".to_string());
-        let mut keys: Vec<String> = std::fs::read_dir(&dir)
-            .unwrap()
-            .flatten()
-            .filter_map(|f| entry_of(&f.path(), &index))
+        index.insert("Joji/BALLADS 1/YEAH RIGHT.flac".to_string(), "afm://42".to_string());
+        let mut keys: Vec<String> = walk(&dir)
+            .into_iter()
+            .filter_map(|(rel, path)| entry_of(&rel, &path, &index))
             .map(|e| e.key)
             .collect();
         keys.sort();
         assert_eq!(keys, vec!["afm://42".to_string(), "afm://old".to_string()]);
+        // Unpinning the album's last song folds the empty shelves away.
+        std::fs::remove_file(dir.join("Joji/BALLADS 1/YEAH RIGHT.flac")).unwrap();
+        std::fs::remove_file(dir.join("Joji/BALLADS 1/Glimpse.flac.part")).unwrap();
+        prune_empty_dirs(&dir);
+        assert!(!dir.join("Joji").exists(), "empty artist shelf should fold away");
+        assert!(dir.join(".nomedia").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
