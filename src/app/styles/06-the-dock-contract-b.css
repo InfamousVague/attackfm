@@ -287,7 +287,15 @@
 .npScreen__coverTarget--reading::before {
   content: '';
   position: absolute;
-  inset: 0;
+  /* Edge to edge across the screen, not just the art column. The reading
+     surface is inline-size:100% of .npScreen__art, which stretches to the
+     sheet's CONTENT box - inside .npScreen's own padding-inline
+     (--glacier-space-6). `inset: 0` left the blur that far in from each side,
+     so it read as a centred pane with sharp footage down the margins. Bleeding
+     the two sides out by that exact padding carries the wash to the sheet
+     edges; the vertical fade (the mask below) is untouched. */
+  inset-block: 0;
+  inset-inline: calc(-1 * var(--glacier-space-6, 1.75rem));
   z-index: 0;
   pointer-events: none;
   -webkit-backdrop-filter: blur(7px);
