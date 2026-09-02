@@ -118,10 +118,13 @@ export function useArtistAcquire(artist: string, session: ServerSession | null) 
    * Love a catalogue song: pull it down like Add does, and promise the like
    * so it lands in Liked. No now-playing hijack - a heart is not a listen.
    */
-  const loveSong = (t: CatalogTrack) => {
+  const loveSong = (t: CatalogTrack, download = true) => {
     if (!session) return;
     setLoved((prev) => new Set(prev).add(t.id));
-    if (!adding[t.id]) void addSong(t);
+    // `download: false` when the song is already on its way by another door
+    // (an audition being fetched): the promise alone is enough, and the
+    // landing sweep keeps it.
+    if (download && !adding[t.id]) void addSong(t);
     void addPendingLike(session, artist, t.title).catch(() => {});
   };
 

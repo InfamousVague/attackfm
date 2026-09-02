@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.53
+
+- Artist pages: tap any Popular song you don't have yet and hear it. It arrives
+  as an audition in For You - a thin bar under the row while it is on its way -
+  and starts playing the moment it is here. Nothing is added to your library by
+  listening; a heart or a play-through keeps it, the way any audition is kept.
+
 ## 0.5.52
 
 - Visualizers: thirteen ways to watch the music, right where the CD spins - a

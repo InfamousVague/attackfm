@@ -25,6 +25,7 @@ import {
   useHiResCovers,
 } from './artistData.ts';
 import { useArtistAcquire } from './artistAcquire.ts';
+import { useArtistAudition } from './artistAudition.ts';
 import { ArtistDiscography } from './ArtistDiscography.tsx';
 import { ArtistGaps } from './ArtistGaps.tsx';
 import { ArtistPopular } from './ArtistPopular.tsx';
@@ -112,6 +113,8 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
   const hiRes = useHiResCovers(artist, albums);
   const { adding, addRecord, addSong, addMissing, loveSong, loved, canAddAlbum, downloads } =
     useArtistAcquire(artist, session);
+  // Hearing a Popular song you do not own: a temporary copy, on tap.
+  const audition = useArtistAudition(artist, session, onPlay);
 
   // The listener's own playlists that feature this artist, each wearing the
   // covers of the artist's songs inside it.
@@ -275,6 +278,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
         theirs={theirs}
         session={session}
         onPlay={onPlay}
+        audition={audition}
       />
 
       <ArtistGaps gaps={gaps} adding={adding} addMissing={addMissing} />

@@ -879,6 +879,9 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                 // Hand the outcome back to the mirror that raised it, if any.
                 // A no-op for an ordinary pasted link.
                 crate::spotify_sync::on_job_finished(&run_state, &id).await;
+                // And to the collector, whose pull this may be: an audition is
+                // stamped as it lands, not on the next five-minute tick.
+                crate::collector::on_job_finished(&run_state, &id).await;
                 // The files also belong on the hub, if this box is a peer.
                 // Rows and a poke only: this still holds the job's download
                 // slot, and PLAYLIST_SLOTS is 1, so a megabyte-paced upload
@@ -1516,6 +1519,11 @@ async fn announce_landed(state: &Arc<AppState>, id: &str) {
     let Some(j) = job else {
         return;
     };
+    // The collector's pulls land as auditions, not as library: "is in your
+    // library" would be the one wrong sentence to push about them.
+    if j.origin == "collector" {
+        return;
+    }
     if j.owner > 0 && j.state == "done" && !j.track_ids.is_empty() {
         let n = j.track_ids.len();
         let body = if n == 1 {
@@ -1875,6 +1883,10 @@ pub async fn retry(
             }
         })
         .await;
+    // A collector pull whose job is retried goes back to queued with it, or
+    // the second attempt's file would land with no stamp - a plain track in
+    // everyone's library from an audition that failed the first time.
+    let _ = state.db.rearm_pull_for_job(&id);
     state.imports.flush().await;
     state.imports.notify.notify_one();
     Ok(Json(serde_json::json!({ "ok": true })))

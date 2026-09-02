@@ -192,6 +192,10 @@ export function AppMain({
       {scrimKey && <TopScrim resetKey={scrimKey} />}
       {detail?.kind === 'artist' ? (
         <ArtistPage
+          /* Keyed per artist so an artist-to-artist hop remounts the page:
+             its per-page state (an audition asked for here, timers) must not
+             carry over and play artist A's song on artist B's page. */
+          key={detail.artist}
           artist={detail.artist}
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}

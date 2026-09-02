@@ -183,21 +183,10 @@ async fn settle_pulls(state: &Arc<AppState>) {
     for (pull_id, user_id, job_id) in open {
         let job = jobs.iter().find(|j| j.id == job_id);
         match job {
-            Some(j) if j.state == "done" => {
-                // A job that finished having gained nothing new still closes
-                // its pull: land_pull only marks it landed when something took
-                // the stamp, so say so explicitly rather than leaving the pull
-                // open against a job that is never going to change again.
-                if state.db.land_pull(pull_id, user_id, &j.track_ids).unwrap_or(0) == 0 {
-                    let _ = state.db.mark_pull_landed(pull_id);
-                } else {
-                    // A new audition for this listener: it belongs in their
-                    // New Music now, not on the next clock tick.
-                    crate::chartlists::refresh_new_music_for(state, user_id);
-                }
-            }
-            Some(j) if j.state == "error" => {
-                let _ = state.db.fail_pull(pull_id);
+            // Ordinarily settled the moment the job stopped (on_job_finished);
+            // this is the backstop for a restart between the two.
+            Some(j) if j.state == "done" || j.state == "error" => {
+                settle_open(state, pull_id, user_id, j).await;
             }
             // Still moving - leave it.
             Some(_) => {}
@@ -233,8 +222,25 @@ async fn settle_pulls(state: &Arc<AppState>) {
 /// candidate for a month. An unanswered offer is now simply forgotten, which
 /// puts the song back in the pool to be offered again when a peer is listening.
 async fn settle_delegated(state: &Arc<AppState>) {
-    for (pull_id, user_id, marker, _url, _title, _artist, created_at, ext_id, kind) in
-        state.db.delegated_pulls()
+    for row in state.db.delegated_pulls() {
+        settle_delegated_row(state, row).await;
+    }
+}
+
+/// One delegated pull, settled NOW - what `claimed` calls the moment a peer
+/// reports a file, so an audition is stamped (and a member's card finished)
+/// as it lands rather than up to five minutes later, when every client had
+/// already been shown the file as a plain library track.
+pub(crate) async fn settle_delegated_pull(state: &Arc<AppState>, pull_id: i64) {
+    if let Some(row) = state.db.delegated_pulls().into_iter().find(|r| r.0 == pull_id) {
+        settle_delegated_row(state, row).await;
+    }
+}
+
+type DelegatedRow = (i64, i64, String, String, String, String, i64, String, String);
+
+async fn settle_delegated_row(state: &Arc<AppState>, row: DelegatedRow) {
+    let (pull_id, user_id, marker, _url, _title, _artist, created_at, ext_id, kind) = row;
     {
         let ids = state.db.pull_path_track_ids(pull_id);
         /*
@@ -276,7 +282,7 @@ async fn settle_delegated(state: &Arc<AppState>) {
                         crate::imports::land_delegated(state, job, &have).await;
                     }
                 }
-                continue;
+                return;
             }
             // The clock restarts at the claim (claim_offered_pull), so a taken
             // pull gets its day from the peer picking it up, not from the paste.
@@ -291,11 +297,11 @@ async fn settle_delegated(state: &Arc<AppState>) {
                     crate::imports::fail_delegated(state, job, why).await;
                 }
             }
-            continue;
+            return;
         }
         if !ids.is_empty() && state.db.land_pull(pull_id, user_id, &ids).unwrap_or(0) > 0 {
             crate::chartlists::refresh_new_music_for(state, user_id);
-            continue;
+            return;
         }
         /*
          * FORGOTTEN, not failed.
@@ -775,7 +781,7 @@ async fn pull_cycle(state: &Arc<AppState>) {
                 .get(&candidate.ext_id)
                 .is_some_and(|(lane, _)| lane == "trending");
 
-            if !buy(state, user, &candidate, charted).await {
+            if !buy(state, user, &candidate, charted, None).await {
                 break;
             }
             /*
@@ -835,7 +841,55 @@ pub(crate) async fn top_up(state: &Arc<AppState>, user: i64) -> i64 {
 
 /// Resolve a candidate to a link the importer takes and raise the job.
 /// True when a job went up (whatever becomes of it).
-pub(crate) async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, charted: bool) -> bool {
+/// What became of a buy. The collector's own loop only asks "did a job go
+/// up"; the artist page's listen button has to tell a person WHY not, and
+/// "the catalogue does not have it" is a different sentence from "the
+/// catalogue could not be reached" or "the library is full".
+pub(crate) enum BuyOutcome {
+    Queued,
+    /// The catalogue answered and does not have this song.
+    Missing,
+    /// Nothing came back at all - no SpotiFLAC and no web token here.
+    Unreachable,
+    /// A pull for this song is already live (queued, taken, downloading):
+    /// nothing was raised, and nothing needed to be.
+    Busy,
+    /// The queue said no - the library's quota, most likely.
+    Refused(String),
+}
+
+pub(crate) async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, charted: bool, reason: Option<&str>) -> bool {
+    matches!(buy_outcome(state, user, d, charted, reason).await, BuyOutcome::Queued | BuyOutcome::Busy)
+}
+
+pub(crate) async fn buy_outcome(
+    state: &Arc<AppState>,
+    user: i64,
+    d: &DiscoveryRow,
+    charted: bool,
+    reason_given: Option<&str>,
+) -> BuyOutcome {
+    // A pull already live for this song is not bought twice: a second tap
+    // on the artist page, or a Date keep racing the collector, used to raise
+    // a second job and re-point the pull's row at it, orphaning the first -
+    // whose file then landed as a plain, everyone-visible track with no
+    // stamp. record_pull's upsert refuses a live row too; this is the door.
+    if matches!(state.db.pull_state_for(user, &d.ext_id), Some((s, _)) if s == "queued") {
+        return BuyOutcome::Busy;
+    }
+    // Claim the (listener, song) NOW - before the catalogue search and the
+    // queue, both of which take a beat. Two buys of one song a second apart
+    // used to pass the check above together and both raise a job; the upsert
+    // refuses a live row, so the second caller here finds somebody else's
+    // marker on it and stands down.
+    let Ok(pull_id) = state.db.record_pull(
+        user, &d.ext_id, "track", &d.title, &d.artist, &d.url, "", d.score as f64, crate::db::Db::PULL_PENDING,
+    ) else {
+        return BuyOutcome::Refused("could not record the pull".into());
+    };
+    if state.db.pull_job(pull_id).as_deref() != Some(crate::db::Db::PULL_PENDING) {
+        return BuyOutcome::Busy;
+    }
     // Discovery candidates carry Deezer links, which the importer refuses as
     // primary input - the same dead end the artist page had, solved the same
     // way: find the Spotify twin by name and hand over that.
@@ -852,19 +906,15 @@ pub(crate) async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, char
         // no SpotiFLAC and no web token - which says nothing about the record.
         // Condemning the candidate then would quietly burn the whole discovery
         // pool on a misconfigured hub, marking every song "not on Spotify"
-        // forever. Leave it for a later cycle instead.
+        // forever. Leave it for a later cycle instead - and take the claim back.
         if rows.is_empty() {
-            return false;
+            let _ = state.db.forget_pull(pull_id);
+            return BuyOutcome::Unreachable;
         }
         // The catalogue answered and did not have it: record the failure so the
         // candidate is never reconsidered, rather than re-searched every cycle.
-        let _ = state.db.record_pull(
-            user, &d.ext_id, "track", &d.title, &d.artist, &d.url, "", d.score as f64, "",
-        );
-        if let Ok(pull) = state.db.pull_id_for(user, &d.ext_id) {
-            let _ = state.db.fail_pull(pull);
-        }
-        return false;
+        let _ = state.db.fail_pull(pull_id);
+        return BuyOutcome::Missing;
     };
 
     /*
@@ -881,8 +931,11 @@ pub(crate) async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, char
      * fallback for a hub with no model at all); the model's warmer line lands
      * on the row behind the download, where its latency costs nobody a song.
      */
-    let reason = plain_reason(d, charted);
-    {
+    // A caller with its own sentence ("you asked to hear it") keeps it: the
+    // model's warmer line is for picks nobody asked for, and it used to
+    // overwrite the given one a minute later.
+    let reason = reason_given.map(str::to_string).unwrap_or_else(|| plain_reason(d, charted));
+    if reason_given.is_none() {
         let st = Arc::clone(state);
         // Only the fields the reason mentions travel; the vector stays put.
         let d2 = DiscoveryRow {
@@ -929,20 +982,10 @@ pub(crate) async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, char
      * a few minutes later.
      */
     if crate::imports::imports_mode() == crate::imports::ImportsMode::CollectorOnly {
-        return state
-            .db
-            .record_pull(
-                user,
-                &d.ext_id,
-                "track",
-                &d.title,
-                &d.artist,
-                &hit.url,
-                &reason,
-                d.score as f64,
-                crate::db::Db::PULL_OFFERED,
-            )
-            .is_ok();
+        return match state.db.set_pull_job(pull_id, crate::db::Db::PULL_OFFERED, &hit.url, &reason) {
+            Ok(()) => BuyOutcome::Queued,
+            Err(e) => BuyOutcome::Refused(format!("could not record the offer: {e}")),
+        };
     }
 
     match crate::imports::enqueue_internal(
@@ -951,20 +994,14 @@ pub(crate) async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, char
     .await
     {
         Ok(job_id) => {
-            let _ = state.db.record_pull(
-                user,
-                &d.ext_id,
-                "track",
-                &d.title,
-                &d.artist,
-                &hit.url,
-                &reason,
-                d.score as f64,
-                &job_id,
-            );
-            true
+            let _ = state.db.set_pull_job(pull_id, &job_id, &hit.url, &reason);
+            BuyOutcome::Queued
         }
-        Err(_) => false,
+        Err(e) => {
+            // No job means no download: the claim goes back with it.
+            let _ = state.db.forget_pull(pull_id);
+            BuyOutcome::Refused(e)
+        }
     }
 }
 
@@ -1097,7 +1134,7 @@ pub async fn claim(
     // it. This is the clock the pasted-link door reads (imports::enqueue), and
     // stamping it only on a take meant a quiet week for the collector shut
     // that door on every member while the peer was polling the whole time.
-    let _ = state.db.meta_set("collector.peer_seen_at", &now_ms().to_string());
+    state.db.note_peer_seen();
     let Some((id, url, title, artist)) = state.db.claim_offered_pull() else {
         return Ok(Json(serde_json::json!({ "pull": null })));
     };
@@ -1125,6 +1162,7 @@ pub async fn failed(
     if body.pull_id <= 0 {
         return Err((StatusCode::BAD_REQUEST, "pullId is required".into()));
     }
+    state.db.note_peer_seen();
     let Some((_user, ext_id, kind)) = state.db.pull_owner_kind(body.pull_id) else {
         return Ok(Json(serde_json::json!({ "ok": true, "known": false })));
     };
@@ -1169,10 +1207,16 @@ pub async fn claimed(
     if body.pull_id <= 0 || path.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "pullId and path are required".into()));
     }
+    // A delivery is the surest sign of a live peer - one mid-album never gets
+    // as far as polling for more work.
+    state.db.note_peer_seen();
     state
         .db
         .record_pull_path(body.pull_id, path)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Settled on the spot, not on the clock: the file is already indexed
+    // (upload::finish scans it before replying with this path).
+    settle_delegated_pull(&state, body.pull_id).await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -1622,13 +1666,188 @@ pub async fn date_candidate_verdict(
             .discovery_lanes(caller.id)
             .get(&d.ext_id)
             .is_some_and(|(lane, _)| lane == "trending");
-        let bought = buy(&state, caller.id, &d, charted).await;
+        let bought = buy(&state, caller.id, &d, charted, None).await;
         let k = crate::discovery::key_of(&d.artist, &d.title);
         let _ = state.db.pending_like_put(caller.id, &k, &d.title, &d.artist);
         return Ok(Json(json!({ "ok": true, "queued": bought })));
     }
     state.db.forget_discovery(caller.id, &body.ext_id);
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(serde::Deserialize)]
+pub struct AuditionBody {
+    /// The catalogue's own id - `deezer:track:<id>` straight off a Popular row.
+    pub ext_id: String,
+    pub title: String,
+    pub artist: String,
+    /// The catalogue link (Deezer's); `buy` finds the Spotify twin itself.
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub cover: String,
+}
+
+/// `POST /api/audition` - "let me hear this one": a tap on a song you do not
+/// own under an artist's Popular rows fetches a TEMPORARY copy to listen to.
+///
+/// It goes through the collector's own door (`buy`) rather than the importer's,
+/// on purpose: a collector pull lands as an audition - `curator_user_id` set,
+/// unpromoted - which is exactly what "temporary" means here. It sits in For
+/// You, plays from the artist page, and either earns its place (a listen
+/// through or a heart adopts it) or stays an audition until a pass in Music
+/// Date removes it - nothing else does. Nothing is filed into the library by
+/// the tap alone. And because it is a collector pull, a hub that delegates its
+/// downloads offers this one to the peer too, so the box that cannot fetch
+/// still gets the song.
+///
+/// `queued: false` carries a `reason` the row can say: `missing` (the
+/// catalogue does not have it), `unreachable` (no catalogue answered),
+/// `refused` (the queue said no - `detail` says why), `held` (it is here as
+/// somebody else's audition), `budget` (the collector's cap), `offline` (a
+/// delegating hub with no download box polling). `queued: true` with reason
+/// `inflight` means it was already on its way.
+pub async fn audition(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<AuditionBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller =
+        crate::auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let title = body.title.trim();
+    let artist = body.artist.trim();
+    let ext_id = body.ext_id.trim();
+    if title.is_empty() || artist.is_empty() || ext_id.is_empty() || ext_id.len() > 128 {
+        return Err((StatusCode::BAD_REQUEST, "a song needs a title, an artist and an id".into()));
+    }
+    let k = crate::discovery::key_of(artist, title);
+    // Already on its way FOR THIS LISTENER - a second tap, or the page
+    // remounting and asking again before the band has caught up. Say so; buy
+    // nothing.
+    if moving_job_owner(&state, &k).await == Some(caller.id)
+        || matches!(state.db.pull_state_for(caller.id, ext_id), Some((s, _)) if s == "queued")
+    {
+        return Ok(Json(json!({ "ok": true, "queued": true, "reason": "inflight" })));
+    }
+    // Already here, or arriving, as someone ELSE's private audition - a song
+    // the caller could see would have been a play button, not this. A second
+    // download would file a duplicate that lands as nobody's, and "on its way"
+    // would promise a copy this listener is never shown.
+    if moving_job_owner(&state, &k).await.is_some()
+        || !held_track_ids(&state, &[(artist.to_string(), title.to_string())]).is_empty()
+    {
+        return Ok(Json(json!({ "ok": true, "queued": false, "reason": "held" })));
+    }
+    // The budget is the operator's and it is one disk: at the cap this door
+    // stops the same way the buying pass does.
+    if state.db.collector_ledger_bytes() >= cap_bytes(&state) {
+        return Ok(Json(json!({ "ok": true, "queued": false, "reason": "budget" })));
+    }
+    // A hub that hands its downloads to another box, with nobody listening:
+    // the card would read "fetching" for a day. Every call on the peer channel
+    // stamps the clock - a box busy with a long album is alive too.
+    if crate::imports::imports_mode() == crate::imports::ImportsMode::CollectorOnly
+        && !peer_seen_within(&state, 15 * 60 * 1000)
+    {
+        return Ok(Json(json!({ "ok": true, "queued": false, "reason": "offline" })));
+    }
+    let d = DiscoveryRow {
+        ext_id: ext_id.to_string(),
+        title: title.to_string(),
+        artist: artist.to_string(),
+        cover: body.cover.trim().to_string(),
+        url: body.url.trim().to_string(),
+        preview: String::new(),
+        // No seed: the reason is given below, not derived from taste.
+        seed: String::new(),
+        popularity: 0.0,
+        bpm: None,
+        lyric_vec: None,
+        score: 0.0,
+    };
+    let outcome =
+        buy_outcome(&state, caller.id, &d, false, Some("You asked to hear it, from the artist's page."))
+            .await;
+    let (queued, reason) = match &outcome {
+        BuyOutcome::Queued => (true, serde_json::Value::Null),
+        BuyOutcome::Busy => (true, "inflight".into()),
+        BuyOutcome::Missing => (false, "missing".into()),
+        BuyOutcome::Unreachable => (false, "unreachable".into()),
+        BuyOutcome::Refused(_) => (false, "refused".into()),
+    };
+    let detail = match &outcome {
+        BuyOutcome::Refused(e) => e.as_str(),
+        _ => "",
+    };
+    Ok(Json(json!({ "ok": true, "queued": queued, "reason": reason, "detail": detail })))
+}
+
+/// Whose local job, if anyone's, is fetching this song right now. The same
+/// identity test `job_moving_for` makes, with the owner handed back so the
+/// artist page can tell "yours, on its way" from "somebody else's".
+async fn moving_job_owner(state: &Arc<AppState>, k: &str) -> Option<i64> {
+    let jobs = state.imports.jobs.lock().await;
+    jobs.iter()
+        .find(|j| {
+            (j.state == "queued" || j.state == "downloading")
+                && j.subtitle
+                    .as_deref()
+                    .map(|a| crate::discovery::key_of(a, &j.title) == k)
+                    .unwrap_or(false)
+        })
+        .map(|j| j.owner)
+}
+
+/// Whether a download box has spoken to this hub within `ms` - the clock every
+/// call on the peer channel stamps (a claim poll, a missing-check, a delivery
+/// report), so it answers "is anybody listening" and not merely "did anybody
+/// ever take work".
+fn peer_seen_within(state: &Arc<AppState>, ms: i64) -> bool {
+    state
+        .db
+        .meta_get("collector.peer_seen_at")
+        .and_then(|v| v.parse::<i64>().ok())
+        .map(|at| now_ms() - at < ms)
+        .unwrap_or(false)
+}
+
+/// A local job finished: settle its pull NOW rather than on the five-minute
+/// clock. Until this, an audition's file sat in the library unstamped - a
+/// plain track every client could see, and the artist page's own listen
+/// button read it as "owned" - for up to five minutes before it became the
+/// private audition it was bought as. `settle_pulls` stays as the backstop
+/// for a restart.
+pub(crate) async fn on_job_finished(state: &Arc<AppState>, job_id: &str) {
+    let open = state.db.open_pulls();
+    let Some((pull_id, user_id, _)) = open.into_iter().find(|(_, _, j)| j == job_id) else {
+        return;
+    };
+    let job = {
+        let jobs = state.imports.jobs.lock().await;
+        jobs.iter().find(|j| j.id == job_id).cloned()
+    };
+    if let Some(j) = job {
+        settle_open(state, pull_id, user_id, &j).await;
+    }
+}
+
+/// One open pull against the local job it names, once that job has stopped.
+async fn settle_open(state: &Arc<AppState>, pull_id: i64, user_id: i64, j: &crate::imports::ImportJob) {
+    if j.state == "done" {
+        // A job that finished having gained nothing new still closes its
+        // pull: land_pull only marks it landed when something took the
+        // stamp, so say so explicitly rather than leaving the pull open
+        // against a job that is never going to change again.
+        if state.db.land_pull(pull_id, user_id, &j.track_ids).unwrap_or(0) == 0 {
+            let _ = state.db.mark_pull_landed(pull_id);
+        } else {
+            // A new audition for this listener: it belongs in their New
+            // Music now, not on the next clock tick.
+            crate::chartlists::refresh_new_music_for(state, user_id);
+        }
+    } else if j.state == "error" {
+        let _ = state.db.fail_pull(pull_id);
+    }
 }
 
 pub async fn date_briefing(
@@ -1980,6 +2199,41 @@ mod delegation_tests {
         assert!(db.delegated_pulls().iter().all(|r| r.0 != id), "landed rows are settled");
         assert!(!db.fail_taken_pull(id).unwrap(), "a landed pull cannot fail");
         assert_eq!(db.collector_ledger_bytes(), 0, "a member's import is not the collector's spend");
+    }
+
+    /// A second buy of a song whose pull is LIVE changes nothing: the row
+    /// keeps the job (or the peer) it already names. Re-pointing it used to
+    /// orphan the first download, whose file then landed with no stamp - a
+    /// plain track in everyone's library from a tap that promised the
+    /// opposite. Only a settled row (failed, landed) is re-armed by a retry.
+    #[test]
+    fn a_live_pull_is_never_re_pointed() {
+        let db = db("live-pull");
+        let me = db.create_user("collector-test", "x", true).unwrap();
+        let first = db
+            .record_pull(me, "deezer:track:9", "track", "Song", "Artist", "https://x/1", "", 0.5, "job-a")
+            .unwrap();
+        assert_eq!(db.pull_state_for(me, "deezer:track:9"), Some(("queued".into(), "job-a".into())));
+        // Live: the upsert's update arm is refused, same id, same job.
+        let again = db
+            .record_pull(me, "deezer:track:9", "track", "Song", "Artist", "https://x/2", "", 0.9, "job-b")
+            .unwrap();
+        assert_eq!(again, first);
+        assert_eq!(db.pull_state_for(me, "deezer:track:9"), Some(("queued".into(), "job-a".into())));
+        // Taken by a peer counts as live too.
+        let offered = db
+            .record_pull(me, "deezer:track:10", "track", "Other", "Artist", "https://x/3", "", 0.5, crate::db::Db::PULL_OFFERED)
+            .unwrap();
+        assert_eq!(db.claim_offered_pull().map(|r| r.0), Some(offered));
+        db.record_pull(me, "deezer:track:10", "track", "Other", "Artist", "https://x/4", "", 0.5, "job-c").unwrap();
+        assert_eq!(
+            db.pull_state_for(me, "deezer:track:10"),
+            Some(("queued".into(), crate::db::Db::PULL_TAKEN.into()))
+        );
+        // Settled: a retry re-arms it.
+        db.fail_pull(first).unwrap();
+        db.record_pull(me, "deezer:track:9", "track", "Song", "Artist", "https://x/5", "", 0.5, "job-d").unwrap();
+        assert_eq!(db.pull_state_for(me, "deezer:track:9"), Some(("queued".into(), "job-d".into())));
     }
 
     /// An offer goes to exactly ONE peer. Two boxes asking in the same second

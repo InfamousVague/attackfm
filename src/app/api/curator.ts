@@ -376,3 +376,52 @@ export async function dateVerdict(
   );
   return { discarded: out.discarded ?? 0, freedBytes: out.freedBytes ?? 0 };
 }
+
+/** Why an audition was not raised - or, for `inflight`, why it did not need
+ *  to be. Mirrors the server's `reason` field; null when it was queued. */
+export type AuditionReason =
+  | 'inflight'
+  | 'missing'
+  | 'unreachable'
+  | 'refused'
+  | 'held'
+  | 'budget'
+  | 'offline';
+
+/**
+ * "Let me hear this one": fetch a TEMPORARY copy of a catalogue song through
+ * the collector's door. It lands as an audition (For You, yours) and is never
+ * filed into the library by this alone - a listen through or a heart does
+ * that. `queued: false` comes with the reason the row can say.
+ */
+export async function requestAudition(
+  session: ServerSession,
+  song: { extId: string; title: string; artist: string; url: string; cover: string },
+): Promise<{ queued: boolean; reason: AuditionReason | null }> {
+  const out = await request<{ queued?: boolean; reason?: string | null }>(
+    session.url,
+    '/api/audition',
+    {
+      token: session.token,
+      method: 'POST',
+      body: JSON.stringify({
+        ext_id: song.extId,
+        title: song.title,
+        artist: song.artist,
+        url: song.url,
+        cover: song.cover,
+      }),
+    },
+  );
+  const known: AuditionReason[] = [
+    'inflight',
+    'missing',
+    'unreachable',
+    'refused',
+    'held',
+    'budget',
+    'offline',
+  ];
+  const reason = known.find((r) => r === out.reason) ?? null;
+  return { queued: out.queued === true, reason };
+}

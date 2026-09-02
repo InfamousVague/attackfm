@@ -252,6 +252,10 @@ pub async fn library_missing(
     Json(body): Json<MissingQuery>,
 ) -> ApiResult {
     auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    // The peer asks this every wave it has something to push - a box busy
+    // with a long album never gets as far as polling for more work, and the
+    // delegation doors read this clock to know one is alive.
+    state.db.note_peer_seen();
 
     use std::collections::HashMap as Map;
     // Each leg maps to the durations AND paths of the rows behind it: the

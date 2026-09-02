@@ -774,6 +774,7 @@ async fn main() {
         .route("/api/date/candidate-verdict", post(collector::date_candidate_verdict))
         .route("/api/date/done", post(collector::date_done))
         .route("/api/date/verdict", post(collector::date_verdict))
+        .route("/api/audition", post(collector::audition))
         .route("/api/albums/gaps", get(albums::gaps))
         .route("/api/album/tracks", get(albums::tracks))
         .route("/api/app/bundle", get(appbundle::manifest))

@@ -221,6 +221,7 @@
 }
 
 .catalogTrack {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--glacier-space-3);
@@ -275,6 +276,7 @@
 
 .catalogTrack__time {
   flex: none;
+  text-align: end;
   color: var(--glacier-text-muted);
   font-variant-numeric: tabular-nums;
   font-size: var(--glacier-font-size-sm);
@@ -324,6 +326,88 @@
 
 .catalogTrack__title--play:hover {
   text-decoration: underline;
+}
+
+/* Only a row that can become a word ("fetching…", "downloader off") reserves
+   the width for one, so it does not jump when its clock changes; the owned
+   rows keep their clocks tight. */
+.catalogTrack[data-listen] .catalogTrack__time {
+  min-inline-size: 5.5em;
+}
+
+/* A title that can carry a mark after it: the text ellipsises on its own
+   and the mark stays a sibling, so a long title never swallows it. */
+.catalogTrack__title--mark {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  min-inline-size: 0;
+}
+
+.catalogTrack__titleText {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A copy is here to listen to - a temporary one, not a song you own. */
+.catalogTrack__temp {
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+.catalogTrack__title--play:disabled {
+  cursor: default;
+  text-decoration: none;
+}
+
+/* A song being fetched to listen to: a thin sweeping bar along the row's
+   bottom edge. Indeterminate on purpose - a delegated download has no
+   fraction to give - and it lives on the row, not in a dialog, because the
+   row is where the tap was. */
+.catalogTrack__bar {
+  position: absolute;
+  inset-inline: var(--glacier-space-2);
+  inset-block-end: 0;
+  block-size: 2px;
+  border-radius: 1px;
+  overflow: hidden;
+  background: var(--glacier-accent-border, var(--glacier-border));
+  pointer-events: none;
+}
+
+.catalogTrack__bar::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inline-size: 40%;
+  border-radius: inherit;
+  background: var(--glacier-accent-solid);
+  animation: catalogTrackSweep 1.1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes catalogTrackSweep {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .catalogTrack__bar::after {
+    inline-size: 100%;
+    animation: catalogTrackPulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes catalogTrackPulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
 }
 
 /* The owned badge: a check that says you have it, becoming a play on hover

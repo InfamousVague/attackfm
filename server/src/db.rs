@@ -8386,9 +8386,15 @@ impl Db {
              ON CONFLICT(user_id, ext_id) DO UPDATE SET
                state = 'queued', job_id = excluded.job_id, url = excluded.url,
                reason = excluded.reason, score = excluded.score, bytes = 0,
-               created_at = excluded.created_at",
+               created_at = excluded.created_at
+             WHERE curator_pulls.state != 'queued'",
             params![user_id, ext_id, kind, title, artist, url, reason, score, job_id, now_ms()],
         )?;
+        // The WHERE on the update arm: a LIVE row is never re-pointed. A
+        // second buy of a song already queued, taken by a peer or downloading
+        // used to swap the row's job for the new one and orphan the first,
+        // whose file then landed with no stamp at all. Callers check
+        // pull_state_for before buying; this is the belt to that brace.
         // last_insert_rowid lies on the UPDATE arm; ask for the row properly.
         conn.query_row(
             "SELECT id FROM curator_pulls WHERE user_id = ?1 AND ext_id = ?2",
@@ -8619,6 +8625,51 @@ impl Db {
      */
     pub const PULL_OFFERED: &str = "peer";
     pub const PULL_TAKEN: &str = "peer:taken";
+    /// A pull CLAIMED but not yet raised: `buy_outcome` writes the row before
+    /// the catalogue search and the queue, so a second buy of the same song
+    /// in the same second finds it live and stands down - two callers used to
+    /// both raise a job, and the loser's file landed with no stamp. The word
+    /// is replaced by the job id (or a peer marker) the moment there is one.
+    pub const PULL_PENDING: &str = "pending";
+
+    /// Point a pull at the download that is now carrying it: the local job's
+    /// id, or the peer marker, with the link the importer was actually given.
+    pub fn set_pull_job(&self, pull_id: i64, job_id: &str, url: &str, reason: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE curator_pulls SET job_id = ?2, url = ?3, reason = ?4, created_at = ?5
+             WHERE id = ?1 AND state = 'queued'",
+            params![pull_id, job_id, url, reason, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Where a pull's download is right now - its job id or marker.
+    pub fn pull_job(&self, pull_id: i64) -> Option<String> {
+        self.lock()
+            .query_row("SELECT job_id FROM curator_pulls WHERE id = ?1", params![pull_id], |r| r.get(0))
+            .ok()
+    }
+
+    /// A failed pull whose local job is being retried goes back to queued
+    /// against that same job, so the retry's file is stamped like the first
+    /// attempt's would have been. True when a row moved.
+    pub fn rearm_pull_for_job(&self, job_id: &str) -> rusqlite::Result<bool> {
+        let n = self.lock().execute(
+            "UPDATE curator_pulls SET state = 'queued', created_at = ?2
+             WHERE job_id = ?1 AND state = 'failed'",
+            params![job_id, now_ms()],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// A download box spoke to this hub - any call on the peer channel counts.
+    pub fn note_peer_seen(&self) {
+        let _ = self.lock().execute(
+            "INSERT INTO meta (k, v) VALUES ('collector.peer_seen_at', ?1)
+             ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+            params![now_ms().to_string()],
+        );
+    }
 
     /// Take one offered pull for a peer to download. At most one, and marked
     /// taken in the same lock so two peers asking at once cannot both get it.
@@ -8990,6 +9041,18 @@ impl Db {
             params![pull_id, created_before_ms],
         )?;
         Ok(())
+    }
+
+    /// A pull's state and where its download is (a local job id, or the peer
+    /// markers), or None when this listener has no row for the song.
+    pub fn pull_state_for(&self, user_id: i64, ext_id: &str) -> Option<(String, String)> {
+        self.lock()
+            .query_row(
+                "SELECT state, job_id FROM curator_pulls WHERE user_id = ?1 AND ext_id = ?2",
+                params![user_id, ext_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok()
     }
 
     pub fn pull_id_for(&self, user_id: i64, ext_id: &str) -> rusqlite::Result<i64> {
