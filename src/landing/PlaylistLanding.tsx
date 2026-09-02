@@ -234,18 +234,20 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
           </Text>
         </div>
 
-        {/* The app's mini player: the spinning disc at the left (the app's
-            own SpinningDisc - turning only while sound is coming out, spooling
-            up while a clip loads), the kit's PlayerBar with the swell beside
-            it. The bar folds its title at a card's width, as the phone strip
-            does; the highlighted row says what is playing. */}
-        <div className="now" data-idle={current === null || undefined}>
-          <div className="now__disc">
-            <SpinningDisc art={art} spinning={playing} spooling={busy !== null} />
-          </div>
+        {/* The app's player bar, floating as its own card at the foot, the
+            way the desktop app's does - with the app's SpinningDisc in the
+            bar's artwork slot (turning only while sound is coming out,
+            spooling up while a clip loads). The kit folds the artwork block
+            below a wide window; the same override the app's strip carries
+            keeps the disc in the bar here, with the title lines folded. */}
+        <div className="nowFloat" data-idle={current === null || undefined}>
           <PlayerBar
             className="now__bar"
+            position="floating"
             density="compact"
+            artwork={<SpinningDisc art={art} spinning={playing} spooling={busy !== null} />}
+            title={current === null ? 'Tap a song to preview' : share.tracks[current]?.title}
+            subtitle={current === null ? 'Thirty seconds of each' : share.tracks[current]?.artist}
             shape="swell"
           tone="accent"
           fill="solid"

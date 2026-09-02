@@ -210,27 +210,45 @@ h1 {
   padding-top: var(--glacier-space-3);
 }
 
-/* The mini player at the card's foot: the app's disc, the kit's bar. */
-.now {
+/* The kit's PlayerBar, floating as its own card at the foot of the playlist
+   card - `position="floating"` gives it the glass, the border, the shadow
+   and the radius; this box gives it room to float in. */
+.nowFloat {
   flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  padding-inline-start: var(--glacier-space-3);
-  border-top: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
-  min-width: 0;
-}
-
-/* The disc's square - the strip's TrackInfo gives it this size in the app. */
-.now__disc {
-  flex: none;
-  width: 2.75rem;
-  height: 2.75rem;
+  padding: var(--glacier-space-2) var(--glacier-space-3) calc(var(--glacier-space-3) + env(safe-area-inset-bottom));
 }
 
 .now__bar {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
+}
+
+/* The kit folds the artwork block below 34rem of container; the app's strip
+   re-shows it with these same rules (styles/19), keeps only the artwork
+   square and folds the title lines - the disc IS the "now playing" here. */
+.now__bar [class*='_track_'] {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  min-inline-size: auto;
+  align-self: stretch;
+}
+
+.now__bar [class*='_track_'] [class*='_artwork_'] {
+  inline-size: 2.75rem !important;
+  block-size: 2.75rem !important;
+  flex: none;
+  /* A disc is round. */
+  border-radius: 50%;
+  overflow: visible;
+}
+
+.now__bar [class*='_track_'] [class*='_artwork_'] > * {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.now__bar [class*='_lines_'] {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
