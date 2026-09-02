@@ -109,6 +109,23 @@ pub fn verify_stream_token(db: &Db, secret: &[u8], token: &str) -> Option<i64> {
     Some(user_id)
 }
 
+/// A day-scoped signature for a URL the server hands out itself to a page
+/// with no sign-in (the invite link's wall). Not a session: it says only
+/// "this server chose to show this today". Verification accepts today's and
+/// yesterday's, so a page loaded before midnight still draws after it.
+pub fn public_sig(secret: &[u8], payload: &str) -> String {
+    let day = now_secs() / 86_400;
+    sign(secret, &format!("public.{payload}.{day}"))
+}
+
+pub fn public_sig_ok(secret: &[u8], payload: &str, sig: &str) -> bool {
+    let day = now_secs() / 86_400;
+    [day, day - 1].iter().any(|d| {
+        let expected = sign(secret, &format!("public.{payload}.{d}"));
+        constant_time_eq(expected.as_bytes(), sig.as_bytes())
+    })
+}
+
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;

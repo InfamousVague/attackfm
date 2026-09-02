@@ -2,6 +2,7 @@ import { Button, Text } from '@glacier/react';
 import { Check, Copy, Disc3, Download, ListMusic, LogIn, Music, User, Users } from '@glacier/icons';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArtWall } from '../app/servers/ArtWall.tsx';
+import { LiveWall } from './LiveWall.tsx';
 
 /**
  * An invite LINK, opened in a browser: the same card the app raises for it
@@ -36,6 +37,15 @@ interface Glance {
   playlists?: number;
   members?: number;
 }
+
+/** What `/api/wall` hands out: paths on the hub, signed for the day. */
+interface WallDoc {
+  covers?: string[];
+  canvases?: string[];
+}
+
+/** Fewer covers than this and the stock wall reads better than a sparse one. */
+const WALL_MINIMUM = 8;
 
 type PlatformKey = 'macos' | 'windows' | 'linux' | 'android' | 'ios';
 
@@ -114,6 +124,7 @@ function useInstaller(platform: PlatformKey): Installer | null {
 
 export function InviteLanding({ invite }: { invite: InviteDoc }) {
   const [glance, setGlance] = useState<Glance | null>(null);
+  const [wall, setWall] = useState<{ covers: string[]; canvases: string[] } | null>(null);
   const [copied, setCopied] = useState(false);
   const [platform] = useState<PlatformKey>(detectPlatform);
   const installer = useInstaller(platform);
@@ -124,9 +135,20 @@ export function InviteLanding({ invite }: { invite: InviteDoc }) {
   useEffect(() => {
     if (invite.state !== 'ok' || !invite.serverUrl) return undefined;
     const controller = new AbortController();
-    fetch(`${invite.serverUrl.replace(/\/+$/, '')}/api/server`, { signal: controller.signal })
+    const hub = invite.serverUrl.replace(/\/+$/, '');
+    fetch(`${hub}/api/server`, { signal: controller.signal })
       .then((res) => (res.ok ? (res.json() as Promise<Glance>) : Promise.reject(new Error(String(res.status)))))
       .then(setGlance)
+      .catch(() => {});
+    // The hub's own wall, where the hub is new enough to offer one; the
+    // stock wall otherwise, or while this is still on its way.
+    fetch(`${hub}/api/wall`, { signal: controller.signal })
+      .then((res) => (res.ok ? (res.json() as Promise<WallDoc>) : Promise.reject(new Error(String(res.status)))))
+      .then((doc) => {
+        const covers = (doc.covers ?? []).map((p) => `${hub}${p}?size=160`);
+        const canvases = (doc.canvases ?? []).map((p) => `${hub}${p}`);
+        if (covers.length >= WALL_MINIMUM) setWall({ covers, canvases });
+      })
       .catch(() => {});
     return () => controller.abort();
   }, [invite]);
@@ -162,7 +184,7 @@ export function InviteLanding({ invite }: { invite: InviteDoc }) {
   return (
     <div className="stage">
       <div className="wallBackdrop" aria-hidden>
-        <ArtWall />
+        {wall ? <LiveWall covers={wall.covers} canvases={wall.canvases} /> : <ArtWall />}
       </div>
       <main className="card card--invite">
         {dead ? (

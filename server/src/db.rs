@@ -2484,6 +2484,34 @@ impl Db {
             .flatten()
     }
 
+    /// A random handful of distinct covers, for a wall with no sign-in.
+    pub fn random_art_ids(&self, limit: i64) -> Vec<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT art_id FROM (SELECT DISTINCT art_id FROM tracks
+               WHERE deleted = 0 AND art_id IS NOT NULL AND art_id != '')
+             ORDER BY RANDOM() LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit], |r| r.get::<_, String>(0))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+    }
+
+    /// A random handful of track ids (canvas::sample_sidecars sifts them).
+    pub fn random_track_ids(&self, limit: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) =
+            conn.prepare("SELECT id FROM tracks WHERE deleted = 0 ORDER BY RANDOM() LIMIT ?1")
+        else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit], |r| r.get::<_, i64>(0))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+    }
+
     pub fn track_count(&self) -> i64 {
         self.lock()
             .query_row("SELECT COUNT(*) FROM tracks WHERE deleted = 0", [], |r| {

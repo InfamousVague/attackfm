@@ -41,6 +41,7 @@ mod spoken;
 mod bookshape;
 mod auth;
 mod canvas;
+mod wall;
 mod collector;
 mod connect;
 mod curator;
@@ -626,6 +627,10 @@ async fn main() {
         .route("/api/pair/start", post(pair::start))
         .route("/api/pair/claim", post(pair::claim))
         // Spotify Canvas for the playing track (inert without AFM_SPOTIFY_SP_DC).
+        // The invite page's wall: a signed, public glance of the library.
+        .route("/api/wall", get(wall::wall))
+        .route("/api/wall/art/{id}/{sig}", get(wall::art))
+        .route("/api/wall/canvas/{id}/{sig}", get(wall::canvas_clip))
         .route("/api/canvas", get(canvas::canvas))
         .route("/api/canvas/media/{id}", get(canvas::media))
         .route("/api/canvas/resweep", post(canvas::resweep))

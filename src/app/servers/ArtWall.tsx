@@ -46,8 +46,19 @@ function columns(covers: readonly string[]): string[][] {
   return out;
 }
 
+/** A fresh order every mount: the bundled set is small, and dealt in file
+ *  order it was the SAME wall every time, the same neighbours side by side. */
+function shuffled<T>(items: readonly T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
 export function ArtWall() {
-  const cols = useMemo(() => columns(COVERS), []);
+  const cols = useMemo(() => columns(shuffled(COVERS)), []);
   if (COVERS.length === 0) return null;
   return (
     <div className="artWall" aria-hidden="true">

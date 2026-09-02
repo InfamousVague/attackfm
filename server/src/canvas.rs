@@ -348,6 +348,20 @@ fn sidecar_for(state: &AppState, track_id: i64) -> Option<std::path::PathBuf> {
     Some(audio.with_extension("canvas.mp4"))
 }
 
+/// Up to `n` tracks with a clip stored beside them, drawn at random. There is
+/// no record of which tracks HAVE a clip - the sidecar is the record - so a
+/// random handful of the library is asked; a library with clips on a tenth
+/// of its songs answers from a few hundred stats, which is nothing.
+pub fn sample_sidecars(state: &AppState, n: usize) -> Vec<i64> {
+    state
+        .db
+        .random_track_ids(600)
+        .into_iter()
+        .filter(|id| sidecar_for(state, *id).is_some_and(|p| p.is_file()))
+        .take(n)
+        .collect()
+}
+
 /// What the client is handed: a path on THIS server, not Spotify's CDN.
 fn media_path(track_id: i64) -> String {
     format!("/api/canvas/media/{track_id}")
@@ -398,7 +412,17 @@ pub async fn media(
     request: axum::extract::Request<axum::body::Body>,
 ) -> Result<axum::response::Response, StatusCode> {
     crate::stream::caller_from_either(&state, &headers, &params)?;
-    let path = sidecar_for(&state, id).ok_or(StatusCode::NOT_FOUND)?;
+    serve_media(&state, id, request).await
+}
+
+/// The clip response itself, for a caller already admitted - `media` above
+/// for a member, `wall::canvas_clip` for a public URL this server signed.
+pub async fn serve_media(
+    state: &AppState,
+    id: i64,
+    request: axum::extract::Request<axum::body::Body>,
+) -> Result<axum::response::Response, StatusCode> {
+    let path = sidecar_for(state, id).ok_or(StatusCode::NOT_FOUND)?;
     if !path.exists() {
         return Err(StatusCode::NOT_FOUND);
     }

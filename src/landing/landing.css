@@ -439,3 +439,13 @@ h1 {
   text-align: center;
   padding: var(--glacier-space-4) var(--glacier-space-6) var(--glacier-space-6);
 }
+
+/* A Canvas clip is a tile like a cover: square, cropped, muted, looping. */
+.wallBackdrop .artWall__col video {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  object-fit: cover;
+  display: block;
+  background: var(--glacier-surface-sunken, #17171b);
+}

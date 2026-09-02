@@ -266,12 +266,23 @@ pub async fn art(
     request: Request<Body>,
 ) -> Result<Response, StatusCode> {
     caller_from_either(&state, &headers, &params)?;
+    serve_art(&state, &art_id, &params, &headers, request).await
+}
 
+/// The art response itself, for a caller already admitted - `art` above for a
+/// member, `wall::art` for a public URL this server signed.
+pub async fn serve_art(
+    state: &AppState,
+    art_id: &str,
+    params: &HashMap<String, String>,
+    headers: &HeaderMap,
+    request: Request<Body>,
+) -> Result<Response, StatusCode> {
     // Resolving through art_path also validates the id's alphabet - nothing
     // below builds a path or a header from an id this did not accept.
-    let original = scan::art_path(&state.art_dir, &art_id).ok_or(StatusCode::NOT_FOUND)?;
+    let original = scan::art_path(&state.art_dir, art_id).ok_or(StatusCode::NOT_FOUND)?;
 
-    let size = requested_art_size(&params);
+    let size = requested_art_size(params);
     let original_etag = format!("\"{art_id}\"");
     let variant_etag = size.map(|s| format!("\"{art_id}@{s}\""));
 
@@ -283,7 +294,7 @@ pub async fn art(
         .flatten()
         .map(|tag| tag.trim_matches('"'))
         .collect();
-    if if_none_match(&headers, &candidates) {
+    if if_none_match(headers, &candidates) {
         let etag = variant_etag.as_deref().unwrap_or(&original_etag);
         return Ok((
             StatusCode::NOT_MODIFIED,
@@ -299,7 +310,7 @@ pub async fn art(
     // the original whenever that cannot work.
     let (path, etag) = match size {
         Some(size) => {
-            let variant = art_variant_path(&state.art_dir, &art_id, size);
+            let variant = art_variant_path(&state.art_dir, art_id, size);
             let ready = variant.is_file() || {
                 let original = original.clone();
                 let dest = variant.clone();
