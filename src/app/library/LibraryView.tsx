@@ -1,9 +1,6 @@
 import { SearchEntry } from '../search/SearchEntry.tsx';
 import { usePrefetchArt } from '../ux/artPrefetch.ts';
 import { artSized } from '../server.ts';
-import { CuratorShelves } from './HomePage.tsx';
-import { ForYouShelf } from './ForYouShelf.tsx';
-import { NewMusicShelf } from './NewMusicShelf.tsx';
 import { Button, IconButton, ScrollArea } from '@glacier/react';
 import { Download } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -15,7 +12,6 @@ import { isFavouriteBook, shelve } from './bookShelf.ts';
 import { ShelfSkeleton } from '../ux/ShelfSkeleton.tsx';
 import { PlaylistShowcase } from '../playlists/PlaylistShowcase.tsx';
 import { HomeStatsCards } from './HomeStatsCards.tsx';
-import { HistoryShelves } from './HomePage.tsx';
 import { TrackMenu } from './TrackMenu.tsx';
 import { isDesktopApp } from '../core/platform.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
@@ -24,10 +20,14 @@ import type { Track } from '../core/tauri.ts';
 import placeholderArt from '../../assets/attack-wave.png';
 
 /**
- * The Library tab - now the app's home. It focuses on what you HAVE: a
- * summary of horizontal shelves built entirely from the local library, or the
- * full song table, chosen by a tab at the top. Searching lives in the header's
- * search icon (the full-screen sheet), so the page carries no filter field.
+ * The Library tab - the app's home, and ONLY what you saved or made: your
+ * playlists, your liked songs, the music you added, the books you kept, and
+ * the week's numbers. Everything the machine suggests - the mixes it built,
+ * the auditions it fetched, the charts, the shelves it reads from your history
+ * - is on Discover, its own tab. That split is by request: this page used to
+ * carry all of it and read as four pages in one scroller. Searching lives in
+ * the header's search icon (the full-screen sheet), so the page carries no
+ * filter field.
  */
 
 /** A shelf: a heading over a horizontal run of cards. Renders nothing when it
@@ -136,18 +136,6 @@ function AlbumCard({
   );
 }
 
-/** A round artist card that links into the artist page. */
-function ArtistCard({ name, cover, onOpen }: { name: string; cover: string | null; onOpen: () => void }) {
-  const { src, loaded, onLoad, onError } = useCardArt(cover);
-  const idle = !loaded || undefined;
-  return (
-    <button type="button" className="artistCard" onClick={onOpen}>
-      <img className="artistCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
-      <span className="artistCardName" data-loading={idle}>{loaded ? name : NBSP}</span>
-    </button>
-  );
-}
-
 export function LibraryView({
   view,
   onPlay,
@@ -225,58 +213,18 @@ export function LibraryView({
     [tracks],
   );
 
-  // Artists by how much of them the library holds, each wearing its first cover.
-  const artists = useMemo(() => {
-    const map = new Map<string, { name: string; cover: string | null; count: number }>();
-    for (const t of tracks) {
-      const name = t.artist.trim();
-      if (!name) continue;
-      const key = name.toLowerCase();
-      const entry = map.get(key);
-      if (entry) {
-        entry.count += 1;
-        if (!entry.cover) entry.cover = t.artwork;
-      } else {
-        map.set(key, { name, cover: t.artwork, count: 1 });
-      }
-    }
-    return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 20);
-  }, [tracks]);
-
   /*
    * Warm the shelf covers before they are scrolled to.
    *
    * The shelves draw the 640px variant, and the server BUILDS each size on the
    * first request that asks for it, so an unwarmed shelf pays for a resize as
-   * well as a download the moment a card comes into view. These three lists
-   * are the whole visible top of the page, and they are short - twenty each -
-   * so warming them is bounded and is exactly the set about to be drawn.
+   * well as a download the moment a card comes into view. The list is the
+   * visible top of the page, and it is short - twenty - so warming it is
+   * bounded and is exactly the set about to be drawn.
    */
   usePrefetchArt(
-    useMemo(
-      () => [
-        ...recentlyAdded.map((t) => artSized(t.artwork, 640)),
-        ...artists.map((a) => artSized(a.cover, 640)),
-      ],
-      [recentlyAdded, artists],
-    ),
+    useMemo(() => recentlyAdded.map((t) => artSized(t.artwork, 640)), [recentlyAdded]),
   );
-
-  // Albums, newest arrival first, each a representative track for play-through.
-  const albums = useMemo(() => {
-    const map = new Map<string, Track[]>();
-    for (const t of tracks) {
-      if (!t.album.trim()) continue;
-      const key = `${t.artist.trim().toLowerCase()}${t.album.trim().toLowerCase()}`;
-      const list = map.get(key);
-      if (list) list.push(t);
-      else map.set(key, [t]);
-    }
-    return [...map.entries()]
-      .map(([key, list]) => ({ key, list, latest: Math.max(...list.map((t) => t.addedAt)) }))
-      .sort((a, b) => b.latest - a.latest)
-      .slice(0, 20);
-  }, [tracks]);
 
   return (
     <div className="homePage libraryPage" ref={setRippleRoot}>
@@ -307,8 +255,6 @@ export function LibraryView({
           <ShelfSkeleton title="Playlists" kind="tile" count={8} />
           <ShelfSkeleton title="Recently added" kind="track" />
           <ShelfSkeleton title="Liked songs" kind="track" />
-          <ShelfSkeleton title="Artists" kind="artist" />
-          <ShelfSkeleton title="Albums" kind="track" />
         </>
       ) : view === 'summary' ? (
         <>
@@ -322,28 +268,11 @@ export function LibraryView({
             onOpenSongs={onOpenSongs}
           />
 
-          {/* What the curator made FROM this library: mixes whose every track
-              is already owned, so they play the instant they are tapped. They
-              were moved out to Discover once and have come back, which is the
-              right way round - a mix of your own music is the one recommended
-              thing that works on day one, and it belongs beside the music it
-              is made of. */}
-          <CuratorShelves onPlay={onPlay} onOpenArtist={onOpenArtist} />
-
-          {/* And what the collector went and FETCHED, still waiting on a
-              listen to earn its place. Below the mixes deliberately: these are
-              the least certain rows on the page. */}
-          <ForYouShelf onPlay={onPlay} />
-
-          {/* And one step further out again: what it has only FOUND. Nothing
-              here is on the disk, so the shelf sits below the one that is -
-              the order down this page is how certain each row is, and this is
-              the least certain of all. */}
-          <NewMusicShelf />
-
           {/* Under the playlists, because both are "things you chose" - a list
-              you built and a book you kept - and above the shelves the library
-              fills in for you. Renders nothing until a book is hearted. */}
+              you built and a book you kept. Renders nothing until a book is
+              hearted. (The curator's mixes, the collector's auditions and the
+              new-music shelf used to sit between the two; they are Discover's
+              now - this page is what you chose, and nothing the machine did.) */}
           <Shelf title="Books you love" count={lovedBooks.length}>
             {lovedBooks.map((book) => (
               <button
@@ -372,33 +301,14 @@ export function LibraryView({
               Renders nothing until there is a week to speak of. */}
           {onOpenStats && <HomeStatsCards onOpenStats={onOpenStats} />}
 
-
-          {/* The personalized mixes, folded in from the old Home: what the
-              server made from your listening. They sit BELOW the stats and the
-              playlists now - the page should open on your own library, not on
-              a shelf that is empty until a history exists. Renders its own
-              shelves and skeletons, and nothing at all on a local library. */}
-          {/* What you have been PLAYING. The AI's own shelves used to render
-              here too, which is what made this page four pages in one scroller;
-              they live on Discover now. */}
-          <HistoryShelves
-            onPlay={onPlay}
-            onOpenArtist={onOpenArtist}
-            onOpenAlbum={onOpenAlbum}
-            onOpenStats={onOpenStats}
-          />
-
-          {recentlyAdded.length === 0 &&
-            favoriteTracks.length === 0 &&
-            artists.length === 0 &&
-            albums.length === 0 && (
-              <div className="emptyState emptyState--tall">
-                <EmptyArt name="library" />
-                <p className="emptyState__text">
-                  No music in your library yet. Sign in to your server or import songs to fill it.
-                </p>
-              </div>
-            )}
+          {recentlyAdded.length === 0 && favoriteTracks.length === 0 && (
+            <div className="emptyState emptyState--tall">
+              <EmptyArt name="library" />
+              <p className="emptyState__text">
+                No music in your library yet. Sign in to your server or import songs to fill it.
+              </p>
+            </div>
+          )}
 
           <Shelf title="Recently added" count={recentlyAdded.length}>
             {recentlyAdded.map((t) => (
@@ -411,18 +321,9 @@ export function LibraryView({
               <TrackCard key={t.path} track={t} onOpen={() => onPlay(t, favoriteTracks)} onOpenArtist={onOpenArtist} />
             ))}
           </Shelf>
-
-          <Shelf title="Artists" count={artists.length}>
-            {artists.map((a) => (
-              <ArtistCard key={a.name} name={a.name} cover={a.cover} onOpen={() => onOpenArtist(a.name)} />
-            ))}
-          </Shelf>
-
-          <Shelf title="Albums" count={albums.length}>
-            {albums.map((g) => (
-              <AlbumCard key={g.key} track={g.list[0]!} onOpen={() => onPlay(g.list[0]!, g.list)} onOpenArtist={onOpenArtist} />
-            ))}
-          </Shelf>
+          {/* No Artists or Albums shelves: those were the library browsing
+              itself, and by request this page holds what you saved or made.
+              An artist is a search or a tap on a credit away. */}
         </>
       ) : (
         <section className="homeShelf librarySongs">

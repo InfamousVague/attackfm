@@ -8,15 +8,16 @@ import {
   type ServerSession,
 } from '../server.ts';
 import { readFeedCache, writeFeedCache } from '../library/feedCache.ts';
+import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import type { Track } from '../core/tauri.ts';
 import type { ResolvedMix } from './homeCards.tsx';
 import { tracksOfHub } from '../server.ts';
 
 /**
  * The home page's feed machinery: the cached-then-refreshed home and curator
- * feeds, and every shelf derived from them. One hook, because Home, Discover's
- * curator shelves and Library's history shelves are the same feed read three
- * ways - splitting the loader would mean loading it twice.
+ * feeds, and every shelf derived from them. One hook, because Discover's
+ * curator shelves and its history shelves are the same feed read two ways -
+ * splitting the loader would not save the second read (Discover mounts both).
  */
 
 const REFRESH_MS = 5 * 60 * 1000;
@@ -79,8 +80,10 @@ export function useHomeFeed(
     }
   }, []);
 
-  // On mount, on a slow clock, and when the app comes back to the front -
-  // the same rhythm the library keeps.
+  // On mount, on a slow clock, when the app comes back to the front - the
+  // same rhythm the library keeps - and on a pull-to-refresh of the page
+  // these shelves are on (the nonce, see nav/pageRefresh.tsx).
+  const refreshNonce = useRefreshNonce();
   useEffect(() => {
     void refresh();
     const interval = window.setInterval(() => void refresh(), REFRESH_MS);
@@ -92,7 +95,7 @@ export function useHomeFeed(
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', wake);
     };
-  }, [refresh]);
+  }, [refresh, refreshNonce]);
 
   // The id -> track map the feed's shelves resolve through. Ids the library
   // has not synced yet simply drop out.

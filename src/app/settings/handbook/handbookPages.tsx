@@ -347,16 +347,19 @@ export const HANDBOOK_PAGES: readonly HandbookPage[] = [
     body: (
       <>
         <P>
-          Everything the machine picks for you sits on Library, under your own
-          shelves. The mixes are built on the server from your listening and
-          contain only music you already own, so they play the instant you tap
-          them; Music Date is the deck of things the collector went and fetched
-          on your behalf, waiting on a listen to earn a place.
+          Everything the machine picks for you sits on Discover, its own tab
+          beside the Library. The mixes are built on the server from your
+          listening and contain only music you already own, so they play the
+          instant you tap them; Music Date is the deck of things the collector
+          went and fetched on your behalf, waiting on a listen to earn a place;
+          the charts it keeps, the lists it suggests and the shelves it reads
+          from your history are all there too.
         </P>
         <P>
-          There is no separate Discover page. Looking for music you do not own
-          yet is a search - the search field takes a Discover scope, which looks
-          outward instead of at your shelves.
+          The Library is only what you saved or made: your liked songs, your
+          playlists, the music you added. Looking for one song you do not own
+          yet is still a search - the search field takes a Discover scope, which
+          looks outward instead of at your shelves.
         </P>
         <Facts
           items={[

@@ -15,6 +15,7 @@ import { PlaylistPage } from '../playlists/PlaylistPage.tsx';
 import { MixPage } from '../playlists/MixPage.tsx';
 import { SongPage, type SongCollection } from '../library/SongPage.tsx';
 import { LibraryView } from '../library/LibraryView.tsx';
+import { DiscoverPage } from '../discover/DiscoverPage.tsx';
 import { BoothPage } from '../booth/BoothPage.tsx';
 import { FriendsPage } from '../profile/FriendsPage.tsx';
 import { ProfilePage } from '../profile/ProfilePage.tsx';
@@ -109,7 +110,8 @@ export function AppMain({
   // that should not be here.
   const hasDownloads = useDownloadsOptional() !== null;
   const hasQueue = useHasDownloadQueue();
-  // Discover is gone as a destination, so nothing here gates on it any more.
+  // Discover is a destination again, but nothing here gates on whether the
+  // box can acquire: the page hides what it cannot act on itself.
   //
   // `useAcquire` is still CALLED, and unconditionally, which the line it
   // replaces was not: `hasDownloads || useAcquire().hasAny` short-circuits, so
@@ -168,7 +170,7 @@ export function AppMain({
               : null
     : activePage
       ? `page:${activePage.key}`
-      : tab === 'home' || tab === 'library'
+      : tab === 'home' || tab === 'library' || tab === 'discover'
         ? tab
         : null;
 
@@ -241,6 +243,18 @@ export function AppMain({
           onOpenPlaylist={onOpenPlaylist}
           onOpenSongs={onOpenSongs}
           onOpenDownloads={hasQueue ? onOpenDownloads : undefined}
+          onOpenStats={onOpenStats}
+        />
+      ) : tab === 'discover' ? (
+        // Discover: what the machine has for you - the mixes it built, the
+        // auditions it fetched, the charts, the suggestions, your history's
+        // shelves. Its own tab again, so the Library can be only yours.
+        <DiscoverPage
+          onPlay={onPlay}
+          onOpenArtist={onOpenArtist}
+          onOpenAlbum={onOpenAlbum}
+          onOpenPlaylist={onOpenPlaylist}
+          onOpenSongs={onOpenSongs}
           onOpenStats={onOpenStats}
         />
       ) : tab === 'booth' && showBooth ? (

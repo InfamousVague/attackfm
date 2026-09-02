@@ -16,26 +16,20 @@ import {
 } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
-import { MusicDateChip } from '../library/MusicDateChip.tsx';
+import { OnRepeatChip } from '../library/OnRepeatChip.tsx';
 import { usePlaylists, type Playlist } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { useLikedStems } from '../servers/likedStems.ts';
-import { useServerSession } from '../servers/serverSession.tsx';
-import { readFeedCache } from '../library/feedCache.ts';
-import { trackIdFromPath, type HomeFeed } from '../server.ts';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
 import { openMix } from '../nav/openMix.ts';
 import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
-import { tracksOfHub } from '../server.ts';
 import { serverLabelFor } from '../servers/serverNames.ts';
 // The objects made for these four tiles. Their own colours are not used: each
 // is tinted to its card's hue in CSS, so the four read as one set rather than
 // four photographs that happen to sit together.
 import likedChip from '../../assets/chip-liked.webp';
-import allSongsChip from '../../assets/chip-all-songs.webp';
-import onRepeatChip from '../../assets/chip-on-repeat.webp';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -202,11 +196,22 @@ function songCount(n: number): string {
  * whatever the plugins bring. Opening any tile shows its tracks in a modal;
  * a user playlist's modal can also shed tracks or delete the list whole.
  */
+/**
+ * Folders the SERVER fills - the charts it keeps as playlists, and its
+ * new-music list. Generated, refreshed on their own clock, never filed by a
+ * person: they belong on Discover, not among the lists you made.
+ */
+const GENERATED_FOLDERS = new Map<string, string>([
+  ['Charts', 'Top charts'],
+  ['New music', 'New music'],
+]);
+
 export function PlaylistShowcase({
   onPlay,
   onOpenPlaylist,
   onOpenSongs,
   onOpenArtist,
+  show = 'personal',
 }: {
   onPlay: (track: Track, queue: Track[]) => void;
   /** Opens one of the user's own lists as a full page - where it can be
@@ -219,39 +224,18 @@ export function PlaylistShowcase({
   onOpenSongs: (view: import('../library/SongPage.tsx').SongCollection) => void;
   /** Opens an artist's page from a modal row's artist line. */
   onOpenArtist?: (artist: string) => void;
+  /**
+   * Which half of the lists to draw. 'personal' (the Library): the doors,
+   * your own playlists and folders, and lists on your other hubs. 'generated'
+   * (Discover): only the folders the server fills - the charts, new music.
+   * One component for both because the tiles, menus and dialogs are the same;
+   * the two never render on one page.
+   */
+  show?: 'personal' | 'generated';
 }) {
   const { tracks, favoriteTracks } = useLibrary();
-  const { session } = useServerSession();
-
-  /*
-   * How many songs are actually on repeat.
-   *
-   * The other three doors carry a figure and this one carried a phrase, which
-   * is why it read as missing something: "Your most played" says what the door
-   * IS, not how much is behind it.
-   *
-   * Taken from the CACHED home feed rather than fetched. `heavy` is the same
-   * list the On repeat page itself opens with, and the feed is already on disk
-   * from the home page - so this costs a localStorage read and no request. It
-   * follows the page's own definition by intersecting with the library: an id
-   * the server counts but this device has not synced is not a song anyone can
-   * open, so counting it would make the card disagree with the page it opens.
-   *
-   * Null - and so no figure at all, LibChipStat draws nothing for it - before
-   * the first home feed has ever landed. A door that says nothing is better
-   * than one that says nought while the library is plainly full.
-   */
-  const onRepeatCount = useMemo(() => {
-    const feed = readFeedCache<HomeFeed>(session, 'home');
-    if (!feed?.heavy?.length) return null;
-    const known = new Set<number>();
-    for (const t of tracksOfHub(tracks, session)) {
-      const id = trackIdFromPath(t.path);
-      if (id !== null) known.add(id);
-    }
-    const n = feed.heavy.filter((id) => known.has(id)).length;
-    return n > 0 ? n : null;
-  }, [session, tracks]);
+  // On repeat is its own chip now (OnRepeatChip), which computes its own
+  // count from the cached feed; that read used to live here and went with it.
   // removeTrack went with the strip's modal - shedding a row was only ever
   // offered there, and Recent never offered it at all.
   const { playlists, create, remove, rename, setMeta, setCover, setAutoStem } = usePlaylists();
@@ -282,11 +266,19 @@ export function PlaylistShowcase({
   const coverInput = useRef<HTMLInputElement | null>(null);
 
   // Same rule the page's menu follows: a folder IS the playlists that name it.
+  // The server's own folders (Charts, New music) are left out - they are not
+  // yours to file a playlist into, and offering them as a move target would
+  // detach that list from the refresh that keeps them current.
   const folders = useMemo(
     () =>
-      [...new Set(playlists.filter((p) => !p.origin).map((p) => p.folder).filter(Boolean))].sort((a, b) =>
-        a.localeCompare(b),
-      ),
+      [
+        ...new Set(
+          playlists
+            .filter((p) => !p.origin && !GENERATED_FOLDERS.has(p.folder))
+            .map((p) => p.folder)
+            .filter(Boolean),
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
     [playlists],
   );
 
@@ -369,7 +361,7 @@ export function PlaylistShowcase({
    * folder gets its own labelled grid underneath, in alphabetical order - a
    * folder's position should not move when you play something inside it.
    */
-  const { loose, foldered, elsewhere } = useMemo(() => {
+  const { loose, foldered, generated, elsewhere } = useMemo(() => {
     const sorted = [...playlists].sort(
       (a, b) =>
         Math.max(b.createdAt, playlistPlayedAt(b.id)) -
@@ -397,9 +389,15 @@ export function PlaylistShowcase({
       if (bucket) bucket.push(p);
       else groups.set(p.folder, [p]);
     }
+    const folders = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
     return {
       loose: out,
-      foldered: [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])),
+      // The server's folders and yours, apart: they are drawn on different
+      // pages. Charts first - it is the shelf people come to Discover for.
+      foldered: folders.filter(([folder]) => !GENERATED_FOLDERS.has(folder)),
+      generated: folders
+        .filter(([folder]) => GENERATED_FOLDERS.has(folder))
+        .sort((a, b) => (a[0] === 'Charts' ? -1 : b[0] === 'Charts' ? 1 : 0)),
       elsewhere: [...hubs.entries()].map(([origin, lists]) => ({
         origin,
         label: serverLabelFor(origin) ?? 'Another server',
@@ -416,11 +414,6 @@ export function PlaylistShowcase({
     () => favoriteTracks.map((t) => t.artwork).filter((a): a is string => !!a),
     [favoriteTracks],
   );
-  const allCovers = useMemo(
-    () => tracks.map((t) => t.artwork).filter((a): a is string => !!a),
-    [tracks],
-  );
-
   // Nothing in this strip opens a modal any more. Recent was the last one, and
   // it opens as a full page like Liked and All songs - the three are the same
   // kind of thing (a window on the whole library, in a fixed order, with
@@ -443,13 +436,16 @@ export function PlaylistShowcase({
       {/* A shelf like every other on the page: the same heading, the same
           horizontal row - the tiles are just squircles instead of squares.
           The counts that used to crowd this header live in the stats card. */}
-      {/* Liked and All songs are not playlists - they are the whole library,
-          sliced two ways, and they never change, never reorder and cannot be
-          deleted. Sitting them in the playlist grid made them look like two
-          more lists among however many the user has made. They lead now, as a
-          pair of half-width chips: a wide shape rather than a square, because
-          what matters about them is the NAME, and a chip that is half the row
-          says "there are exactly two of these" at a glance. */}
+      {/* Liked and On repeat are not playlists - they are the library, sliced
+          two ways by your own hand and your own habit - and they never
+          reorder and cannot be deleted. Sitting them in the playlist grid
+          made them look like two more lists among however many the user has
+          made. They lead, as a pair of half-width chips: a wide shape rather
+          than a square, because what matters about them is the NAME, and a
+          chip that is half the row says "there are exactly two of these" at
+          a glance. (All songs and Music Date sat here once; both are on
+          Discover now, by request.) */}
+      {show === 'personal' && (
       <section className="homeShelf libShelf">
         <div className="libChips" {...hold}>
           {/* Built like the Browse tiles on search: a bold gradient face, the
@@ -491,39 +487,15 @@ export function PlaylistShowcase({
               <span className="libChip__count">{songCount(favoriteTracks.length)}</span>
             </button>
           </MaybeMenu>
-          <button
-            type="button"
-            className="libChip libChip--all"
-            style={{ '--libChipHue': 214, '--libChipHue2': 262, '--art': `url("${allSongsChip}")` } as CSSProperties}
-            onClick={() => onOpenSongs('all')}
-          >
-            <img className="libChip__art" src={allSongsChip} alt="" loading="lazy" />
-            <LibChipMosaic covers={allCovers} />
-            <LibChipStat value={String(tracks.length)} />
-            <span className="libChip__name">All songs</span>
-            <span className="libChip__count">{songCount(tracks.length)}</span>
-          </button>
-          {/* The songs you keep coming back to, as a door beside the other
-              whole-library views. Green, wearing the repeat mark itself - the
-              one chip whose face is a symbol, because the symbol IS the name. */}
-          <button
-            type="button"
-            className="libChip libChip--repeat"
-            style={{ '--libChipHue': 145, '--libChipHue2': 190, '--art': `url("${onRepeatChip}")` } as CSSProperties}
-            onClick={() => onOpenSongs('onrepeat')}
-          >
-            <img className="libChip__art" src={onRepeatChip} alt="" loading="lazy" />
-            <LibChipMosaic covers={allCovers} />
-            <LibChipStat value={onRepeatCount === null ? undefined : String(onRepeatCount)} />
-            <span className="libChip__name">On repeat</span>
-            <span className="libChip__count">
-              {onRepeatCount === null ? 'Your most played' : songCount(onRepeatCount)}
-            </span>
-          </button>
-          <MusicDateChip />
+          {/* The songs you keep coming back to, beside the ones you kept:
+              both are yours by your own hand or your own habit. (All songs
+              and Music Date moved to Discover - by request.) */}
+          <OnRepeatChip onOpenSongs={onOpenSongs} />
         </div>
       </section>
+      )}
 
+      {show === 'personal' && (
       <section className="homeShelf">
         <h2 className="homeShelfTitle">Playlists</h2>
         {/* A grid, not a rail: every playlist on screen at once, wrapping
@@ -585,20 +557,29 @@ export function PlaylistShowcase({
             ))}
         </div>
       </section>
+      )}
 
       {/* One shelf per folder, under the loose ones. Deliberately flat rather
           than a folder you open: on a phone, a tile that leads to another grid
           of tiles is a second journey for something that fits on this screen -
           and folders here are for grouping a wall of playlists, not for hiding
-          them. */}
-      {foldered.map(([folder, lists]) => (
+          them. Your folders on the Library; the server's (the charts, new
+          music) on Discover, under the names people know them by. */}
+      {(show === 'personal' ? foldered : generated).map(([folder, lists]) => (
         <section className="homeShelf" key={folder}>
           <h2 className="homeShelfTitle">
-            <FolderClosed size={15} className="showcaseFolderGlyph" aria-hidden />
-            {folder}
+            {show === 'personal' && (
+              <FolderClosed size={15} className="showcaseFolderGlyph" aria-hidden />
+            )}
+            {show === 'personal' ? folder : (GENERATED_FOLDERS.get(folder) ?? folder)}
             <span className="showcaseFolderCount">{lists.length}</span>
           </h2>
-          <div className="showcaseGrid" {...hold}>
+          {/* Generated tiles (the charts, new music) take the read-only shape
+              the other-hub tiles wear: no hold menu, no delete. Renaming or
+              re-filing a chart list only detaches this device's copy from the
+              refresh that keeps it current - the verbs speak to a list you
+              made, and this is not one. */}
+          <div className="showcaseGrid" {...(show === 'personal' ? hold : {})}>
             {lists.map((playlist) => (
               <Tile
                 key={playlist.id}
@@ -617,8 +598,8 @@ export function PlaylistShowcase({
                   )
                 }
                 onOpen={() => onOpenPlaylist(playlist.id)}
-                onDelete={() => setDeleting({ id: playlist.id, name: playlist.name })}
-                menu={tileMenu(playlist)}
+                onDelete={show === 'personal' ? () => setDeleting({ id: playlist.id, name: playlist.name }) : undefined}
+                menu={show === 'personal' ? tileMenu(playlist) : undefined}
               />
             ))}
           </div>
@@ -627,7 +608,7 @@ export function PlaylistShowcase({
 
       {/* Lists on this account's other hubs. Read-only tiles - no hold menu,
           no delete: those verbs all speak to the primary server. */}
-      {elsewhere.map(({ origin, label, lists }) => (
+      {show === 'personal' && elsewhere.map(({ origin, label, lists }) => (
         <section className="homeShelf" key={origin}>
           <h2 className="homeShelfTitle">
             On {label}

@@ -70,12 +70,14 @@ export function HomePage({
   embedded?: boolean;
   /**
    * Which half of these shelves to draw. The two halves answer different
-   * questions and now live on different pages: what the AI MADE for you
-   * ('curator', on Discover) and what you have been PLAYING ('history', on
-   * Library). One component still owns both because the two never render at
-   * once - Library and Discover are separate tabs - so splitting the file would
-   * duplicate the whole feed-loading half for no gain. Prefer the named
-   * wrappers below to passing this by hand.
+   * questions: what the AI MADE for you ('curator') and what you have been
+   * PLAYING ('history'). Both live on Discover now, drawn by the two wrappers
+   * below so the chip row, For you and the charts can sit between them. One
+   * component still owns both because they read the same feed; the cost is
+   * that Discover mounts it twice (once per wrapper), each running its own
+   * cached-then-refreshed fetch - acceptable while both are cheap, worth
+   * hoisting to a shared provider if a third reader ever appears. Prefer the
+   * named wrappers below to passing this by hand.
    */
   section?: 'curator' | 'history' | 'all';
 }) {
@@ -384,7 +386,7 @@ export function HomePage({
         * contract - but a station is a different promise: a mix is your own
         * music arranged, a station also plays you things you have never
         * heard. Folded into the shelf above they were invisible, and with the
-        * Booth behind developer mode and Discover gone, this shelf is the one
+        * Booth behind developer mode, this shelf on Discover is the one
         * place a person meets them. Same card, same held verbs.
         */}
       {showCurator && !skelCurator && stations.length > 0 && (
@@ -556,7 +558,7 @@ export function CuratorShelves(props: {
 
 /**
  * The shelves built from what you have PLAYED - jump back in, your top
- * artists, recently played - for the Library page, beside the music you own.
+ * artists, recently played - for the Discover page, below the curator shelves.
  * Keeps the desktop's only door to the Stats page (the top-artists header).
  */
 export function HistoryShelves(props: {

@@ -1,6 +1,6 @@
 import { NavBar, NavBarItem } from '@glacier/react';
 import { useNavPill } from './useNavPill.ts';
-import { CircleUserRound, Disc3, LibraryBig, Search, UsersRound } from '@glacier/icons';
+import { CircleUserRound, Disc3, LibraryBig, Search, Telescope, UsersRound } from '@glacier/icons';
 import { useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { atSize, useNavSeats, type NavDest } from './navSeats.ts';
@@ -51,11 +51,13 @@ export function PrimaryNav({
   // there is nothing to download, so the tab is absent rather than a dead end.
   const dl = useDownloadsOptional();
   const hasDownloads = dl !== null;
-  // Discover is gone as a destination: its personal half (the curated mixes,
-  // Music Date, the audition shelf) moved onto Library, and looking for music
-  // you do not own is what the search page's Discover scope is for.
+  // Discover is a destination again - by request: everything the machine
+  // suggests (the curated mixes, Music Date, the auditions, the charts) lives
+  // there, and the Library holds only what you saved or made. The seat does
+  // not depend on an importer being present: the page has plenty to show
+  // without one, and hides what it cannot act on itself.
   //
-  // `useAcquire` stays called here even though no seat depends on it now.
+  // `useAcquire` stays called here even though no seat depends on it.
   // Called unconditionally. It used to sit behind `hasDownloads ||`, so the
   // hook ran or did not depending on whether an importer was loaded - and the
   // day that flipped mid-session React would have found a different hook order
@@ -79,6 +81,7 @@ export function PrimaryNav({
     tab === 'library' ||
     tab === 'home' ||
     (tab !== 'downloads' &&
+      tab !== 'discover' &&
       tab !== 'friends' &&
       tab !== 'profile' &&
       tab !== 'search' &&
@@ -129,6 +132,15 @@ export function PrimaryNav({
         icon: <LibraryBig size={18} />,
         active: libraryActive,
         go: () => onTab('library'),
+      },
+      // Right after the Library, because the two are the same question asked
+      // twice: what YOU kept, and what the machine has for you.
+      {
+        key: 'discover',
+        label: 'Discover',
+        icon: <Telescope size={18} />,
+        active: tab === 'discover',
+        go: () => onTab('discover'),
       },
     ];
     if (booksPage) {
@@ -197,14 +209,20 @@ export function PrimaryNav({
 
   const primaryItems = (
     <>
-      {/* Library leads: the music you actually own, plus the mixes made from it.
-          Discover sits beside it as the place you go to find what you do NOT
-          have - and appears whenever there is a way to acquire (import or buy). */}
+      {/* Library leads: the music you saved or made. Discover sits beside it
+          as the place the machine keeps everything it has for you - always
+          seated, whether or not anything here can fetch. */}
       <NavBarItem
         icon={<LibraryBig size={18} />}
         label="Library"
         active={libraryActive}
         onClick={() => onTab('library')}
+      />
+      <NavBarItem
+        icon={<Telescope size={18} />}
+        label="Discover"
+        active={tab === 'discover'}
+        onClick={() => onTab('discover')}
       />
       {/* Downloads is NOT a nav destination. On the phone it is an icon on the
           library page (where the music it is fetching ends up); on the desktop

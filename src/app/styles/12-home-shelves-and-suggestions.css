@@ -264,6 +264,47 @@
   text-overflow: ellipsis;
 }
 
+/* The whole card is the one control (tap to add): a button wearing the
+   card's own layout rather than a button's chrome. */
+.suggestCardBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  inline-size: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.suggestCardBody:focus-visible {
+  outline: 2px solid var(--glacier-accent-solid);
+  outline-offset: 2px;
+  border-radius: var(--glacier-radius-lg);
+}
+
+/* What the tap does, in the cover's corner: a plus, then a check once the
+   list is on its way. Frosted like the source tag opposite it. */
+.suggestCardAdd {
+  position: absolute;
+  inset-block-end: var(--glacier-space-1);
+  inset-inline-end: var(--glacier-space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.6rem;
+  block-size: 1.6rem;
+  border-radius: var(--glacier-radius-full);
+  color: #fff;
+  background: color-mix(in srgb, #000 55%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
 /* The Add button: quiet accent by default, muted while adding, a settled
    success once queued - the card's own confirmation the import is under way. */
 .suggestAddBtn {

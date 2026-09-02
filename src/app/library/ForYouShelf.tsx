@@ -6,6 +6,7 @@ import { useCardArt } from '../ux/artLoad.ts';
 import { TrackMenu } from './TrackMenu.tsx';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { readFeedCache, writeFeedCache } from './feedCache.ts';
 import { fetchCurator, trackIdFromPath, type CuratorFeed } from '../server.ts';
 import { MosaicCover } from '../playlists/PlaylistShowcase.tsx';
@@ -58,6 +59,9 @@ function ForYouCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
 function useCuratedHere(): { title: string; blurb: string; tracks: Track[] }[] {
   const { session } = useServerSession();
   const { tracks, forYou } = useLibrary();
+  // A pull-to-refresh on the page re-asks, the way its sibling useMyAuditions
+  // already does - see nav/pageRefresh.tsx.
+  const refreshNonce = useRefreshNonce();
   const [feed, setFeed] = useState<CuratorFeed | null>(() =>
     readFeedCache<CuratorFeed>(session, 'curator'),
   );
@@ -72,7 +76,7 @@ function useCuratedHere(): { title: string; blurb: string; tracks: Track[] }[] {
       .catch(() => {});
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.url]);
+  }, [session?.url, refreshNonce]);
   return useMemo(() => {
     const byId = new Map<number, Track>();
     for (const t of [...tracksOfHub(tracks, session), ...forYou]) {

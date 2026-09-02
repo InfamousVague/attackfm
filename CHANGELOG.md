@@ -15,6 +15,20 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.54
+
+- Discover is back, as its own tab beside the Library, and everything the
+  machine has for you lives there now: the daylist and the daily and mood
+  mixes, the mixes made from your library, your stations, the For-you
+  auditions and Music Date, new music, the top charts, the lists the
+  catalogues suggest, and the shelves read from your history - jump back in,
+  your top artists, recently played. All songs - the whole pile - is a door
+  there too.
+- The Library is only what you saved or made: Liked and On repeat, your
+  playlists and folders, recently added, the books you love, and your week.
+  The generated Charts and New-music folders have moved to Discover; the
+  Artists and Albums browsing shelves are gone - an artist is a search or a
+  tap on any credit away, and an album is on its artist's page.
 ## 0.5.53
 
 - Artist pages: tap any Popular song you don't have yet and hear it. It arrives

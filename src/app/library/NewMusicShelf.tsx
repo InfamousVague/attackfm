@@ -4,6 +4,7 @@ import { Check, Pause, Play, Plus, Sparkles } from '@glacier/icons';
 import { Shelf } from '../home/homeCards.tsx';
 import { ShelfSkeleton } from '../ux/ShelfSkeleton.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { fetchNewMusic, type NewMusicList, type NewMusicTrack } from '../api/newMusic.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
@@ -32,6 +33,8 @@ export function NewMusicShelf() {
   const { session } = useServerSession();
   const [lists, setLists] = useState<NewMusicList[] | null>(null);
   const [open, setOpen] = useState<NewMusicList | null>(null);
+  // A pull-to-refresh on the page re-asks; see nav/pageRefresh.tsx.
+  const refreshNonce = useRefreshNonce();
 
   useEffect(() => {
     if (!session) {
@@ -49,7 +52,7 @@ export function NewMusicShelf() {
         if (!ctrl.signal.aborted) setLists([]);
       });
     return () => ctrl.abort();
-  }, [session]);
+  }, [session, refreshNonce]);
 
   if (!session) return null;
   if (lists === null) return <ShelfSkeleton title="New music for you" kind="mix" count={3} />;
