@@ -84,8 +84,18 @@ pub(crate) fn whisper_model(state: &AppState) -> Option<PathBuf> {
         }
     }
     let dir = state.data_dir.join("whisper");
-    // Best first: a better model already there wins over the default.
+    // Best first: a better model already there wins over the default. The large
+    // family leads - it is the most accurate whisper has, and its word clocks
+    // are what a read-along lives or dies by - then the multilingual/English
+    // ladder down to tiny. `large-v3-turbo` sits just behind full `large-v3`:
+    // near its accuracy at a fraction of the CPU, the sensible pick on a box
+    // with no GPU.
     for name in [
+        "ggml-large-v3.bin",
+        "ggml-large-v3-turbo.bin",
+        "ggml-large-v2.bin",
+        "ggml-large-v1.bin",
+        "ggml-large.bin",
         "ggml-medium.en.bin",
         "ggml-medium.bin",
         "ggml-small.en.bin",
