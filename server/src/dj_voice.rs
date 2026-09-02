@@ -129,7 +129,7 @@ pub async fn hear(
                     // listener literally asked for this one out loud.
                     score: 10.0,
                 };
-                let _ = crate::collector::buy(&st, user, &d, false).await;
+                let _ = crate::collector::buy(&st, user, &d, false, None).await;
             }
         });
     }
