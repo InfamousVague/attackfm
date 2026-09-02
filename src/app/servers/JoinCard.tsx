@@ -77,7 +77,10 @@ export function JoinCard({ code, onDone }: { code: string; onDone: () => void })
   };
 
   const name = preview?.serverName || info?.name || 'a server';
-  const owner = info?.owner || preview?.from || '';
+  // The owner is what the SERVER says; the inviter is who sent the link.
+  // They are usually the same person, but any member may mint an invite,
+  // and a card that called the inviter the owner would be lying.
+  const owner = info?.owner || '';
   const stats: { icon: ReactNode; value: number; label: string }[] = info
     ? [
         { icon: <Music size={14} />, value: info.tracks, label: info.tracks === 1 ? 'song' : 'songs' },
@@ -108,7 +111,7 @@ export function JoinCard({ code, onDone }: { code: string; onDone: () => void })
               <h3 className="joinCard__name">{name}</h3>
               <Text tone="muted" size="sm">
                 {owner ? `${owner}'s server` : 'A server on AttackFM'}
-                {preview.from && preview.from !== owner ? ` · invited by @${preview.from}` : preview.from ? ` · invited you` : ''}
+                {preview.from ? ` · invited by @${preview.from}` : ''}
               </Text>
             </div>
           </div>

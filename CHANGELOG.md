@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.43
+
+- The join card names the server's owner as the server says it, and the inviter as the inviter - the two are not always the same person.
+
 ## 0.5.42
 
 - An invite link is one tap to join now: opening one in the app raises a card with the server's name, whose it is, and its glance - songs, artists, albums, playlists, members - and a single Join button. No code to type; without an account yet, the sign-up sits on the same card and joining follows straight on.
