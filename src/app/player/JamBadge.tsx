@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, IconButton, Popover, Text } from '@glacier/react';
-import { User, Users } from '@glacier/icons';
+import { Music, User, Users } from '@glacier/icons';
 import { useJamOptional } from './jam.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 
@@ -104,6 +104,7 @@ export function JamBadge() {
                     <span>
                       {r.hostName}
                       {r.memberCount > 1 ? ` · ${r.memberCount} inside` : ''}
+                      {r.trackTitle ? ` · ${r.trackTitle}` : ''}
                     </span>
                     <Button
                       variant="ghost"
@@ -167,19 +168,34 @@ export function JamBadge() {
             ? 'Just you so far'
             : `${room.memberCount} listening${others === 1 ? ' — one other' : ''}`}
           {jam.hosting ? ' · you set the pace' : ' · following along'}
+          {room.hostQuiet && !jam.hosting ? ' · the host has gone quiet' : ''}
         </Text>
 
+        {/* What the room is hearing, by name - the one line a member whose
+            library lacks the song still gets, instead of silence. */}
+        {room.trackTitle && (
+          <span className="jamPanel__now">
+            <Music size={13} aria-hidden />
+            <span>
+              {room.trackTitle}
+              {room.trackArtist ? ` · ${room.trackArtist}` : ''}
+              {room.playing ? '' : ' · paused'}
+            </span>
+          </span>
+        )}
+
         {/* Named, not just counted. "3 listening" tells you the room is busy;
-            the names tell you whose evening you are in. */}
-        {room.members.length > 0 && (
+            the names tell you whose evening you are in - and who has been
+            here longest, which is who the clock passes to. */}
+        {(room.people?.length ?? room.members.length) > 0 && (
           <ul className="jamPanel__who">
-            {room.members.map((name) => (
-              <li key={name} className="jamPanel__member">
+            {(room.people ?? room.members.map((name, i) => ({ id: i, name, host: name === room.hostName, joinedAt: 0, seenAt: 0 }))).map((p) => (
+              <li key={p.id} className="jamPanel__member">
                 {/* One person per row, so the group glyph stays the ROOM's mark
                     and never stands next to a single name. */}
                 <User size={13} aria-hidden />
-                <span>{name}</span>
-                {name === room.hostName && <span className="jamPanel__host">host</span>}
+                <span>{p.name}</span>
+                {p.host && <span className="jamPanel__host">host</span>}
               </li>
             ))}
           </ul>
@@ -202,9 +218,17 @@ export function JamBadge() {
         )}
 
         <div className="jamPanel__actions">
+          {/* A host has two exits: hand the room on, or close it. Leaving
+              used to end it for everyone, which is the one thing a host
+              stepping out for a moment never meant. */}
           <Button variant="ghost" size="sm" onClick={() => void jam.leave()}>
-            {jam.hosting ? 'End the jam' : 'Leave'}
+            {jam.hosting && room.memberCount > 1 ? 'Leave (hand it on)' : 'Leave'}
           </Button>
+          {jam.hosting && room.memberCount > 1 && (
+            <Button variant="ghost" size="sm" onClick={() => void jam.end()}>
+              End for everyone
+            </Button>
+          )}
         </div>
       </div>
     </Popover>

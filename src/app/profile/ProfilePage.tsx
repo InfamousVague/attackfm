@@ -108,9 +108,9 @@ function NearbyListeners({
 }
 
 /** The code box: six characters, however they were typed. */
-function JoinJamByCode({ onJoin }: { onJoin: (code: string) => void }) {
+function JoinJamByCode({ onJoin }: { onJoin: (code: string) => Promise<boolean> }) {
   const [code, setCode] = useState('');
-  const [tried, setTried] = useState(false);
+  const [tried, setTried] = useState<'joined' | 'failed' | null>(null);
   // The code is read aloud as often as it is pasted, so it arrives with
   // spaces, dashes and whatever case the reader felt like.
   const clean = code.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -121,9 +121,11 @@ function JoinJamByCode({ onJoin }: { onJoin: (code: string) => void }) {
       onSubmit={(e) => {
         e.preventDefault();
         if (!ready) return;
-        setTried(true);
-        onJoin(clean);
-        setCode('');
+        setTried(null);
+        void onJoin(clean).then((ok) => {
+          setTried(ok ? 'joined' : 'failed');
+          if (ok) setCode('');
+        });
       }}
     >
       <Input
@@ -139,9 +141,14 @@ function JoinJamByCode({ onJoin }: { onJoin: (code: string) => void }) {
       <Button type="submit" variant="outline" size="sm" disabled={!ready}>
         <Radio size={15} /> <span>Join</span>
       </Button>
-      {tried && (
+      {tried === 'joined' && (
         <Text size="xs" tone="subtle">
-          If the room is live you are in it; if not, the code has expired.
+          You are in. The room shows above, and on the player.
+        </Text>
+      )}
+      {tried === 'failed' && (
+        <Text size="xs" tone="danger">
+          No live room has that code - it may have ended, or be on another server.
         </Text>
       )}
     </form>
@@ -268,7 +275,7 @@ function LiveNow() {
 
       {/* Someone in the car reads out six characters and you are in their
           room. No shared wifi, no friend request first, nothing to scan. */}
-      {!jam.current && <JoinJamByCode onJoin={(code) => void jam.join(code)} />}
+      {!jam.current && <JoinJamByCode onJoin={(code) => jam.join(code)} />}
 
       <NearbyListeners
         handle={session.username ?? 'listener'}

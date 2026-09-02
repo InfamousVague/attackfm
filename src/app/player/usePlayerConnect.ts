@@ -6,6 +6,8 @@ import { useConnect } from './playbackSync.tsx';
 import { useJamOptional } from './jam.tsx';
 import { usePlayback } from './playback.tsx';
 import { recordDiag } from '../diag/diagLog.ts';
+import { setNowPlayingBeat } from '../profile/presence.ts';
+import { deviceId } from './connect.ts';
 import type { Track } from '../core/tauri.ts';
 
 type ConnectValue = ReturnType<typeof useConnect>;
@@ -204,6 +206,14 @@ export function usePlayerConnect({
     return () => connect.registerController(null);
   }, [connect]);
 
+  // What this device hears, for friends who may know (profile/presence.ts).
+  // Song and play state only - the bridge decides whether it travels.
+  useEffect(() => {
+    setNowPlayingBeat(
+      track ? { title: track.title, artist: track.artist, album: track.album ?? '', playing } : null,
+    );
+  }, [track, playing]);
+
   // --- jams ---------------------------------------------------------------
   //
   // A jam is the same idea as a Connect hand-off, pointed at another PERSON
@@ -222,8 +232,11 @@ export function usePlayerConnect({
       void jam
         .hostBeat({
           trackId: id,
+          trackTitle: live.track?.title ?? '',
+          trackArtist: live.track?.artist ?? '',
           positionMs: Math.round(positionRef.current * 1000),
           playing: live.playing,
+          deviceId: deviceId(),
           queue: live.queue
             .map((t: Track) => trackIdFromPath(t.path))
             .filter((n): n is number => n != null),
@@ -250,27 +263,38 @@ export function usePlayerConnect({
   // Following: steer to the host. A different song loads and resumes at their
   // position (the same resumeRef the Connect hand-off uses); the same song
   // only corrects when it has drifted far enough to hear, since nudging the
-  // playhead every few seconds is worse than a little slip. The position the
-  // server hands over is already carried forward to the moment it was read.
+  // playhead every few seconds is worse than a little slip.
+  //
+  // The position the server hands over was carried forward to the moment it
+  // was READ; the time since then - the poll's flight plus however long the
+  // frame sat before this ran - is added here, from this device's own clock
+  // (receivedAt is stamped on arrival, so no cross-machine skew is involved).
   useEffect(() => {
     const room = jam?.current;
     if (!room || jam.hosting || room.trackId == null) return;
     const live = liveRef.current;
     const wanted = room.trackId;
     const currentId = live.track ? trackIdFromPath(live.track.path) : null;
+    const sinceRead = room.playing && room.receivedAt ? Math.min(15_000, Math.max(0, Date.now() - room.receivedAt)) : 0;
+    const roomMs = room.positionMs + sinceRead;
 
     if (currentId !== wanted) {
       const t = live.allTracks.find((x) => trackIdFromPath(x.path) === wanted);
-      // Not in this listener's library: nothing to play, so the room simply
-      // moves on without them rather than the app inventing a track.
-      if (!t) return;
-      resumeRef.current = { trackId: wanted, positionMs: room.positionMs, play: room.playing };
+      // Not in this listener's library: nothing to play, so the room moves
+      // on without them - and says so (the badge shows what is on by name).
+      if (!t) {
+        recordDiag('jam', `room is playing a song this library lacks: ${room.trackArtist ?? ''} - ${room.trackTitle ?? ''} (#${wanted})`);
+        return;
+      }
+      resumeRef.current = { trackId: wanted, positionMs: roomMs, play: room.playing };
       live.onTrackChange?.(t);
       return;
     }
 
-    const driftSec = Math.abs(positionRef.current - room.positionMs / 1000);
-    if (driftSec > 3) live.commitSeek(room.positionMs / 1000);
+    // A second and a half is the line: under it a nudge is more audible than
+    // the slip; over it the two rooms are singing different bars.
+    const driftSec = Math.abs(positionRef.current - roomMs / 1000);
+    if (driftSec > 1.5) live.commitSeek(roomMs / 1000);
     if (live.playing !== room.playing) live.setPlayingState(room.playing);
     // Keyed on updatedAt so this runs once per report from the host rather
     // than on every render of this component.

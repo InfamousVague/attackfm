@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.51
+
+- Friends are live now: the Friends page shows who is online and what each friend is listening to at this moment (while they share), listening friends float to the top, and the week's numbers refresh every twenty minutes instead of every six hours. "Keeps their listening private" and "quiet this week" are told apart, and a registry that cannot be reached says so instead of loading forever.
+- Jams: a host stepping out hands the room to whoever has been in it longest instead of ending it for everyone (End for everyone is its own button); members who close the app drop off the list; the room shows what is playing by name, and says who joined, who left and who has the clock. Followers stay within a second and a half of the host. Room codes are random now. A code that does not work says so.
+
 ## 0.5.50
 
 - An invite link to a server you're already signed into no longer asks you to create an account: the card says you're a member (or that it's your server) and opens it.

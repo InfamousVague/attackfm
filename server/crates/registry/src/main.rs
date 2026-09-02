@@ -54,7 +54,29 @@ struct AppState {
     /// music server it listens from - which makes it the natural place updates
     /// come from, the same way sign-in does.
     bundle_dir: std::path::PathBuf,
+    /// What each account is doing right now, by account id - a heartbeat the
+    /// app posts while it is open, with the playing song while sharing is on.
+    /// In memory on purpose: presence is the present tense, and a restart
+    /// only means everyone reads as away until their next beat.
+    presence: Mutex<HashMap<i64, Presence>>,
 }
+
+#[derive(Clone, Default)]
+struct Presence {
+    seen_at: i64,
+    playing: bool,
+    title: String,
+    artist: String,
+    album: String,
+    /// When this song started being reported, so a friend reads "for 3m".
+    since: i64,
+}
+
+/// Online is a beat within this long; the app posts every half minute.
+const PRESENCE_ONLINE_SECS: i64 = 90;
+/// A song reported within this long is still "listening to" - past it the
+/// app has gone quiet and the last song would be a stale claim.
+const PRESENCE_TRACK_SECS: i64 = 5 * 60;
 
 type ApiError = (StatusCode, String);
 type ApiResult = Result<Json<Value>, ApiError>;
@@ -445,25 +467,99 @@ async fn refresh(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiR
 
 // --- friends ----------------------------------------------------------------
 
-fn friend_json(f: &db::Friend) -> Value {
+fn friend_json(state: &AppState, f: &db::Friend) -> Value {
+    let now = now_secs();
     // The listening glance shows only while it is FRESH - eight days covers a
     // weekly announcer with slack. Someone who stops sharing simply stops
     // announcing, and this is where their numbers quietly disappear.
-    let fresh = f.listened_at > 0 && now_secs() - f.listened_at < 8 * 24 * 60 * 60;
+    let fresh = f.listened_at > 0 && now - f.listened_at < 8 * 24 * 60 * 60;
+    // Whether they share at all, as they last told us - so a reader can tell
+    // "keeps it private" from "quiet this week", which used to be one face.
+    let sharing = state.db.profile(f.id).map(|(on, _, _)| on);
+    let presence = state.presence.lock().unwrap().get(&f.id).cloned();
+    let online = presence.as_ref().is_some_and(|p| now - p.seen_at < PRESENCE_ONLINE_SECS)
+        || now - f.seen_at < PRESENCE_ONLINE_SECS;
+    let now_playing = presence
+        .as_ref()
+        .filter(|p| !p.title.is_empty() && now - p.seen_at < PRESENCE_TRACK_SECS && sharing != Some(false))
+        .map(|p| {
+            json!({
+                "title": p.title, "artist": p.artist, "album": p.album,
+                "playing": p.playing, "since": p.since, "at": p.seen_at,
+            })
+        })
+        .unwrap_or(Value::Null);
     json!({
         "id": f.id, "handle": f.handle, "serverUrl": f.server_url,
-        "seenAt": f.seen_at, "songs": f.songs, "playlists": f.playlists, "artists": f.artists,
+        "seenAt": presence.as_ref().map(|p| p.seen_at.max(f.seen_at)).unwrap_or(f.seen_at),
+        "online": online,
+        "nowPlaying": now_playing,
+        "sharing": sharing,
+        "listenedAt": f.listened_at,
+        "songs": f.songs, "playlists": f.playlists, "artists": f.artists,
         "weekMinutes": if fresh { Value::from(f.week_minutes) } else { Value::Null },
         "weekTopArtist": if fresh && !f.week_top_artist.is_empty() { Value::from(f.week_top_artist.clone()) } else { Value::Null },
         "streakDays": if fresh { Value::from(f.streak_days) } else { Value::Null },
     })
 }
 
+#[derive(Deserialize)]
+struct PresenceBody {
+    #[serde(default)]
+    playing: bool,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    artist: String,
+    #[serde(default)]
+    album: String,
+}
+
+/// `POST /v1/presence` - "I am here, and this is on". The app posts it every
+/// half minute while open and at once when the song changes; friends read
+/// it back as online / listening to. The song travels only while the sender
+/// shares their listening - the app sends it empty otherwise, and the reader
+/// checks the sharing switch besides.
+async fn presence_put(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<PresenceBody>,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let now = now_secs();
+    let title = body.title.trim().chars().take(200).collect::<String>();
+    let artist = body.artist.trim().chars().take(200).collect::<String>();
+    let album = body.album.trim().chars().take(200).collect::<String>();
+    {
+        let mut map = state.presence.lock().unwrap();
+        let prev = map.get(&who.sub).cloned().unwrap_or_default();
+        let same = prev.title == title && prev.artist == artist;
+        map.insert(
+            who.sub,
+            Presence {
+                seen_at: now,
+                playing: body.playing,
+                since: if same && prev.since > 0 { prev.since } else { now },
+                title,
+                artist,
+                album,
+            },
+        );
+        // Presence for the whole registry is a few hundred small structs;
+        // still, an account that has been silent a day need not be carried.
+        if map.len() > 10_000 {
+            map.retain(|_, p| now - p.seen_at < 24 * 60 * 60);
+        }
+    }
+    state.db.touch_seen(who.sub, now);
+    Ok(Json(json!({ "ok": true })))
+}
+
 /// `GET /v1/friends` - the whole standing: friends, requests aimed at me, and
 /// requests I have out. One call so the page renders in a single round trip.
 async fn friends(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
     let who = caller(&state, &headers)?;
-    let friends: Vec<Value> = state.db.friends_of(who.sub).iter().map(friend_json).collect();
+    let friends: Vec<Value> = state.db.friends_of(who.sub).iter().map(|f| friend_json(&state, f)).collect();
     let incoming: Vec<Value> = state
         .db
         .requests_for(who.sub, true)
@@ -1840,6 +1936,7 @@ async fn main() {
         issuer,
         challenges: Mutex::new(HashMap::new()),
         bundle_dir,
+        presence: Mutex::new(HashMap::new()),
     });
 
     // DELETE belongs here as much as GET does: `/v1/friends/{id}` is the only
@@ -1874,6 +1971,7 @@ async fn main() {
         .route("/v1/refresh", post(refresh))
         .route("/v1/announce", post(announce))
         .route("/v1/friends", get(friends))
+        .route("/v1/presence", post(presence_put))
         .route("/v1/friends/requests", post(friend_request))
         .route("/v1/friends/requests/{id}/accept", post(accept_request))
         .route("/v1/friends/requests/{id}/decline", post(decline_request))

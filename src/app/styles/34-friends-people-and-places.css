@@ -381,3 +381,72 @@
   gap: var(--glacier-space-2);
   justify-content: flex-end;
 }
+
+/* Right now: what a friend is hearing at this moment, with a pulse that says
+   the line is live rather than remembered. Paused stills it. */
+.friendRow__glance--live {
+  color: var(--glacier-text);
+}
+
+.friendRow__glance--quiet {
+  color: var(--glacier-text-muted);
+  font-style: italic;
+}
+
+.friendRow__live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+.friendRow__liveText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendRow__liveDot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: oklch(0.72 0.17 150);
+  box-shadow: 0 0 0 0 oklch(0.72 0.17 150 / 0.6);
+  animation: friendLivePulse 1.8s ease-out infinite;
+  flex: none;
+}
+
+.friendRow__live[data-paused] .friendRow__liveDot {
+  background: var(--glacier-text-muted);
+  animation: none;
+  box-shadow: none;
+}
+
+@keyframes friendLivePulse {
+  0% {
+    box-shadow: 0 0 0 0 oklch(0.72 0.17 150 / 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 6px oklch(0.72 0.17 150 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.72 0.17 150 / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .friendRow__liveDot {
+    animation: none;
+  }
+}
+
+.friendsBar__live {
+  margin-inline-start: var(--glacier-space-2);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 500;
+  color: oklch(0.72 0.17 150);
+}
+
+.friendStats__now {
+  color: var(--glacier-text);
+}

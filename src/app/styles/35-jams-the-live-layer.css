@@ -290,3 +290,19 @@
   margin-inline-start: auto;
   flex: none;
 }
+
+/* What the room is hearing, by name, above the people. */
+.jamPanel__now {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text);
+}
+
+.jamPanel__now > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

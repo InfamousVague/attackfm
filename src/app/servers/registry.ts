@@ -147,6 +147,15 @@ export interface RegistryFriend {
   weekMinutes?: number | null;
   weekTopArtist?: string | null;
   streakDays?: number | null;
+  /** A heartbeat within the last minute or two. Absent from old registries. */
+  online?: boolean;
+  /** What they are hearing right now, while they share and their app is
+   *  open; null between songs and once they have gone quiet. */
+  nowPlaying?: { title: string; artist: string; album: string; playing: boolean; since: number; at: number } | null;
+  /** Their sharing switch as they last told the registry; null = never said. */
+  sharing?: boolean | null;
+  /** When the week's glance was last announced (seconds). */
+  listenedAt?: number;
 }
 
 export interface RegistryRequest {
@@ -159,6 +168,16 @@ export interface FriendsFeed {
   friends: RegistryFriend[];
   incoming: RegistryRequest[];
   outgoing: RegistryRequest[];
+}
+
+/** "I am here, and this is on." Posted every half minute while the app is
+ *  open and at once when the song changes; friends read it as online and
+ *  listening-to. The song goes only while sharing is on. */
+export async function postPresence(
+  token: string,
+  beat: { playing: boolean; title?: string; artist?: string; album?: string },
+): Promise<void> {
+  await call('/v1/presence', { token, method: 'POST', body: JSON.stringify(beat) });
 }
 
 export async function fetchFriends(token: string): Promise<FriendsFeed> {

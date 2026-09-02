@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { announce, publishProfile } from '../servers/registry.ts';
+import { announce, postPresence, publishProfile } from '../servers/registry.ts';
 import { useLibrary } from '../library/library.tsx';
 import { usePlaylists } from '../playlists/playlists.tsx';
 import { tracksOfHub } from '../server.ts';
 import { fold } from '../core/fold.ts';
 import { fetchStatsSummary, type StatsSummary } from './stats.ts';
+import { onNowPlayingBeat, readNowPlayingBeat } from './presence.ts';
 
 /**
  * Sharing your listening with friends - the weekly glance behind the friends
@@ -29,8 +30,13 @@ import { fetchStatsSummary, type StatsSummary } from './stats.ts';
  */
 
 const SHARE_KEY = 'attackfm-share-listening';
-/** How often a standing session re-announces. */
-const REANNOUNCE_MS = 6 * 60 * 60 * 1000;
+/** How often a standing session re-announces the week's glance. Twenty
+ *  minutes: the numbers a friend reads should be this evening's, not this
+ *  morning's, and the announce is a few hundred bytes. */
+const REANNOUNCE_MS = 20 * 60 * 1000;
+/** The presence heartbeat: online is a beat within the last minute and a
+ *  half, so every half minute keeps it lit with slack for a slow link. */
+const PRESENCE_MS = 30 * 1000;
 
 const listeners = new Set<() => void>();
 
@@ -130,6 +136,41 @@ export function ListeningShareBridge() {
     }, 4000);
     return () => window.clearTimeout(timer);
   }, [registry, server, songs, artists, lists]);
+
+  /*
+   * Presence: "online" and "listening to". A beat every half minute while
+   * the app is open, and one at once when the song or the play state
+   * changes (debounced, so a scrub through the queue is one post, not ten).
+   * The song rides only while sharing is on; with it off the beat still
+   * says "here", which is what an account being signed in already says.
+   */
+  useEffect(() => {
+    if (!registry) return;
+    let live = true;
+    let debounce = 0;
+    const beat = () => {
+      if (!live) return;
+      const np = readNowPlayingBeat();
+      void postPresence(registry.token, {
+        playing: !!np?.playing,
+        ...(sharing && np ? { title: np.title, artist: np.artist, album: np.album } : {}),
+      }).catch(() => {
+        // Offline, or a registry from before presence: the next beat tries again.
+      });
+    };
+    beat();
+    const timer = window.setInterval(beat, PRESENCE_MS);
+    const off = onNowPlayingBeat(() => {
+      window.clearTimeout(debounce);
+      debounce = window.setTimeout(beat, 1500);
+    });
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+      window.clearTimeout(debounce);
+      off();
+    };
+  }, [registry, sharing]);
 
   useEffect(() => {
     if (!sharing || !registry || !server) return;

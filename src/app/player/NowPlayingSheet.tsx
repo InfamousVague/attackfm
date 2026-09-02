@@ -31,6 +31,7 @@ import { SpinningDisc } from './SpinningDisc.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
 import { DevicePicker } from './DevicePicker.tsx';
 import { JamBadge } from './JamBadge.tsx';
+import { useJamOptional } from './jam.tsx';
 import { VolumeRow } from './VolumeControl.tsx';
 import { LyricsPanel } from './LyricsPanel.tsx';
 import { fetchLyrics, type SyncedLine } from './lyrics.ts';
@@ -799,6 +800,8 @@ export function NowPlayingSheet({
    * already takes fifty would be the worse of the two.
    */
   const { analyser } = useNowPlayingMotion();
+  // The room, if any: the queue panel labels itself for it.
+  const jamRoom = useJamOptional()?.current ?? null;
   /*
    * The phone's own movement, on the one screen where it means anything.
    *
@@ -2124,6 +2127,7 @@ export function NowPlayingSheet({
           <QueuePanel
             queue={queue}
             current={track}
+            inJam={!!jamRoom}
             onQueueChange={(next) => onQueueChange?.(next)}
             onPlayTrack={(t) => onTrackChange?.(t)}
             onClose={() => setNpQueue(false)}

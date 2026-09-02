@@ -415,8 +415,10 @@ export const HANDBOOK_PAGES: readonly HandbookPage[] = [
           music never jumps rooms by accident.
         </P>
         <P>
-          Jams ride the same wires: a friend&rsquo;s room folds your picks
-          into their queue instead of yours.
+          Jams are their own room, not a hand-off: the host&rsquo;s player
+          sets the pace, everyone else follows it, and a friend&rsquo;s room
+          folds your picks into their queue instead of yours. If the host
+          steps out, the clock passes to whoever has been there longest.
         </P>
       </>
     ),

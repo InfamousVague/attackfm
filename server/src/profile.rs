@@ -103,6 +103,13 @@ pub async fn profile(
         .ok_or((StatusCode::NOT_FOUND, "no such member here".into()))?;
 
     let its_me = user_id == caller.id;
+    // Friends only, as the page promises. The hub's friend graph is the
+    // registry's, mirrored by the app (friends.rs) - a member who is not a
+    // friend of this person has no business with their listening, whatever
+    // the sharing switch says: that switch is "share with FRIENDS".
+    if !its_me && !state.db.friends_of(user_id).iter().any(|(id, _)| *id == caller.id) {
+        return Err((StatusCode::FORBIDDEN, "they keep their listening to themselves".into()));
+    }
     let sharing = sharing_on(&state.db, user_id);
     if !its_me && !sharing {
         // A closed door, not a thinner page - and the same body either way,

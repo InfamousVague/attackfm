@@ -7,24 +7,30 @@
 //! between updates.
 //!
 //! Deliberately NOT built into connect.rs. That hub is one-user-many-devices
-//! and carries live playback for the whole app; a jam is many-users-one-room
-//! and is new. Keeping them apart means a bug in here cannot take somebody's
-//! music down with it, and the two can be merged later once this has earned
-//! its keep.
+//! and carries live playback for the whole app; a jam is many-users-one-room.
+//! Keeping them apart means a bug in here cannot take somebody's music down
+//! with it.
 //!
 //! Held in memory only. A jam is a moment, not a record - if the server
 //! restarts, the music was already interrupted.
-
+//!
+//! What the room knows about its people: everyone's `seen_at`, refreshed by
+//! their polls, so a member who closed the app drops off the list instead of
+//! being counted forever; and the host's beat, which is the room's pulse. A
+//! host who goes quiet, or leaves, hands the room to whoever has been in it
+//! longest - the music was playing for them too, and a room that vanished
+//! mid-song the moment the host's phone locked was the loudest complaint.
 use crate::auth;
 use crate::AppState;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
+use rand::Rng;
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 type ApiError = (StatusCode, String);
@@ -34,19 +40,52 @@ fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
-/// A jam that has heard nothing from its host in this long is over: the host
-/// closed the app, lost signal, or stopped. Members stop following rather
-/// than sit forever on a song that has not moved.
-const STALE_MS: i64 = 90_000;
+/// A host whose beat has not arrived in this long is not hosting any more -
+/// the app is closed, backgrounded past the throttle, or off the network. The
+/// room passes to the next member rather than freezing on them.
+const HOST_QUIET_MS: i64 = 30_000;
+/// A member whose poll has not arrived in this long has left without saying
+/// so. Followers poll every few seconds; hidden ones keep polling slower.
+const MEMBER_QUIET_MS: i64 = 60_000;
+/// A room nobody has touched in this long is over.
+const ROOM_STALE_MS: i64 = 90_000;
+/// How many pending additions a room holds before it stops taking more.
+const ADDITIONS_CAP: usize = 50;
+/// How many recent events a room remembers for latecomers to read.
+const EVENTS_KEPT: usize = 12;
+/// Another of the host's devices may take the clock only after this device
+/// has been silent this long; before that a paused second phone would clobber
+/// the room with its own idle state.
+const CLOCK_HANDOVER_MS: i64 = 10_000;
+
+#[derive(Clone)]
+pub struct Member {
+    pub id: i64,
+    pub name: String,
+    pub joined_at: i64,
+    pub seen_at: i64,
+}
+
+#[derive(Clone)]
+pub struct Event {
+    pub at: i64,
+    /// "joined" | "left" | "host" (the room changed hands to `who`).
+    pub kind: &'static str,
+    pub who: String,
+}
 
 #[derive(Clone)]
 pub struct Jam {
     pub id: String,
     pub host_id: i64,
     pub host_name: String,
-    /// Everyone listening, host included: user id -> their name.
-    pub members: HashMap<i64, String>,
+    /// Everyone listening, host included, in the order they arrived.
+    pub members: Vec<Member>,
     pub track_id: Option<i64>,
+    /// What is on, by name, so a member without the song still knows what
+    /// the room is hearing - ids mean something on one box only.
+    pub track_title: String,
+    pub track_artist: String,
     pub position_ms: i64,
     pub playing: bool,
     /// What the host is playing through, so a member can show what is next.
@@ -54,41 +93,92 @@ pub struct Jam {
     /// Tracks members have asked to add, waiting for the host to take them into
     /// its own queue. Kept apart from `queue` so the host's next state post -
     /// which overwrites `queue` wholesale - cannot clobber a pending request;
-    /// the host drains this on its beat and folds them into its real queue,
-    /// which then flows back out to the room. One-way (member -> host) by
-    /// design, so there is never a merge to reconcile.
+    /// the host drains this on its beat. One-way (member -> host) by design.
     pub additions: Vec<i64>,
     /// Who asked for each track, by track id, for as long as the jam lives.
-    /// A jam is other people's taste arriving in your queue - saying whose is
-    /// most of the point, and the host's own state posts carry only ids, so
-    /// the attribution has to live here rather than ride the queue.
     pub added_by: HashMap<i64, String>,
     /// When position_ms was true. Members extrapolate forward from here.
     pub updated_at: i64,
+    /// Which of the host's devices is the clock, and when it last beat.
+    pub clock_device: String,
+    pub clock_at: i64,
+    pub events: VecDeque<Event>,
+    pub created_at: i64,
 }
 
 impl Jam {
-    fn stale(&self) -> bool {
-        now_ms() - self.updated_at > STALE_MS
+    fn member(&self, id: i64) -> Option<&Member> {
+        self.members.iter().find(|m| m.id == id)
+    }
+
+    fn has(&self, id: i64) -> bool {
+        self.member(id).is_some()
+    }
+
+    fn note(&mut self, kind: &'static str, who: &str) {
+        self.events.push_back(Event { at: now_ms(), kind, who: who.to_string() });
+        while self.events.len() > EVENTS_KEPT {
+            self.events.pop_front();
+        }
+    }
+
+    /// The room after `id` walks out: hands off if they were the host, and
+    /// says whether anybody is left.
+    fn remove(&mut self, id: i64) -> bool {
+        let Some(pos) = self.members.iter().position(|m| m.id == id) else {
+            return !self.members.is_empty();
+        };
+        let gone = self.members.remove(pos);
+        self.note("left", &gone.name);
+        if self.host_id == id {
+            self.hand_off();
+        }
+        !self.members.is_empty()
+    }
+
+    /// The longest-standing member takes the clock. Their app sees itself as
+    /// host on its next poll and starts beating from where its own deck is -
+    /// which is where the room was, since it was following.
+    fn hand_off(&mut self) {
+        if let Some(next) = self.members.iter().min_by_key(|m| m.joined_at).cloned() {
+            self.host_id = next.id;
+            self.host_name = next.name.clone();
+            self.clock_device = String::new();
+            self.clock_at = 0;
+            self.updated_at = now_ms();
+            self.note("host", &next.name);
+        }
     }
 
     /// The wire shape. `positionMs` is carried forward to NOW for a playing
-    /// jam, so a member that just joined lands in the right place instead of
-    /// wherever the host last happened to report.
+    /// jam (capped: a beat that stopped is not a song that kept going), so a
+    /// member that just joined lands in the right place. `now` is the hub's
+    /// clock, for the reader to measure its own skew against.
     fn to_json(&self) -> serde_json::Value {
-        let drift = if self.playing { (now_ms() - self.updated_at).max(0) } else { 0 };
+        let now = now_ms();
+        let drift = if self.playing { (now - self.updated_at).clamp(0, HOST_QUIET_MS) } else { 0 };
         json!({
             "id": self.id,
             "hostId": self.host_id,
             "hostName": self.host_name,
-            "members": self.members.values().cloned().collect::<Vec<_>>(),
+            "members": self.members.iter().map(|m| m.name.clone()).collect::<Vec<_>>(),
+            "people": self.members.iter().map(|m| json!({
+                "id": m.id, "name": m.name, "joinedAt": m.joined_at, "seenAt": m.seen_at,
+                "host": m.id == self.host_id,
+            })).collect::<Vec<_>>(),
             "memberCount": self.members.len(),
             "trackId": self.track_id,
+            "trackTitle": self.track_title,
+            "trackArtist": self.track_artist,
             "positionMs": self.position_ms + drift,
             "playing": self.playing,
             "queue": self.queue,
             "addedBy": self.added_by,
             "updatedAt": self.updated_at,
+            "hostQuiet": now - self.updated_at > HOST_QUIET_MS,
+            "events": self.events.iter().map(|e| json!({ "at": e.at, "kind": e.kind, "who": e.who })).collect::<Vec<_>>(),
+            "createdAt": self.created_at,
+            "now": now,
         })
     }
 }
@@ -103,52 +193,111 @@ impl JamState {
         Arc::new(Self::default())
     }
 
-    /// Drops jams whose host has gone quiet. Called before every read, so a
-    /// dead jam is never offered to anybody.
+    /// The rooms, whatever a previous holder did: a panic elsewhere must not
+    /// poison every jam for the life of the process.
+    fn lock(&self) -> MutexGuard<'_, HashMap<String, Jam>> {
+        self.jams.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Housekeeping before every read and write: members who stopped
+    /// polling leave, a quiet host hands off, and empty or abandoned rooms
+    /// close. A dead jam is never offered to anybody.
     fn sweep(&self, jams: &mut HashMap<String, Jam>) {
-        jams.retain(|_, jam| !jam.stale());
+        let now = now_ms();
+        for jam in jams.values_mut() {
+            let quiet: Vec<i64> = jam
+                .members
+                .iter()
+                .filter(|m| now - m.seen_at > MEMBER_QUIET_MS)
+                .map(|m| m.id)
+                .collect();
+            for id in quiet {
+                jam.remove(id);
+            }
+            if !jam.members.is_empty() && jam.has(jam.host_id) && now - jam.updated_at > HOST_QUIET_MS {
+                // The host is still polling but not beating: their player
+                // stopped reporting (the app in the background past its
+                // throttle). Somebody else takes the clock.
+                if jam.members.len() > 1 {
+                    let old = jam.host_id;
+                    let others: Vec<&Member> = jam.members.iter().filter(|m| m.id != old).collect();
+                    if let Some(next) = others.iter().min_by_key(|m| m.joined_at).cloned().cloned() {
+                        jam.host_id = next.id;
+                        jam.host_name = next.name.clone();
+                        jam.clock_device = String::new();
+                        jam.clock_at = 0;
+                        jam.updated_at = now;
+                        jam.note("host", &next.name);
+                    }
+                }
+            }
+        }
+        jams.retain(|_, jam| {
+            !jam.members.is_empty() && jam.has(jam.host_id) && now - jam.updated_at.max(jam.created_at) < ROOM_STALE_MS
+                || (!jam.members.is_empty() && jam.members.iter().any(|m| now - m.seen_at < MEMBER_QUIET_MS))
+        });
+    }
+
+    /// Take `id` out of every room but `keep`, handing off where they hosted.
+    fn withdraw(&self, jams: &mut HashMap<String, Jam>, id: i64, keep: Option<&str>) {
+        for jam in jams.values_mut() {
+            if keep.is_some_and(|k| k == jam.id) {
+                continue;
+            }
+            if jam.has(id) {
+                jam.remove(id);
+            }
+        }
+        jams.retain(|_, j| !j.members.is_empty());
     }
 }
 
-/// A short, sayable id - a jam gets shared out loud.
-fn jam_id() -> String {
+/// A short, sayable id from an unambiguous alphabet - a jam gets shared out
+/// loud. Random, and never one already live: the id is also the invitation,
+/// so it must be neither guessable nor a door into somebody else's room.
+fn jam_id(taken: &HashMap<String, Jam>) -> String {
     const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
-    let seed = now_ms() as u64;
-    let mut n = seed ^ (seed >> 17) ^ 0x9E3779B97F4A7C15;
-    let mut out = String::new();
-    for _ in 0..6 {
-        n = n.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-        out.push(ALPHABET[(n >> 33) as usize % ALPHABET.len()] as char);
+    let mut rng = rand::thread_rng();
+    loop {
+        let id: String = (0..6).map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char).collect();
+        if !taken.contains_key(&id) {
+            return id;
+        }
     }
-    out
 }
 
 /// `POST /api/jams` - start one, hosted by the caller. Starting again while
-/// already hosting returns the jam you already have rather than a second one.
+/// already hosting returns the jam you already have rather than a second one;
+/// starting while following another room leaves that room first.
 pub async fn create(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    let mut jams = state.jams.jams.lock().unwrap();
+    let mut jams = state.jams.lock();
     state.jams.sweep(&mut jams);
-
     if let Some(existing) = jams.values().find(|j| j.host_id == caller.id) {
         return Ok(Json(existing.to_json()));
     }
-
-    let mut members = HashMap::new();
-    members.insert(caller.id, caller.username.clone());
-    let jam = Jam {
-        id: jam_id(),
+    state.jams.withdraw(&mut jams, caller.id, None);
+    let now = now_ms();
+    let mut jam = Jam {
+        id: jam_id(&jams),
         host_id: caller.id,
-        host_name: caller.username,
-        members,
+        host_name: caller.username.clone(),
+        members: vec![Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now }],
         track_id: None,
+        track_title: String::new(),
+        track_artist: String::new(),
         position_ms: 0,
         playing: false,
         queue: Vec::new(),
         additions: Vec::new(),
         added_by: HashMap::new(),
-        updated_at: now_ms(),
+        updated_at: now,
+        clock_device: String::new(),
+        clock_at: 0,
+        events: VecDeque::new(),
+        created_at: now,
     };
+    jam.note("joined", &caller.username);
     let out = jam.to_json();
     jams.insert(jam.id.clone(), jam);
     Ok(Json(out))
@@ -156,85 +305,99 @@ pub async fn create(State(state): State<Arc<AppState>>, headers: HeaderMap) -> A
 
 /// `GET /api/jams` - the jam you are in, and every jam your FRIENDS are
 /// hosting. Only friends': a jam is not a public room, and the friend list is
-/// the whole guest list.
+/// the whole guest list. Reading is also the member's heartbeat.
 pub async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let friend_ids: Vec<i64> = state.db.friends_of(caller.id).into_iter().map(|(id, _)| id).collect();
-
-    let mut jams = state.jams.jams.lock().unwrap();
+    let mut jams = state.jams.lock();
+    let now = now_ms();
+    for jam in jams.values_mut() {
+        if let Some(m) = jam.members.iter_mut().find(|m| m.id == caller.id) {
+            m.seen_at = now;
+        }
+    }
     state.jams.sweep(&mut jams);
-
-    let mine = jams.values().find(|j| j.members.contains_key(&caller.id)).map(|j| j.to_json());
+    let mine = jams.values().find(|j| j.has(caller.id)).map(|j| j.to_json());
     let friends: Vec<_> = jams
         .values()
-        .filter(|j| friend_ids.contains(&j.host_id) && !j.members.contains_key(&caller.id))
+        .filter(|j| friend_ids.contains(&j.host_id) && !j.has(caller.id))
         .map(|j| j.to_json())
         .collect();
-
     Ok(Json(json!({ "current": mine, "friends": friends })))
 }
 
 /// `POST /api/jams/{id}/join` - listen along.
 ///
-/// The id IS the invitation. It is six characters from a deliberately
-/// unambiguous alphabet, it exists only in memory while the jam is live, and
-/// it is learnable in exactly three ways: the host reads it out, the host
-/// shares a link, or it appears in a friend's feed (`list`, which shows only
-/// friends' jams). So holding one is the permission - which is what makes a
-/// jam work in a car, where the people beside you may not be in your friends
-/// list and are certainly not on your wifi.
-///
-/// The friend check that used to stand here could not survive that: it made
-/// a shared code useless to the person you shared it with. What remains is
-/// the host's own control - leaving ends the jam for everyone.
+/// The id IS the invitation. It is six random characters from an unambiguous
+/// alphabet, it exists only in memory while the jam is live, and it is
+/// learnable in exactly three ways: the host reads it out, the host shares a
+/// link, or it appears in a friend's feed (`list`, which shows only friends'
+/// jams). So holding one is the permission - which is what makes a jam work
+/// in a car, where the people beside you may not be in your friends list.
 pub async fn join(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    let mut jams = state.jams.jams.lock().unwrap();
+    let id = id.trim().to_lowercase();
+    let mut jams = state.jams.lock();
     state.jams.sweep(&mut jams);
-
-    // Existence only - the jam itself is taken again below, mutably, after the
-    // sweep of the other rooms. Checked FIRST so a dead id cannot evict you
-    // from the room you are actually in.
+    // Existence FIRST, so a dead id cannot evict you from the room you are in.
     if !jams.contains_key(&id) {
         return Err((StatusCode::NOT_FOUND, "that jam has ended".into()));
     }
-    // One jam at a time: joining leaves whatever you were in.
-    for other in jams.values_mut() {
-        if other.id != id {
-            other.members.remove(&caller.id);
-        }
-    }
-    jams.retain(|_, j| !j.members.is_empty());
-
+    // One jam at a time: joining leaves whatever you were in - handing that
+    // room to its next member if you were hosting it.
+    state.jams.withdraw(&mut jams, caller.id, Some(&id));
     let Some(jam) = jams.get_mut(&id) else {
         return Err((StatusCode::NOT_FOUND, "that jam has ended".into()));
     };
-    jam.members.insert(caller.id, caller.username);
+    let now = now_ms();
+    if let Some(m) = jam.members.iter_mut().find(|m| m.id == caller.id) {
+        m.seen_at = now;
+    } else {
+        jam.members.push(Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now });
+        jam.note("joined", &caller.username);
+    }
     Ok(Json(jam.to_json()))
 }
 
-/// `POST /api/jams/{id}/leave` - step out. The host leaving ends it for
-/// everyone: without the clock there is nothing left to follow.
+/// `POST /api/jams/{id}/leave` - step out. The host leaving hands the room to
+/// whoever has been in it longest; the last person out closes it.
 pub async fn leave(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    let mut jams = state.jams.jams.lock().unwrap();
-
+    let id = id.trim().to_lowercase();
+    let mut jams = state.jams.lock();
     if let Some(jam) = jams.get_mut(&id) {
-        if jam.host_id == caller.id {
+        if !jam.remove(caller.id) {
             jams.remove(&id);
-        } else {
-            jam.members.remove(&caller.id);
         }
     }
-    jams.retain(|_, j| !j.members.is_empty());
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `POST /api/jams/{id}/end` - the host closes the room for everyone. Leaving
+/// hands the room on; this is the other thing a host might mean.
+pub async fn end(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let id = id.trim().to_lowercase();
+    let mut jams = state.jams.lock();
+    let Some(jam) = jams.get(&id) else {
+        return Ok(Json(json!({ "ok": true })));
+    };
+    if jam.host_id != caller.id {
+        return Err((StatusCode::FORBIDDEN, "only the host can end the jam".into()));
+    }
+    jams.remove(&id);
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -242,11 +405,19 @@ pub async fn leave(
 pub struct HostState {
     #[serde(rename = "trackId")]
     pub track_id: Option<i64>,
+    #[serde(default, rename = "trackTitle")]
+    pub track_title: String,
+    #[serde(default, rename = "trackArtist")]
+    pub track_artist: String,
     #[serde(rename = "positionMs")]
     pub position_ms: i64,
     pub playing: bool,
     #[serde(default)]
     pub queue: Option<Vec<i64>>,
+    /// Which of the host's devices this is, so a second, idle device cannot
+    /// clobber the clock the playing one keeps.
+    #[serde(default, rename = "deviceId")]
+    pub device_id: String,
 }
 
 /// `POST /api/jams/{id}/state` - the host's clock, posted as it plays. Only
@@ -259,26 +430,42 @@ pub async fn set_state(
     Json(body): Json<HostState>,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    let mut jams = state.jams.jams.lock().unwrap();
+    let id = id.trim().to_lowercase();
+    let mut jams = state.jams.lock();
     let Some(jam) = jams.get_mut(&id) else {
         return Err((StatusCode::NOT_FOUND, "that jam has ended".into()));
     };
     if jam.host_id != caller.id {
         return Err((StatusCode::FORBIDDEN, "only the host sets the pace".into()));
     }
+    let now = now_ms();
+    if let Some(m) = jam.members.iter_mut().find(|m| m.id == caller.id) {
+        m.seen_at = now;
+    }
+    // The clock belongs to the host's device that is PLAYING. Another of
+    // their devices - a laptop left open, paused - may take it over only
+    // once this one has been quiet a while, or if it is the one now playing
+    // while the clock device reports nothing of the sort.
+    let other_device = !jam.clock_device.is_empty() && jam.clock_device != body.device_id;
+    if other_device && now - jam.clock_at < CLOCK_HANDOVER_MS && !(body.playing && !jam.playing) {
+        return Ok(Json(json!({ "ok": true, "additions": [], "clock": false })));
+    }
+    jam.clock_device = body.device_id;
+    jam.clock_at = now;
     jam.track_id = body.track_id;
-    jam.position_ms = body.position_ms;
+    jam.track_title = body.track_title.chars().take(200).collect();
+    jam.track_artist = body.track_artist.chars().take(200).collect();
+    jam.position_ms = body.position_ms.max(0);
     jam.playing = body.playing;
     if let Some(queue) = body.queue {
         jam.queue = queue;
     }
-    jam.updated_at = now_ms();
+    jam.updated_at = now;
     // Hand the host anything the room has asked to add since its last beat, and
     // clear it: the host folds these into its real queue, which comes back to
-    // everyone on the next post. Draining here (the host's own write) means no
-    // extra round trip and no chance a member's request is served twice.
+    // everyone on the next post.
     let additions = std::mem::take(&mut jam.additions);
-    Ok(Json(json!({ "ok": true, "additions": additions })))
+    Ok(Json(json!({ "ok": true, "additions": additions, "clock": true })))
 }
 
 #[derive(Deserialize)]
@@ -298,22 +485,23 @@ pub async fn add_to_queue(
     Json(body): Json<QueueAdd>,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    let mut jams = state.jams.jams.lock().unwrap();
+    let id = id.trim().to_lowercase();
+    let mut jams = state.jams.lock();
     state.jams.sweep(&mut jams);
     let Some(jam) = jams.get_mut(&id) else {
         return Err((StatusCode::NOT_FOUND, "that jam has ended".into()));
     };
-    if !jam.members.contains_key(&caller.id) {
+    let Some(name) = jam.member(caller.id).map(|m| m.name.clone()) else {
         return Err((StatusCode::FORBIDDEN, "join the jam to add to it".into()));
-    }
+    };
     if !jam.queue.contains(&body.track_id) && !jam.additions.contains(&body.track_id) {
+        if jam.additions.len() >= ADDITIONS_CAP {
+            return Err((StatusCode::TOO_MANY_REQUESTS, "the jam's queue is full for now".into()));
+        }
         jam.additions.push(body.track_id);
     }
     // Whoever asked owns the credit, even if the host already had it queued:
     // the room should read "Kayla wanted this" either way.
-    let name = jam.members.get(&caller.id).cloned().unwrap_or_default();
-    if !name.is_empty() {
-        jam.added_by.insert(body.track_id, name);
-    }
+    jam.added_by.insert(body.track_id, name);
     Ok(Json(json!({ "ok": true })))
 }

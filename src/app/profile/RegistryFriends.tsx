@@ -30,7 +30,7 @@ import {
   StatTile,
   Text,
 } from '@glacier/react';
-import { ArrowUpRight, ChartNoAxesColumn, Check, Clock, Flame, UserPlus, X } from '@glacier/icons';
+import { ArrowUpRight, ChartNoAxesColumn, Check, Clock, Flame, Music, UserPlus, X } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { artistImageKnown, cachedArtistImage, resolveArtistImage } from '../albumArtist/artistImage.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
@@ -95,14 +95,56 @@ export function seenAgo(stamp: number): string | null {
   return `${Math.round(days / 7)}w ago`;
 }
 
-/** The listening glance a friend chose to share: "6h this week · Jon Hopkins". */
+/** The listening glance a friend chose to share: "6h 20m this week · Jon Hopkins". */
 function weekGlance(f: RegistryFriend): string | null {
   if (typeof f.weekMinutes !== 'number' || f.weekMinutes <= 0) return null;
   // Time only - the artist half renders separately, as a door rather than a
-  // suffix baked into the string.
-  return f.weekMinutes >= 60
-    ? `${Math.round(f.weekMinutes / 60)}h this week`
-    : `${Math.round(f.weekMinutes)}m this week`;
+  // suffix baked into the string. Hours AND minutes: rounding to the hour
+  // read 89 and 91 minutes as the same "1h".
+  return `${fmtMinutes(f.weekMinutes)} this week`;
+}
+
+/** Online: the registry's word when it has one (a heartbeat within the last
+ *  minute or two), else the old read off seenAt. */
+export function isOnline(f: RegistryFriend): boolean {
+  return f.online ?? seenAgo(f.seenAt) === 'online now';
+}
+
+/** "for 12m" - how long the song they are on has been on. */
+function sinceAgo(sinceSecs: number): string {
+  const mins = Math.max(0, Math.round((Date.now() / 1000 - sinceSecs) / 60));
+  return mins < 1 ? 'just started' : mins < 60 ? `for ${mins}m` : `for ${Math.round(mins / 60)}h`;
+}
+
+/** What they are hearing right now, as a line - or null when nothing is on. */
+export function NowPlayingLine({ f, long = false }: { f: RegistryFriend; long?: boolean }) {
+  const np = f.nowPlaying;
+  if (!np) return null;
+  return (
+    <span className="friendRow__live" data-paused={!np.playing || undefined}>
+      <Music size={12} aria-hidden />
+      <span className="friendRow__liveDot" aria-hidden />
+      <span className="friendRow__liveText">
+        {np.playing ? 'Listening to ' : 'Paused on '}
+        <strong>{np.title}</strong>
+        {np.artist ? ` · ${np.artist}` : ''}
+        {long && np.since ? ` · ${sinceAgo(np.since)}` : ''}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Friends in the order that matters right now: whoever is listening at this
+ * moment first, then whoever is online, then by when they were last seen.
+ * A list sorted by handle put the one friend who is here now under the
+ * fold behind twelve who were last seen in July.
+ */
+function byLiveness(a: RegistryFriend, b: RegistryFriend): number {
+  const rank = (f: RegistryFriend) => (f.nowPlaying?.playing ? 0 : f.nowPlaying ? 1 : isOnline(f) ? 2 : 3);
+  const d = rank(a) - rank(b);
+  if (d !== 0) return d;
+  return (b.seenAt ?? 0) - (a.seenAt ?? 0) || a.handle.localeCompare(b.handle);
 }
 
 // --- account setup ----------------------------------------------------------
@@ -151,6 +193,9 @@ export function FriendsSection({
 }) {
   const { session: server } = useServerSession();
   const [feed, setFeed] = useState<FriendsFeed | null>(null);
+  // Why the feed is what it is: a registry that cannot be reached says so on
+  // the page instead of leaving four skeleton rows "loading" forever.
+  const [feedError, setFeedError] = useState<string | null>(null);
   const [handle, setHandle] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
@@ -161,8 +206,11 @@ export function FriendsSection({
   const refresh = useCallback(async () => {
     try {
       setFeed(await fetchFriends(token));
-    } catch {
-      // Unreachable right now; whatever is on screen stays.
+      setFeedError(null);
+    } catch (e) {
+      // Unreachable right now; whatever is on screen stays, and the page
+      // says the numbers may be old.
+      setFeedError(e instanceof Error && e.message ? e.message : 'attack.fm is not answering');
     }
     try {
       setShares(await fetchShares(token));
@@ -232,8 +280,19 @@ export function FriendsSection({
 
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 20_000);
-    return () => window.clearInterval(timer);
+    // Fifteen seconds: a friend pressing play shows up here inside the time
+    // it takes to read the page, without the radio held warm.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') void refresh();
+    }, 15_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [refresh]);
 
   // Let friends see where this account's library is and how big, once, when
@@ -303,8 +362,10 @@ export function FriendsSection({
     });
   };
 
-  const friends = feed?.friends ?? [];
+  const friends = [...(feed?.friends ?? [])].sort(byLiveness);
   const incoming = feed?.incoming ?? [];
+  const listeningNow = friends.filter((f) => f.nowPlaying?.playing).length;
+  const onlineNow = friends.filter(isOnline).length;
   const outgoing = feed?.outgoing ?? [];
   // Feedback lands where the eye is: inside the add modal while it is open,
   // on the section otherwise. Opening it clears the previous story.
@@ -337,6 +398,11 @@ export function FriendsSection({
       {note && !addOpen && (
         <p className={`friendsNote friendsNote--${note.tone}`} role="status">
           {note.text}
+        </p>
+      )}
+      {feedError && (
+        <p className="friendsNote friendsNote--bad" role="status">
+          Could not reach attack.fm ({feedError}).{feed ? ' Showing what was last read.' : ''}
         </p>
       )}
 
@@ -414,12 +480,22 @@ export function FriendsSection({
 
       <section className="homeShelf">
         <div className="friendsBar">
-          <h2 className="homeShelfTitle">Friends{friends.length > 0 ? ` · ${friends.length}` : ''}</h2>
+          <h2 className="homeShelfTitle">
+            Friends{friends.length > 0 ? ` · ${friends.length}` : ''}
+            {/* The live count beside the total: what the page is FOR. */}
+            {(listeningNow > 0 || onlineNow > 0) && (
+              <span className="friendsBar__live">
+                {listeningNow > 0
+                  ? `${listeningNow} listening now`
+                  : `${onlineNow} online`}
+              </span>
+            )}
+          </h2>
           <Button variant="outline" size="sm" onClick={openAdd}>
             <UserPlus size={15} /> <span>Add</span>
           </Button>
         </div>
-        {feed === null ? (
+        {feed === null && !feedError ? (
           /* Loading is NOT emptiness. Falling through to the empty state here
              told people they had no friends before the answer had arrived -
              and on a slow link that claim sat on screen for seconds. Four
@@ -438,6 +514,8 @@ export function FriendsSection({
               </div>
             ))}
           </div>
+        ) : feed === null ? (
+          <p className="statsNote">Nothing to show until attack.fm answers.</p>
         ) : friends.length === 0 && outgoing.length === 0 ? (
           <div className="emptyState">
             <EmptyArt name="friends" />
@@ -452,8 +530,15 @@ export function FriendsSection({
           <div className="friendRows">
             {friends.map((f) => {
               const seen = seenAgo(f.seenAt);
-              const online = seen === 'online now';
+              const online = isOnline(f);
               const glance = weekGlance(f);
+              // Sharing OFF is its own honest line; a quiet week is another.
+              const quiet =
+                f.sharing === false
+                  ? 'keeps their listening private'
+                  : glance === null && f.songs > 0
+                    ? 'quiet this week'
+                    : null;
               // `artTick` is read here so the memo-free list re-renders when a
               // batch of pictures lands; the value itself is meaningless.
               void artTick;
@@ -490,17 +575,25 @@ export function FriendsSection({
                   <span className="friendRow__who">
                     <span className="friendRow__handle">{f.handle}</span>
                     <span className="friendRow__meta">
-                      {[f.songs > 0 ? `${f.songs.toLocaleString()} songs` : 'no library yet', online ? null : seen]
+                      {[f.songs > 0 ? `${f.songs.toLocaleString()} songs` : 'no library yet', online ? 'online' : seen]
                         .filter(Boolean)
                         .join(' · ')}
                     </span>
                   </span>
+                  {/* Right now, when there is a right now: what they are
+                      hearing at this moment. It outranks the week's glance
+                      for the same reason it sorts first. */}
+                  {f.nowPlaying && (
+                    <span className="friendRow__glance friendRow__glance--live">
+                      <NowPlayingLine f={f} />
+                    </span>
+                  )}
                   {/* What they've been playing, if they share it - the line
                       that makes the list about music rather than accounts. On
                       a wide row it takes the middle, which is the room the
                       grid used to waste; on a narrow one it drops under the
                       handle. */}
-                  {glance && (
+                  {!f.nowPlaying && glance && (
                     <span className="friendRow__glance">
                       {glance}
                       {/* The row already paints this artist's photo behind
@@ -513,6 +606,9 @@ export function FriendsSection({
                         </>
                       )}
                     </span>
+                  )}
+                  {!f.nowPlaying && !glance && quiet && (
+                    <span className="friendRow__glance friendRow__glance--quiet">{quiet}</span>
                   )}
                   {/* Visit leads and Stats trails, which is the opposite of
                       the reading order you would guess - but visiting is the
@@ -610,6 +706,11 @@ export function FriendStats({ friend }: { friend: RegistryFriend }) {
   const sharing = typeof friend.weekMinutes === 'number';
   return (
     <div className="friendStats">
+      {friend.nowPlaying && (
+        <p className="friendStats__artist friendStats__now">
+          <NowPlayingLine f={friend} long />
+        </p>
+      )}
       {sharing ? (
         <div className="friendStats__week">
           <div className="friendStats__hero">
@@ -635,7 +736,11 @@ export function FriendStats({ friend }: { friend: RegistryFriend }) {
         </div>
       ) : (
         <Text size="sm" tone="muted">
-          They don&rsquo;t share their listening (or haven&rsquo;t played anything this week).
+          {friend.sharing === false
+            ? 'They keep their listening private.'
+            : friend.listenedAt
+              ? 'Nothing played this week yet.'
+              : 'They have not shared any listening yet.'}
         </Text>
       )}
       <div className="friendStats__tiles">

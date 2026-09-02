@@ -4,19 +4,48 @@ import { request, type ServerSession } from './http.ts';
 
 /** A live listening room. `positionMs` arrives already carried forward to the
  *  moment it was read, so a follower can seek straight to it. */
+export interface JamPerson {
+  id: number;
+  name: string;
+  joinedAt: number;
+  seenAt: number;
+  host: boolean;
+}
+
+export interface JamEvent {
+  at: number;
+  /** joined | left | host (the room changed hands to `who`). */
+  kind: string;
+  who: string;
+}
+
 export interface Jam {
   id: string;
   hostId: number;
   hostName: string;
   members: string[];
+  /** The room's people with their standing - absent from an older hub. */
+  people?: JamPerson[];
   memberCount: number;
   trackId: number | null;
+  /** What is on, by name, for a member whose library lacks it. */
+  trackTitle?: string;
+  trackArtist?: string;
   positionMs: number;
   playing: boolean;
   queue: number[];
   /** Who asked for a track, by track id: "added by Kayla" on the row. */
   addedBy?: Record<string, string>;
   updatedAt: number;
+  /** The host's beat has stopped arriving; the room is about to change hands. */
+  hostQuiet?: boolean;
+  events?: JamEvent[];
+  createdAt?: number;
+  /** The hub's clock when this was read. */
+  now?: number;
+  /** This device's clock when this arrived - stamped by the provider, so a
+   *  follower can add the time since without any cross-machine skew. */
+  receivedAt?: number;
 }
 
 export interface JamsFeed {
@@ -46,13 +75,26 @@ export async function leaveJam(session: ServerSession, id: string): Promise<void
   await request(session.url, `/api/jams/${id}/leave`, { token: session.token, method: 'POST' });
 }
 
+/** The host closes the room for everyone. Leaving hands it on instead. */
+export async function endJam(session: ServerSession, id: string): Promise<void> {
+  await request(session.url, `/api/jams/${id}/end`, { token: session.token, method: 'POST' });
+}
+
 /** The host's clock, posted as it plays. Members read it and follow. The reply
  *  hands back any track ids members have asked to add since the last beat, for
  *  the host to fold into its own queue. */
 export async function pushJamState(
   session: ServerSession,
   id: string,
-  state: { trackId: number | null; positionMs: number; playing: boolean; queue?: number[] },
+  state: {
+    trackId: number | null;
+    trackTitle?: string;
+    trackArtist?: string;
+    positionMs: number;
+    playing: boolean;
+    queue?: number[];
+    deviceId?: string;
+  },
 ): Promise<number[]> {
   const out = await request<{ additions?: number[] }>(session.url, `/api/jams/${id}/state`, {
     token: session.token,

@@ -48,11 +48,19 @@ export function FriendsThisWeek({
   useEffect(() => {
     if (!registry) return;
     let live = true;
-    void fetchFriends(registry.token)
-      .then((feed) => live && setFriends(feed.friends))
-      .catch(() => {});
+    const load = () =>
+      void fetchFriends(registry.token)
+        .then((feed) => live && setFriends(feed.friends))
+        .catch(() => {});
+    load();
+    // Re-read while the page is open: the friends grid a tab away refreshes,
+    // and a leaderboard frozen at mount time read as a different truth.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') load();
+    }, 60_000);
     return () => {
       live = false;
+      window.clearInterval(timer);
     };
   }, [registry, sharing]);
 
