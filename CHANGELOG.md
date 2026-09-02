@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.50
+
+- An invite link to a server you're already signed into no longer asks you to create an account: the card says you're a member (or that it's your server) and opens it.
+
 ## 0.5.49
 
 - Invite links now show the server they invite you to: a wall of that library's own album covers, with its Spotify Canvas clips mixed in, instead of the same stock covers every time. The stock wall behind the sign-in screen is dealt fresh each time too.

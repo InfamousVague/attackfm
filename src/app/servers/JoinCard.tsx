@@ -1,12 +1,13 @@
 import { Button, Text } from '@glacier/react';
-import { Disc3, LogIn, ListMusic, Music, User, Users } from '@glacier/icons';
+import { Check, Disc3, LogIn, ListMusic, Music, User, Users } from '@glacier/icons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRegistry } from './registrySession.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { AccountForm } from './AccountForm.tsx';
 import { previewInvite, type InvitePreview } from './registry.ts';
 import { enterServer, fetchServerInfo, type ServerInfo } from '../server.ts';
-import { rememberSession } from './sessions.ts';
+import { rememberSession, sessionForOrigin } from './sessions.ts';
+import { normalizeServerUrl } from '../server.ts';
 
 /**
  * An invite LINK, tapped: one card, one button.
@@ -37,7 +38,7 @@ export function JoinCard({
   auto?: boolean;
 }) {
   const { session: registry, apply: applyRegistry } = useRegistry();
-  const { applySession } = useServerSession();
+  const { applySession, pivot } = useServerSession();
   const [preview, setPreview] = useState<InvitePreview | null>(null);
   const [info, setInfo] = useState<ServerInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,15 +93,20 @@ export function JoinCard({
     }
   };
 
+  // Already signed into the server the invite names - the owner following
+  // their own link, a member tapping it twice. There is nothing to join and
+  // nothing to sign up for: the card says so and opens the server.
+  const held = preview?.serverUrl ? sessionForOrigin(normalizeServerUrl(preview.serverUrl)) : null;
+
   // The automatic join, once the invite has been read and an identity is in
   // hand. Signed out, the account form below hands its identity to join()
   // itself, so nothing fires here until then.
   useEffect(() => {
-    if (!auto || !registry || !preview || autoFired.current) return;
+    if (!auto || !registry || !preview || held || autoFired.current) return;
     autoFired.current = true;
     void join();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per card, on the first render that has both
-  }, [auto, registry, preview]);
+  }, [auto, registry, preview, held]);
 
   const name = preview?.serverName || info?.name || 'a server';
   // The owner is what the SERVER says; the inviter is who sent the link.
@@ -159,7 +165,24 @@ export function JoinCard({
               when it wakes.
             </Text>
           )}
-          {registry ? (
+          {held ? (
+            <>
+              <Text size="sm" tone="muted">
+                <Check size={14} /> {held.isAdmin ? `This is your server.` : `You're already a member of ${name}.`}
+              </Text>
+              <Button
+                variant="solid"
+                size="lg"
+                className="joinCard__join"
+                onClick={() => {
+                  pivot(held.url);
+                  onDone();
+                }}
+              >
+                <LogIn size={16} /> Open {name}
+              </Button>
+            </>
+          ) : registry ? (
             <Button variant="solid" size="lg" className="joinCard__join" disabled={busy} onClick={() => void join()}>
               <LogIn size={16} /> {busy ? 'Joining…' : `Join ${name}`}
             </Button>
