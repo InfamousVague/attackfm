@@ -227,11 +227,20 @@ export function bookSpeedLabel(rate: number): string {
   return `${rate}×`;
 }
 
-/** The book clock, defaulting to the chapter panel. */
+/** The book clock, defaulting to the chapter panel. Every face the Artwork
+ *  menu offers a book is remembered here, or a choice that worked all evening
+ *  is quietly gone at the next launch (which is what happened to the analyser,
+ *  and then the visualizer, when only the first three were let through). */
 export function readBookArtView(): ArtView {
   try {
     const stored = localStorage.getItem(BOOK_ART_VIEW_KEY);
-    return stored === 'cd' || stored === 'cover' || stored === 'hidden' ? stored : 'chapters';
+    return stored === 'cd' ||
+      stored === 'cover' ||
+      stored === 'hidden' ||
+      stored === 'analyser' ||
+      stored === 'visualizer'
+      ? stored
+      : 'chapters';
   } catch {
     return 'chapters';
   }

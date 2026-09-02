@@ -398,14 +398,19 @@ export function Player({
   wantedRateRef.current = wantedRate;
   const playingBook = track?.kind === 'book';
   // Whether any enabled plugin can draw the art square (the visualizers
-  // plugin). Without one, a stored 'visualizer' choice falls back to the disc
-  // rather than leaving the square empty - the plugin may have been turned off
+  // plugin). Without one, a stored 'visualizer' choice falls back to each
+  // clock's own default - the disc for a song, the chapters for a book -
+  // rather than leaving the square empty: the plugin may have been turned off
   // since the choice was made.
   const { enabled: enabledPlugins } = usePlugins();
   const hasVisualizer = enabledPlugins.some((p) => Boolean(p.slots?.['now-playing-art']));
   const chosenArtView = playingBook ? bookArtView : artView;
   const wornArtView: ArtView =
-    chosenArtView === 'visualizer' && !hasVisualizer ? 'cd' : chosenArtView;
+    chosenArtView === 'visualizer' && !hasVisualizer
+      ? playingBook
+        ? 'chapters'
+        : 'cd'
+      : chosenArtView;
   const chooseArtView = (next: ArtView) => {
     (playingBook ? setBookArtView : setArtView)(next);
     try {

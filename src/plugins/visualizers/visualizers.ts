@@ -103,6 +103,46 @@ function noise2(x: number, y: number, t: number): number {
 }
 
 /** The hue of a CSS colour string - hsl(), rgb(), #hex - or null. */
+/**
+ * One pixel of a CSS colour, painted by the browser itself - the parser of
+ * last resort, so a colour written in any space the browser knows still gives
+ * a hue. The kit's own accent ramp is oklch(), which no regex below reads:
+ * with the dynamic accent off, or a song with no readable cover, every
+ * visualizer wore the fallback pink instead of the accent that was chosen.
+ * Null when the browser will not paint it. Cached per string, because the
+ * accent is re-read twice a second and only changes when the token does.
+ */
+const pixels = new Map<string, [number, number, number] | null>();
+let pixelCtx: CanvasRenderingContext2D | null | undefined;
+function pixelOf(css: string): [number, number, number] | null {
+  const hit = pixels.get(css);
+  if (hit !== undefined) return hit;
+  if (pixelCtx === undefined) {
+    const c = typeof document === 'undefined' ? null : document.createElement('canvas');
+    if (c) {
+      c.width = 1;
+      c.height = 1;
+    }
+    pixelCtx = c?.getContext('2d', { willReadFrequently: true }) ?? null;
+  }
+  let out: [number, number, number] | null = null;
+  if (pixelCtx) {
+    // A colour the browser cannot parse leaves fillStyle where it was - the
+    // sentinel - which is how it says no.
+    pixelCtx.fillStyle = '#010203';
+    pixelCtx.fillStyle = css;
+    if (pixelCtx.fillStyle !== '#010203') {
+      pixelCtx.clearRect(0, 0, 1, 1);
+      pixelCtx.fillRect(0, 0, 1, 1);
+      const d = pixelCtx.getImageData(0, 0, 1, 1).data;
+      out = [d[0] ?? 0, d[1] ?? 0, d[2] ?? 0];
+    }
+  }
+  if (pixels.size > 64) pixels.clear();
+  pixels.set(css, out);
+  return out;
+}
+
 function hueOf(css: string): number | null {
   const s = css.trim();
   const hsl = /hsla?\(\s*([\d.]+)/.exec(s);
@@ -119,10 +159,16 @@ function hueOf(css: string): number | null {
     b = parseInt(full.slice(4, 6), 16);
   } else {
     const rgb = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(s);
-    if (!rgb) return null;
-    r = parseFloat(rgb[1] ?? '0');
-    g = parseFloat(rgb[2] ?? '0');
-    b = parseFloat(rgb[3] ?? '0');
+    if (rgb) {
+      r = parseFloat(rgb[1] ?? '0');
+      g = parseFloat(rgb[2] ?? '0');
+      b = parseFloat(rgb[3] ?? '0');
+    } else {
+      // oklch(), color-mix(), a name: whatever it is, the browser can paint it.
+      const px = pixelOf(s);
+      if (!px) return null;
+      [r, g, b] = px;
+    }
   }
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
@@ -135,8 +181,10 @@ function hueOf(css: string): number | null {
   return ((h * 60) % 360 + 360) % 360;
 }
 
-/** The app's accent hue right now, read off the dynamic accent token. The
- *  brand pink when the token cannot be read (a server render, a test). */
+/** The app's accent hue right now, read off the accent token: an hsl() when
+ *  the dynamic accent is up, the kit's oklch() ramp otherwise (read through a
+ *  pixel). The brand pink only when nothing can be read at all - a server
+ *  render, a test. */
 export function accentHue(): number {
   try {
     const css = getComputedStyle(document.documentElement).getPropertyValue('--glacier-accent-solid');
@@ -156,6 +204,29 @@ export function makeColor(hue: number): VizFrame['color'] {
 function fade(f: VizFrame, alpha: number): void {
   f.ctx.fillStyle = `rgba(6, 6, 8, ${alpha})`;
   f.ctx.fillRect(0, 0, f.w, f.h);
+}
+
+/**
+ * Stroke the current path as a glowing line: two wide additive strokes under
+ * the crisp one. Not a canvas shadow - a shadow rasterises and blurs a layer
+ * the size of the path every frame, which for a ring that fills the square
+ * measured 5-6 ms a frame on WebKit, more than the other ten visualizers put
+ * together. This reads the same at a sixth of the cost. `light` is the glow's
+ * lightness; the line on top sits a little brighter.
+ */
+function glowStroke(f: VizFrame, width: number, blur: number, shift = 0, light = 60): void {
+  const { ctx } = f;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.strokeStyle = f.color(0.12, light, shift);
+  ctx.lineWidth = width + blur;
+  ctx.stroke();
+  ctx.strokeStyle = f.color(0.28, light, shift);
+  ctx.lineWidth = width + blur * 0.35;
+  ctx.stroke();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.strokeStyle = f.color(0.95, light + 6, shift);
+  ctx.lineWidth = width;
+  ctx.stroke();
 }
 
 // ---------------------------------------------------------------------------
@@ -235,12 +306,7 @@ const scope: VizDef = {
         else ctx.lineTo(x, y);
       }
       ctx.closePath();
-      ctx.strokeStyle = f.color(0.95, 66);
-      ctx.lineWidth = 2.2;
-      ctx.shadowColor = f.color(0.9, 60);
-      ctx.shadowBlur = 14 + f.beat * 18;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
+      glowStroke(f, 2.2, 14 + f.beat * 18, 0, 60);
     };
   },
 };
@@ -272,12 +338,7 @@ const lissajous: VizDef = {
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
-      ctx.strokeStyle = f.color(0.9, 62, (t * 20) % 60);
-      ctx.lineWidth = 1.6 + f.beat * 2;
-      ctx.shadowColor = f.color(0.8);
-      ctx.shadowBlur = 10;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
+      glowStroke(f, 1.6 + f.beat * 2, 10, (t * 20) % 60, 56);
     };
   },
 };
@@ -767,12 +828,7 @@ const rose: VizDef = {
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
-      ctx.strokeStyle = f.color(0.9, 64, (f.t * 25) % 60);
-      ctx.lineWidth = 1.8 + f.beat * 2;
-      ctx.shadowColor = f.color(0.8);
-      ctx.shadowBlur = 12;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
+      glowStroke(f, 1.8 + f.beat * 2, 12, (f.t * 25) % 60, 58);
       ctx.restore();
     };
   },
