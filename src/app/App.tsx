@@ -37,6 +37,7 @@ import { DownloadNotices } from './notify/DownloadNotices.tsx';
 import { VerboseNotices } from './notify/VerboseNotices.tsx';
 import { FriendNotices } from './notify/FriendNotices.tsx';
 import { ShareNotices } from './notify/ShareNotices.tsx';
+import { SharedPlaylistBridge } from './playlists/SharedPlaylistBridge.tsx';
 import { NotifyBell } from './notify/NotifyBell.tsx';
 import { ShareServer } from './library/ShareServer.tsx';
 import { CarPlayBridge } from './player/CarPlayBridge.tsx';
@@ -835,6 +836,7 @@ export function App() {
                 waits for an answer, so it rings either way. */}
             <FriendNotices />
             <ShareNotices />
+            <SharedPlaylistBridge />
             {/* Music Date, fullscreen: over everything, chrome gone - no nav
                 bar, no player strip, just the introductions. A floating
                 chevron (and the system back) is the way out. */}

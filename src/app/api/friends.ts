@@ -71,12 +71,19 @@ export async function removeFriend(session: ServerSession, userId: number): Prom
  * friendships. Older hubs 404 - swallowed, since a hub that cannot mirror
  * simply keeps an empty friend list as before.
  */
-export async function mirrorFriendsToHub(session: ServerSession, handles: string[]): Promise<void> {
+export async function mirrorFriendsToHub(
+  session: ServerSession,
+  handles: string[],
+  /** The registry session: with it the hub verifies the list with attack.fm
+   *  itself and settles every friendship at once, instead of filing requests
+   *  that wait for the other person's app. */
+  registryToken?: string,
+): Promise<void> {
   try {
     await request(session.url, '/api/friends/mirror', {
       method: 'POST',
       token: session.token,
-      body: JSON.stringify({ handles }),
+      body: JSON.stringify({ handles, registryToken }),
     });
   } catch {
     // See above.

@@ -304,6 +304,59 @@ impl Db {
         let _ = c.execute("DELETE FROM friend_requests WHERE id = ?1", [id]);
     }
 
+    // --- playlist links ------------------------------------------------------------
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_playlist_share(
+        &self,
+        code: &str,
+        owner_id: i64,
+        name: &str,
+        description: &str,
+        tracks_json: &str,
+        covers_json: &str,
+        now: i64,
+    ) -> rusqlite::Result<()> {
+        let c = self.conn.lock().unwrap();
+        c.execute(
+            "INSERT INTO playlist_shares (code, owner_id, name, description, tracks, covers, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![code, owner_id, name, description, tracks_json, covers_json, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn playlist_share(&self, code: &str) -> Option<PlaylistShare> {
+        let c = self.conn.lock().unwrap();
+        c.query_row(
+            "SELECT s.code, s.owner_id, a.handle, s.name, s.description, s.tracks, s.covers, s.created_at, s.opens
+               FROM playlist_shares s JOIN accounts a ON a.id = s.owner_id
+              WHERE s.code = ?1",
+            [code],
+            |r| {
+                Ok(PlaylistShare {
+                    code: r.get(0)?,
+                    owner_id: r.get(1)?,
+                    owner_handle: r.get(2)?,
+                    name: r.get(3)?,
+                    description: r.get(4)?,
+                    tracks_json: r.get(5)?,
+                    covers_json: r.get(6)?,
+                    created_at: r.get(7)?,
+                    opens: r.get(8)?,
+                })
+            },
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
+    pub fn bump_share_opens(&self, code: &str) {
+        let c = self.conn.lock().unwrap();
+        let _ = c.execute("UPDATE playlist_shares SET opens = opens + 1 WHERE code = ?1", [code]);
+    }
+
     // --- profiles ----------------------------------------------------------------
 
     /// Store what the app published. An empty body with `sharing` alone
@@ -851,6 +904,19 @@ impl Db {
     }
 }
 
+/// A playlist shared as a link, as the landing page and the app read it.
+pub struct PlaylistShare {
+    pub code: String,
+    pub owner_id: i64,
+    pub owner_handle: String,
+    pub name: String,
+    pub description: String,
+    pub tracks_json: String,
+    pub covers_json: String,
+    pub created_at: i64,
+    pub opens: i64,
+}
+
 /// A song sent between friends, as the recipient's inbox lists it.
 pub struct Share {
     pub id: i64,
@@ -978,6 +1044,21 @@ CREATE TABLE IF NOT EXISTS shares (
   dismissed_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS shares_to ON shares(to_id, taken_at, dismissed_at);
+
+-- A playlist shared as a LINK: its songs by name, so it can be opened by
+-- someone on any hub (or none) and re-filed onto theirs - the songs they own
+-- straight in, the rest as wants their hub goes and gets. Never the files.
+CREATE TABLE IF NOT EXISTS playlist_shares (
+  code        TEXT PRIMARY KEY,
+  owner_id    INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  tracks      TEXT NOT NULL,             -- JSON [{artist,title,album,durationMs}]
+  covers      TEXT NOT NULL DEFAULT '[]', -- JSON [data URL, ...] up to four
+  created_at  INTEGER NOT NULL,
+  opens       INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS playlist_shares_owner ON playlist_shares(owner_id, created_at DESC);
 
 -- The account's listening profile - the whole thing, as its own app publishes
 -- it from wherever it listens. Global on purpose: a profile is a person's,

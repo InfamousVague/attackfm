@@ -32,7 +32,7 @@ export function FriendMirrorBridge() {
         const feed = await fetchRegistryFriends(token);
         if (!live) return;
         const handles = feed.friends.map((f) => f.handle).filter(Boolean);
-        if (handles.length) await mirrorFriendsToHub(session, handles);
+        if (handles.length) await mirrorFriendsToHub(session, handles, token);
       } catch {
         // Either side unreachable: the next pass tries again.
       }

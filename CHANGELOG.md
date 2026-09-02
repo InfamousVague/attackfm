@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.41
+
+- Sharing a playlist with friends now lists everyone you are friends with on AttackFM who is on your server - including people you invited who have not opened the new app yet. Your server checks the friend list with attack.fm itself instead of waiting for both sides to say so.
+- Share a playlist as a link. Make a link in the share sheet and send it anywhere: it unfurls like a Spotify embed (cover, name, how many songs, who shared it) and lists the songs. Opened in AttackFM by anyone on any server, it files the playlist onto their own server - the songs they have go straight in, the rest their server goes and gets.
+
 ## 0.5.40
 
 - Playlists on your other servers are grouped by server again even when a server address was saved with a different spelling; the primary server can no longer show up as "another server".

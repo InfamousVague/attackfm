@@ -189,6 +189,46 @@ export async function removeFriend(token: string, accountId: number): Promise<vo
 // --- invites ---------------------------------------------------------------
 
 /** A server owner mints an invite; the code is what an invite link carries. */
+// --- playlists as links ------------------------------------------------------
+
+export interface SharedTrack {
+  artist: string;
+  title: string;
+  album: string;
+  durationMs?: number | null;
+}
+
+/** A playlist behind a link: its songs by name, a few small covers. */
+export interface SharedPlaylist {
+  code: string;
+  name: string;
+  description: string;
+  /** The handle that shared it. */
+  by: string;
+  tracks: SharedTrack[];
+  covers: string[];
+  createdAt: number;
+  opens: number;
+  url: string;
+}
+
+/** Publish a playlist as a link. Names and small covers only - no files. */
+export async function publishPlaylistShare(
+  token: string,
+  body: { name: string; description?: string; tracks: SharedTrack[]; covers?: string[] },
+): Promise<{ code: string; url: string }> {
+  return call('/v1/playlists/share', { token, method: 'POST', body: JSON.stringify(body) });
+}
+
+/** Read a playlist behind a link. Public: the link is the permission. */
+export async function fetchPlaylistShare(code: string): Promise<SharedPlaylist> {
+  return call<SharedPlaylist>(`/v1/playlists/share/${encodeURIComponent(code)}`);
+}
+
+export function playlistShareLink(code: string): string {
+  return `${REGISTRY_URL}/p/${code}`;
+}
+
 // --- the listening profile, global ------------------------------------------
 
 /**

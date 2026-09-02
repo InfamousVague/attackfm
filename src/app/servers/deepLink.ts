@@ -130,11 +130,43 @@ export function onInvite(handler: (code: string) => void): () => void {
   };
 }
 
+// --- playlist links ----------------------------------------------------------
+//
+// https://registry.attack.fm/p/<code>  or  attackfm://p/<code>: a playlist
+// shared by name. Same shape as invites - held until a subscriber appears,
+// spent once handled.
+
+let pendingPlaylist: string | null = null;
+const playlistSubscribers = new Set<(code: string) => void>();
+
+function playlistCodeFromUrl(url: string): string | null {
+  const m = url.match(/\/p\/([^/?#\s]+)/i);
+  return m?.[1]?.trim() || null;
+}
+
+export function onPlaylistLink(handler: (code: string) => void): () => void {
+  playlistSubscribers.add(handler);
+  if (pendingPlaylist) handler(pendingPlaylist);
+  return () => {
+    playlistSubscribers.delete(handler);
+  };
+}
+
+export function clearPlaylistLink(): void {
+  pendingPlaylist = null;
+}
+
 function deliver(url: string): void {
   const link = spotifyLink(url);
   if (link) {
     pendingLink = link;
     for (const handler of linkSubscribers) handler(link);
+    return;
+  }
+  const playlist = playlistCodeFromUrl(url);
+  if (playlist) {
+    pendingPlaylist = playlist;
+    for (const handler of playlistSubscribers) handler(playlist);
     return;
   }
   const code = codeFromUrl(url);

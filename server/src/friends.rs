@@ -111,7 +111,42 @@ pub async fn request(
 pub struct MirrorBody {
     /// Registry handles of the caller's friends, as the app read them off
     /// attack.fm.
+    #[serde(default)]
     pub handles: Vec<String>,
+    /// The caller's registry session. With it the hub asks attack.fm for the
+    /// friend list ITSELF and settles friendships outright - a registry
+    /// friendship is already mutual, so there is nothing left to ask the
+    /// other person. Without it the handles are taken as a claim and filed
+    /// as requests that settle when the other side mirrors too, which is
+    /// why "friends I invited" never became shareable until they had opened
+    /// the new app.
+    #[serde(default, rename = "registryToken")]
+    pub registry_token: Option<String>,
+}
+
+/// The handles attack.fm says are the caller's friends, or None when the
+/// registry cannot be asked (no token, unreachable, token refused).
+async fn verified_friend_handles(state: &AppState, token: &str) -> Option<Vec<String>> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .ok()?;
+    let reply = client
+        .get(format!("{}/v1/friends", state.registry_url.trim_end_matches('/')))
+        .bearer_auth(token.trim())
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?;
+    let body = reply.json::<serde_json::Value>().await.ok()?;
+    Some(
+        body.get("friends")?
+            .as_array()?
+            .iter()
+            .filter_map(|f| f.get("handle").and_then(|h| h.as_str()).map(str::to_string))
+            .collect(),
+    )
 }
 
 /// `POST /api/friends/mirror` - the app hands over its REGISTRY friends, and
@@ -133,7 +168,17 @@ pub async fn mirror(
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let mut befriended = 0usize;
     let mut asked = 0usize;
-    for handle in body.handles.iter().take(500) {
+    // Verified by the registry where it can be: then the list is the truth
+    // and every match becomes a friendship now. Otherwise the app's claim,
+    // settled the slow way.
+    let (handles, verified) = match body.registry_token.as_deref() {
+        Some(token) => match verified_friend_handles(&state, token).await {
+            Some(list) => (list, true),
+            None => (body.handles.clone(), false),
+        },
+        None => (body.handles.clone(), false),
+    };
+    for handle in handles.iter().take(500) {
         let handle = handle.trim().trim_start_matches('@');
         if handle.is_empty() {
             continue;
@@ -149,6 +194,18 @@ pub async fn mirror(
             continue;
         };
         if target_id == caller.id || state.db.are_friends(caller.id, target_id) {
+            continue;
+        }
+        if verified {
+            if state.db.add_friendship(caller.id, target_id).is_ok() {
+                // Whatever either side had asked is answered.
+                for (request_id, uid, _) in state.db.incoming_requests(caller.id) {
+                    if uid == target_id {
+                        let _ = state.db.delete_friend_request(request_id);
+                    }
+                }
+                befriended += 1;
+            }
             continue;
         }
         let crossed = state
@@ -169,7 +226,7 @@ pub async fn mirror(
             asked += 1;
         }
     }
-    Ok(Json(json!({ "ok": true, "befriended": befriended, "asked": asked })))
+    Ok(Json(json!({ "ok": true, "befriended": befriended, "asked": asked, "verified": verified })))
 }
 
 /// `POST /api/friends/requests/{id}/accept` - only the person asked may.

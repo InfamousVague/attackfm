@@ -946,6 +946,280 @@ async fn set_membership(
     Ok(Json(json!({ "ok": true })))
 }
 
+// --- playlist links ------------------------------------------------------------------
+
+/// Songs on a shared playlist, by name. Five hundred is a long playlist;
+/// past that it is a library, and a link is not the way to move one.
+const SHARE_MAX_TRACKS: usize = 500;
+/// Up to four small cover thumbnails ride along for the landing page's
+/// mosaic and the link preview. Each is a data URL; a phone-made 160px JPEG
+/// is ~8 KB, so this cap is generous without being a photo host.
+const SHARE_MAX_COVER_BYTES: usize = 48 * 1024;
+const SHARE_CODE_LEN: usize = 10;
+
+#[derive(Deserialize)]
+struct SharedTrack {
+    artist: String,
+    title: String,
+    #[serde(default)]
+    album: String,
+    #[serde(default, rename = "durationMs")]
+    duration_ms: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct SharePlaylistBody {
+    name: String,
+    #[serde(default)]
+    description: String,
+    tracks: Vec<SharedTrack>,
+    #[serde(default)]
+    covers: Vec<String>,
+}
+
+fn share_code() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    (0..SHARE_CODE_LEN)
+        .map(|_| INVITE_ALPHABET[rng.gen_range(0..INVITE_ALPHABET.len())] as char)
+        .collect()
+}
+
+/// `POST /v1/playlists/share` - publish a playlist as a link. What is kept is
+/// the NAMES of its songs and a few small covers; whoever opens the link
+/// re-files it on their own hub, which fetches what it does not own.
+async fn share_playlist(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<SharePlaylistBody>,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let name: String = body.name.trim().chars().take(120).collect();
+    if name.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "A playlist needs a name.".into()));
+    }
+    if body.tracks.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "An empty playlist is not worth a link.".into()));
+    }
+    if body.tracks.len() > SHARE_MAX_TRACKS {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "That playlist is too long to share as a link.".into()));
+    }
+    let tracks: Vec<Value> = body
+        .tracks
+        .iter()
+        .filter(|t| !t.artist.trim().is_empty() && !t.title.trim().is_empty())
+        .map(|t| {
+            json!({
+                "artist": t.artist.trim().chars().take(200).collect::<String>(),
+                "title": t.title.trim().chars().take(200).collect::<String>(),
+                "album": t.album.trim().chars().take(200).collect::<String>(),
+                "durationMs": t.duration_ms,
+            })
+        })
+        .collect();
+    if tracks.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Every song needs an artist and a title.".into()));
+    }
+    let covers: Vec<&String> = body
+        .covers
+        .iter()
+        .filter(|c| c.starts_with("data:image/") && c.len() <= SHARE_MAX_COVER_BYTES)
+        .take(4)
+        .collect();
+    let description: String = body.description.trim().chars().take(400).collect();
+    let code = share_code();
+    state
+        .db
+        .create_playlist_share(
+            &code,
+            who.sub,
+            &name,
+            &description,
+            &Value::Array(tracks).to_string(),
+            &serde_json::to_string(&covers).unwrap_or_else(|_| "[]".into()),
+            now_secs(),
+        )
+        .map_err(db_err)?;
+    Ok(Json(json!({ "code": code, "url": format!("{}/p/{}", public_base(), code) })))
+}
+
+/// Where links point. The registry lives behind one hostname; a deploy that
+/// changes it sets `AFM_REGISTRY_PUBLIC`.
+fn public_base() -> String {
+    std::env::var("AFM_REGISTRY_PUBLIC")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "https://registry.attack.fm".into())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn share_json(s: &db::PlaylistShare, with_covers: bool) -> Value {
+    let tracks: Value = serde_json::from_str(&s.tracks_json).unwrap_or(Value::Array(vec![]));
+    let covers: Value = if with_covers {
+        serde_json::from_str(&s.covers_json).unwrap_or(Value::Array(vec![]))
+    } else {
+        Value::Array(vec![])
+    };
+    json!({
+        "code": s.code, "name": s.name, "description": s.description, "by": s.owner_handle,
+        "tracks": tracks, "covers": covers, "createdAt": s.created_at, "opens": s.opens,
+        "url": format!("{}/p/{}", public_base(), s.code),
+    })
+}
+
+/// `GET /v1/playlists/share/{code}` - the playlist, for the app. Public: the
+/// link IS the permission, the way a Spotify link is.
+async fn playlist_share_json(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(code): axum::extract::Path<String>,
+) -> ApiResult {
+    let s = state
+        .db
+        .playlist_share(code.trim())
+        .ok_or((StatusCode::NOT_FOUND, "No playlist at that link.".into()))?;
+    state.db.bump_share_opens(&s.code);
+    Ok(Json(share_json(&s, true)))
+}
+
+/// `GET /p/{code}/cover.jpg` - the first cover, for link previews: a messenger
+/// unfurling the page fetches og:image, and it has to be a plain picture URL.
+async fn playlist_share_cover(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(code): axum::extract::Path<String>,
+) -> axum::response::Response {
+    let Some(s) = state.db.playlist_share(code.trim()) else {
+        return (StatusCode::NOT_FOUND, "no such playlist").into_response();
+    };
+    let covers: Vec<String> = serde_json::from_str(&s.covers_json).unwrap_or_default();
+    let Some(first) = covers.first() else {
+        return (StatusCode::NOT_FOUND, "no cover").into_response();
+    };
+    // data:image/jpeg;base64,....
+    let Some((head, b64)) = first.split_once(',') else {
+        return (StatusCode::NOT_FOUND, "no cover").into_response();
+    };
+    let mime = head
+        .trim_start_matches("data:")
+        .split(';')
+        .next()
+        .unwrap_or("image/jpeg")
+        .to_string();
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64.trim()) else {
+        return (StatusCode::NOT_FOUND, "no cover").into_response();
+    };
+    (
+        [(axum::http::header::CONTENT_TYPE, mime), (axum::http::header::CACHE_CONTROL, "public, max-age=86400".into())],
+        bytes,
+    )
+        .into_response()
+}
+
+/// `GET /p/{code}` - what a playlist LINK opens: a page that unfurls in a
+/// messenger like a Spotify embed (title, cover, "N songs · shared by"),
+/// lists the songs, and hands the app the link by its own scheme.
+async fn playlist_landing(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(code): axum::extract::Path<String>,
+) -> Html<String> {
+    let safe = esc(code.trim());
+    let Some(s) = state.db.playlist_share(code.trim()) else {
+        return invite_page(
+            "Playlist not found",
+            "<h1>No playlist at that link</h1><p>It may have been mistyped, or taken down.</p>",
+        );
+    };
+    let tracks: Vec<Value> = serde_json::from_str(&s.tracks_json).unwrap_or_default();
+    let covers: Vec<String> = serde_json::from_str(&s.covers_json).unwrap_or_default();
+    let base = public_base();
+    let count = tracks.len();
+    let summary = format!(
+        "{count} {} · shared by @{} on AttackFM",
+        if count == 1 { "song" } else { "songs" },
+        esc(&s.owner_handle)
+    );
+    let image = if covers.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<meta property=\"og:image\" content=\"{base}/p/{safe}/cover.jpg\">\
+             <meta name=\"twitter:card\" content=\"summary_large_image\">\
+             <meta name=\"twitter:image\" content=\"{base}/p/{safe}/cover.jpg\">"
+        )
+    };
+    let mosaic: String = covers
+        .iter()
+        .take(4)
+        .map(|c| format!("<img src=\"{}\" alt=\"\">", esc(c)))
+        .collect();
+    let rows: String = tracks
+        .iter()
+        .take(60)
+        .enumerate()
+        .map(|(i, t)| {
+            let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let artist = t.get("artist").and_then(|v| v.as_str()).unwrap_or("");
+            format!(
+                "<li><span class=\"n\">{}</span><span class=\"t\">{}</span><span class=\"a\">{}</span></li>",
+                i + 1,
+                esc(title),
+                esc(artist)
+            )
+        })
+        .collect();
+    let more = if count > 60 { format!("<p class=\"hint\">and {} more</p>", count - 60) } else { String::new() };
+    let description = if s.description.is_empty() { String::new() } else { format!("<p class=\"desc\">{}</p>", esc(&s.description)) };
+    Html(format!(
+        r#"<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{name} · AttackFM</title>
+<meta property="og:type" content="music.playlist">
+<meta property="og:site_name" content="AttackFM">
+<meta property="og:title" content="{name}">
+<meta property="og:description" content="{summary}">
+<meta property="og:url" content="{base}/p/{safe}">
+{image}
+<meta name="description" content="{summary}">
+<style>
+  :root {{ color-scheme: dark; }}
+  body {{ margin: 0; min-height: 100dvh; padding: 1.5rem; background: #0b0b0d; color: #f2f2f4;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }}
+  main {{ max-width: 30rem; margin: 0 auto; }}
+  .mosaic {{ display: grid; grid-template-columns: 1fr 1fr; gap: 2px; width: 12rem; aspect-ratio: 1;
+    border-radius: 1rem; overflow: hidden; background: #17171b; margin: 0 auto 1.25rem; }}
+  .mosaic img {{ width: 100%; height: 100%; object-fit: cover; }}
+  .mosaic img:only-child {{ grid-column: 1 / -1; grid-row: 1 / -1; }}
+  h1 {{ font-size: 1.5rem; margin: 0; text-align: center; }}
+  p {{ color: #a8a8b3; margin: 0.25rem 0 0; text-align: center; }}
+  .desc {{ margin-top: 0.75rem; }}
+  .open {{ display: block; margin: 1.5rem 0 0.5rem; padding: 0.9rem 1.25rem; text-align: center;
+    border-radius: 999px; background: #f0356d; color: #fff; font-weight: 600; text-decoration: none; }}
+  .get {{ display: block; text-align: center; color: #a8a8b3; font-size: 0.9rem; }}
+  ol {{ list-style: none; margin: 1.75rem 0 0; padding: 0; }}
+  li {{ display: grid; grid-template-columns: 2rem 1fr; column-gap: 0.5rem; padding: 0.55rem 0;
+    border-bottom: 1px solid #1d1d22; }}
+  .n {{ color: #6b6b75; font-variant-numeric: tabular-nums; grid-row: 1 / 3; }}
+  .t {{ font-weight: 600; }}
+  .a {{ color: #a8a8b3; font-size: 0.9rem; }}
+  .hint {{ font-size: 0.85rem; margin-top: 1rem; }}
+</style>
+</head><body><main>
+{mosaic_block}
+<h1>{name}</h1>
+<p>{summary}</p>
+{description}
+<a class="open" href="attackfm://p/{safe}">Open in AttackFM</a>
+<a class="get" href="https://attack.fm">No app yet? Get AttackFM, then open this link again.</a>
+<ol>{rows}</ol>
+{more}
+</main></body></html>"#,
+        name = esc(&s.name),
+        mosaic_block = if mosaic.is_empty() { String::new() } else { format!("<div class=\"mosaic\">{mosaic}</div>") },
+    ))
+}
+
 // --- profiles ------------------------------------------------------------------------
 
 /// A profile is a few hundred songs' worth of names and numbers; anything
@@ -1364,7 +1638,10 @@ async fn apple_site_association() -> impl IntoResponse {
         "applinks": {
             "details": [{
                 "appIDs": [APPLE_APP_ID],
-                "components": [{ "/": "/i/*", "comment": "invite links open the app's Join screen" }]
+                "components": [
+                    { "/": "/i/*", "comment": "invite links open the app's Join screen" },
+                    { "/": "/p/*", "comment": "playlist links open in the app" }
+                ]
             }]
         }
     });
@@ -1431,6 +1708,10 @@ async fn main() {
         .route("/v1/friends/requests/{id}/accept", post(accept_request))
         .route("/v1/friends/requests/{id}/decline", post(decline_request))
         .route("/v1/friends/{account_id}", axum::routing::delete(remove_friend))
+        .route("/v1/playlists/share", post(share_playlist))
+        .route("/v1/playlists/share/{code}", get(playlist_share_json))
+        .route("/p/{code}", get(playlist_landing))
+        .route("/p/{code}/cover.jpg", get(playlist_share_cover))
         .route("/v1/profile", axum::routing::put(profile_put))
         .route("/v1/profile/{handle}", get(profile_get))
         .route("/v1/shares", get(shares).post(send_share))
