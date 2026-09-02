@@ -349,8 +349,20 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
       if (isTauri() && isAndroid) {
         // An app build from before the native bridge: nothing on this side
         // of the WebView can write a file, and pretending it downloaded was
-        // the bug. Say what fixes it.
-        toast({ message: 'Saving pictures needs the AttackFM app 0.5.29 or newer - install the latest from attack.fm.' });
+        // the bug. Say what fixes it - and say WHICH version, because the
+        // one in Settings is the over-the-air bundle, not the installed app,
+        // and "you need a newer version" on a phone showing the newest
+        // bundle reads as nonsense.
+        let installed = '';
+        try {
+          const { getVersion } = await import('@tauri-apps/api/app');
+          installed = await getVersion();
+        } catch {
+          // Unknown is fine; the sentence still stands.
+        }
+        toast({
+          message: `Saving pictures needs the AttackFM app itself at 0.5.29 or newer${installed ? ` - this phone has the ${installed} app installed` : ''}. Updates over the air do not replace the app; install the latest from attack.fm.`,
+        });
         return;
       }
       if (isTauri() && navigator.clipboard && 'ClipboardItem' in window) {

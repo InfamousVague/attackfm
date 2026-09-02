@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.39
+
+- When saving a picture needs a newer app, the message now names the app version this phone actually has installed, and says that updates over the air do not replace the app itself.
+
 ## 0.5.38
 
 - Save image on the invite card works again where it silently did not: the picture is drawn ahead of the tap, so the share sheet on iPhone opens inside the tap instead of being refused after the wait; on a desktop the card lands on the clipboard; and an Android app from before 0.5.29 now says it needs updating instead of claiming a download.
