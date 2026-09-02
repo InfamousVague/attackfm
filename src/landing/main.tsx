@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@glacier/tokens/css/tokens.css';
 import '@glacier/react/styles.css';
+import './borrowed.css';
 import './landing.css';
 import { PlaylistLanding, type SharedPlaylistDoc } from './PlaylistLanding.tsx';
 

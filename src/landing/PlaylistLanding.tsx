@@ -1,6 +1,8 @@
 import { Button, IconButton, PlayerBar, Text } from '@glacier/react';
 import { ListMusic, Pause, Play } from '@glacier/icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SpinningDisc } from '../app/player/SpinningDisc.tsx';
+import { CoverWall } from '../app/playlists/CoverWall.tsx';
 
 export interface SharedTrackDoc {
   artist: string;
@@ -141,14 +143,22 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
     };
   }, [play, stop, total]);
 
-  const nowTrack = current === null ? null : share.tracks[current];
   const count = total;
+
+  // The wall behind the header: the app's own CoverWall, fed the covers the
+  // link carries plus the catalogue's cover for every song (which 404s
+  // quietly where there is none - a missing tile, not a broken wall).
+  const wallArt = useMemo(
+    () => [...share.covers, ...share.tracks.map((_, i) => `/p/${share.code}/art/${i}`)],
+    [share],
+  );
 
   return (
     <div className="stage">
       {share.covers[0] && <div className="backdrop" style={{ backgroundImage: `url(${share.covers[0]})` }} />}
       <main className="card">
         <div className="head">
+          <CoverWall artworks={wallArt} />
           {share.covers.length > 0 ? (
             <div className="mosaic" data-n={Math.min(share.covers.length, 4)} aria-hidden>
               {share.covers.slice(0, 4).map((c, i) => (
@@ -224,44 +234,19 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
           </Text>
         </div>
 
-        {/* What is playing, said above the bar the way the app's strip says
-            it: the kit's bar keeps its own title for wide windows and folds
-            it away at a card's width, and a player with no name on it is a
-            player you cannot trust. */}
-        <div className="nowMeta">
-          {art ? (
-            <img className="now__art" src={art} alt="" />
-          ) : (
-            <span className="now__art now__art--empty" aria-hidden>
-              <ListMusic size={18} />
-            </span>
-          )}
-          <div className="nowMeta__who">
-            <Text as="span" size="sm" className="nowMeta__title">
-              {nowTrack ? nowTrack.title : 'Tap a song to preview'}
-            </Text>
-            <Text as="span" tone="muted" size="xs" className="nowMeta__artist">
-              {nowTrack ? nowTrack.artist : 'Thirty seconds of each'}
-            </Text>
+        {/* The app's mini player: the spinning disc at the left (the app's
+            own SpinningDisc - turning only while sound is coming out, spooling
+            up while a clip loads), the kit's PlayerBar with the swell beside
+            it. The bar folds its title at a card's width, as the phone strip
+            does; the highlighted row says what is playing. */}
+        <div className="now" data-idle={current === null || undefined}>
+          <div className="now__disc">
+            <SpinningDisc art={art} spinning={playing} spooling={busy !== null} />
           </div>
-        </div>
-        {/* The app's player bar, the app's swell. Idle, it still stands: Play
-            starts the first song, the way the strip does with a queue. */}
-        <PlayerBar
-          className="now"
-          data-idle={current === null || undefined}
-          artwork={
-            art ? (
-              <img className="now__art" src={art} alt="" />
-            ) : (
-              <span className="now__art now__art--empty" aria-hidden>
-                <ListMusic size={18} />
-              </span>
-            )
-          }
-          title={nowTrack ? nowTrack.title : 'Tap a song to preview'}
-          subtitle={nowTrack ? nowTrack.artist : 'Thirty seconds of each'}
-          shape="swell"
+          <PlayerBar
+            className="now__bar"
+            density="compact"
+            shape="swell"
           tone="accent"
           fill="solid"
           rail="contrast"
@@ -284,9 +269,10 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
             if (on) void audio.current?.play();
             else audio.current?.pause();
           }}
-          onSkipBack={() => step(-1)}
-          onSkipForward={() => step(1)}
-        />
+            onSkipBack={() => step(-1)}
+            onSkipForward={() => step(1)}
+          />
+        </div>
         <audio ref={audio} preload="none" />
       </main>
     </div>

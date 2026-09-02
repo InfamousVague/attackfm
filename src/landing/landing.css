@@ -52,14 +52,24 @@ body {
   box-shadow: var(--glacier-shadow-xl, 0 30px 80px rgba(0, 0, 0, 0.6));
 }
 
+/* The header wears the app's cover wall behind it (playlists/CoverWall,
+   absolutely positioned into this box and masked), so `isolation` keeps its
+   stacking inside and everything in front sits above it. */
 .head {
   flex: none;
+  position: relative;
+  isolation: isolate;
   padding: var(--glacier-space-6) var(--glacier-space-6) var(--glacier-space-4);
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--glacier-space-1);
+}
+
+.head > :not(.coverWall) {
+  position: relative;
+  z-index: 1;
 }
 
 .mosaic {
@@ -200,54 +210,27 @@ h1 {
   padding-top: var(--glacier-space-3);
 }
 
-/* What is playing, above the kit's bar. */
-.nowMeta {
+/* The mini player at the card's foot: the app's disc, the kit's bar. */
+.now {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--glacier-space-3);
-  padding: var(--glacier-space-3) var(--glacier-space-4) 0;
+  gap: var(--glacier-space-2);
+  padding-inline-start: var(--glacier-space-3);
   border-top: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
   min-width: 0;
 }
 
-.nowMeta__who {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.nowMeta__title {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.nowMeta__artist {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The kit's PlayerBar, pinned to the card's foot. */
-.now {
+/* The disc's square - the strip's TrackInfo gives it this size in the app. */
+.now__disc {
   flex: none;
-}
-
-.now__art {
   width: 2.75rem;
   height: 2.75rem;
-  border-radius: var(--glacier-radius-sm, 0.5rem);
-  object-fit: cover;
-  display: block;
 }
 
-.now__art--empty {
-  display: grid;
-  place-items: center;
-  background: var(--glacier-surface-sunken, #24242b);
-  color: var(--glacier-text-muted);
+.now__bar {
+  flex: 1;
+  min-width: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
