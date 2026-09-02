@@ -333,3 +333,109 @@ h1 {
     transform: none;
   }
 }
+
+/* --- the invite page ------------------------------------------------------ */
+
+/* The app's front-door wall (servers/ArtWall) pins itself to the viewport
+   and blurs itself; under the backdrop's scrim it reads as the app's own
+   sign-in screen, which is the point: this page is that door, opened from
+   outside. */
+.wallBackdrop .artWall {
+  z-index: 0;
+}
+
+.card--invite {
+  /* Taller than a phone when the glance is full: scrolls inside its own
+     box, so the top of the card is never pushed off the stage. */
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.card--invite .head {
+  padding-bottom: var(--glacier-space-3);
+}
+
+/* The server's mark, sized for a page rather than a modal. */
+.card--invite .joinCard__mark {
+  width: 5rem;
+  height: 5rem;
+  font-size: 2.25rem;
+  margin-bottom: var(--glacier-space-2);
+}
+
+.joinCard__mark--dead {
+  background: color-mix(in srgb, var(--glacier-danger-solid, #e5484d) 22%, transparent);
+  color: var(--glacier-danger-text, #ff8589);
+}
+
+/* The glance as one wrapping row of tiles: the app's rule sizes them for a
+   modal's width, and on a page they went to one per line. */
+.card--invite .joinCard__stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--glacier-space-2);
+  margin: var(--glacier-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  width: 100%;
+}
+
+.card--invite .joinCard__stat {
+  flex: 0 0 auto;
+  min-width: 5.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+}
+
+.doors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: 0 var(--glacier-space-6);
+}
+
+.door {
+  width: 100%;
+}
+
+.door__note {
+  text-align: center;
+}
+
+.door__note a,
+.carry a {
+  color: var(--glacier-accent-text, var(--glacier-accent-solid));
+}
+
+.codeBox {
+  margin: var(--glacier-space-5) var(--glacier-space-6) 0;
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg, 1rem);
+  background: var(--glacier-surface-sunken, rgba(255, 255, 255, 0.04));
+  border: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
+  text-align: center;
+}
+
+.codeBox__row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--glacier-space-2);
+  margin-top: var(--glacier-space-2);
+}
+
+.codeBox__code {
+  font: 600 1.15rem/1.4 var(--glacier-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  letter-spacing: 0.08em;
+  word-break: break-all;
+}
+
+.carry {
+  display: block;
+  text-align: center;
+  padding: var(--glacier-space-4) var(--glacier-space-6) var(--glacier-space-6);
+}

@@ -19,7 +19,9 @@ export function InviteBridge() {
   };
   return (
     <Modal open onClose={close} title="You're invited" size="sm">
-      <JoinCard code={code} onDone={close} />
+      {/* Auto: the link IS the decision. Signed in, the card joins as it
+          opens; signed out, it joins the moment the account form is done. */}
+      <JoinCard code={code} onDone={close} auto />
     </Modal>
   );
 }

@@ -1,6 +1,6 @@
 import { Button, Text } from '@glacier/react';
 import { Disc3, LogIn, ListMusic, Music, User, Users } from '@glacier/icons';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRegistry } from './registrySession.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { AccountForm } from './AccountForm.tsx';
@@ -21,13 +21,29 @@ import { rememberSession } from './sessions.ts';
  * Joining ADDS the server to the ones this account listens from and makes
  * it the one on screen; nothing else is signed out.
  */
-export function JoinCard({ code, onDone }: { code: string; onDone: () => void }) {
+export function JoinCard({
+  code,
+  onDone,
+  auto = false,
+}: {
+  code: string;
+  onDone: () => void;
+  /**
+   * Join without waiting for the button. For a link that was tapped: the
+   * tap was the decision, and asking again is what made "open the link
+   * again after signing up" a two-step. A card opened any other way (a code
+   * typed in) still waits for Join.
+   */
+  auto?: boolean;
+}) {
   const { session: registry, apply: applyRegistry } = useRegistry();
   const { applySession } = useServerSession();
   const [preview, setPreview] = useState<InvitePreview | null>(null);
   const [info, setInfo] = useState<ServerInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // One automatic attempt per card: a failure lands on the button, not a loop.
+  const autoFired = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -75,6 +91,16 @@ export function JoinCard({ code, onDone }: { code: string; onDone: () => void })
       setBusy(false);
     }
   };
+
+  // The automatic join, once the invite has been read and an identity is in
+  // hand. Signed out, the account form below hands its identity to join()
+  // itself, so nothing fires here until then.
+  useEffect(() => {
+    if (!auto || !registry || !preview || autoFired.current) return;
+    autoFired.current = true;
+    void join();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per card, on the first render that has both
+  }, [auto, registry, preview]);
 
   const name = preview?.serverName || info?.name || 'a server';
   // The owner is what the SERVER says; the inviter is who sent the link.

@@ -14,7 +14,7 @@ import { join } from 'node:path';
 
 const STYLES = 'src/app/styles';
 const OUT = 'src/landing/borrowed.css';
-const CLASSES = ['spinningDisc', 'coverWall', 'appPlayer', 'playerBarShell', 'stripTransport', 'npArt', 'npArtSoft', 'artViewTarget', 'soundConsole'];
+const CLASSES = ['spinningDisc', 'coverWall', 'artWall', 'joinCard', 'appPlayer', 'playerBarShell', 'stripTransport', 'npArt', 'npArtSoft', 'artViewTarget', 'soundConsole'];
 
 const css = readdirSync(STYLES)
   .filter((f) => f.endsWith('.css'))

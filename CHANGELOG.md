@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.48
+
+- Invite links open on a card now: the server's glance, Open in AttackFM, and a download button for the machine you're on. An invite tapped before you had an account is kept - once you've signed in or signed up, the same link joins the server by itself, no extra tap.
+
 ## 0.5.47
 
 - The music date now tells you about the artist: a short read on who they are

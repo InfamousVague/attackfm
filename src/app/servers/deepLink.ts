@@ -87,7 +87,33 @@ export function spotifyEmbedUrl(url: string): string | null {
   return m ? `https://open.spotify.com/embed/${m[1]!.toLowerCase()}/${m[2]}` : null;
 }
 
-let pending: string | null = null;
+/**
+ * The invite in hand survives the process: a link tapped on a phone with no
+ * account yet lands on the sign-in gate, behind which nothing subscribes
+ * until an account exists - by which time a cold launch may have happened
+ * in between. Kept in storage until it is spent or dismissed, so the join
+ * card is raised the moment the gate opens, whichever launch that is.
+ */
+const PENDING_INVITE_KEY = 'afm.invite.pending';
+
+function readPendingInvite(): string | null {
+  try {
+    return localStorage.getItem(PENDING_INVITE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writePendingInvite(code: string | null): void {
+  try {
+    if (code) localStorage.setItem(PENDING_INVITE_KEY, code);
+    else localStorage.removeItem(PENDING_INVITE_KEY);
+  } catch {
+    // Held for this run regardless.
+  }
+}
+
+let pending: string | null = readPendingInvite();
 const subscribers = new Set<(code: string) => void>();
 let pendingLink: string | null = null;
 const linkSubscribers = new Set<(url: string) => void>();
@@ -118,6 +144,7 @@ export function clearSpotifyLink(): void {
  *  the process. */
 export function clearInvite(): void {
   pending = null;
+  writePendingInvite(null);
 }
 
 /** Be told when an invite arrives - now, or the moment one does. Replays the
@@ -172,6 +199,7 @@ function deliver(url: string): void {
   const code = codeFromUrl(url);
   if (!code) return;
   pending = code;
+  writePendingInvite(code);
   for (const handler of subscribers) handler(code);
 }
 

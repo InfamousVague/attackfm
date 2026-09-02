@@ -816,51 +816,109 @@ async fn invite_landing(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(code): axum::extract::Path<String>,
 ) -> Html<String> {
+    let code = code.trim().to_uppercase();
     let safe = esc(&code);
-    let Some(inv) = state.db.invite(&code) else {
-        return invite_page(
-            "Invite not found",
-            "<h1>That invite is not valid</h1><p>The link may have been mistyped, or the invite \
-             withdrawn.</p>",
-        );
-    };
-    // A standing invite is never used up and never lapses, so neither of the
-    // two dead-ends below applies to it. Without this the SECOND person to
-    // follow a review link would be told the code had been used - by the first.
-    let standing = is_standing(inv.expires_at);
-    if !standing && inv.redeemed_by.is_some() {
-        return invite_page(
-            "Invite already used",
-            "<h1>That invite has already been used</h1><p>Ask whoever sent it for another.</p>",
-        );
-    }
-    if !standing && now_secs() >= inv.expires_at {
-        return invite_page(
-            "Invite expired",
-            "<h1>That invite has expired</h1><p>Ask whoever sent it for another.</p>",
-        );
-    }
-    let from = state.db.account_by_id(inv.created_by).map(|a| a.handle).unwrap_or_default();
-    // An invite nobody signed is not from a person - it is the door to a
-    // server. A standing one with no author is exactly that (a review note,
-    // say), so it says so rather than claiming "Someone" invited you.
-    let who = if from.is_empty() {
-        "You have been invited to a music library on AttackFM.".to_string()
-    } else {
-        format!("<strong>{}</strong> invited you to their music library on AttackFM.", esc(&from))
-    };
-    invite_page(
-        "You're invited",
-        &format!(
-            "<h1>Join {name}</h1>\
-             <p>{who}</p>\
-             <a class=\"open\" href=\"attackfm://i/{safe}\">Open in AttackFM</a>\
-             <p class=\"hint\" style=\"margin-top:1.5rem\">No app yet, or the button did nothing? \
-             Enter this code in AttackFM under Join a server:</p>\
-             <div class=\"code\">{safe}</div>",
-            name = esc(&inv.server_name),
+    // The invite as the page draws it. A bad, spent or expired code still
+    // renders the card rather than a bare 404: a shared link that answers
+    // "this invite has already been used" is doing its job.
+    let (doc, title, summary) = match state.db.invite(&code) {
+        None => (
+            json!({ "code": code, "state": "missing", "serverName": "", "serverUrl": "", "from": "",
+                    "standing": false, "maxUses": null, "remaining": null }),
+            "Invite not found".to_string(),
+            "That invite is not valid.".to_string(),
         ),
+        Some(inv) => {
+            // A standing invite is never used up and never lapses, so neither
+            // dead-end applies to it. Without this the SECOND person to follow
+            // a review link would be told the code had been used - by the first.
+            let standing = is_standing(inv.expires_at);
+            let spent = !standing && inv.uses_count >= inv.max_uses;
+            let expired = !standing && now_secs() >= inv.expires_at;
+            let from = state.db.account_by_id(inv.created_by).map(|a| a.handle).unwrap_or_default();
+            let state_word = if spent { "used" } else if expired { "expired" } else { "ok" };
+            let name = if inv.server_name.is_empty() { "a music library".to_string() } else { inv.server_name.clone() };
+            let summary = match (state_word, from.is_empty()) {
+                ("used", _) => "That invite has already been used.".to_string(),
+                ("expired", _) => "That invite has expired.".to_string(),
+                (_, true) => format!("You have been invited to {name} on AttackFM."),
+                (_, false) => format!("@{from} invited you to {name} on AttackFM."),
+            };
+            (
+                json!({
+                    "code": code,
+                    "state": state_word,
+                    "serverName": inv.server_name,
+                    "serverUrl": inv.server_url,
+                    "from": from,
+                    "standing": standing,
+                    "maxUses": if standing { serde_json::Value::Null } else { json!(inv.max_uses) },
+                    "remaining": if standing { serde_json::Value::Null } else { json!((inv.max_uses - inv.uses_count).max(0)) },
+                }),
+                if state_word == "ok" { format!("Join {name}") } else { "Invite".to_string() },
+                summary,
+            )
+        }
+    };
+    let base = public_base();
+    let noscript = format!(
+        "<h1>{title}</h1><p>{summary}</p><a href=\"attackfm://i/{safe}\">Open in AttackFM</a>\
+         <p>Or enter this code in AttackFM under Join a server: <code>{safe}</code></p>",
+        title = esc(&title),
+        summary = esc(&summary),
+    );
+    landing_shell(
+        &esc(&title),
+        "website",
+        &esc(&summary),
+        &format!("{base}/i/{safe}"),
+        "",
+        &noscript,
+        "__INVITE__",
+        &doc.to_string(),
     )
+}
+
+/// The landing bundle's shell: the OG tags a messenger unfurls, the document
+/// inline under `global` for the page to draw from without a fetch, and the
+/// bundle itself. One shell for every landing the registry serves, so a
+/// playlist link and an invite link are the same page with different words.
+/// `<` is escaped in the document so no name can close the script tag.
+#[allow(clippy::too_many_arguments)]
+fn landing_shell(
+    title: &str,
+    og_type: &str,
+    description: &str,
+    url: &str,
+    image_tags: &str,
+    noscript: &str,
+    global: &str,
+    doc: &str,
+) -> Html<String> {
+    let doc = doc.replace('<', "\\u003c");
+    let stamp = landing_stamp();
+    Html(format!(
+        r##"<!doctype html>
+<html lang="en" data-theme="dark"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{title} · AttackFM</title>
+<meta property="og:type" content="{og_type}">
+<meta property="og:site_name" content="AttackFM">
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="{description}">
+<meta property="og:url" content="{url}">
+{image_tags}
+<meta name="description" content="{description}">
+<link rel="stylesheet" href="/p/_/landing.css?v={stamp}">
+<style>html,body{{background:#0b0b0d;color:#f2f2f4;margin:0}}</style>
+</head><body>
+<div id="root"></div>
+<noscript><main style="max-width:30rem;margin:2rem auto;padding:1rem;font-family:system-ui,sans-serif">{noscript}</main></noscript>
+<script>window.{global} = {doc};</script>
+<script type="module" src="/p/_/landing.js?v={stamp}"></script>
+</body></html>"##
+    ))
 }
 
 /// `POST /v1/invites/{code}/redeem` - the signed-in account spends the invite and
