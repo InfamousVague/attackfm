@@ -7,6 +7,7 @@ import { StaticConnectProvider } from '../app/player/playbackSync.tsx';
 import { NowPlayingMotionProvider } from '../app/player/nowPlayingMotion.tsx';
 import { PlaybackProvider } from '../app/player/playback.tsx';
 import { EqualizerProvider } from '../app/player/equalizer.tsx';
+import { useArtTint } from '../app/player/artTint.ts';
 import { PluginsContext, type PluginsContextValue } from '../plugins/pluginsContext.ts';
 import type { Track } from '../app/core/tauri.ts';
 
@@ -205,7 +206,7 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
     if (audio.current) audio.current.muted = next;
   }, []);
 
-  // The wall behind the header: the app's own CoverWall, fed the covers the
+  // The wall behind the PAGE: the app's own CoverWall, fed the covers the
   // link carries plus the catalogue's cover for every song (which 404s
   // quietly where there is none - a missing tile, not a broken wall).
   const wallArt = useMemo(
@@ -213,12 +214,30 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
     [share],
   );
 
+  // The song's colour, the app's way: artTint reads the cover and hands back
+  // the accent ramp as CSS variables, which the app sets on the document so
+  // every accent - the seek, the buttons, the plate - takes the song's hue.
+  // The card's header wears it as a steady band. Nothing playing: the kit's
+  // own accent, as the app before its first song.
+  const tint = useArtTint(art, true);
+  useEffect(() => {
+    if (!tint) return undefined;
+    const root = document.documentElement;
+    for (const [k, v] of Object.entries(tint)) root.style.setProperty(k, v);
+    root.setAttribute('data-song-tint', '');
+    return () => {
+      for (const k of Object.keys(tint)) root.style.removeProperty(k);
+      root.removeAttribute('data-song-tint');
+    };
+  }, [tint]);
+
   return (
     <div className="stage">
-      {share.covers[0] && <div className="backdrop" style={{ backgroundImage: `url(${share.covers[0]})` }} />}
+      <div className="wallBackdrop" aria-hidden>
+        <CoverWall artworks={wallArt} />
+      </div>
       <main className="card">
-        <div className="head">
-          <CoverWall artworks={wallArt} />
+        <div className="head" data-tinted={tint ? '' : undefined}>
           {share.covers.length > 0 ? (
             <div className="mosaic" data-n={Math.min(share.covers.length, 4)} aria-hidden>
               {share.covers.slice(0, 4).map((c, i) => (

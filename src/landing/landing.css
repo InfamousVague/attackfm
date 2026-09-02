@@ -20,18 +20,42 @@ body {
   height: 100%;
 }
 
-.backdrop {
+/* The page's backdrop is the app's cover wall (playlists/CoverWall), which
+   is built to sit behind a header: absolutely positioned into its box and
+   masked to fade. Here the box is the viewport and the fade comes off - the
+   wall runs edge to edge under a scrim that keeps the card the subject. */
+.wallBackdrop {
   position: fixed;
-  inset: -10%;
-  background-size: cover;
-  background-position: center;
-  filter: blur(60px) saturate(1.3) brightness(0.45);
-  transform: scale(1.1);
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: var(--glacier-bg, #0b0b0d);
+}
+
+.wallBackdrop .coverWall {
+  /* Past the viewport on every side so the blur's soft edge never shows.
+     The radius is constant, so the kernel is the cheap kind even though
+     the wall underneath it scrolls (a radius that CHANGES per frame is the
+     expensive one). */
+  inset: -2rem;
+  border-radius: 0;
+  -webkit-mask-image: none;
+  mask-image: none;
+  filter: blur(7px);
+}
+
+.wallBackdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 90% at 50% 40%, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.7));
+  pointer-events: none;
 }
 
 .stage {
   position: fixed;
   inset: 0;
+  z-index: 1;
   display: grid;
   place-items: center;
   padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
@@ -52,24 +76,25 @@ body {
   box-shadow: var(--glacier-shadow-xl, 0 30px 80px rgba(0, 0, 0, 0.6));
 }
 
-/* The header wears the app's cover wall behind it (playlists/CoverWall,
-   absolutely positioned into this box and masked), so `isolation` keeps its
-   stacking inside and everything in front sits above it. */
+/* The header is a steady band of the playing song's colour - the accent
+   ramp artTint derives from its cover, which the app sets on the document
+   the same way - fading into the card. Nothing playing: the kit's accent. */
 .head {
   flex: none;
   position: relative;
-  isolation: isolate;
   padding: var(--glacier-space-6) var(--glacier-space-6) var(--glacier-space-4);
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--glacier-space-1);
-}
-
-.head > :not(.coverWall) {
-  position: relative;
-  z-index: 1;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--glacier-accent-9, var(--glacier-accent-solid)) 42%, transparent) 0%,
+    color-mix(in srgb, var(--glacier-accent-9, var(--glacier-accent-solid)) 14%, transparent) 70%,
+    transparent 100%
+  );
+  transition: background 0.6s ease;
 }
 
 .mosaic {
