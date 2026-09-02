@@ -64,7 +64,7 @@ body {
 .card {
   position: relative;
   width: min(100%, 30rem);
-  max-height: min(88dvh, 52rem);
+  max-height: min(calc(100dvh - 2rem), 60rem);
   display: flex;
   flex-direction: column;
   border-radius: var(--glacier-radius-xl, 1.5rem);
@@ -112,10 +112,25 @@ body {
    through the fade. The record's face is the app's SpinningDisc, which
    fills whatever box it is given. */
 .platter {
+  /* One length for both axes, none of it a percentage: a percentage height
+     inside a content-sized flex column is indefinite, and WebKit resolved
+     the aspect-ratio box from it into an oval on some screens. 100vw less
+     the stage's, the card's and the head's side paddings is the width the
+     head actually offers. */
+  --platter: min(16rem, 26dvh, calc(100vw - 7rem));
   position: relative;
-  width: min(100% - 1rem, 20rem, 34dvh);
-  aspect-ratio: 1;
+  flex: none;
+  width: var(--platter);
+  height: var(--platter);
   margin: 0 auto var(--glacier-space-3);
+}
+
+/* A phone's card is mostly height-bound: a smaller platter there keeps two
+   rows of the list in view under it instead of one. */
+@media (max-width: 40rem) {
+  .platter {
+    --platter: min(16rem, 22dvh, calc(100vw - 7rem));
+  }
 }
 
 .platter__cover,
