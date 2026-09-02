@@ -520,6 +520,7 @@ async fn main() {
     // And, on a peer, the outbox that carries what it downloaded up to the hub.
     // A no-op on a box with no hub configured.
     peersync::spawn(state.clone());
+    peersync::spawn_refetch(state.clone());
 
     // The curator: enriches the library with tempo and lyric vectors, and
     // rebuilds each listener's playlists from what they actually play.
@@ -658,6 +659,17 @@ async fn main() {
         )
         .route("/api/refetch/{id}/audio/{index}", get(refetch::preview))
         .route("/api/refetch/{id}/keep", post(refetch::keep))
+        // The peer channel: on a hub with no downloader, a peer (the M4 running
+        // SpotiFLAC) claims the alternates, pulls them, and ships them back to
+        // stage here. `deliver` carries a whole audio file, so its body cap is
+        // lifted - every other route keeps axum's 2 MB default.
+        .route("/api/refetch/peer/claim", get(refetch::peer_claim))
+        .route(
+            "/api/refetch/peer/deliver/{job_id}/{index}",
+            post(refetch::peer_deliver).layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route("/api/refetch/peer/fail/{job_id}/{index}", post(refetch::peer_fail))
+        .route("/api/refetch/peer/beat/{job_id}/{index}", post(refetch::peer_beat))
         .route("/api/imports/clear", post(imports::clear))
         .route("/api/imports/{id}", axum::routing::delete(imports::remove))
         .route("/api/imports/{id}/cancel", post(imports::cancel))

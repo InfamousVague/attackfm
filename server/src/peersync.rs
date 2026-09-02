@@ -961,3 +961,154 @@ pub async fn retry(
     state.peersync.poke();
     Ok(Json(json!({ "requeued": requeued })))
 }
+
+// --- the "Wrong song?" downloader half -------------------------------------
+//
+// Same split as the outbox above, the other direction: a hub with no downloader
+// offers the alternates a re-fetch needs, and this peer - the box that HAS
+// SpotiFLAC - claims them, pulls them here, and ships each back to stage on the
+// hub for auditioning (refetch::peer_claim / peer_deliver / peer_fail). One at a
+// time on purpose: a person is watching a modal fill, and five parallel
+// SpotiFLAC children on a box that is also streaming is not a kindness.
+
+/// Between refetch-claim polls when the hub had nothing to fetch. Shorter than
+/// the outbox's IDLE because someone is waiting on the answer in real time.
+const REFETCH_IDLE: Duration = Duration::from_secs(5);
+/// The whole file goes up in one request, not 1 MiB chunks, so it needs its own
+/// generous ceiling rather than the client's 120s: a large lossless alternate
+/// over a home uplink can take minutes.
+const REFETCH_DELIVER_TIMEOUT: Duration = Duration::from_secs(600);
+/// How often the peer tells the hub it is still working a claim. Comfortably
+/// under the hub's CLAIM_STALE/NO_PEER windows so a live pull never looks dead.
+const REFETCH_BEAT: Duration = Duration::from_secs(30);
+
+/// Start the refetch downloader loop, if this box is a peer AND can download.
+/// A hub (no peer config) or a box with no SpotiFLAC starts nothing.
+pub fn spawn_refetch(state: Arc<AppState>) {
+    let Some(hub) = hub() else {
+        return;
+    };
+    if crate::imports::find_spotiflac().is_none() {
+        return;
+    }
+    tokio::spawn(async move {
+        tokio::time::sleep(BOOT_DELAY).await;
+        let scratch = state.data_dir.join("refetch-peer");
+        let _ = std::fs::remove_dir_all(&scratch);
+        loop {
+            match claim_refetch(&state, hub).await {
+                // Took one - there may be more of the same hunt, look again now.
+                true => {}
+                // Nothing offered, or the hub was unreachable: wait a beat.
+                false => tokio::time::sleep(REFETCH_IDLE).await,
+            }
+        }
+    });
+}
+
+/// Claim one refetch candidate from the hub, pull it, and ship it back (or
+/// report it failed). Returns whether it did any work.
+async fn claim_refetch(state: &Arc<AppState>, hub: &'static Hub) -> bool {
+    let Ok(resp) = http()
+        .get(format!("{}/api/refetch/peer/claim", hub.url))
+        .bearer_auth(&hub.token)
+        .send()
+        .await
+    else {
+        return false;
+    };
+    if !resp.status().is_success() {
+        return false;
+    }
+    let Ok(body) = resp.json::<serde_json::Value>().await else {
+        return false;
+    };
+    let claim = &body["claim"];
+    if claim.is_null() {
+        return false;
+    }
+    let (Some(job_id), Some(index), Some(url)) = (
+        claim["jobId"].as_str().map(str::to_string),
+        claim["index"].as_u64().map(|n| n as usize),
+        claim["url"].as_str().map(str::to_string),
+    ) else {
+        return false;
+    };
+    let service = claim["service"].as_str().unwrap_or("").to_string();
+
+    // Heartbeat the hub for the WHOLE span of this claim - the download and the
+    // upload both - so however slow one pull is, the hub knows the downloader is
+    // alive and no waiting hunt (this one or another) gives up on it. Aborted
+    // the moment the work resolves, below.
+    let beat = {
+        let job_id = job_id.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(REFETCH_BEAT).await;
+                let _ = http()
+                    .post(format!("{}/api/refetch/peer/beat/{job_id}/{index}", hub.url))
+                    .bearer_auth(&hub.token)
+                    .send()
+                    .await;
+            }
+        })
+    };
+
+    let dir = state
+        .data_dir
+        .join("refetch-peer")
+        .join(format!("{job_id}-{index}"));
+    let _ = std::fs::remove_dir_all(&dir);
+
+    match crate::refetch::fetch_one(state, &dir, &url, &service).await {
+        Ok(path) => {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "candidate.audio".to_string());
+            match tokio::fs::read(&path).await {
+                Ok(bytes) => {
+                    let sent = http()
+                        .post(format!("{}/api/refetch/peer/deliver/{job_id}/{index}", hub.url))
+                        .query(&[("name", name.as_str())])
+                        .bearer_auth(&hub.token)
+                        .timeout(REFETCH_DELIVER_TIMEOUT)
+                        .body(bytes)
+                        .send()
+                        .await;
+                    // Report a failed delivery back so the slot fails promptly
+                    // rather than sitting claimed until the stale timeout. A
+                    // delivery the hub already accepted (response merely lost)
+                    // leaves the candidate "ready", so this fail is a no-op 409
+                    // there - harmless.
+                    match sent {
+                        Ok(r) if r.status().is_success() => {}
+                        Ok(r) => {
+                            let code = r.status();
+                            fail_refetch(hub, &job_id, index, &format!("the hub refused the delivery ({code})")).await;
+                        }
+                        Err(e) => {
+                            fail_refetch(hub, &job_id, index, &format!("could not reach the hub to deliver: {e}")).await;
+                        }
+                    }
+                }
+                Err(e) => fail_refetch(hub, &job_id, index, &format!("staged file unreadable: {e}")).await,
+            }
+        }
+        Err(e) => fail_refetch(hub, &job_id, index, &e).await,
+    }
+    beat.abort();
+    let _ = std::fs::remove_dir_all(&dir);
+    true
+}
+
+/// Tell the hub this candidate could not be pulled, so its slot fails rather
+/// than sitting claimed until the hub's patience runs out.
+async fn fail_refetch(hub: &'static Hub, job_id: &str, index: usize, err: &str) {
+    let _ = http()
+        .post(format!("{}/api/refetch/peer/fail/{job_id}/{index}", hub.url))
+        .bearer_auth(&hub.token)
+        .json(&json!({ "error": err }))
+        .send()
+        .await;
+}

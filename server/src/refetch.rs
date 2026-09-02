@@ -60,6 +60,12 @@ const SAME_TAKE_MS: i64 = 2000;
 /// negotiating between services is never mistaken for a stall.
 const STALL_SECS: u64 = 420;
 
+/// The most a peer may stream for one delivered alternate. A single audio file,
+/// even a long lossless one, is comfortably under this; the ceiling only exists
+/// because peer_deliver lifts axum's body cap, so an unbounded stream can't fill
+/// the hub's disk.
+const MAX_DELIVER_BYTES: u64 = 1024 * 1024 * 1024;
+
 type ApiError = (StatusCode, String);
 type ApiResult<T> = Result<T, ApiError>;
 
@@ -100,6 +106,24 @@ pub struct Candidate {
     /// Where it landed. Never leaves the server.
     #[serde(skip)]
     pub file: Option<PathBuf>,
+    /// The catalogue URL and forced service (empty = the full ladder) this
+    /// candidate is fetched from. Server-only: on a hub with no downloader they
+    /// are what a peer (the M4) claims and pulls. Never sent to the client.
+    #[serde(skip)]
+    pub url: String,
+    #[serde(skip)]
+    pub service: String,
+    /// When a peer took this one to download, so a peer that dies mid-pull frees
+    /// the candidate for another to claim rather than pinning it forever. A live
+    /// peer keeps this fresh with heartbeats.
+    #[serde(skip)]
+    pub claimed_at: Option<i64>,
+    /// True while a peer is actively streaming this candidate's file in. The
+    /// write happens without the jobs lock, so this flag - set under the lock
+    /// before the write - is what makes a second delivery to the same slot bounce
+    /// instead of racing the first onto disk.
+    #[serde(skip)]
+    pub delivering: bool,
 }
 
 /// The track as it stands, so the modal can show what is being replaced.
@@ -130,11 +154,29 @@ pub struct Job {
     /// Who started it. Only they may commit or scrap it.
     #[serde(skip)]
     pub owner: i64,
+    /// True when this hub cannot download for itself and the candidates are
+    /// offered to a peer (the M4) to pull and ship back. Set once, in hunt().
+    #[serde(skip)]
+    pub delegated: bool,
+    /// Unix seconds the last thing happened on this job - seeded at start, and
+    /// bumped every time a peer claims, delivers, or fails a candidate. A
+    /// delegated hunt that goes quiet for too long is failed against this, so a
+    /// job whose downloader never answered still settles instead of spinning.
+    #[serde(skip)]
+    pub last_progress: i64,
 }
 
 pub struct RefetchManager {
     jobs: tokio::sync::Mutex<HashMap<String, Job>>,
     staging_root: PathBuf,
+    /// Unix seconds of the last contact from ANY downloader peer, over any of
+    /// the peer endpoints (claim, deliver, fail, beat). This is how a delegated
+    /// hunt tells "the downloader is working, just slowly" from "the downloader
+    /// is gone": while this is fresh, no hunt's deadline fires, however long a
+    /// single pull takes; once it goes stale every waiting hunt gives up. Global
+    /// on purpose - one live peer serving hunt A keeps hunt B from crying that
+    /// no import machine exists.
+    last_peer_seen: std::sync::atomic::AtomicI64,
 }
 
 impl RefetchManager {
@@ -149,7 +191,19 @@ impl RefetchManager {
         Arc::new(RefetchManager {
             jobs: tokio::sync::Mutex::new(HashMap::new()),
             staging_root,
+            last_peer_seen: std::sync::atomic::AtomicI64::new(0),
         })
+    }
+
+    /// A peer just touched one of the peer endpoints - remember when, so sweep()
+    /// knows the downloader is alive.
+    fn note_peer_seen(&self, now: i64) {
+        self.last_peer_seen
+            .store(now, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn peer_seen(&self) -> i64 {
+        self.last_peer_seen.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -359,8 +413,9 @@ fn shape(
 }
 
 /// Pulls one candidate into its own directory. A failure here is this
-/// candidate's failure and nobody else's.
-async fn fetch_one(
+/// candidate's failure and nobody else's. `pub(crate)` so the peer loop
+/// (peersync) can run exactly this download on the box that has SpotiFLAC.
+pub(crate) async fn fetch_one(
     state: &Arc<AppState>,
     dir: &Path,
     url: &str,
@@ -517,12 +572,12 @@ pub async fn start(
         .track(track_id)
         .ok_or_else(|| bad(StatusCode::NOT_FOUND, "no such track"))?;
 
-    if find_spotiflac().is_none() {
-        return Err(bad(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "SpotiFLAC is not installed on this server, so there is nothing to re-fetch with.",
-        ));
-    }
+    // No local downloader is no longer a dead end. On a hub whose files are
+    // filled by a downloader PEER (the M4 running SpotiFLAC and shipping over -
+    // see peersync), the alternates are offered to that peer and shipped back to
+    // stage here, exactly the way the library is filled. hunt() decides which
+    // path this is; if no peer ever answers, the job fails with a plain message
+    // rather than refusing up front on a box that can in fact re-fetch.
 
     /*
      * ALREADY HUNTING FOR THIS TRACK? Hand back the hunt in progress.
@@ -573,6 +628,8 @@ pub async fn start(
         candidates: Vec::new(),
         staging: staging.clone(),
         owner: caller.id,
+        delegated: false,
+        last_progress: now_secs(),
     };
     state.refetch.jobs.lock().await.insert(id.clone(), job.clone());
 
@@ -617,7 +674,7 @@ async fn hunt(
         let Some(job) = jobs.get_mut(&job_id) else {
             return;
         };
-        for (i, (_, _, t, a, source)) in shortlist.iter().enumerate() {
+        for (i, (url, service, t, a, source)) in shortlist.iter().enumerate() {
             job.candidates.push(Candidate {
                 index: i,
                 source: source.clone(),
@@ -632,8 +689,25 @@ async fn hunt(
                 codec: String::new(),
                 same_as: None,
                 file: None,
+                url: url.clone(),
+                service: service.clone(),
+                claimed_at: None,
+                delivering: false,
             });
         }
+    }
+
+    // No downloader here: this hub is filled by a peer. Leave every candidate
+    // "queued" and flip the job to delegated - the peer channel (peer_claim /
+    // peer_deliver / peer_fail below) pulls them on the M4 and ships them back
+    // to stage, and the deadline in sweep() settles the job if none ever comes.
+    if find_spotiflac().is_none() {
+        let mut jobs = state.refetch.jobs.lock().await;
+        if let Some(job) = jobs.get_mut(&job_id) {
+            job.delegated = true;
+            job.last_progress = now_secs();
+        }
+        return;
     }
 
     // All at once: five sequential provider downloads is minutes of staring,
@@ -656,31 +730,7 @@ async fn hunt(
                 return;
             };
             match result {
-                Ok(path) => {
-                    let (duration_ms, lossless, codec, size) = probe(&path);
-                    // Same length as an earlier one means the same performance
-                    // arrived twice. Labelled, not hidden.
-                    let same_as = job.candidates.iter().find_map(|other| {
-                        if other.index >= i || other.state != "ready" {
-                            return None;
-                        }
-                        match (other.duration_ms, duration_ms) {
-                            (Some(a), Some(b)) if (a - b).abs() <= SAME_TAKE_MS => {
-                                Some(other.same_as.unwrap_or(other.index))
-                            }
-                            _ => None,
-                        }
-                    });
-                    if let Some(c) = job.candidates.get_mut(i) {
-                        c.state = "ready".to_string();
-                        c.duration_ms = duration_ms;
-                        c.lossless = lossless;
-                        c.codec = codec;
-                        c.size_bytes = Some(size);
-                        c.same_as = same_as;
-                        c.file = Some(path);
-                    }
-                }
+                Ok(path) => mark_candidate_ready(job, i, path),
                 Err(e) => {
                     if let Some(c) = job.candidates.get_mut(i) {
                         c.state = "failed".to_string();
@@ -696,12 +746,126 @@ async fn hunt(
 
     let mut jobs = state.refetch.jobs.lock().await;
     if let Some(job) = jobs.get_mut(&job_id) {
-        let any = job.candidates.iter().any(|c| c.state == "ready");
-        job.state = "ready".to_string();
-        if !any {
-            job.state = "failed".to_string();
-            job.error = Some("Every alternate failed to download.".to_string());
+        settle(job);
+    }
+}
+
+/// A candidate's audio has landed at `path` (whether pulled here or shipped by a
+/// peer): probe it, label it against the takes already in, and mark it ready.
+/// Shared by the local hunt and the peer-delivery handler so both read exactly
+/// the same off a finished file.
+fn mark_candidate_ready(job: &mut Job, index: usize, path: PathBuf) {
+    let (duration_ms, lossless, codec, size) = probe(&path);
+    // Same length as an earlier one means the same performance arrived twice.
+    // Labelled, not hidden.
+    let same_as = job.candidates.iter().find_map(|other| {
+        if other.index >= index || other.state != "ready" {
+            return None;
         }
+        match (other.duration_ms, duration_ms) {
+            (Some(a), Some(b)) if (a - b).abs() <= SAME_TAKE_MS => {
+                Some(other.same_as.unwrap_or(other.index))
+            }
+            _ => None,
+        }
+    });
+    if let Some(c) = job.candidates.get_mut(index) {
+        c.state = "ready".to_string();
+        c.duration_ms = duration_ms;
+        c.lossless = lossless;
+        c.codec = codec;
+        c.size_bytes = Some(size);
+        c.same_as = same_as;
+        c.file = Some(path);
+        c.claimed_at = None;
+        c.delivering = false;
+    }
+}
+
+/// Move a job off 'hunting' once every candidate is terminal (ready or failed).
+/// A hunt with nothing playable is a failed hunt, and says so.
+fn settle(job: &mut Job) {
+    let done = job
+        .candidates
+        .iter()
+        .all(|c| c.state == "ready" || c.state == "failed");
+    if !done {
+        return;
+    }
+    let any = job.candidates.iter().any(|c| c.state == "ready");
+    if any {
+        job.state = "ready".to_string();
+    } else {
+        job.state = "failed".to_string();
+        job.error = Some("Every alternate failed to download.".to_string());
+    }
+}
+
+/// Unix seconds. The job's own clock for the delegated deadline; the whole point
+/// is elapsed real time, so millisecond precision would be false economy.
+fn now_secs() -> i64 {
+    crate::db::now_ms() / 1000
+}
+
+/// A claim whose peer has not been heard from (no heartbeat, no delivery) for
+/// this long is re-offered, so a peer that died mid-pull and came back can take
+/// it again. A live peer heartbeats every BEAT well inside this, so a working
+/// claim is never yanked. Comfortably above the beat interval, below NO_PEER.
+const CLAIM_STALE_SECS: i64 = 120;
+/// No contact from ANY peer for this long means the downloader is gone, and
+/// every waiting hunt gives up with a plain message. A live peer - claiming,
+/// heartbeating, or delivering - refreshes the clock long before this, so a
+/// single slow pull (a four-provider ladder, a big upload) never trips it.
+const NO_PEER_SECS: i64 = 180;
+
+/// Advance a delegated job against the downloader's liveness. Called wherever a
+/// delegated job is read or acted on (status polls, peer claims). The rule is
+/// simple: while a peer is in contact the hunt WAITS, no matter how slow one
+/// pull is; once the peer has gone silent past NO_PEER_SECS, everything still
+/// pending is failed so the job always leaves 'hunting'. `peer_seen` is the
+/// global last-contact clock (RefetchManager::peer_seen).
+fn sweep(job: &mut Job, now: i64, peer_seen: i64) {
+    if !job.delegated || job.state != "hunting" {
+        return;
+    }
+    // Re-offer a claim gone quiet past the stale window - a peer that took it,
+    // died without reporting, and its heartbeat stopped. A live peer keeps
+    // claimed_at fresh, so this only frees a genuinely dead claim.
+    for c in job.candidates.iter_mut() {
+        if c.state == "downloading" || c.state == "delivering" {
+            if let Some(t) = c.claimed_at {
+                if now - t > CLAIM_STALE_SECS {
+                    c.state = "queued".to_string();
+                    c.claimed_at = None;
+                    c.delivering = false;
+                }
+            }
+        }
+    }
+    // The downloader is alive and in contact: wait. A slow ladder or a large
+    // upload is not a stall, and nothing here should end it.
+    if now - peer_seen <= NO_PEER_SECS {
+        return;
+    }
+    // Silence past the deadline: the downloader is gone. Nothing still pending
+    // will arrive, so fail it and let the job settle on whatever did land.
+    let any_ready = job.candidates.iter().any(|c| c.state == "ready");
+    for c in job.candidates.iter_mut() {
+        if c.state != "ready" && c.state != "failed" {
+            c.state = "failed".to_string();
+            c.error = Some("the downloader stopped responding".to_string());
+            c.claimed_at = None;
+            c.delivering = false;
+        }
+    }
+    if any_ready {
+        settle(job);
+    } else {
+        job.state = "failed".to_string();
+        job.error = Some(
+            "No import machine answered. The box that downloads (running SpotiFLAC) must be on and pointed at this server for 'Wrong song?' to fetch alternates."
+                .to_string(),
+        );
     }
 }
 
@@ -712,11 +876,17 @@ pub async fn status(
     headers: HeaderMap,
 ) -> ApiResult<Json<Job>> {
     auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".to_string()))?;
-    let jobs = state.refetch.jobs.lock().await;
-    jobs.get(&id)
-        .cloned()
-        .map(Json)
-        .ok_or_else(|| bad(StatusCode::NOT_FOUND, "no such hunt"))
+    let now = now_secs();
+    let peer_seen = state.refetch.peer_seen();
+    let mut jobs = state.refetch.jobs.lock().await;
+    let job = jobs
+        .get_mut(&id)
+        .ok_or_else(|| bad(StatusCode::NOT_FOUND, "no such hunt"))?;
+    // A poll is the natural moment to advance a delegated hunt's deadlines - the
+    // client asks every second or so while the modal is open, which is exactly
+    // when a stuck one needs to be told it is stuck.
+    sweep(job, now, peer_seen);
+    Ok(Json(job.clone()))
 }
 
 /// `GET /api/refetch/{id}/audio/{index}` - listen to a candidate before
@@ -743,7 +913,7 @@ pub async fn preview(
     let mime = mime_guess::from_path(&path)
         .first_or_octet_stream()
         .to_string();
-    let response = ServeFile::new_with_mime(
+    let mut response = ServeFile::new_with_mime(
         &path,
         &mime.parse().unwrap_or(mime_guess::mime::APPLICATION_OCTET_STREAM),
     )
@@ -751,6 +921,13 @@ pub async fn preview(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .into_response();
+    // The filename's extension is peer-supplied, so forbid content sniffing:
+    // a mislabelled body can never be re-interpreted as something executable.
+    // In the app this URL is only ever an <audio> source.
+    response.headers_mut().insert(
+        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+        axum::http::HeaderValue::from_static("nosniff"),
+    );
     Ok(response)
 }
 
@@ -882,6 +1059,252 @@ pub async fn scrap(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
+// --- the peer channel ------------------------------------------------------
+//
+// When the hub has no downloader of its own, the alternates are pulled by a
+// PEER (the M4 running SpotiFLAC) and shipped back here to stage - the same
+// division of labour that fills the library, see peersync. The peer POLLS:
+// claim a queued candidate, download it there, deliver the file back (or report
+// it failed). All three are the same authenticated caller the collector claim
+// endpoints trust - the peer presents its hub token.
+
+/// `GET /api/refetch/peer/claim` - a downloader peer asks for one candidate to
+/// pull. Hands back the first queued candidate of any delegated hunt, marks it
+/// downloading, and returns its url + service. `{claim: null}` when there is
+/// nothing to do.
+pub async fn peer_claim(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<serde_json::Value>> {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".to_string()))?;
+    let now = now_secs();
+    // Reaching this endpoint at all is proof the downloader is alive, so the
+    // clock is `now` for every hunt swept below - none can conclude the peer is
+    // gone while the peer is right here asking for work.
+    state.refetch.note_peer_seen(now);
+    let mut jobs = state.refetch.jobs.lock().await;
+    // Sweep first, so a candidate a dead peer abandoned is back on offer before
+    // we pick one.
+    for job in jobs.values_mut() {
+        sweep(job, now, now);
+    }
+    for job in jobs.values_mut() {
+        if !job.delegated || job.state != "hunting" {
+            continue;
+        }
+        let Some(i) = job.candidates.iter().position(|c| c.state == "queued") else {
+            continue;
+        };
+        let (url, service) = {
+            let c = &mut job.candidates[i];
+            c.state = "downloading".to_string();
+            c.claimed_at = Some(now);
+            c.delivering = false;
+            (c.url.clone(), c.service.clone())
+        };
+        job.last_progress = now;
+        return Ok(Json(serde_json::json!({
+            "claim": { "jobId": job.id, "index": i, "url": url, "service": service }
+        })));
+    }
+    Ok(Json(serde_json::json!({ "claim": null })))
+}
+
+/// A peer-supplied filename, reduced to a bare, safe leaf. The peer is trusted
+/// to authenticate but its filename is still input: only the final component,
+/// no separators, so it can never climb out of the candidate's own directory.
+fn sanitize_name(name: &str) -> String {
+    let leaf = Path::new(name)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let leaf: String = leaf.chars().filter(|c| *c != '/' && *c != '\\').take(180).collect();
+    if leaf.trim().is_empty() {
+        "candidate.audio".to_string()
+    } else {
+        leaf
+    }
+}
+
+/// Stream a request body to a file, bounded by `cap` so the body-cap-lifted
+/// deliver route can never be made to write without limit.
+async fn stream_to_file(request: Request<Body>, path: &Path, cap: u64) -> ApiResult<()> {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+    let mut file = tokio::fs::File::create(path).await.map_err(internal)?;
+    let mut stream = request.into_body().into_data_stream();
+    let mut written: u64 = 0;
+    while let Some(chunk) = stream.next().await {
+        let chunk =
+            chunk.map_err(|e| (StatusCode::BAD_REQUEST, format!("the upload stream broke: {e}")))?;
+        written += chunk.len() as u64;
+        if written > cap {
+            return Err(bad(StatusCode::PAYLOAD_TOO_LARGE, "that alternate is too large"));
+        }
+        file.write_all(&chunk).await.map_err(internal)?;
+    }
+    file.flush().await.map_err(internal)?;
+    Ok(())
+}
+
+/// `POST /api/refetch/peer/deliver/{job_id}/{index}?name=<file>` - a peer ships
+/// a downloaded alternate back. The candidate slot is validated and RESERVED
+/// under the lock before a byte is written (so a delivery only ever lands in a
+/// slot a peer actually holds, and a second delivery to the same slot bounces),
+/// then the file is streamed with the lock dropped, then the slot is confirmed
+/// still ours before it is marked ready. The route lifts axum's body cap
+/// (main.rs) because an alternate is a file, not a chunk.
+pub async fn peer_deliver(
+    State(state): State<Arc<AppState>>,
+    AxumPath((job_id, index)): AxumPath<(String, usize)>,
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    request: Request<Body>,
+) -> ApiResult<Json<serde_json::Value>> {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".to_string()))?;
+    let now0 = now_secs();
+    state.refetch.note_peer_seen(now0);
+    let name = sanitize_name(params.get("name").map(String::as_str).unwrap_or(""));
+
+    // Validate and RESERVE the slot before writing anything. A delivery is only
+    // accepted into a candidate a peer is holding (state "downloading", not
+    // already "delivering"); flipping it to "delivering" here, under the lock,
+    // is what makes a second or out-of-range delivery bounce instead of racing a
+    // file onto disk or filling it for a slot that does not exist.
+    let dir = {
+        let mut jobs = state.refetch.jobs.lock().await;
+        let job = jobs
+            .get_mut(&job_id)
+            .ok_or_else(|| bad(StatusCode::NOT_FOUND, "no such hunt"))?;
+        if !job.delegated || job.state != "hunting" {
+            return Err(bad(StatusCode::CONFLICT, "this hunt does not take deliveries"));
+        }
+        let c = job
+            .candidates
+            .get_mut(index)
+            .ok_or_else(|| bad(StatusCode::NOT_FOUND, "no such candidate"))?;
+        if c.state != "downloading" || c.delivering {
+            return Err(bad(
+                StatusCode::CONFLICT,
+                "that candidate is not awaiting delivery",
+            ));
+        }
+        c.delivering = true;
+        c.claimed_at = Some(now0);
+        job.last_progress = now0;
+        job.staging.join(index.to_string())
+    };
+    std::fs::create_dir_all(&dir).map_err(internal)?;
+    let path = dir.join(&name);
+
+    if let Err(e) = stream_to_file(request, &path, MAX_DELIVER_BYTES).await {
+        // The write failed or overran: give the slot back so it can be retried,
+        // and drop the partial file.
+        let _ = tokio::fs::remove_file(&path).await;
+        let mut jobs = state.refetch.jobs.lock().await;
+        if let Some(c) = jobs.get_mut(&job_id).and_then(|j| j.candidates.get_mut(index)) {
+            if c.delivering {
+                c.delivering = false;
+                c.state = "queued".to_string();
+                c.claimed_at = None;
+            }
+        }
+        return Err(e);
+    }
+
+    let now = now_secs();
+    let mut jobs = state.refetch.jobs.lock().await;
+    let Some(job) = jobs.get_mut(&job_id) else {
+        // Scrapped while the file was in flight - drop what landed.
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(bad(StatusCode::NOT_FOUND, "no such hunt"));
+    };
+    // A sweep may have re-queued or failed this slot while the file was in
+    // flight (a peer that went quiet, then this late delivery). If the slot is
+    // no longer the one we reserved, the hunt has moved on: drop the file rather
+    // than resurrect a settled candidate.
+    let still_ours = job
+        .candidates
+        .get(index)
+        .map(|c| c.delivering)
+        .unwrap_or(false);
+    if !still_ours || job.state != "hunting" {
+        drop(jobs);
+        let _ = tokio::fs::remove_file(&path).await;
+        return Ok(Json(serde_json::json!({ "ok": true, "discarded": true })));
+    }
+    mark_candidate_ready(job, index, path);
+    job.last_progress = now;
+    settle(job);
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct PeerFailBody {
+    pub error: Option<String>,
+}
+
+/// `POST /api/refetch/peer/fail/{job_id}/{index}` - a peer reporting it could
+/// not pull this one. Only a candidate a peer is actually holding
+/// (downloading/delivering) can be failed, so a stray caller cannot fail a
+/// queued or already-decided one. The hunt settles when the last is accounted.
+pub async fn peer_fail(
+    State(state): State<Arc<AppState>>,
+    AxumPath((job_id, index)): AxumPath<(String, usize)>,
+    headers: HeaderMap,
+    Json(body): Json<PeerFailBody>,
+) -> ApiResult<Json<serde_json::Value>> {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".to_string()))?;
+    let now = now_secs();
+    state.refetch.note_peer_seen(now);
+    let mut jobs = state.refetch.jobs.lock().await;
+    let Some(job) = jobs.get_mut(&job_id) else {
+        return Err(bad(StatusCode::NOT_FOUND, "no such hunt"));
+    };
+    let c = job
+        .candidates
+        .get_mut(index)
+        .ok_or_else(|| bad(StatusCode::NOT_FOUND, "no such candidate"))?;
+    if c.state != "downloading" && c.state != "delivering" {
+        return Err(bad(StatusCode::CONFLICT, "that candidate is not being fetched"));
+    }
+    c.state = "failed".to_string();
+    c.error = Some(
+        body.error
+            .filter(|e| !e.trim().is_empty())
+            .unwrap_or_else(|| "the downloader could not fetch this".to_string()),
+    );
+    c.claimed_at = None;
+    c.delivering = false;
+    job.last_progress = now;
+    settle(job);
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// `POST /api/refetch/peer/beat/{job_id}/{index}` - a peer says it is still on
+/// this candidate. Refreshes the global liveness clock (so no waiting hunt gives
+/// up while the downloader is working, however slow one pull is) and this
+/// claim's own clock (so a slow pull is not re-offered out from under it).
+pub async fn peer_beat(
+    State(state): State<Arc<AppState>>,
+    AxumPath((job_id, index)): AxumPath<(String, usize)>,
+    headers: HeaderMap,
+) -> ApiResult<Json<serde_json::Value>> {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".to_string()))?;
+    let now = now_secs();
+    state.refetch.note_peer_seen(now);
+    let mut jobs = state.refetch.jobs.lock().await;
+    if let Some(job) = jobs.get_mut(&job_id) {
+        if let Some(c) = job.candidates.get_mut(index) {
+            if c.state == "downloading" || c.state == "delivering" {
+                c.claimed_at = Some(now);
+                job.last_progress = now;
+            }
+        }
+    }
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
 #[cfg(test)]
 mod refetch_tests {
     use super::*;
@@ -963,5 +1386,130 @@ mod refetch_tests {
         }
         assert!(!shortlist.is_empty());
         println!("  -> {} candidates planned", shortlist.len());
+    }
+
+    // --- the delegated state machine (no network, no SpotiFLAC) -------------
+    //
+    // sweep(job, now, peer_seen): while the downloader is in contact (peer_seen
+    // fresh) the hunt WAITS however slow one pull is; once peer_seen goes stale
+    // past NO_PEER_SECS every pending candidate fails and the job settles.
+
+    fn cand(index: usize, state: &str) -> Candidate {
+        Candidate {
+            index,
+            source: String::new(),
+            title: String::new(),
+            artist: String::new(),
+            album: String::new(),
+            state: state.to_string(),
+            error: None,
+            duration_ms: None,
+            size_bytes: None,
+            lossless: false,
+            codec: String::new(),
+            same_as: None,
+            file: None,
+            url: format!("u{index}"),
+            service: String::new(),
+            claimed_at: None,
+            delivering: false,
+        }
+    }
+
+    fn a_job(delegated: bool, cands: Vec<Candidate>) -> Job {
+        Job {
+            id: "j".into(),
+            track_id: 1,
+            state: "hunting".into(),
+            error: None,
+            current: CurrentTrack {
+                id: 1,
+                title: String::new(),
+                artist: String::new(),
+                album: String::new(),
+                duration_ms: None,
+                lossless: false,
+                codec: String::new(),
+            },
+            candidates: cands,
+            staging: PathBuf::from("/tmp/refetch-test-none"),
+            owner: 1,
+            delegated,
+            last_progress: 0,
+        }
+    }
+
+    #[test]
+    fn settle_waits_for_every_candidate_then_prefers_any_ready() {
+        let mut j = a_job(true, vec![cand(0, "ready"), cand(1, "downloading")]);
+        settle(&mut j);
+        assert_eq!(j.state, "hunting", "one still downloading, not done");
+        j.candidates[1].state = "failed".into();
+        settle(&mut j);
+        assert_eq!(j.state, "ready", "one playable is a usable hunt");
+    }
+
+    #[test]
+    fn settle_all_failed_is_a_failed_hunt() {
+        let mut j = a_job(true, vec![cand(0, "failed"), cand(1, "failed")]);
+        settle(&mut j);
+        assert_eq!(j.state, "failed");
+        assert!(j.error.unwrap().contains("failed to download"));
+    }
+
+    #[test]
+    fn a_live_peer_holds_a_hunt_however_slow() {
+        let now = 100_000;
+        // Everything still queued, job quiet for an hour - but the peer was seen
+        // one second ago. It is working; do not give up on it.
+        let mut j = a_job(true, vec![cand(0, "queued"), cand(1, "downloading")]);
+        j.candidates[1].claimed_at = Some(now - 5);
+        sweep(&mut j, now, now - 1);
+        assert_eq!(j.state, "hunting");
+        assert_eq!(j.candidates[1].state, "downloading", "a live slow pull is untouched");
+    }
+
+    #[test]
+    fn a_gone_peer_fails_a_hunt_that_never_landed_anything() {
+        let now = 100_000;
+        let mut j = a_job(true, vec![cand(0, "queued"), cand(1, "downloading")]);
+        // No peer contact for well past the window.
+        sweep(&mut j, now, now - NO_PEER_SECS - 1);
+        assert_eq!(j.state, "failed");
+        assert!(j.error.as_ref().unwrap().contains("import machine"));
+        assert!(j.candidates.iter().all(|c| c.state == "failed"));
+    }
+
+    #[test]
+    fn a_gone_peer_keeps_what_already_landed() {
+        let now = 100_000;
+        let mut j = a_job(true, vec![cand(0, "ready"), cand(1, "downloading")]);
+        sweep(&mut j, now, now - NO_PEER_SECS - 1);
+        assert_eq!(j.candidates[1].state, "failed", "the straggler is abandoned");
+        assert_eq!(j.state, "ready", "but the one that arrived still carries the hunt");
+    }
+
+    #[test]
+    fn a_stale_claim_is_reoffered_even_while_the_peer_is_alive() {
+        let now = 100_000;
+        let mut stuck = cand(0, "downloading");
+        stuck.claimed_at = Some(now - CLAIM_STALE_SECS - 1);
+        let mut j = a_job(true, vec![stuck, cand(1, "queued")]);
+        // Peer alive (fresh), but THIS claim went quiet: re-offer it, do not fail.
+        sweep(&mut j, now, now);
+        assert_eq!(j.candidates[0].state, "queued", "the abandoned claim is back on offer");
+        assert!(j.candidates[0].claimed_at.is_none());
+        assert_eq!(j.state, "hunting");
+    }
+
+    #[test]
+    fn sweep_leaves_a_local_hunt_alone() {
+        let now = 100_000;
+        // A non-delegated hunt is bounded by its own stall watchdog, never here,
+        // no matter how stale the peer clock looks.
+        let mut j = a_job(false, vec![cand(0, "downloading")]);
+        sweep(&mut j, now, now - NO_PEER_SECS - 999);
+        assert_eq!(j.state, "hunting");
+        assert_eq!(j.candidates[0].state, "downloading");
     }
 }
