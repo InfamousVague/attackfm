@@ -762,6 +762,7 @@ async fn main() {
         .route("/api/curator", get(curator::feed))
         .route("/api/curator/pulls", get(collector::status))
         .route("/api/date/briefing", get(collector::date_briefing))
+        .route("/api/date/artist", get(collector::date_artist))
         .route("/api/date/candidates", get(collector::date_candidates))
         .route("/api/date/preview", get(collector::date_preview))
         .route("/api/date/candidate-verdict", post(collector::date_candidate_verdict))

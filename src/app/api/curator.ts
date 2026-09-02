@@ -118,16 +118,55 @@ export interface PreviewDateCard {
 /** The best measured candidates, ready to date on their thirty seconds -
  *  and how deep the pool runs past the dealt hand, so every surface can
  *  promise the same number. */
+/** Which deck to deal. 'new' = only just-released music, 'tiny' = only the
+ *  small, obscure acts (most-unknown first). Absent/anything else = the usual
+ *  seated mix. An older server ignores the param and deals its ordinary mix. */
+export type DateMode = 'new' | 'tiny';
+
 export async function fetchDateCandidates(
   session: ServerSession,
   count = 25,
+  mode?: DateMode,
 ): Promise<{ cards: PreviewDateCard[]; total: number }> {
+  const q = new URLSearchParams({ count: String(count) });
+  if (mode) q.set('mode', mode);
   const out = await request<{ candidates?: PreviewDateCard[]; total?: number }>(
     session.url,
-    `/api/date/candidates?count=${count}`,
+    `/api/date/candidates?${q.toString()}`,
     { token: session.token },
   );
   return { cards: out.candidates ?? [], total: out.total ?? (out.candidates ?? []).length };
+}
+
+/** What the AI (and Deezer) know about a card's artist, for the date's profile
+ *  panel: a short who/where-from line, a few releases, and how big they are. */
+export interface DateArtistProfile {
+  /** The honest one-line "who they are / where they're from", or empty when
+   *  the server has not learned this artist yet (it fills in behind the ask). */
+  blurb: string;
+  /** A short discography - albums, newest first, with years. Facts from the
+   *  catalogue, so even an artist no model knows still gets a real list. */
+  discography: string[];
+  /** Deezer fan count, when known - the "how big are they" number. */
+  fans: number | null;
+}
+
+/** Look up the current card's artist. Cheap to call as cards advance; the
+ *  server caches the prose and pulls the discography live. */
+export async function fetchDateArtist(
+  session: ServerSession,
+  name: string,
+): Promise<DateArtistProfile> {
+  const out = await request<Partial<DateArtistProfile>>(
+    session.url,
+    `/api/date/artist?name=${encodeURIComponent(name)}`,
+    { token: session.token },
+  );
+  return {
+    blurb: out.blurb ?? '',
+    discography: out.discography ?? [],
+    fans: out.fans ?? null,
+  };
 }
 
 /** A FRESH preview URL for one candidate - the stored one carries an

@@ -34,14 +34,18 @@ const FETCH_EVERY_MS: i64 = 12 * 60 * 60 * 1000;
 /// How much of the chart to consider. Deep enough to survive heavy dedupe on
 /// a listener who already owns the hits. 100 is Deezer's page limit.
 const CHART_TAKE: usize = 100;
-/// Fresh releases considered per sweep, after sorting by listen count.
+/// How many of Deezer's editorial selection to pull per sweep - the supply the
+/// fresh lane (and the date's "New music" deck) draws from.
 const FRESH_TAKE: usize = 40;
 /// Politeness between resolve calls, same as the taste walk's.
 const GAP: Duration = Duration::from_millis(700);
 /// Per-listener ceilings per sweep, so one sweep cannot flood a pool the
 /// scoring then has to dig the taste walk's finds back out of.
 const CHART_PER_USER: usize = 50;
-const FRESH_PER_USER: usize = 15;
+// Widened with the date's "New music only" deck: a fresh-only deal needs a pool
+// deeper than a garnish seat did, so the fresh lane both fills faster per sweep
+// and keeps more (FRESH_KEEP below).
+const FRESH_PER_USER: usize = 30;
 /// How many of THIS lane's rows a listener's pool keeps stocked. The old
 /// ceiling was pool-TOTAL (target + reserve), and a heavy dater's pool sits
 /// far above the target permanently - so the chart lane was silently barred
@@ -50,7 +54,7 @@ const FRESH_PER_USER: usize = 15;
 /// rows: bounded exactly as before, but never starved by the rest of the
 /// pool's politics.
 const TREND_KEEP: usize = 50;
-const FRESH_KEEP: usize = 20;
+const FRESH_KEEP: usize = 60;
 
 fn meta_key() -> &'static str {
     "trending.fetched_at"
@@ -221,7 +225,7 @@ async fn fresh_releases() -> Vec<Found> {
     let c = crate::discovery::client(25);
     let Ok(resp) = c
         .get("https://api.deezer.com/editorial/0/selection")
-        .query(&[("limit", "25")])
+        .query(&[("limit", FRESH_TAKE.to_string())])
         .send()
         .await
     else {

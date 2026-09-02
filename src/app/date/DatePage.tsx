@@ -1,5 +1,6 @@
 import {
   Button,
+  FilterChip,
   IconButton,
   SeekBar,
   SegmentedBar,
@@ -39,10 +40,13 @@ import { hushBeats, speakBeats } from '../booth/djVoice.ts';
 import { dateVoiceEnabled } from './dateVoice.ts';
 import {
   dateCandidateVerdict,
+  fetchDateArtist,
   fetchDateBriefing,
   fetchDateCandidates,
   fetchDatePreview,
+  type DateArtistProfile,
   type DateBriefingSong,
+  type DateMode,
   type PreviewDateCard,
 } from '../api/curator.ts';
 import { makeRatchet } from '../ux/ratchet.ts';
@@ -53,6 +57,13 @@ const PREVIEW_SCHEME = 'preview:';
 
 /** How many verdicts can be walked back. */
 const UNDO_DEPTH = 10;
+
+/** 1_234_567 -> "1.2M", 12_300 -> "12.3K" - the artist's fan count, humanised. */
+function formatFans(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  return String(n);
+}
 
 /** A decision, and what it actually changed - see the note on `undos`. */
 interface Verdict {
@@ -198,6 +209,25 @@ export function DatePage() {
   // chip both add it, so the two numbers finally agree.
   const [poolBeyond, setPoolBeyond] = useState(0);
   const candidateFetchAt = useRef(0);
+  /*
+   * The deck to deal: the ordinary mix, or one of the two AI decks - only
+   * just-released music, or only the small obscure acts. Flipping one re-deals
+   * from scratch (clear the dealt hand and drop the refill throttle so the
+   * effect below runs at once with the new mode), and in a mode the library
+   * half of the deck is set aside so the mode actually constrains what shows.
+   */
+  const [mode, setMode] = useState<DateMode | null>(null);
+  // A mode flip empties the deck ON PURPOSE to re-deal. That is not a finished
+  // sitting, so this ref tells the deck-emptied effect below to sit this one
+  // out rather than fire dateDone and reset the tally.
+  const switchingDeck = useRef(false);
+  const chooseMode = useCallback((next: DateMode) => {
+    switchingDeck.current = true;
+    setMode((cur) => (cur === next ? null : next));
+    setCandidates([]);
+    setPoolBeyond(0);
+    candidateFetchAt.current = 0;
+  }, []);
   useEffect(() => {
     if (!session) return;
     const waiting = candidates.filter((c) => !gone.has(PREVIEW_SCHEME + c.extId)).length;
@@ -205,13 +235,20 @@ export function DatePage() {
     const now = Date.now();
     if (now - candidateFetchAt.current < 20_000) return;
     candidateFetchAt.current = now;
-    void fetchDateCandidates(session, 25)
+    let live = true;
+    void fetchDateCandidates(session, 25, mode ?? undefined)
       .then(({ cards, total }) => {
+        // A mode flip between ask and answer supersedes this deal; dropping it
+        // keeps the previous mode's cards from landing in the new deck.
+        if (!live) return;
         setCandidates(cards);
         setPoolBeyond(Math.max(0, total - cards.length));
       })
       .catch(() => {});
-  }, [session, gone, candidates]);
+    return () => {
+      live = false;
+    };
+  }, [session, gone, candidates, mode]);
   const previewByPath = useMemo(
     () => new Map(candidates.map((c) => [PREVIEW_SCHEME + c.extId, c] as const)),
     [candidates],
@@ -239,9 +276,12 @@ export function DatePage() {
     [candidates],
   );
 
+  // In a mode, the library auditions are set aside: a "new music only" or
+  // "tiny artists" deck that still leaked your old auditions would not be the
+  // deck it says it is. The ordinary deck leads with them as before.
   const deck = useMemo(
-    () => [...mine, ...previewDeck].filter((t) => !gone.has(t.path)),
-    [mine, previewDeck, gone],
+    () => [...(mode ? [] : mine), ...previewDeck].filter((t) => !gone.has(t.path)),
+    [mine, previewDeck, gone, mode],
   );
 
   // The next stretch of cards, kept on the phone. Handed to the device cache
@@ -275,6 +315,43 @@ export function DatePage() {
 
   const current = deck[0] ?? null;
   const upcoming = deck[1] ?? null;
+
+  // What the AI (and the catalogue) know about the current card's artist, for
+  // the profile panel under the deck. Fetched lazily as cards advance, cached
+  // per artist, and the next card's artist is warmed so its panel is ready the
+  // moment it becomes current. The `live` flag drops a stale answer if the deck
+  // moved on before it arrived.
+  const [profile, setProfile] = useState<DateArtistProfile | null>(null);
+  const profileCache = useRef<Map<string, DateArtistProfile>>(new Map());
+  useEffect(() => {
+    if (!session || !current?.artist) {
+      setProfile(null);
+      return;
+    }
+    let live = true;
+    const name = current.artist;
+    const cached = profileCache.current.get(name);
+    if (cached) {
+      setProfile(cached);
+    } else {
+      setProfile(null);
+      void fetchDateArtist(session, name)
+        .then((p) => {
+          profileCache.current.set(name, p);
+          if (live) setProfile(p);
+        })
+        .catch(() => {});
+    }
+    const next = upcoming?.artist;
+    if (next && next !== name && !profileCache.current.has(next)) {
+      void fetchDateArtist(session, next)
+        .then((p) => profileCache.current.set(next, p))
+        .catch(() => {});
+    }
+    return () => {
+      live = false;
+    };
+  }, [session, current?.artist, upcoming?.artist]);
 
   /*
    * The intro: walking in, the deck HOLDS - no snippet plays - while a full
@@ -655,6 +732,13 @@ export function DatePage() {
   // this is what makes the promise true.
   useEffect(() => {
     if (!session || deck.length > 0) return;
+    // A mode flip emptied the deck to re-deal, not because the sitting ended:
+    // consume the flag and skip, so dateDone and the tally reset do not fire on
+    // a chip tap. A real swipe-to-empty leaves the flag false and proceeds.
+    if (switchingDeck.current) {
+      switchingDeck.current = false;
+      return;
+    }
     // Once per emptying, not once per render - and again after you swipe
     // through a fresh batch, which is a different sitting with new verdicts.
     const signature = `${sessionKept.current.length}:${sessionPassed.current.length}`;
@@ -919,6 +1003,19 @@ export function DatePage() {
           </div>,
           document.body,
         )}
+      {/* The two AI decks - only just-released music, or only the small obscure
+          acts. Rendered OUTSIDE the populated/empty split below, so a mode that
+          dealt nothing can always be toggled back off (tapping the lit chip
+          returns to the everything deck); without this a user could be stranded
+          in an empty mode with no control on screen. Mutually exclusive. */}
+      <div className="dateModes" role="group" aria-label="Choose what to hear">
+        <FilterChip selected={mode === 'new'} onSelectedChange={() => chooseMode('new')}>
+          New music
+        </FilterChip>
+        <FilterChip selected={mode === 'tiny'} onSelectedChange={() => chooseMode('tiny')}>
+          Tiny artists
+        </FilterChip>
+      </div>
       {current || outgoing ? (
         <>
           {/* How many are still waiting, and how this sitting is going. The
@@ -1010,6 +1107,34 @@ export function DatePage() {
             )}
           </div>
 
+          {/* Who this is: the AI's short read on the artist, and the real
+              discography from the catalogue. Sits OUTSIDE .dateStack so it does
+              not ride the card's drag or catch the swipe. */}
+          {current && (
+            <section className="dateProfile" aria-label={`About ${current.artist}`}>
+              <h3 className="dateProfile__who">{current.artist}</h3>
+              {profile?.blurb ? (
+                <p className="dateProfile__blurb">{profile.blurb}</p>
+              ) : (
+                <p className="dateProfile__blurb dateProfile__blurb--thin">
+                  {profile ? 'Still getting to know this one.' : 'Looking them up…'}
+                </p>
+              )}
+              {profile && profile.discography.length > 0 && (
+                <ul className="dateProfile__disco">
+                  {profile.discography.slice(0, 4).map((r) => (
+                    <li key={r} className="dateProfile__release">
+                      {r}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {profile?.fans != null && profile.fans > 0 && (
+                <p className="dateProfile__fans">{formatFans(profile.fans)} fans on Deezer</p>
+              )}
+            </section>
+          )}
+
           <div className="dateActions">
             <IconButton
               variant="outline"
@@ -1052,7 +1177,11 @@ export function DatePage() {
         <div className="emptyState emptyState--tall">
           <EmptyArt name="discovery" />
           <p className="emptyState__text">
-            {refill === 'asking'
+            {mode === 'new'
+              ? 'No new releases left to meet right now - tap New music above to go back to everything.'
+              : mode === 'tiny'
+              ? 'No tiny artists left to meet right now - tap Tiny artists above to go back to everything.'
+              : refill === 'asking'
               ? 'That\u2019s everyone. Going to find more like the ones you kept\u2026'
               : refill === 'failed'
                 ? 'That\u2019s everyone. I could not reach your server to look for more.'
@@ -1060,7 +1189,7 @@ export function DatePage() {
                   ? 'That\u2019s everyone. Your server is out looking now — new ones land as it finds them.'
                   : 'You\u2019re all caught up — the DJ fetches more as it learns what you keep.'}
           </p>
-          {passedRef.current.size > 0 && (
+          {!mode && passedRef.current.size > 0 && (
             <Button
               variant="ghost"
               size="sm"

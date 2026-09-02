@@ -62,7 +62,9 @@
   inline-size: min(100%, 24rem);
   margin-inline: auto;
   aspect-ratio: 3 / 4;
-  max-block-size: 62dvh;
+  /* Trimmed from 62dvh to leave room under the deck for the artist profile
+     panel without the tally or the pass/keep buttons clipping off a phone. */
+  max-block-size: 54dvh;
 }
 
 .dateCard {
@@ -207,4 +209,84 @@
    two never move under a thumb that is already reaching for them. */
 .dateActions__btn--undo:disabled {
   opacity: 0.3;
+}
+
+/* ---- the AI decks: two chips over the stack -------------------------------
+   Only just-released music, or only the small obscure acts. Mutually
+   exclusive; the ordinary mix is neither lit. */
+.dateModes {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  gap: var(--glacier-space-2);
+  margin-block-end: var(--glacier-space-3);
+}
+
+/* ---- the artist profile: who this is, and what they have made ------------
+   The AI's short read (who they are, where they're from) plus the catalogue's
+   own discography, under the deck. Deliberately quiet and height-capped - the
+   card is still the subject, and a long list scrolls inside rather than
+   shoving the pass/keep buttons off a phone screen. */
+.dateProfile {
+  flex: none;
+  inline-size: min(100%, 360px);
+  margin-inline: auto;
+  margin-block-start: var(--glacier-space-3);
+  padding: var(--glacier-space-2) var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg, 1rem);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-raised);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+  max-block-size: 130px;
+  overflow-y: auto;
+}
+
+.dateProfile__who {
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 700;
+  color: var(--glacier-text);
+}
+
+.dateProfile__blurb {
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.4;
+  color: var(--glacier-text-muted);
+  text-wrap: balance;
+}
+
+.dateProfile__blurb--thin {
+  font-style: italic;
+  opacity: 0.65;
+}
+
+.dateProfile__disco {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.dateProfile__release {
+  font-size: var(--glacier-font-size-xs);
+  padding: 2px var(--glacier-space-2);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--glacier-accent-solid) 14%, transparent);
+  color: var(--glacier-text);
+  white-space: nowrap;
+}
+
+.dateProfile__fans {
+  margin: 2px 0 0;
+  font-size: var(--glacier-font-size-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
 }

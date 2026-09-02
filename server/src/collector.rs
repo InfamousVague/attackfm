@@ -1160,6 +1160,12 @@ pub async fn date_candidates(
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(25)
         .clamp(1, 40);
+    // Two optional decks, chosen from the app: "new" deals only the fresh shelf
+    // (editorial just-released), "tiny" deals only the obscure - the small acts,
+    // most-unknown first. Anything else is the ordinary seated mix.
+    let mode = q.get("mode").map(String::as_str).unwrap_or("");
+    let fresh_only = mode == "new";
+    let tiny = mode == "tiny";
     let pulled = state.db.pulled_ext_ids(caller.id, now_ms() - FAILED_RETRY_AFTER_MS);
     // Judged by song, not by id: a candidate the catalogue re-offered under a
     // new id, or one that slipped into the pool before its verdict was kept
@@ -1172,65 +1178,103 @@ pub async fn date_candidates(
         .filter(|d| {
             !d.preview.trim().is_empty()
                 && !pulled.contains(&d.ext_id)
-                && measured(d)
+                // A tiny act rarely has lyrics or a tempo read, and the deck
+                // would starve if it demanded one: the thirty-second preview is
+                // all a date needs, so the analysis gate is dropped for that
+                // deck only.
+                && (tiny || measured(d))
                 && !judged.contains(&crate::discovery::key_of(&d.artist, &d.title))
         })
         .collect();
-    let total = all.len();
-    /*
-     * SEATED, not just ranked: a pure taste ordering sinks exactly the music
-     * a date deck exists to introduce - the chart hit far from your taste,
-     * the release that came out on Friday. The deal runs a five-card
-     * pattern: three from taste, one from the chart (by chart position),
-     * one from the fresh shelf (editorial order), each seat falling back to
-     * the next bench when its own is empty - the same reasoning as the
-     * collector's own chart seat.
-     */
+    let mut total = all.len();
     let lanes = state.db.discovery_lanes(caller.id);
     let lane_of = |d: &crate::db::DiscoveryRow| {
         lanes.get(&d.ext_id).map(|(lane, _)| lane.as_str()).unwrap_or("taste").to_string()
     };
-    let mut by_pop = |name: &str| -> std::collections::VecDeque<&crate::db::DiscoveryRow> {
-        let mut rows: Vec<&crate::db::DiscoveryRow> =
-            all.iter().filter(|d| lane_of(d) == name).collect();
-        rows.sort_by(|a, b| {
-            b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal)
-        });
-        rows.into_iter().collect()
-    };
-    let mut chart = by_pop("trending");
-    let mut fresh = by_pop("fresh");
-    let mut taste: std::collections::VecDeque<&crate::db::DiscoveryRow> =
-        all.iter().filter(|d| lane_of(d) == "taste").collect();
-    let mut used: std::collections::HashSet<&str> = std::collections::HashSet::new();
-    let mut cards: Vec<serde_json::Value> = Vec::new();
-    let mut seat = 0usize;
-    while cards.len() < want {
-        let benches: [&mut std::collections::VecDeque<&crate::db::DiscoveryRow>; 3] = match seat % 5
-        {
-            2 => [&mut chart, &mut fresh, &mut taste],
-            4 => [&mut fresh, &mut chart, &mut taste],
-            _ => [&mut taste, &mut chart, &mut fresh],
-        };
-        let mut pick: Option<&crate::db::DiscoveryRow> = None;
-        for bench in benches {
-            while let Some(d) = bench.pop_front() {
-                if used.insert(&d.ext_id) {
-                    pick = Some(d);
-                    break;
-                }
-            }
-            if pick.is_some() {
-                break;
-            }
-        }
-        let Some(d) = pick else { break };
-        cards.push(json!({
+    let card_of = |d: &crate::db::DiscoveryRow| {
+        json!({
             "extId": d.ext_id, "title": d.title, "artist": d.artist,
             "cover": d.cover, "preview": d.preview, "seed": d.seed,
             "lane": lane_of(d),
-        }));
-        seat += 1;
+        })
+    };
+    let mut cards: Vec<serde_json::Value> = Vec::new();
+    if fresh_only || tiny {
+        // A single ordered bench, no five-card seating. New = the fresh shelf,
+        // most-charting first. Tiny = the taste pool (charts/fresh excluded,
+        // they are popular by construction), most-obscure first; no popularity
+        // floor, so it always yields the smallest acts on hand rather than an
+        // empty deck.
+        let mut bench: Vec<&crate::db::DiscoveryRow> = all
+            .iter()
+            .filter(|d| {
+                let lane = lane_of(d);
+                if fresh_only {
+                    lane == "fresh"
+                } else {
+                    lane != "trending" && lane != "fresh"
+                }
+            })
+            .collect();
+        bench.sort_by(|a, b| {
+            if tiny {
+                a.popularity.partial_cmp(&b.popularity).unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal)
+            }
+        });
+        // "N left to meet" should count this deck, not the whole pool.
+        total = bench.len();
+        for d in bench.into_iter().take(want) {
+            cards.push(card_of(d));
+        }
+    } else {
+        /*
+         * SEATED, not just ranked: a pure taste ordering sinks exactly the music
+         * a date deck exists to introduce - the chart hit far from your taste,
+         * the release that came out on Friday. The deal runs a five-card
+         * pattern: three from taste, one from the chart (by chart position),
+         * one from the fresh shelf (editorial order), each seat falling back to
+         * the next bench when its own is empty - the same reasoning as the
+         * collector's own chart seat.
+         */
+        let mut by_pop = |name: &str| -> std::collections::VecDeque<&crate::db::DiscoveryRow> {
+            let mut rows: Vec<&crate::db::DiscoveryRow> =
+                all.iter().filter(|d| lane_of(d) == name).collect();
+            rows.sort_by(|a, b| {
+                b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            rows.into_iter().collect()
+        };
+        let mut chart = by_pop("trending");
+        let mut fresh = by_pop("fresh");
+        let mut taste: std::collections::VecDeque<&crate::db::DiscoveryRow> =
+            all.iter().filter(|d| lane_of(d) == "taste").collect();
+        let mut used: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut seat = 0usize;
+        while cards.len() < want {
+            let benches: [&mut std::collections::VecDeque<&crate::db::DiscoveryRow>; 3] =
+                match seat % 5 {
+                    2 => [&mut chart, &mut fresh, &mut taste],
+                    4 => [&mut fresh, &mut chart, &mut taste],
+                    _ => [&mut taste, &mut chart, &mut fresh],
+                };
+            let mut pick: Option<&crate::db::DiscoveryRow> = None;
+            for bench in benches {
+                while let Some(d) = bench.pop_front() {
+                    if used.insert(&d.ext_id) {
+                        pick = Some(d);
+                        break;
+                    }
+                }
+                if pick.is_some() {
+                    break;
+                }
+            }
+            let Some(d) = pick else { break };
+            cards.push(card_of(d));
+            seat += 1;
+        }
     }
     // The dealt hand's bands get their shelf entries written behind this
     // reply, so the briefing that follows has something true to say.
@@ -1245,6 +1289,95 @@ pub async fn date_candidates(
         });
     }
     Ok(Json(json!({ "candidates": cards, "total": total })))
+}
+
+/// Deezer's fan count for an artist - the honest "how big are they" number.
+async fn deezer_fans(c: &reqwest::Client, id: u64) -> Option<u64> {
+    let v: serde_json::Value = c
+        .get(format!("https://api.deezer.com/artist/{id}"))
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    v.get("nb_fan").and_then(|x| x.as_u64())
+}
+
+/// A short discography: the artist's albums, newest first, one line each with
+/// its year, deduped by title. Facts straight from Deezer - true even for an
+/// act no model has ever heard of, which is the whole point of not leaving the
+/// profile to the model's memory.
+async fn deezer_discography(c: &reqwest::Client, id: u64) -> Vec<String> {
+    let Ok(resp) = c
+        .get(format!("https://api.deezer.com/artist/{id}/albums"))
+        .query(&[("limit", "50")])
+        .send()
+        .await
+    else {
+        return Vec::new();
+    };
+    let Ok(v) = resp.json::<serde_json::Value>().await else {
+        return Vec::new();
+    };
+    let Some(items) = v.get("data").and_then(|d| d.as_array()) else {
+        return Vec::new();
+    };
+    let mut rows: Vec<(String, String)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for a in items {
+        let title = a.get("title").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+        if title.is_empty() || !seen.insert(title.to_lowercase()) {
+            continue;
+        }
+        let date = a.get("release_date").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let year = date.get(0..4).unwrap_or("").to_string();
+        let line = if year.is_empty() { title } else { format!("{title} ({year})") };
+        rows.push((date, line));
+    }
+    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    rows.into_iter().map(|(_, line)| line).take(6).collect()
+}
+
+/// `GET /api/date/artist?name=` - who the current card's artist is, for the
+/// date's profile panel. The prose is the honest one-line lore we already keep
+/// (who they are, where they are from), absent for an artist the model does not
+/// recognise and filled behind this reply for next time; the discography and
+/// fan count are pulled LIVE from Deezer, so even an unknown small act gets a
+/// true short profile instead of an invented one.
+pub async fn date_artist(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    crate::auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let name = q.get("name").map(|s| s.trim().to_string()).unwrap_or_default();
+    if name.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "name is required".into()));
+    }
+
+    let blurb = crate::lore::known_artists(&state, std::slice::from_ref(&name))
+        .get(&crate::discovery::artist_key_public(&name))
+        .cloned()
+        .unwrap_or_default();
+
+    let c = crate::discovery::client(12);
+    let (fans, discography) = match crate::discovery::deezer_artist_id_public(&c, &name).await {
+        Some(id) => tokio::join!(deezer_fans(&c, id), deezer_discography(&c, id)),
+        None => (None, Vec::new()),
+    };
+
+    // No prose yet: research this artist behind the reply so a later visit has
+    // it, exactly as the deal itself does for the dealt hand.
+    if blurb.is_empty() {
+        let st = state.clone();
+        let n = name.clone();
+        tokio::spawn(async move {
+            crate::lore::ensure_artists(&st, &[n]).await;
+        });
+    }
+
+    Ok(Json(json!({ "blurb": blurb, "discography": discography, "fans": fans })))
 }
 
 /// `GET /api/date/preview?extId=` - a FRESH preview URL, resolved live.

@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.47
+
+- The music date now tells you about the artist: a short read on who they are
+  and where they're from, with a real discography and fan count under the deck.
+- Two new ways to date: a "New music" button for just-released tracks, and a
+  "Tiny artists" button for the small, under-the-radar acts - with the AI doing
+  its homework on the little-known ones.
+
 ## 0.5.46
 
 - Playlist links on attack.fm now wear the playlist's album covers as a slowly drifting, blurred backdrop behind the card, and the card's header takes the colour of whichever song is previewing.
