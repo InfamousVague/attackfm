@@ -33,7 +33,7 @@ import {
   type PlaylistMember,
   type PlaylistRole,
 } from '../server.ts';
-import { allSessions } from '../servers/sessions.ts';
+import { allSessions, normalise } from '../servers/sessions.ts';
 import { serverLabelFor } from '../servers/serverNames.ts';
 import { fold, titleKey } from '../library/owned.ts';
 import {
@@ -323,13 +323,13 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
    */
   const [others, setOthers] = useState<{ session: ServerSession; lists: RemotePlaylist[] }[]>(() =>
     allSessions()
-      .filter((s) => s.url !== session.url)
+      .filter((s) => normalise(s.url) !== normalise(session.url))
       .map((s) => ({ session: s, lists: readFeedCache<RemotePlaylist[]>(s, 'playlists') ?? [] })),
   );
   useEffect(() => {
     let live = true;
     const ask = async () => {
-      const secondaries = allSessions().filter((s) => s.url !== session.url);
+      const secondaries = allSessions().filter((s) => normalise(s.url) !== normalise(session.url));
       const answers = await Promise.all(
         secondaries.map(async (s) => {
           try {

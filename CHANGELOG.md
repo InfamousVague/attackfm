@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.40
+
+- Playlists on your other servers are grouped by server again even when a server address was saved with a different spelling; the primary server can no longer show up as "another server".
+- The save-image message now points at the 0.5.38 app release, the first one that carries the saving bridge in every build.
+
 ## 0.5.39
 
 - When saving a picture needs a newer app, the message now names the app version this phone actually has installed, and says that updates over the air do not replace the app itself.

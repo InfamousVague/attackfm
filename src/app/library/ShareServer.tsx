@@ -361,7 +361,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
           // Unknown is fine; the sentence still stands.
         }
         toast({
-          message: `Saving pictures needs the AttackFM app itself at 0.5.29 or newer${installed ? ` - this phone has the ${installed} app installed` : ''}. Updates over the air do not replace the app; install the latest from attack.fm.`,
+          message: `Saving pictures needs the AttackFM app itself from the 0.5.38 release or newer${installed ? ` - this phone has the ${installed} app installed` : ''}. Updates over the air do not replace the app; install the latest from attack.fm.`,
         });
         return;
       }
