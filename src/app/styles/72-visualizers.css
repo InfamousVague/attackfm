@@ -1,0 +1,57 @@
+/* ---- Visualizers -----------------------------------------------------------
+   The visualizers plugin's face, in the Now Playing art square - the spot the
+   CD spins in. The square's size, its 22px corner and the long-press menu are
+   the chrome's (.npScreen__coverTarget); this only fills it. Painted on a near
+   -black so every visualizer's trails and glows have the same floor to fade
+   into, whatever the theme. */
+.vizArt {
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: 22px;
+  overflow: hidden;
+  background: #060608;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  /* A tap cycles visualizers; the pan/zoom the browser might want is not. */
+  touch-action: manipulation;
+}
+
+.vizArt__canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+/* The name, shown for a moment after a tap so you know what you switched to,
+   then gone - the picture is the point, not a caption on it. */
+.vizArt__name {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 12px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s var(--glacier-ease-out);
+}
+
+.vizArt[data-show-name] .vizArt__name {
+  opacity: 1;
+}
+
+/* The settings pane's thumbnails: one still frame of each visualizer. */
+.vizThumb {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: 10px;
+  background: #060608;
+}

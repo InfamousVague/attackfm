@@ -40,7 +40,16 @@ export type PluginSlotId =
    * invisible on desktop rather than merely differently placed. Anything added
    * to this slot needs both.
    */
-  | 'now-playing-actions';
+  | 'now-playing-actions'
+  /**
+   * The Now Playing art square - the spot where the CD spins. Rendered ONLY
+   * while the listener has chosen the 'visualizer' art view (Artwork style
+   * menu), which the chrome offers only when some enabled plugin fills this
+   * slot. The plugin owns the whole square: it reads the audio graph through
+   * useNowPlayingMotion and draws what it likes; the chrome keeps the square's
+   * size, corner radius and the long-press menu around it.
+   */
+  | 'now-playing-art';
 
 /** One tab a plugin adds to the settings modal's rail. */
 export interface PluginSettingsSection {

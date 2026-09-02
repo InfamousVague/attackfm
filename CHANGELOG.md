@@ -15,6 +15,15 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.52
+
+- Visualizers: thirteen ways to watch the music, right where the CD spins - a
+  spectrum halo, a vector scope, Lissajous curves, a particle nebula, a Julia
+  fractal, the old demoscene plasma, a flow field, a kaleidoscope, a starfield
+  warp, a spiral galaxy, the Lorenz butterfly, beat-dropped ripples and a rose.
+  Choose Visualizer under Now Playing's Artwork style menu, tap the picture to
+  cycle, or pick one in Settings. Each paints in the record's own colour.
+
 ## 0.5.51
 
 - Friends are live now: the Friends page shows who is online and what each friend is listening to at this moment (while they share), listening friends float to the top, and the week's numbers refresh every twenty minutes instead of every six hours. "Keeps their listening private" and "quiet this week" are told apart, and a registry that cannot be reached says so instead of loading forever.

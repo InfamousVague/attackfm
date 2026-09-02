@@ -67,6 +67,7 @@ import {
   writeDeckPref,
   type ArtView,
 } from './deckShared.ts';
+import { usePlugins } from '../../plugins/pluginsContext.ts';
 import { useSystemNowPlaying } from './useSystemNowPlaying.ts';
 import { useListenReporting } from './useListenReporting.ts';
 import { useNpChrome } from './useNpChrome.ts';
@@ -396,7 +397,15 @@ export function Player({
   const wantedRateRef = useRef(wantedRate);
   wantedRateRef.current = wantedRate;
   const playingBook = track?.kind === 'book';
-  const wornArtView = playingBook ? bookArtView : artView;
+  // Whether any enabled plugin can draw the art square (the visualizers
+  // plugin). Without one, a stored 'visualizer' choice falls back to the disc
+  // rather than leaving the square empty - the plugin may have been turned off
+  // since the choice was made.
+  const { enabled: enabledPlugins } = usePlugins();
+  const hasVisualizer = enabledPlugins.some((p) => Boolean(p.slots?.['now-playing-art']));
+  const chosenArtView = playingBook ? bookArtView : artView;
+  const wornArtView: ArtView =
+    chosenArtView === 'visualizer' && !hasVisualizer ? 'cd' : chosenArtView;
   const chooseArtView = (next: ArtView) => {
     (playingBook ? setBookArtView : setArtView)(next);
     try {
@@ -428,7 +437,13 @@ export function Player({
   // One menu, three doorways: the strip's square, the sheet's art, and the
   // Canvas clip itself all open this same chooser, so the setting stays one
   // setting no matter where the press lands. (Items live in NowPlayingSheet.)
-  const npArtMenu = npArtMenuItems(wornArtView, chooseArtView, playingBook, songHasLyrics);
+  const npArtMenu = npArtMenuItems(
+    wornArtView,
+    chooseArtView,
+    playingBook,
+    songHasLyrics,
+    hasVisualizer,
+  );
 
   // The EQ gains ride the graph's filters; kept in a ref so a freshly built
   // meter can be seeded with them without waiting for a render.

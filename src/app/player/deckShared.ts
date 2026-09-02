@@ -160,7 +160,7 @@ export const CATCH_FLUSH_MS = 45;
  *  square is also the tap target that lifts this sheet, and a hole (or a
  *  list at postage-stamp size) in the strip reads as a layout bug, not a
  *  preference. */
-export type ArtView = 'cd' | 'cover' | 'chapters' | 'lyrics' | 'analyser' | 'hidden';
+export type ArtView = 'cd' | 'cover' | 'chapters' | 'lyrics' | 'analyser' | 'visualizer' | 'hidden';
 
 export const ART_VIEW_KEY = 'attackfm-art-view';
 
@@ -175,7 +175,11 @@ export const BOOK_ART_VIEW_KEY = 'attackfm-art-view-book';
 export function readArtView(): ArtView {
   try {
     const stored = localStorage.getItem(ART_VIEW_KEY);
-    return stored === 'cover' || stored === 'hidden' || stored === 'analyser' || stored === 'lyrics'
+    return stored === 'cover' ||
+      stored === 'hidden' ||
+      stored === 'analyser' ||
+      stored === 'lyrics' ||
+      stored === 'visualizer'
       ? stored
       : 'cd';
   } catch {

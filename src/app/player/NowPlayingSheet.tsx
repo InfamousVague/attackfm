@@ -20,7 +20,7 @@ import type { ArtTint } from './artTint.ts';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { Airplay, AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, TableOfContents, Trash2, Volume2 } from '@glacier/icons';
+import { Airplay, AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
@@ -102,6 +102,10 @@ export function npArtMenuItems(
    *  only plain lyrics keeps the mic popover rather than a read-along that
    *  could not light a word. */
   lyrics = false,
+  /** Some enabled plugin fills the art square (the visualizers plugin), so
+   *  the Visualizer face is worth offering. Absent the plugin the item is
+   *  hidden rather than leading to an empty square. */
+  visualizer = false,
 ) {
   return (
     <>
@@ -144,6 +148,15 @@ export function npArtMenuItems(
       >
         Analyser
       </MenuItem>
+      {visualizer && (
+        <MenuItem
+          icon={<Sparkles size={15} />}
+          shortcut={artView === 'visualizer' ? <Check size={14} /> : undefined}
+          onSelect={() => chooseArtView('visualizer')}
+        >
+          Visualizer
+        </MenuItem>
+      )}
       <MenuItem
         icon={<EyeOff size={15} />}
         shortcut={artView === 'hidden' ? <Check size={14} /> : undefined}
@@ -1615,6 +1628,12 @@ export function NowPlayingSheet({
               items={bookFaces}
               runFraction={Math.min(1, Math.max(0, barValue / barDuration))}
             />
+          ) : artView === 'visualizer' ? (
+            /* A plugin's face for the square - the visualizers plugin draws
+               its canvas here, reading the graph through useNowPlayingMotion.
+               The Player only offers this face while some enabled plugin
+               fills the slot, so the square is never left empty. */
+            <PluginSlot id="now-playing-art" />
           ) : artView === 'analyser' ? (
             /* The first thing in the app to read more than one number off the
                audio graph - see SpectrumArt. */
