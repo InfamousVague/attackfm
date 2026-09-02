@@ -1,6 +1,8 @@
 import { Button, Field, IconButton, Select, Text, useToast } from '@glacier/react';
 import { GlassSheet } from '../ux/GlassSheet.tsx';
 import { useShareDoor } from '../nav/shareDoor.ts';
+import { isAndroid } from '../core/platform.ts';
+import { isTauri } from '../core/tauri.ts';
 import { Check, Copy, Download, Share2 } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
@@ -232,6 +234,37 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
     };
   }, [invite]);
 
+  /*
+   * The picture is drawn AHEAD of the tap.
+   *
+   * Rasterising the card takes a good fraction of a second, and the share
+   * sheet (iOS, browsers) may only be summoned while the tap that asked for
+   * it is still "live" - WebKit refuses navigator.share after an await that
+   * long, quietly, and the button did nothing. So the PNG is made as soon as
+   * the card is complete (invite minted, QR drawn) and kept; Save then hands
+   * over a finished picture in the same tick as the tap. Remade whenever the
+   * card changes, dropped when the sheet closes.
+   */
+  const [png, setPng] = useState<string | null>(null);
+  useEffect(() => {
+    setPng(null);
+    if (!open || !invite || !qr) return;
+    let live = true;
+    // A beat for the QR <img> to decode and the card to settle at its size.
+    const timer = window.setTimeout(() => {
+      const node = cardRef.current;
+      if (!node) return;
+      const box = node.getBoundingClientRect();
+      void shoot(node, Math.round(box.width), Math.round(box.height), 5).then((url) => {
+        if (live && url) setPng(url);
+      });
+    }, 350);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [open, invite, qr]);
+
   // Nothing to invite anyone TO without a server: a local-only library has no
   // door to hand out, so the button simply is not there.
   if (!session) return null;
@@ -263,7 +296,9 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
       // Five device pixels per CSS pixel: a ~400px card becomes a ~2000px
       // poster, sharp on any screen it is sent to. The QR below is rendered
       // at 1000px for the same reason - a 300px code scaled up came out soft.
-      const dataUrl = await shoot(node, Math.round(box.width), Math.round(box.height), 5);
+      // The pre-drawn picture where there is one (see the effect above) - so
+      // the share sheet below is asked for inside the tap, not after a wait.
+      const dataUrl = png ?? (await shoot(node, Math.round(box.width), Math.round(box.height), 5));
       if (!dataUrl) {
         toast({ message: 'Could not draw the card. Try again in a moment.' });
         return;
@@ -290,16 +325,44 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
         });
         return;
       }
-      const blob = await (await fetch(dataUrl)).blob();
+      // Decoded by hand rather than fetch()ed: a fetch is one more await
+      // between the tap and the share sheet, and WebKit counts them.
+      const raw = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'image/png' });
       const file = new File([blob], 'attackfm-invite.png', { type: 'image/png' });
       const shareData = { files: [file], title: `Join ${possessive(owner)} AttackFM server` };
       if (navigator.canShare?.(shareData)) {
         try {
           await navigator.share(shareData);
-        } catch {
-          // A cancelled sheet is a decision, not a failure - no surprise file.
+        } catch (err) {
+          // A cancelled sheet is a decision, not a failure - no surprise
+          // file. A REFUSED sheet (the tap's moment had passed) is said out
+          // loud, because the alternative is a button that does nothing.
+          if (err instanceof Error && err.name !== 'AbortError') {
+            toast({ message: 'The share sheet would not open - tap Save image again.' });
+          }
         }
         return;
+      }
+      if (isTauri() && isAndroid) {
+        // An app build from before the native bridge: nothing on this side
+        // of the WebView can write a file, and pretending it downloaded was
+        // the bug. Say what fixes it.
+        toast({ message: 'Saving pictures needs the AttackFM app 0.5.29 or newer - install the latest from attack.fm.' });
+        return;
+      }
+      if (isTauri() && navigator.clipboard && 'ClipboardItem' in window) {
+        // The desktop app's WebView ignores a download link; the clipboard
+        // is the door that works everywhere on a desk.
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          toast({ message: 'Copied the card to the clipboard - paste it into a message.' });
+          return;
+        } catch {
+          // Fall through to the download and let the platform decide.
+        }
       }
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
