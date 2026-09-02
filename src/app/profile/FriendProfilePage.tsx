@@ -28,7 +28,7 @@ import { TrackMenu } from '../library/TrackMenu.tsx';
 import { artworkHue, artworkUrl, genreArtwork } from '../ux/artwork.ts';
 import type { Track } from '../core/tauri.ts';
 import './StatsPage.css';
-import { tracksOfHub } from '../server.ts';
+import { ServerError, tracksOfHub } from '../server.ts';
 
 /**
  * One friend, the whole page - by request, after the small stats modal
@@ -74,7 +74,11 @@ export function FriendProfilePage({
   const { tracks } = useLibrary();
   const [range, setRange] = useState<StatsRange>('week');
   const [profile, setProfile] = useState<MemberProfile | null>(null);
-  const [face, setFace] = useState<'loading' | 'ok' | 'closed' | 'away' | 'sorry'>('loading');
+  const [face, setFace] = useState<'loading' | 'ok' | 'closed' | 'away' | 'unknown' | 'sorry'>('loading');
+  /** What the server actually said when the profile did not load - shown
+   *  rather than guessed at. "May be a version behind" was the old guess,
+   *  and it was wrong on a hub that was two versions AHEAD. */
+  const [reason, setReason] = useState<string | null>(null);
 
   const sameHub =
     !!session &&
@@ -99,7 +103,13 @@ export function FriendProfilePage({
       .catch((err: unknown) => {
         if (!live) return;
         const text = err instanceof Error ? err.message : String(err ?? '');
-        setFace(text.includes('themselves') ? 'closed' : 'sorry');
+        const status = err instanceof ServerError ? err.status : 0;
+        // 403 with the hub's own words: a closed door. 404: the hub has no
+        // member under that handle - they are on it with a plain server
+        // login the registry never tied to their account. Anything else is
+        // a real failure, and the reason is shown.
+        setReason(status ? `${status} · ${text}` : text || 'no reply');
+        setFace(text.includes('themselves') ? 'closed' : status === 404 ? 'unknown' : 'sorry');
       });
     return () => {
       live = false;
@@ -188,13 +198,26 @@ export function FriendProfilePage({
       </div>
     );
   }
+  if (face === 'unknown') {
+    return (
+      <div className="homePage friendProfile">
+        {head}
+        <FriendStats friend={friend} />
+        <p className="statsNote">
+          {host || 'That server'} has no member under @{friend.handle}. They are on it with a
+          server login the registry never tied to their AttackFM account - once they sign into
+          it with the account (Profile → Where you listen), their profile appears here.
+        </p>
+      </div>
+    );
+  }
   if (face === 'sorry' || !profile) {
     return (
       <div className="homePage friendProfile">
         {head}
         <p className="statsNote">
           {face === 'sorry'
-            ? 'Their profile did not load - the server may be a version behind.'
+            ? `Their profile did not load${reason ? ` (${reason})` : ''}.`
             : 'Reading their listening…'}
         </p>
       </div>

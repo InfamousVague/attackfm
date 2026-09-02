@@ -2064,6 +2064,24 @@ impl Db {
             .flatten()
     }
 
+    /// The same, case-blind - for matching a REGISTRY handle (always lower
+    /// case on the wire) against a username somebody typed with capitals when
+    /// they signed into this hub directly. Exact match wins where both exist.
+    pub fn user_by_name_ci(&self, username: &str) -> Option<User> {
+        self.user_by_name(username).or_else(|| {
+            self.lock()
+                .query_row(
+                    "SELECT id, username, pass_hash, is_admin, stream_epoch FROM users
+                      WHERE username = ?1 COLLATE NOCASE ORDER BY id ASC LIMIT 1",
+                    params![username],
+                    Self::read_user,
+                )
+                .optional()
+                .ok()
+                .flatten()
+        })
+    }
+
     /// The id of the track filed at this library-relative path, if indexed.
     /// The importer asks right after scan_one so a finished job can name the
     /// track ids it produced - what lets a client play an import on arrival.

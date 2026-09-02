@@ -92,9 +92,12 @@ pub async fn profile(
         .db
         .member_by_handle(who)
         .or_else(|| {
+            // A friend who signed into this hub directly, never through the
+            // registry: their handle and their username are the same word,
+            // give or take the capitals they typed.
             state
                 .db
-                .user_by_name(who)
+                .user_by_name_ci(who)
                 .map(|u| (u.id, u.username, String::new(), 0))
         })
         .ok_or((StatusCode::NOT_FOUND, "no such member here".into()))?;

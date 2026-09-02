@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.36
+
+- A friend's profile that does not load now says why, instead of guessing the server is behind. A friend who is on your server with a plain server login (never through their AttackFM account) gets an honest note about that; the server also matches their name case-blind, so capitals in a username no longer hide a profile.
+
 ## 0.5.35
 
 - The share button in the header now shares what you are looking at: on a playlist it opens that playlist's sharing sheet (or, for a list shared with you, who else has it); everywhere else it is still the invite card.

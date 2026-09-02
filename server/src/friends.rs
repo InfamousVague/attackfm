@@ -138,7 +138,16 @@ pub async fn mirror(
         if handle.is_empty() {
             continue;
         }
-        let Some((target_id, _, _, _)) = state.db.member_by_handle(handle) else { continue };
+        // Bound through the registry, or on this hub under the same name
+        // with a direct login - the profile page matches the same two ways.
+        let Some(target_id) = state
+            .db
+            .member_by_handle(handle)
+            .map(|(id, _, _, _)| id)
+            .or_else(|| state.db.user_by_name_ci(handle).map(|u| u.id))
+        else {
+            continue;
+        };
         if target_id == caller.id || state.db.are_friends(caller.id, target_id) {
             continue;
         }
