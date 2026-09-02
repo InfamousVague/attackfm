@@ -233,9 +233,66 @@ async fn settle_pulls(state: &Arc<AppState>) {
 /// candidate for a month. An unanswered offer is now simply forgotten, which
 /// puts the song back in the pool to be offered again when a peer is listening.
 async fn settle_delegated(state: &Arc<AppState>) {
-    for (pull_id, user_id, _marker, _url, _title, _artist, created_at) in state.db.delegated_pulls()
+    for (pull_id, user_id, marker, _url, _title, _artist, created_at, ext_id, kind) in
+        state.db.delegated_pulls()
     {
         let ids = state.db.pull_path_track_ids(pull_id);
+        /*
+         * A member's pasted link, downloaded elsewhere (imports::enqueue on a
+         * hub in collector mode). The files are THEIRS - a finished import,
+         * not an audition - so the card is completed rather than the tracks
+         * stamped, and a day unanswered is a failure the card can say, not a
+         * candidate quietly returned to a pool it never came from.
+         *
+         * WHOLE, not first. An album arrives one report per file over a
+         * window, so the card is finished only when the link's own listing
+         * is accounted for, or when the files have stopped coming. And a
+         * song this box already held is part of the answer: a peer only
+         * pushes what is missing here, so the listing is also matched by
+         * identity against the library.
+         */
+        if kind == "import" {
+            let job = crate::imports::delegated_job_id(&ext_id);
+            let (expected, total) = match job {
+                Some(j) => crate::imports::delegated_expectation(state, j).await,
+                None => (Vec::new(), None),
+            };
+            let mut have = ids.clone();
+            for id in held_track_ids(state, &expected) {
+                if !have.contains(&id) {
+                    have.push(id);
+                }
+            }
+            let last_at = state.db.pull_last_path_at(pull_id);
+            let complete = match total {
+                Some(t) if t > 0 => have.len() as u32 >= t,
+                _ => last_at > 0 && now_ms() - last_at >= IMPORT_QUIET_MS,
+            };
+            // Everything the listing named was here all along: no peer needed.
+            let held_only = ids.is_empty() && !expected.is_empty() && have.len() >= expected.len();
+            if !have.is_empty() && (complete || held_only) {
+                if state.db.land_import_pull(pull_id).is_ok() {
+                    if let Some(job) = job {
+                        crate::imports::land_delegated(state, job, &have).await;
+                    }
+                }
+                continue;
+            }
+            // The clock restarts at the claim (claim_offered_pull), so a taken
+            // pull gets its day from the peer picking it up, not from the paste.
+            if now_ms() - created_at > UNANSWERED_MS {
+                let _ = state.db.fail_pull(pull_id);
+                if let Some(job) = job {
+                    let why = if marker == crate::db::Db::PULL_TAKEN {
+                        "The download box took it but never delivered it. Retry to offer it again."
+                    } else {
+                        "No download box answered in a day. Retry when it is back."
+                    };
+                    crate::imports::fail_delegated(state, job, why).await;
+                }
+            }
+            continue;
+        }
         if !ids.is_empty() && state.db.land_pull(pull_id, user_id, &ids).unwrap_or(0) > 0 {
             crate::chartlists::refresh_new_music_for(state, user_id);
             continue;
@@ -254,6 +311,40 @@ async fn settle_delegated(state: &Arc<AppState>) {
             let _ = state.db.forget_pull(pull_id);
         }
     }
+}
+
+/// How long a delegated link with no listing of its own waits after its last
+/// file before the card is finished: an album's files arrive one report each,
+/// and one settle cycle of silence is the sign they have stopped.
+const IMPORT_QUIET_MS: i64 = 5 * 60 * 1000;
+
+/// The library's own copies of the songs a listing names, by identity - the
+/// exact credit first, the lead credit second, the way `matching_identity`
+/// reads a promised heart. Used for a delegated link: what was already here
+/// counts toward the card, since a peer never pushes those.
+pub(crate) fn held_track_ids(state: &Arc<AppState>, expected: &[(String, String)]) -> Vec<i64> {
+    if expected.is_empty() {
+        return Vec::new();
+    }
+    let identities = state.db.track_identities();
+    let mut out: Vec<i64> = Vec::new();
+    for (artist, title) in expected {
+        if artist.trim().is_empty() || title.trim().is_empty() {
+            continue;
+        }
+        let exact = crate::discovery::key_of(artist, title);
+        let lead = crate::discovery::lead_key(artist, title);
+        let hit = identities
+            .iter()
+            .find(|(_, a, t, _)| crate::discovery::key_of(a, t) == exact)
+            .or_else(|| identities.iter().find(|(_, a, t, _)| crate::discovery::lead_key(a, t) == lead));
+        if let Some((id, ..)) = hit {
+            if !out.contains(id) {
+                out.push(*id);
+            }
+        }
+    }
+    out
 }
 
 /// How long a promised heart waits for its song before the promise lapses.
@@ -580,15 +671,18 @@ async fn pull_cycle(state: &Arc<AppState>) {
         return;
     }
     // Nobody is taking what has already been offered; adding to the pile helps
-    // no one.
-    if state.db.delegated_pulls().len() >= OUTSTANDING_OFFERS {
+    // no one. Members' delegated links are not the collector's pile - a burst
+    // of pastes must not eat its offer budget, nor count as its backlog.
+    if state.db.delegated_pulls().iter().filter(|r| r.8 != "import").count() >= OUTSTANDING_OFFERS {
         return;
     }
     // People first: a human's import in flight means the queue is not ours.
+    // A delegated card waits on another box and holds no slot here.
     {
         let jobs = state.imports.jobs.lock().await;
         let busy = jobs.iter().any(|j| {
-            (j.state == "queued" || j.state == "downloading")
+            crate::imports::local(j)
+                && (j.state == "queued" || j.state == "downloading")
                 && (j.origin != "collector" || j.state == "downloading")
         });
         if busy {
@@ -999,12 +1093,66 @@ pub async fn claim(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     auth::require_caller(&state.db, &headers)
         .map_err(|s| (s, "sign in first".to_string()))?;
+    // A download box is LISTENING - whether or not there was anything to hand
+    // it. This is the clock the pasted-link door reads (imports::enqueue), and
+    // stamping it only on a take meant a quiet week for the collector shut
+    // that door on every member while the peer was polling the whole time.
+    let _ = state.db.meta_set("collector.peer_seen_at", &now_ms().to_string());
     let Some((id, url, title, artist)) = state.db.claim_offered_pull() else {
         return Ok(Json(serde_json::json!({ "pull": null })));
     };
+    // `kind` says whose want this is: the collector's own pick, or a member's
+    // pasted link ("import"). A peer that predates the field ignores it.
+    let kind = state.db.pull_kind(id).unwrap_or_else(|| "track".to_string());
     Ok(Json(serde_json::json!({
-        "pull": { "id": id, "url": url, "title": title, "artist": artist }
+        "pull": { "id": id, "url": url, "title": title, "artist": artist, "kind": kind }
     })))
+}
+
+/// A peer reporting that a claimed pull FAILED on its side - the provider
+/// did not have it, the download stalled, anything its card would say. Only a
+/// member's delegated link is failed outright (the card gets the sentence and
+/// a Retry); the collector's own pulls keep their existing fate, forgotten
+/// after a day, because "the peer could not fetch it today" is not the
+/// thirty-day "the catalogue does not have it" that `fail_pull` means there.
+pub async fn failed(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<FailedBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    if body.pull_id <= 0 {
+        return Err((StatusCode::BAD_REQUEST, "pullId is required".into()));
+    }
+    let Some((_user, ext_id, kind)) = state.db.pull_owner_kind(body.pull_id) else {
+        return Ok(Json(serde_json::json!({ "ok": true, "known": false })));
+    };
+    if kind == "import" {
+        if state.db.fail_taken_pull(body.pull_id).unwrap_or(false) {
+            if let Some(job) = crate::imports::delegated_job_id(&ext_id) {
+                // A peer's own summary is short; the route is open to any
+                // signed-in caller like the rest of the channel, so the card
+                // takes a sentence, never a page.
+                let why: String = body.error.trim().chars().take(600).collect();
+                let why = if why.is_empty() {
+                    "The download box could not fetch it.".to_string()
+                } else {
+                    why
+                };
+                crate::imports::fail_delegated(&state, job, &why).await;
+            }
+        }
+    }
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FailedBody {
+    pub pull_id: i64,
+    #[serde(default)]
+    pub error: String,
 }
 
 /// A peer reporting what a claimed pull actually produced, as the rel_path the
@@ -1047,6 +1195,25 @@ pub async fn release(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     auth::require_caller(&state.db, &headers)
         .map_err(|s| (s, "sign in first".to_string()))?;
+    // A member's link handed back by a peer that predates the failure report
+    // is failed here rather than re-offered: the same box would take it and
+    // hand it back again every minute, and the card would say "queued" for a
+    // day. An updated peer says why through /api/collector/failed instead.
+    if let Some((_user, ext_id, kind)) = state.db.pull_owner_kind(body.pull_id) {
+        if kind == "import" {
+            if state.db.fail_taken_pull(body.pull_id).unwrap_or(false) {
+                if let Some(job) = crate::imports::delegated_job_id(&ext_id) {
+                    crate::imports::fail_delegated(
+                        &state,
+                        job,
+                        "The download box could not take it - it may be out of room. Retry later.",
+                    )
+                    .await;
+                }
+            }
+            return Ok(Json(serde_json::json!({ "ok": true })));
+        }
+    }
     state
         .db
         .release_claimed_pull(body.pull_id)
@@ -1644,6 +1811,10 @@ pub async fn status(
         .db
         .recent_pulls(caller.id, 20)
         .into_iter()
+        // A member's delegated link is their download card, not a collector
+        // find: it already shows on the Downloads page and in the incoming
+        // band, and here it would read as a pick nobody made.
+        .filter(|row| row.2 != "import")
         .map(|(title, artist, kind, pull_state, at, reason, job)| {
             json!({
                 "title": title,
@@ -1760,6 +1931,55 @@ mod delegation_tests {
             crate::db::Db::PULL_OFFERED,
         )
         .unwrap()
+    }
+
+    /// A member's pasted link rides the offer channel as its own KIND of pull,
+    /// and settles as a finished import rather than an audition: no stamp,
+    /// no size against the collector's budget, and a failure only while a peer
+    /// actually holds it.
+    #[test]
+    fn a_members_link_is_its_own_kind_of_pull() {
+        let db = db("import-pull");
+        let _owner = db.create_user("collector-test", "x", true).unwrap();
+        let member = db.create_user("member", "x", false).unwrap();
+        // The collector's own pick was offered FIRST...
+        let pick = offer(&db, "deezer:track:1", "Some Pick", "Some Artist");
+        let link = "https://open.spotify.com/track/y";
+        let id = db
+            .record_pull(member, "import:job1", "import", "Spotify track", "", link, "", 0.0, crate::db::Db::PULL_OFFERED)
+            .unwrap();
+        // The settle pass tells a member's link from the collector's pick by
+        // what the offered row carries.
+        let rows = db.delegated_pulls();
+        let row = rows.iter().find(|r| r.0 == id).expect("offered");
+        assert_eq!((row.7.as_str(), row.8.as_str()), ("import:job1", "import"));
+        assert_eq!(db.pull_kind(id).as_deref(), Some("import"));
+        assert_eq!(db.pull_owner_kind(id), Some((member, "import:job1".to_string(), "import".to_string())));
+        // Nobody holds it yet: a failure report against a bare offer is noise.
+        assert!(!db.fail_taken_pull(id).unwrap(), "an offer nobody took cannot fail");
+        // ...and the person's link still goes first.
+        let (claimed, ..) = db.claim_offered_pull().expect("claimable");
+        assert_eq!(claimed, id, "a member's link is claimed before the collector's picks");
+        // An offer nobody took can be withdrawn; a taken one cannot.
+        assert!(!db.forget_offered_pull(id).unwrap(), "taken: not withdrawable");
+        assert!(db.forget_offered_pull(pick).unwrap(), "offered: withdrawn");
+        // A path reported against a taken import pull counts, and starts the
+        // quiet clock the settle pass reads.
+        assert_eq!(db.pull_last_path_at(id), 0);
+        db.record_pull_path(id, "Some/Where.flac").unwrap();
+        assert!(db.pull_last_path_at(id) > 0, "the clock started");
+        assert!(db.fail_taken_pull(id).unwrap(), "the peer that holds it can fail it");
+        assert!(!db.fail_taken_pull(id).unwrap(), "but only once");
+        // Retry re-arms the SAME row - the card's key is the pull's key.
+        let again = db
+            .record_pull(member, "import:job1", "import", "Spotify track", "", link, "", 0.0, crate::db::Db::PULL_OFFERED)
+            .unwrap();
+        assert_eq!(again, id);
+        assert_eq!(db.claim_offered_pull().map(|r| r.0), Some(id));
+        db.land_import_pull(id).unwrap();
+        assert!(db.delegated_pulls().iter().all(|r| r.0 != id), "landed rows are settled");
+        assert!(!db.fail_taken_pull(id).unwrap(), "a landed pull cannot fail");
+        assert_eq!(db.collector_ledger_bytes(), 0, "a member's import is not the collector's spend");
     }
 
     /// An offer goes to exactly ONE peer. Two boxes asking in the same second

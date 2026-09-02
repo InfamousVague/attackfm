@@ -325,24 +325,26 @@ async fn take_a_want(state: &Arc<AppState>, hub: &Hub) -> bool {
     note_claim("");
 
     let pull_id = pull["id"].as_i64().unwrap_or(0);
+    // A member's pasted link rides the same channel as the collector's picks
+    // (kind "import"). On THIS box either kind files exactly as a collector
+    // pick always has: a plain library row under the first admin, with no
+    // audition stamp (that stamp is the hub's land_pull against ITS pull row -
+    // this box records none) and nothing that ever reclaims it. The hub
+    // decides what the copy up there becomes.
+    let kind = pull["kind"].as_str().unwrap_or("track");
+    let via = if kind == "import" {
+        format!("a member of {}", host_of(&hub.url))
+    } else {
+        format!("the collector · for {}", host_of(&hub.url))
+    };
 
-    match crate::imports::enqueue_internal(
-        state,
-        url,
-        title,
-        artist,
-        "collector",
-        owner,
-        &format!("the collector · for {}", host_of(&hub.url)),
-    )
-    .await
-    {
+    match crate::imports::enqueue_internal(state, url, title, artist, "collector", owner, &via).await {
         Ok(job_id) => {
             // Written BEFORE anything can finish: the upload reports against
             // this mapping, and a job that beat the write would deliver a file
             // the hub could never tie to its pull.
             let _ = state.db.meta_set(&claim_key(&job_id), &pull_id.to_string());
-            eprintln!("[peersync] fetching {title} - {artist} for {}", host_of(&hub.url));
+            eprintln!("[peersync] fetching {title} - {artist} for {} ({kind})", host_of(&hub.url));
             true
         }
         /*
@@ -357,10 +359,19 @@ async fn take_a_want(state: &Arc<AppState>, hub: &Hub) -> bool {
          */
         Err(e) => {
             eprintln!("[peersync] could not take {title}: {e}");
+            // A member's link is FAILED with the reason, so their card says
+            // "library is at its quota" within the minute instead of waiting
+            // out a day; the collector's own picks are handed back to be
+            // offered again, as ever.
+            let (route, body) = if kind == "import" {
+                ("failed", serde_json::json!({ "pullId": pull_id, "error": e }))
+            } else {
+                ("release", serde_json::json!({ "pullId": pull_id }))
+            };
             let _ = http()
-                .post(format!("{}/api/collector/release", hub.url))
+                .post(format!("{}/api/collector/{route}", hub.url))
                 .bearer_auth(&hub.token)
-                .json(&serde_json::json!({ "pullId": pull_id }))
+                .json(&body)
                 .send()
                 .await;
             false
@@ -436,15 +447,34 @@ async fn report_delivery(state: &Arc<AppState>, hub: &'static Hub, job_id: &str,
     }
 }
 
+/// The other outcome: a claimed pull this box could not finish. Best effort,
+/// once - an older hub answers 404 and the pull simply ages out there as it
+/// always did.
+async fn report_failure(state: &Arc<AppState>, hub: &'static Hub, job_id: &str, error: &str) {
+    let Some(pull) = state
+        .db
+        .meta_get(&claim_key(job_id))
+        .and_then(|v| v.parse::<i64>().ok())
+    else {
+        return;
+    };
+    let _ = http()
+        .post(format!("{}/api/collector/failed", hub.url))
+        .bearer_auth(&hub.token)
+        .json(&serde_json::json!({ "pullId": pull, "error": error }))
+        .send()
+        .await;
+}
+
 /// A finished import owes the hub its files.
 ///
 /// Rows and a poke only. This is called while the job still holds its download
 /// slot and `PLAYLIST_SLOTS` is 1, so a megabyte-paced upload here would wedge
 /// every playlist import queued behind it.
 pub async fn on_job_finished(state: &Arc<AppState>, job_id: &str) {
-    if hub().is_none() {
+    let Some(hub) = hub() else {
         return;
-    }
+    };
     let job = {
         let jobs = state.imports.jobs.lock().await;
         // The card can have been removed between the flush and this call - the
@@ -454,6 +484,12 @@ pub async fn on_job_finished(state: &Arc<AppState>, job_id: &str) {
         };
         job.clone()
     };
+    if job.state == "error" {
+        // A claimed pull that failed here is told to the hub at once, so a
+        // member's card says why today rather than "queued" for a day.
+        report_failure(state, hub, job_id, job.error.as_deref().unwrap_or("download failed")).await;
+        return;
+    }
     if job.state != "done" {
         return;
     }
@@ -518,8 +554,8 @@ async fn cycle(state: &Arc<AppState>, hub: &'static Hub) -> bool {
         return true;
     }
 
-    let missing = match ask_missing(hub, &tracks).await {
-        Ok(missing) => missing,
+    let (missing, present) = match ask_missing(hub, &tracks).await {
+        Ok(answer) => answer,
         Err(reason) => {
             // Rows are left exactly as they were. A hub that cannot answer this
             // is a hub that cannot be pushed to either, and hammering it every
@@ -541,6 +577,13 @@ async fn cycle(state: &Arc<AppState>, hub: &'static Hub) -> bool {
             state
                 .db
                 .peer_sync_finish(&row.rel_path, "skipped", "the hub already has it");
+            // A song the hub held all along still counts as DELIVERED for the
+            // pull that asked for it - otherwise a member's link to a song
+            // already in the library waited a day and then read as failed.
+            // The hub names its own file; that is what the pull lands on.
+            if let Some(path) = present.get(&index) {
+                report_delivery(state, hub, &row.job_id, path).await;
+            }
         }
     }
     if to_push.is_empty() {
@@ -568,10 +611,12 @@ async fn cycle(state: &Arc<AppState>, hub: &'static Hub) -> bool {
 }
 
 /// Ask the hub which of these it lacks. `Err` names why nobody could be asked.
+/// What the hub is short of (indices into `tracks`), and for what it already
+/// holds, the path of its own copy - an older hub sends only the first.
 async fn ask_missing(
     hub: &'static Hub,
     tracks: &[serde_json::Value],
-) -> Result<std::collections::HashSet<usize>, String> {
+) -> Result<(std::collections::HashSet<usize>, std::collections::HashMap<usize, String>), String> {
     let reply = http()
         .post(format!("{}/api/library/missing", hub.url))
         .bearer_auth(&hub.token)
@@ -588,7 +633,7 @@ async fn ask_missing(
         .json()
         .await
         .map_err(|e| format!("the hub's answer could not be read ({e})"))?;
-    Ok(body
+    let missing = body
         .get("missing")
         .and_then(|m| m.as_array())
         .map(|ids| {
@@ -597,7 +642,21 @@ async fn ask_missing(
                 .map(|v| v as usize)
                 .collect()
         })
-        .unwrap_or_default())
+        .unwrap_or_default();
+    let present = body
+        .get("present")
+        .and_then(|p| p.as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    let index = row.get("index")?.as_u64()? as usize;
+                    let path = row.get("path")?.as_str()?.to_string();
+                    Some((index, path))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok((missing, present))
 }
 
 fn unauthorized_reason() -> String {

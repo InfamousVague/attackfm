@@ -2232,15 +2232,18 @@ impl Db {
     /// duration - for the sync precheck to match a client's local files
     /// against. Tags rather than hashes: the same song re-ripped should read
     /// as already here, and nobody hashes forty gigabytes to ask that.
-    pub fn sync_identities(&self) -> Vec<(String, String, String, String, Option<i64>)> {
+    pub fn sync_identities(
+        &self,
+    ) -> Vec<(String, String, String, String, Option<i64>, String)> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT title, artist, album_artist, album, duration_ms FROM tracks WHERE deleted = 0",
+            "SELECT title, artist, album_artist, album, duration_ms, rel_path
+             FROM tracks WHERE deleted = 0",
         ) else {
             return Vec::new();
         };
         let rows = stmt.query_map([], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
         });
         rows.map(|r| r.filter_map(Result::ok).collect())
             .unwrap_or_default()
@@ -8523,14 +8526,56 @@ impl Db {
         // signed-in caller, like the rest of the peer channel, and a report is
         // what decides which file becomes an audition - so it may not name a
         // pull that is merely on offer, already landed, or in the local queue.
-        self.lock().execute(
+        // A member's delegated link ('import') is the exception on the marker:
+        // it never becomes an audition, and a peer that took it, hit a snag and
+        // handed it back still owes the files it did push.
+        let conn = self.lock();
+        let n = conn.execute(
             "INSERT OR IGNORE INTO curator_pull_paths (pull_id, rel_path)
              SELECT ?1, ?2 WHERE EXISTS (
-               SELECT 1 FROM curator_pulls WHERE id = ?1 AND state = 'queued' AND job_id = ?3
+               SELECT 1 FROM curator_pulls WHERE id = ?1 AND state = 'queued'
+                 AND (job_id = ?3 OR kind = 'import')
              )",
             params![pull_id, rel_path, Self::PULL_TAKEN],
         )?;
+        if n > 0 {
+            // The clock the settle pass reads to know a many-file link has
+            // stopped arriving: an album lands one file per report.
+            conn.execute(
+                "INSERT INTO meta (k, v) VALUES (?1, ?2)
+                 ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+                params![Self::path_clock_key(pull_id), now_ms().to_string()],
+            )?;
+        }
         Ok(())
+    }
+
+    fn path_clock_key(pull_id: i64) -> String {
+        format!("pull.path_at.{pull_id}")
+    }
+
+    /// When a delegated pull last gained a file, in ms; 0 when it never has.
+    pub fn pull_last_path_at(&self, pull_id: i64) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT v FROM meta WHERE k = ?1",
+                params![Self::path_clock_key(pull_id)],
+                |r| r.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
+    }
+
+    /// Drop an offer nobody has taken. False when the row is gone or a peer
+    /// already holds it - then the download is happening and cannot be called
+    /// off from here.
+    pub fn forget_offered_pull(&self, pull_id: i64) -> rusqlite::Result<bool> {
+        let n = self.lock().execute(
+            "DELETE FROM curator_pulls WHERE id = ?1 AND state = 'queued' AND job_id = ?2",
+            params![pull_id, Self::PULL_OFFERED],
+        )?;
+        Ok(n > 0)
     }
 
     /// The live track ids a delegated pull was told about, in the order the
@@ -8575,16 +8620,19 @@ impl Db {
     pub const PULL_OFFERED: &str = "peer";
     pub const PULL_TAKEN: &str = "peer:taken";
 
-    /// Take one offered pull for a peer to download. At most one, oldest
-    /// first, and marked taken in the same lock so two peers asking at once
-    /// cannot both get it.
+    /// Take one offered pull for a peer to download. At most one, and marked
+    /// taken in the same lock so two peers asking at once cannot both get it.
+    /// A person's pasted link ('import') goes before the collector's own
+    /// speculative picks, oldest first within each - somebody is watching that
+    /// card. Taking restarts the row's clock: the day it is given to be
+    /// delivered runs from the claim, not from when it was first offered.
     pub fn claim_offered_pull(&self) -> Option<(i64, String, String, String)> {
         let conn = self.lock();
         let row = conn
             .query_row(
                 "SELECT id, url, title, artist FROM curator_pulls
                  WHERE state = 'queued' AND job_id = ?1
-                 ORDER BY created_at LIMIT 1",
+                 ORDER BY (kind = 'import') DESC, created_at LIMIT 1",
                 params![Self::PULL_OFFERED],
                 |r| {
                     Ok((
@@ -8597,8 +8645,8 @@ impl Db {
             )
             .ok()?;
         conn.execute(
-            "UPDATE curator_pulls SET job_id = ?1 WHERE id = ?2",
-            params![Self::PULL_TAKEN, row.0],
+            "UPDATE curator_pulls SET job_id = ?1, created_at = ?3 WHERE id = ?2",
+            params![Self::PULL_TAKEN, row.0, now_ms()],
         )
         .ok()?;
         // When a download box last showed up. With the downloading happening on
@@ -8614,11 +8662,15 @@ impl Db {
     }
 
     /// Pulls that are out with a peer: id, user, marker, url, title, artist,
-    /// and when they were raised.
-    pub fn delegated_pulls(&self) -> Vec<(i64, i64, String, String, String, String, i64)> {
+    /// when they were raised, the pull's key, and its kind ('track' for the
+    /// collector's own picks, 'import' for a member's delegated link).
+    pub fn delegated_pulls(
+        &self,
+    ) -> Vec<(i64, i64, String, String, String, String, i64, String, String)> {
         let conn = self.lock();
         let mut stmt = match conn.prepare(
-            "SELECT id, user_id, job_id, url, title, artist, created_at FROM curator_pulls
+            "SELECT id, user_id, job_id, url, title, artist, created_at, ext_id, kind
+             FROM curator_pulls
              WHERE state = 'queued' AND job_id IN (?1, ?2)",
         ) {
             Ok(s) => s,
@@ -8633,6 +8685,8 @@ impl Db {
                 r.get(4)?,
                 r.get(5)?,
                 r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
             ))
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
@@ -8699,6 +8753,53 @@ impl Db {
             params![pull_id],
         )?;
         Ok(())
+    }
+
+    /// A member's delegated link landed: the pull is settled without a stamp
+    /// (the files are a finished import, not an audition) and without a size,
+    /// so it never counts against the collector's budget - the member's disk
+    /// is the library's, the same as any import.
+    pub fn land_import_pull(&self, pull_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE curator_pulls SET state = 'landed', bytes = 0
+             WHERE id = ?1 AND state = 'queued'",
+            params![pull_id],
+        )?;
+        Ok(())
+    }
+
+    /// Fail a pull a peer holds, and only one it holds: a report against an
+    /// offer nobody took, or a pull already landed, changes nothing. True
+    /// when the row moved.
+    pub fn fail_taken_pull(&self, pull_id: i64) -> rusqlite::Result<bool> {
+        let n = self.lock().execute(
+            "UPDATE curator_pulls SET state = 'failed'
+             WHERE id = ?1 AND state = 'queued' AND job_id = ?2",
+            params![pull_id, Self::PULL_TAKEN],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// What a pull is: the collector's 'track'/'album', or a member's 'import'.
+    pub fn pull_kind(&self, pull_id: i64) -> Option<String> {
+        self.lock()
+            .query_row(
+                "SELECT kind FROM curator_pulls WHERE id = ?1",
+                params![pull_id],
+                |r| r.get(0),
+            )
+            .ok()
+    }
+
+    /// Whose pull, under what key, of what kind.
+    pub fn pull_owner_kind(&self, pull_id: i64) -> Option<(i64, String, String)> {
+        self.lock()
+            .query_row(
+                "SELECT user_id, ext_id, kind FROM curator_pulls WHERE id = ?1",
+                params![pull_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .ok()
     }
 
     /// Adoption: a completed listen or a heart on an auditioning track moves it

@@ -787,6 +787,7 @@ async fn main() {
         .route("/api/collector/claim", post(collector::claim))
         .route("/api/collector/claimed", post(collector::claimed))
         .route("/api/collector/release", post(collector::release))
+        .route("/api/collector/failed", post(collector::failed))
         .route("/api/peersync", get(peersync::status))
         .route("/api/peersync/retry", post(peersync::retry))
         .route("/api/curator/pulls/settings", post(collector::settings))

@@ -453,8 +453,9 @@ fn staged_audio_files(dir: &Path) -> Vec<PathBuf> {
 /// box. The fix for that is a setting in the app, not a package on the server.
 pub(crate) fn no_downloader_here() -> String {
     if imports_mode() == ImportsMode::CollectorOnly {
-        return "This server only downloads for its own collector \
-                (AFM_IMPORTS=collector). Pick the server that takes links, \
+        return "This server hands its downloads to another box, and none has \
+                answered it in the last week (AFM_IMPORTS=collector). Wait for \
+                that box to come back, or pick a server that takes links, \
                 under Settings, Downloads, \"Download on\"."
             .to_string();
     }
@@ -683,6 +684,44 @@ pub(crate) async fn fetch_embed_meta(link: &str, kind: &str) -> Option<EmbedMeta
 /// every song slot; a background single leaves the last one clear for a tap; a
 /// playlist takes the one playlist slot. Oldest-first within each group (`jobs`
 /// is insertion order). Returns (id, url, is_song).
+/// The `service` of a card whose download happens on ANOTHER box: this hub
+/// offered the link to its download peer and is waiting for the files to come
+/// back up. The local worker never picks one, and the settle pass in
+/// collector.rs is what finishes or fails it.
+pub(crate) const PEER_SERVICE: &str = "peer";
+
+/// The pull row a delegated card rides on - `curator_pulls` keyed by the job.
+pub(crate) fn delegated_ext_id(job_id: &str) -> String {
+    format!("import:{job_id}")
+}
+
+/// The other direction: the card an `import:` pull belongs to.
+pub(crate) fn delegated_job_id(ext_id: &str) -> Option<&str> {
+    ext_id.strip_prefix("import:")
+}
+
+/// A job this box downloads itself. A delegated one is somebody else's work:
+/// it holds no slot here, and the sweeps that stand down for "a person's
+/// import in flight" must not stand down for it.
+pub(crate) fn local(j: &ImportJob) -> bool {
+    j.service != PEER_SERVICE
+}
+
+/// What a delegated card expects to receive, as far as the link's own
+/// listing said: (artist, title) per song, and the total when it is known.
+/// Empty when the listing never arrived - then only the peer's reports count.
+pub(crate) async fn delegated_expectation(
+    state: &Arc<AppState>,
+    job_id: &str,
+) -> (Vec<(String, String)>, Option<u32>) {
+    let jobs = state.imports.jobs.lock().await;
+    let Some(j) = jobs.iter().find(|j| j.id == job_id) else {
+        return (Vec::new(), None);
+    };
+    let expected = j.items.iter().map(|i| (i.artist.clone(), i.title.clone())).collect();
+    (expected, j.total)
+}
+
 fn pick_runnable(
     jobs: &[ImportJob],
     songs: usize,
@@ -692,7 +731,7 @@ fn pick_runnable(
     if songs < SONG_SLOTS {
         if let Some(j) = jobs
             .iter()
-            .find(|j| j.state == "queued" && is_song_kind(&j.kind) && j.now_playing)
+            .find(|j| local(j) && j.state == "queued" && is_song_kind(&j.kind) && j.now_playing)
         {
             return Some(hit(j));
         }
@@ -700,13 +739,16 @@ fn pick_runnable(
     if songs < BG_SONG_SLOTS {
         if let Some(j) = jobs
             .iter()
-            .find(|j| j.state == "queued" && is_song_kind(&j.kind) && !j.now_playing)
+            .find(|j| local(j) && j.state == "queued" && is_song_kind(&j.kind) && !j.now_playing)
         {
             return Some(hit(j));
         }
     }
     if playlists < PLAYLIST_SLOTS {
-        if let Some(j) = jobs.iter().find(|j| j.state == "queued" && !is_song_kind(&j.kind)) {
+        if let Some(j) = jobs
+            .iter()
+            .find(|j| local(j) && j.state == "queued" && !is_song_kind(&j.kind))
+        {
             return Some(hit(j));
         }
     }
@@ -827,33 +869,7 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                 // owner. After the flush so the job reads as done to anyone
                 // the tap wakes, and only for real arrivals - a job that
                 // found every track already owned landed nothing.
-                {
-                    let job = {
-                        let jobs = run_state.imports.jobs.lock().await;
-                        jobs.iter().find(|j| j.id == id).cloned()
-                    };
-                    if let Some(j) = job {
-                        if j.owner > 0 && j.state == "done" && !j.track_ids.is_empty() {
-                            let n = j.track_ids.len();
-                            let body = if n == 1 {
-                                if j.title.is_empty() {
-                                    "1 song is in your library.".to_string()
-                                } else {
-                                    format!("\u{201c}{}\u{201d} is in your library.", j.title)
-                                }
-                            } else {
-                                format!("{n} songs are in your library.")
-                            };
-                            crate::push::notify(
-                                &run_state,
-                                j.owner,
-                                crate::push::Kind::Drops,
-                                "New music".into(),
-                                body,
-                            );
-                        }
-                    }
-                }
+                announce_landed(&run_state, &id).await;
                 // A playlist link asked for a PLAYLIST, not a pile of songs.
                 // Nothing here used to make one, so importing a Spotify list
                 // filed forty tracks in the library and left the listener to
@@ -902,7 +918,10 @@ async fn file_into_playlist(state: &Arc<AppState>, job_id: &str) {
         let Some(j) = jobs.iter().find(|j| j.id == job_id) else { return };
         j.clone()
     };
-    if job.kind != "playlist" || job.owner <= 0 || job.state != "done" {
+    // A list fetched for ANOTHER box (a peer's claim, origin "collector") is
+    // that box's to make; here it would be a playlist under whoever this
+    // box's owner is, for songs they never asked for.
+    if job.kind != "playlist" || job.owner <= 0 || job.state != "done" || job.origin == "collector" {
         return;
     }
     let mut ids: Vec<i64> = Vec::with_capacity(job.track_ids.len() + job.owned_track_ids.len());
@@ -1486,20 +1505,141 @@ pub async fn enqueue_internal(
     Ok(id)
 }
 
+/// The push a finished card owes its owner: "it is in your library", once,
+/// and only for a real arrival - a job that found every track already owned
+/// landed nothing. Shared by the local worker and a delegated landing.
+async fn announce_landed(state: &Arc<AppState>, id: &str) {
+    let job = {
+        let jobs = state.imports.jobs.lock().await;
+        jobs.iter().find(|j| j.id == id).cloned()
+    };
+    let Some(j) = job else {
+        return;
+    };
+    if j.owner > 0 && j.state == "done" && !j.track_ids.is_empty() {
+        let n = j.track_ids.len();
+        let body = if n == 1 {
+            if j.title.is_empty() {
+                "1 song is in your library.".to_string()
+            } else {
+                format!("\u{201c}{}\u{201d} is in your library.", j.title)
+            }
+        } else {
+            format!("{n} songs are in your library.")
+        };
+        crate::push::notify(state, j.owner, crate::push::Kind::Drops, "New music".into(), body);
+    }
+}
+
+/// A delegated card's files have arrived - the peer reported them and this
+/// box's own scan filed them - so finish the card the way the worker would
+/// have: done, counted, announced, and a playlist link made into a playlist.
+pub(crate) async fn land_delegated(state: &Arc<AppState>, job_id: &str, track_ids: &[i64]) {
+    let n = track_ids.len() as u32;
+    let ids = track_ids.to_vec();
+    state
+        .imports
+        .update(job_id, |j| {
+            j.state = "done".to_string();
+            j.error = None;
+            j.completed = n;
+            if j.total.map_or(true, |t| t < n) {
+                j.total = Some(n);
+            }
+            j.current_track = None;
+            j.current_index = None;
+            j.track_ids = ids.clone();
+        })
+        .await;
+    state.imports.flush().await;
+    let title = {
+        let jobs = state.imports.jobs.lock().await;
+        jobs.iter().find(|j| j.id == job_id).map(|j| j.title.clone()).unwrap_or_default()
+    };
+    let activity_key = format!("imports:{job_id}");
+    state.db.record_activity(crate::db::NewActivity {
+        source: "imports",
+        kind: "download",
+        state: "done",
+        key: &activity_key,
+        title: "Download finished",
+        body: &title,
+        track_id: track_ids.first().copied(),
+        detail: None,
+    });
+    announce_landed(state, job_id).await;
+    file_into_playlist(state, job_id).await;
+}
+
+/// A delegated card that will not be arriving: the peer said so, or nobody
+/// answered the offer at all. The card reads the reason and offers Retry.
+pub(crate) async fn fail_delegated(state: &Arc<AppState>, job_id: &str, why: &str) {
+    let why: String = why.chars().take(600).collect();
+    state
+        .imports
+        .update(job_id, |j| {
+            if j.state == "queued" {
+                j.state = "error".to_string();
+                j.error = Some(why.clone());
+            }
+        })
+        .await;
+    let why = why.as_str();
+    state.imports.flush().await;
+    let activity_key = format!("imports:{job_id}");
+    state.db.record_activity(crate::db::NewActivity {
+        source: "imports",
+        kind: "download",
+        state: "failed",
+        key: &activity_key,
+        title: "Download failed",
+        body: why,
+        track_id: None,
+        detail: None,
+    });
+}
+
+/// How recently a download box must have claimed work for a pasted link to
+/// be handed to it rather than refused. A week covers a home server that is
+/// off for a holiday; past that, a card that waits a day and fails is worse
+/// than the refusal that names the setting.
+const PEER_RECENT_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+
+/// Whether a download box has been answering this hub's offers lately. The
+/// clock is stamped by every claim (see `claim_offered_pull`).
+fn peer_listening(state: &AppState) -> bool {
+    state
+        .db
+        .meta_get("collector.peer_seen_at")
+        .and_then(|v| v.parse::<i64>().ok())
+        .map(|at| now_unix() * 1000 - at < PEER_RECENT_MS)
+        .unwrap_or(false)
+}
+
 /// `POST /api/imports` - enqueue a link. Returns the job as first created;
 /// richer metadata (real title, artwork, track count) lands moments later via
 /// a background embed fetch and shows up on the next list poll.
+///
+/// On a hub that does not download itself (`AFM_IMPORTS=collector`) the link
+/// is DELEGATED: the card is queued here with `service = "peer"`, an offer is
+/// raised on the same channel the collector's own pulls ride, the download box
+/// claims it, fetches it, ships the files back up, and the settle pass finishes
+/// the card when they land. This is what lets a member of the server - who has
+/// no second server to point "Download on" at - paste a link at all. The
+/// refusal stays for a hub nobody has been answering, because a card that
+/// waits a day and then fails is a worse answer than the setting's name.
 pub async fn enqueue(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(body): Json<EnqueueBody>,
 ) -> Result<Json<ImportJob>, ApiError> {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    // Refused HERE rather than by withholding the binary, which is the whole
+    // Decided HERE rather than by withholding the binary, which is the whole
     // point of the middle mode: `find_spotiflac` still answers, so the
     // collector keeps stocking the shelves and the search results keep marking
-    // songs fetchable - only the pasted-link door is shut.
-    if imports_mode() == ImportsMode::CollectorOnly {
+    // songs fetchable - only the pasted-link door changes what it does.
+    let delegate = imports_mode() == ImportsMode::CollectorOnly;
+    if delegate && !peer_listening(&state) {
         return Err((StatusCode::FORBIDDEN, no_downloader_here()));
     }
     let url = body.url.trim().to_string();
@@ -1522,9 +1662,12 @@ pub async fn enqueue(
         url: url.clone(),
         kind: kind.to_string(),
         title: default_title(kind),
-        service: "server".to_string(),
+        service: if delegate { PEER_SERVICE } else { "server" }.to_string(),
         quality: quality(),
-        total: None,
+        // A delegated single song is one file by definition, and the settle
+        // pass lands a card the moment its count is met - without this it
+        // would wait out the quiet window meant for albums.
+        total: if delegate && is_song_kind(kind) { Some(1) } else { None },
         completed: 0,
         skipped: 0,
         state: "queued".to_string(),
@@ -1554,12 +1697,42 @@ pub async fn enqueue(
     state.imports.flush().await;
     state.imports.notify.notify_one();
 
+    if delegate {
+        // The offer, keyed by the card so the landing can find its way back.
+        // `record_pull` is an upsert on (user, key), so a retry re-arms the
+        // same row rather than growing a second one.
+        let offered = state.db.record_pull(
+            caller.id,
+            &delegated_ext_id(&job.id),
+            "import",
+            &job.title,
+            "",
+            &url,
+            "",
+            0.0,
+            crate::db::Db::PULL_OFFERED,
+        );
+        if let Err(e) = offered {
+            // No offer means no download, ever: take the card back rather
+            // than leave it queued against nothing.
+            {
+                let mut jobs = state.imports.jobs.lock().await;
+                jobs.retain(|j| j.id != job.id);
+            }
+            state.imports.flush().await;
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("could not offer the link: {e}")));
+        }
+    }
+
     // Best-effort pretty metadata; the queue never waits on Spotify.
     let meta_state = Arc::clone(&state);
     let meta_id = job.id.clone();
     let meta_kind = kind.to_string();
+    let meta_owner = caller.id;
     tokio::spawn(async move {
         if let Some(meta) = fetch_embed_meta(&url, &meta_kind).await {
+            let expected: Vec<(String, String)> =
+                meta.items.iter().map(|i| (i.artist.clone(), i.title.clone())).collect();
             meta_state
                 .imports
                 .update(&meta_id, |j| {
@@ -1573,6 +1746,20 @@ pub async fn enqueue(
                 })
                 .await;
             meta_state.imports.flush().await;
+            // A delegated link whose every song is already here needs no
+            // download box at all: the card is finished on the spot and the
+            // offer withdrawn - while nobody has taken it. (Taken means the
+            // peer is fetching; its own presence report finishes the card.)
+            if delegate && !expected.is_empty() {
+                let held = crate::collector::held_track_ids(&meta_state, &expected);
+                if held.len() >= expected.len() {
+                    if let Ok(pull) = meta_state.db.pull_id_for(meta_owner, &delegated_ext_id(&meta_id)) {
+                        if meta_state.db.forget_offered_pull(pull).unwrap_or(false) {
+                            land_delegated(&meta_state, &meta_id, &held).await;
+                        }
+                    }
+                }
+            }
         }
     });
 
@@ -1589,6 +1776,29 @@ pub async fn cancel(
     if let Some(tx) = state.imports.cancels.lock().await.remove(&id) {
         let _ = tx.send(());
     } else {
+        // A delegated card's offer goes with it - while nobody has taken it.
+        // Once the peer holds it the download is happening on a box this one
+        // cannot reach, and the files WILL arrive; the honest answer is to say
+        // so and leave the card to finish, not to forget the pull and let the
+        // songs land with no card, owner or playlist.
+        let delegated = {
+            let jobs = state.imports.jobs.lock().await;
+            jobs.iter()
+                .find(|j| j.id == id && j.service == PEER_SERVICE && j.state == "queued")
+                .map(|j| j.owner)
+        };
+        if let Some(owner) = delegated {
+            if let Ok(pull) = state.db.pull_id_for(owner, &delegated_ext_id(&id)) {
+                if !state.db.forget_offered_pull(pull).unwrap_or(false)
+                    && state.db.pull_owner_kind(pull).is_some()
+                {
+                    return Err((
+                        StatusCode::CONFLICT,
+                        "The download box already took this one; it will arrive shortly.".into(),
+                    ));
+                }
+            }
+        }
         state
             .imports
             .update(&id, |j| {
@@ -1620,7 +1830,36 @@ pub async fn retry(
      * files the track into exactly the library the setting exists to protect.
      */
     if imports_mode() == ImportsMode::CollectorOnly {
-        return Err((StatusCode::FORBIDDEN, no_downloader_here()));
+        // A delegated card is retried the way it was raised: offered again.
+        // Anything else on a non-downloader is the detour above.
+        let card = {
+            let jobs = state.imports.jobs.lock().await;
+            jobs.iter().find(|j| j.id == id).cloned()
+        };
+        match card {
+            Some(j) if j.service == PEER_SERVICE && j.state == "error" => {
+                if !peer_listening(&state) {
+                    return Err((StatusCode::FORBIDDEN, no_downloader_here()));
+                }
+                state
+                    .db
+                    .record_pull(
+                        j.owner,
+                        &delegated_ext_id(&j.id),
+                        "import",
+                        &j.title,
+                        "",
+                        &j.url,
+                        "",
+                        0.0,
+                        crate::db::Db::PULL_OFFERED,
+                    )
+                    .map_err(|e| {
+                        (StatusCode::INTERNAL_SERVER_ERROR, format!("could not offer the link: {e}"))
+                    })?;
+            }
+            _ => return Err((StatusCode::FORBIDDEN, no_downloader_here())),
+        }
     }
     state
         .imports
@@ -1650,10 +1889,18 @@ pub async fn remove(
     auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     {
         let mut jobs = state.imports.jobs.lock().await;
-        jobs.retain(|j| j.id != id || j.state == "downloading");
+        // A delegated card still waiting is in flight too: dropping it would
+        // leave its offer live and its songs to land against nothing.
+        jobs.retain(|j| j.id != id || j.state == "downloading" || in_flight_elsewhere(j));
     }
     state.imports.flush().await;
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// A delegated card another box is (or may be) working on. Cancel is the
+/// door for those, because it knows to check whether the peer took it.
+fn in_flight_elsewhere(j: &ImportJob) -> bool {
+    j.service == PEER_SERVICE && j.state == "queued"
 }
 
 #[derive(Deserialize)]
@@ -1670,7 +1917,9 @@ pub async fn clear(
     auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     {
         let mut jobs = state.imports.jobs.lock().await;
-        jobs.retain(|j| j.state == "downloading" || !body.states.contains(&j.state));
+        jobs.retain(|j| {
+            j.state == "downloading" || in_flight_elsewhere(j) || !body.states.contains(&j.state)
+        });
     }
     state.imports.flush().await;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -1824,7 +2073,7 @@ mod failure_text_tests {
         }
         assert_eq!(
             no_downloader_here(),
-            "This server only downloads for its own collector (AFM_IMPORTS=collector). Pick the server that takes links, under Settings, Downloads, \"Download on\".",
+            "This server hands its downloads to another box, and none has answered it in the last week (AFM_IMPORTS=collector). Wait for that box to come back, or pick a server that takes links, under Settings, Downloads, \"Download on\".",
         );
 
         std::env::remove_var("AFM_IMPORTS");

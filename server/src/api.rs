@@ -254,55 +254,64 @@ pub async fn library_missing(
     auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
 
     use std::collections::HashMap as Map;
-    let mut have: Map<String, Vec<Option<i64>>> = Map::new();
+    // Each leg maps to the durations AND paths of the rows behind it: the
+    // reply names the file that stands in for a track already here, so a peer
+    // delivering a delegated link can report a song it did not have to push.
+    let mut have: Map<String, Vec<(Option<i64>, String)>> = Map::new();
     // A third, artist-less leg (title + album only) absorbs the ways two tag
     // readers join a multi-artist credit differently ("A & B" vs "A; B" vs
     // "A feat. B") - within one ALBUM, an identical title with a duration
     // within tolerance is the same recording, whoever the credit names.
-    let mut have_loose: Map<String, Vec<Option<i64>>> = Map::new();
-    for (title, artist, album_artist, album, duration_ms) in state.db.sync_identities() {
+    let mut have_loose: Map<String, Vec<(Option<i64>, String)>> = Map::new();
+    for (title, artist, album_artist, album, duration_ms, rel_path) in state.db.sync_identities() {
         have.entry(sync_key(&title, &artist, &album))
             .or_default()
-            .push(duration_ms);
+            .push((duration_ms, rel_path.clone()));
         if album_artist.trim().to_lowercase() != artist.trim().to_lowercase() {
             have.entry(sync_key(&title, &album_artist, &album))
                 .or_default()
-                .push(duration_ms);
+                .push((duration_ms, rel_path.clone()));
         }
         if !album.trim().is_empty() {
             have_loose
                 .entry(sync_key(&title, "", &album))
                 .or_default()
-                .push(duration_ms);
+                .push((duration_ms, rel_path));
         }
     }
 
-    let duration_close = |ours: &[Option<i64>], theirs: Option<f64>| -> bool {
-        let Some(theirs) = theirs else { return true };
-        ours.iter().any(|ms| match ms {
-            None => true,
-            Some(ms) => ((*ms as f64) / 1000.0 - theirs).abs() <= 3.0,
-        })
+    // The first row whose duration agrees (a row with no duration agrees
+    // with anything), as the path that stands in for the asked-about track.
+    let close = |ours: &[(Option<i64>, String)], theirs: Option<f64>| -> Option<String> {
+        ours.iter()
+            .find(|(ms, _)| match (ms, theirs) {
+                (None, _) | (_, None) => true,
+                (Some(ms), Some(theirs)) => ((*ms as f64) / 1000.0 - theirs).abs() <= 3.0,
+            })
+            .map(|(_, path)| path.clone())
     };
 
-    let missing: Vec<usize> = body
-        .tracks
-        .iter()
-        .enumerate()
-        .filter(|(_, t)| {
-            let exact = have
-                .get(&sync_key(&t.title, &t.artist, &t.album))
-                .is_some_and(|durs| duration_close(durs, t.duration));
-            let loose = !t.album.trim().is_empty()
-                && have_loose
-                    .get(&sync_key(&t.title, "", &t.album))
-                    .is_some_and(|durs| duration_close(durs, t.duration));
-            !(exact || loose)
-        })
-        .map(|(i, _)| i)
-        .collect();
+    let mut missing: Vec<usize> = Vec::new();
+    let mut present: Vec<serde_json::Value> = Vec::new();
+    for (i, t) in body.tracks.iter().enumerate() {
+        let exact = have
+            .get(&sync_key(&t.title, &t.artist, &t.album))
+            .and_then(|rows| close(rows, t.duration));
+        let loose = || {
+            if t.album.trim().is_empty() {
+                return None;
+            }
+            have_loose
+                .get(&sync_key(&t.title, "", &t.album))
+                .and_then(|rows| close(rows, t.duration))
+        };
+        match exact.or_else(loose) {
+            Some(path) => present.push(json!({ "index": i, "path": path })),
+            None => missing.push(i),
+        }
+    }
 
-    Ok(Json(json!({ "missing": missing })))
+    Ok(Json(json!({ "missing": missing, "present": present })))
 }
 
 /// `GET /api/scan` - how the indexer is doing.

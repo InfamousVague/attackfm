@@ -435,7 +435,7 @@ async fn fast_enrich_cycle(state: &Arc<AppState>) -> bool {
         .lock()
         .await
         .iter()
-        .any(|j| j.state == "queued" || j.state == "downloading")
+        .any(|j| crate::imports::local(j) && (j.state == "queued" || j.state == "downloading"))
     {
         return false;
     }
@@ -487,7 +487,7 @@ async fn fast_enrich_cycle(state: &Arc<AppState>) -> bool {
                 .lock()
                 .await
                 .iter()
-                .any(|j| j.state == "queued" || j.state == "downloading")
+                .any(|j| crate::imports::local(j) && (j.state == "queued" || j.state == "downloading"))
         {
             break;
         }
