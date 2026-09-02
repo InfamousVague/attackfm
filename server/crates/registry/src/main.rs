@@ -1127,6 +1127,90 @@ async fn playlist_share_cover(
         .into_response()
 }
 
+/// Thirty-second previews for the landing page, from the catalogue the app's
+/// own discovery already draws on (Deezer's public search - no key, no
+/// account). The registry holds no audio: a preview is a redirect to the
+/// catalogue's clip, looked up by artist and title once per song and kept
+/// in memory. None means "asked, nothing there" - not asked again until a
+/// restart, which is the right price for a song the catalogue lacks.
+type PreviewHit = Option<(String, String)>;
+static PREVIEWS: std::sync::OnceLock<Mutex<HashMap<String, PreviewHit>>> = std::sync::OnceLock::new();
+
+async fn deezer_preview(artist: &str, title: &str) -> PreviewHit {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .user_agent("AttackFM registry (playlist link previews)")
+        .build()
+        .ok()?;
+    let q = format!("artist:\"{}\" track:\"{}\"", artist.replace('"', ""), title.replace('"', ""));
+    let body = client
+        .get("https://api.deezer.com/search")
+        .query(&[("q", q.as_str()), ("limit", "1")])
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json::<Value>()
+        .await
+        .ok()?;
+    let hit = body.get("data")?.as_array()?.first()?;
+    let preview = hit.get("preview")?.as_str()?.trim().to_string();
+    if preview.is_empty() {
+        return None;
+    }
+    let cover = hit
+        .pointer("/album/cover_medium")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    Some((preview, cover))
+}
+
+/// The (preview, cover) for song `i` of a shared playlist, cached.
+async fn preview_for(state: &AppState, code: &str, i: usize) -> Option<PreviewHit> {
+    let s = state.db.playlist_share(code)?;
+    let tracks: Vec<Value> = serde_json::from_str(&s.tracks_json).unwrap_or_default();
+    let t = tracks.get(i)?;
+    let artist = t.get("artist").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    if artist.is_empty() || title.is_empty() {
+        return Some(None);
+    }
+    let key = format!("{code}:{i}");
+    let cache = PREVIEWS.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(hit) = cache.lock().unwrap().get(&key) {
+        return Some(hit.clone());
+    }
+    let hit = deezer_preview(&artist, &title).await;
+    cache.lock().unwrap().insert(key, hit.clone());
+    Some(hit)
+}
+
+/// `GET /p/{code}/preview/{i}` - redirects to a thirty-second clip of song i,
+/// or 404 when the catalogue has none. The page plays it in place.
+async fn playlist_preview(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path((code, i)): axum::extract::Path<(String, usize)>,
+) -> axum::response::Response {
+    match preview_for(&state, code.trim(), i).await {
+        Some(Some((preview, _))) => axum::response::Redirect::temporary(&preview).into_response(),
+        Some(None) => (StatusCode::NOT_FOUND, "no preview for that song").into_response(),
+        None => (StatusCode::NOT_FOUND, "no such song").into_response(),
+    }
+}
+
+/// `GET /p/{code}/art/{i}` - the catalogue's cover for song i, for the row.
+async fn playlist_row_art(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path((code, i)): axum::extract::Path<(String, usize)>,
+) -> axum::response::Response {
+    match preview_for(&state, code.trim(), i).await {
+        Some(Some((_, cover))) if !cover.is_empty() => axum::response::Redirect::temporary(&cover).into_response(),
+        _ => (StatusCode::NOT_FOUND, "no art").into_response(),
+    }
+}
+
 /// `GET /p/{code}` - what a playlist LINK opens: a page that unfurls in a
 /// messenger like a Spotify embed (title, cover, "N songs · shared by"),
 /// lists the songs, and hands the app the link by its own scheme.
@@ -1166,21 +1250,26 @@ async fn playlist_landing(
         .collect();
     let rows: String = tracks
         .iter()
-        .take(60)
         .enumerate()
         .map(|(i, t)| {
             let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("");
             let artist = t.get("artist").and_then(|v| v.as_str()).unwrap_or("");
             format!(
-                "<li><span class=\"n\">{}</span><span class=\"t\">{}</span><span class=\"a\">{}</span></li>",
-                i + 1,
-                esc(title),
-                esc(artist)
+                "<li class=\"row\" data-i=\"{i}\"><button type=\"button\" class=\"play\" aria-label=\"Preview {t}\">\
+                 <span class=\"n\">{n}</span><span class=\"glyph\" aria-hidden=\"true\"></span></button>\
+                 <span class=\"t\">{t}</span><span class=\"a\">{a}</span>\
+                 <span class=\"bar\" aria-hidden=\"true\"><span></span></span></li>",
+                n = i + 1,
+                t = esc(title),
+                a = esc(artist)
             )
         })
         .collect();
-    let more = if count > 60 { format!("<p class=\"hint\">and {} more</p>", count - 60) } else { String::new() };
     let description = if s.description.is_empty() { String::new() } else { format!("<p class=\"desc\">{}</p>", esc(&s.description)) };
+    let backdrop = covers
+        .first()
+        .map(|c| format!("<div class=\"backdrop\" style=\"background-image:url('{}')\"></div>", esc(c)))
+        .unwrap_or_default();
     Html(format!(
         r#"<!doctype html>
 <html lang="en"><head>
@@ -1196,38 +1285,124 @@ async fn playlist_landing(
 <meta name="description" content="{summary}">
 <style>
   :root {{ color-scheme: dark; }}
-  body {{ margin: 0; min-height: 100dvh; padding: 1.5rem; background: #0b0b0d; color: #f2f2f4;
+  * {{ box-sizing: border-box; }}
+  html, body {{ height: 100%; }}
+  body {{ margin: 0; background: #0b0b0d; color: #f2f2f4; overflow: hidden;
     font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }}
-  main {{ max-width: 30rem; margin: 0 auto; }}
-  .mosaic {{ display: grid; grid-template-columns: 1fr 1fr; gap: 2px; width: 12rem; aspect-ratio: 1;
-    border-radius: 1rem; overflow: hidden; background: #17171b; margin: 0 auto 1.25rem; }}
-  .mosaic img {{ width: 100%; height: 100%; object-fit: cover; }}
+  .backdrop {{ position: fixed; inset: -10%; background-size: cover; background-position: center;
+    filter: blur(60px) saturate(1.3) brightness(0.45); transform: scale(1.1); }}
+  .stage {{ position: fixed; inset: 0; display: grid; place-items: center;
+    padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)); }}
+  .card {{ position: relative; width: min(100%, 30rem); max-height: min(88dvh, 52rem);
+    display: flex; flex-direction: column; border-radius: 1.5rem; overflow: hidden;
+    background: rgba(20, 20, 24, 0.86); backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4); border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6); }}
+  .head {{ flex: none; padding: 1.5rem 1.5rem 1rem; text-align: center; }}
+  .mosaic {{ display: grid; grid-template-columns: 1fr 1fr; gap: 2px; width: 9.5rem; aspect-ratio: 1;
+    border-radius: 1rem; overflow: hidden; background: #17171b; margin: 0 auto 1rem;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.5); }}
+  .mosaic img {{ width: 100%; height: 100%; object-fit: cover; display: block; }}
   .mosaic img:only-child {{ grid-column: 1 / -1; grid-row: 1 / -1; }}
-  h1 {{ font-size: 1.5rem; margin: 0; text-align: center; }}
-  p {{ color: #a8a8b3; margin: 0.25rem 0 0; text-align: center; }}
-  .desc {{ margin-top: 0.75rem; }}
-  .open {{ display: block; margin: 1.5rem 0 0.5rem; padding: 0.9rem 1.25rem; text-align: center;
-    border-radius: 999px; background: #f0356d; color: #fff; font-weight: 600; text-decoration: none; }}
-  .get {{ display: block; text-align: center; color: #a8a8b3; font-size: 0.9rem; }}
-  ol {{ list-style: none; margin: 1.75rem 0 0; padding: 0; }}
-  li {{ display: grid; grid-template-columns: 2rem 1fr; column-gap: 0.5rem; padding: 0.55rem 0;
-    border-bottom: 1px solid #1d1d22; }}
-  .n {{ color: #6b6b75; font-variant-numeric: tabular-nums; grid-row: 1 / 3; }}
-  .t {{ font-weight: 600; }}
-  .a {{ color: #a8a8b3; font-size: 0.9rem; }}
-  .hint {{ font-size: 0.85rem; margin-top: 1rem; }}
+  h1 {{ font-size: 1.35rem; margin: 0; line-height: 1.25; overflow-wrap: anywhere; }}
+  .head p {{ color: #a8a8b3; margin: 0.25rem 0 0; font-size: 0.9rem; }}
+  .desc {{ margin-top: 0.5rem !important; }}
+  .actions {{ display: flex; gap: 0.5rem; margin-top: 1rem; }}
+  .open {{ flex: 1; padding: 0.75rem 1rem; text-align: center; border-radius: 999px;
+    background: #f0356d; color: #fff; font-weight: 600; text-decoration: none; font-size: 0.95rem; }}
+  .get {{ flex: 1; padding: 0.75rem 1rem; text-align: center; border-radius: 999px; color: #f2f2f4;
+    background: rgba(255,255,255,0.08); text-decoration: none; font-size: 0.95rem; }}
+  .list {{ flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    border-top: 1px solid rgba(255,255,255,0.08); padding: 0.25rem 0.75rem 1rem; }}
+  ol {{ list-style: none; margin: 0; padding: 0; }}
+  .row {{ position: relative; display: grid; grid-template-columns: 2.5rem 1fr; column-gap: 0.6rem;
+    align-items: center; padding: 0.5rem 0.25rem; border-radius: 0.75rem; }}
+  .row[data-on] {{ background: rgba(240,53,109,0.14); }}
+  .play {{ grid-row: 1 / 3; width: 2.5rem; height: 2.5rem; border: none; border-radius: 999px;
+    background: rgba(255,255,255,0.06); color: #f2f2f4; display: grid; place-items: center;
+    cursor: pointer; padding: 0; }}
+  .play .n {{ color: #8e8e99; font-variant-numeric: tabular-nums; font-size: 0.85rem; }}
+  .play .glyph {{ display: none; width: 0; height: 0; }}
+  .row:hover .play .n, .row[data-on] .play .n, .row[data-busy] .play .n {{ display: none; }}
+  .row:hover .play .glyph, .row[data-on] .play .glyph, .row[data-busy] .play .glyph {{ display: block;
+    border-left: 12px solid #fff; border-top: 7px solid transparent; border-bottom: 7px solid transparent; margin-left: 3px; }}
+  .row[data-on] .play {{ background: #f0356d; }}
+  .row[data-on] .play .glyph {{ border: none; width: 12px; height: 13px;
+    background: linear-gradient(90deg, #fff 0 4px, transparent 4px 8px, #fff 8px 12px); margin: 0; }}
+  .row[data-busy] .play .glyph {{ border-color: transparent; border-left-color: rgba(255,255,255,0.5); }}
+  .row[data-none] {{ opacity: 0.55; }}
+  .t {{ font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .a {{ color: #a8a8b3; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .bar {{ grid-column: 2; height: 2px; margin-top: 0.3rem; border-radius: 2px; background: rgba(255,255,255,0.08);
+    display: none; }}
+  .row[data-on] .bar {{ display: block; }}
+  .bar > span {{ display: block; height: 100%; width: 0; border-radius: 2px; background: #f0356d; }}
+  .foot {{ color: #6b6b75; font-size: 0.75rem; text-align: center; padding: 0.75rem 0 0; }}
+  @media (prefers-reduced-motion: reduce) {{ .backdrop {{ transform: none; }} }}
 </style>
-</head><body><main>
-{mosaic_block}
-<h1>{name}</h1>
-<p>{summary}</p>
-{description}
-<a class="open" href="attackfm://p/{safe}">Open in AttackFM</a>
-<a class="get" href="https://attack.fm">No app yet? Get AttackFM, then open this link again.</a>
-<ol>{rows}</ol>
-{more}
-</main></body></html>"#,
+</head><body>
+{backdrop}
+<div class="stage"><main class="card">
+  <div class="head">
+    {mosaic_block}
+    <h1>{name}</h1>
+    <p>{summary}</p>
+    {description}
+    <div class="actions">
+      <a class="open" href="attackfm://p/{safe}">Open in AttackFM</a>
+      <a class="get" href="https://attack.fm">Get the app</a>
+    </div>
+  </div>
+  <div class="list">
+    <ol id="rows">{rows}</ol>
+    <p class="foot">Tap a song for a thirty-second preview · full songs play in AttackFM</p>
+  </div>
+</main></div>
+<audio id="player" preload="none"></audio>
+<script>
+(function () {{
+  var code = {code_json};
+  var audio = document.getElementById('player');
+  var rows = document.getElementById('rows');
+  var current = null;
+  function row(i) {{ return rows.querySelector('[data-i="' + i + '"]'); }}
+  function clear() {{
+    if (current !== null) {{ var r = row(current); if (r) {{ r.removeAttribute('data-on'); r.removeAttribute('data-busy'); }} }}
+    current = null;
+  }}
+  function stop() {{ audio.pause(); audio.removeAttribute('src'); audio.load(); clear(); }}
+  function play(i) {{
+    var r = row(i); if (!r || r.hasAttribute('data-none')) return;
+    if (current === i) {{ stop(); return; }}
+    stop(); current = i; r.setAttribute('data-busy', '');
+    // The registry answers with a redirect to the catalogue's clip, or 404.
+    fetch('/p/' + code + '/preview/' + i, {{ method: 'HEAD' }}).then(function (res) {{
+      if (current !== i) return;
+      if (!res.ok) {{ r.removeAttribute('data-busy'); r.setAttribute('data-none', ''); current = null; return; }}
+      audio.src = res.url; audio.play().then(function () {{
+        r.removeAttribute('data-busy'); r.setAttribute('data-on', '');
+      }}).catch(function () {{ r.removeAttribute('data-busy'); current = null; }});
+    }}).catch(function () {{ r.removeAttribute('data-busy'); current = null; }});
+  }}
+  rows.addEventListener('click', function (e) {{
+    var li = e.target.closest('.row'); if (!li) return;
+    play(parseInt(li.getAttribute('data-i'), 10));
+  }});
+  audio.addEventListener('timeupdate', function () {{
+    if (current === null || !audio.duration) return;
+    var bar = row(current).querySelector('.bar > span');
+    if (bar) bar.style.width = (100 * audio.currentTime / audio.duration) + '%';
+  }});
+  audio.addEventListener('ended', function () {{
+    var next = current === null ? null : current + 1;
+    clear();
+    if (next !== null && row(next)) play(next);
+  }});
+}})();
+</script>
+</body></html>"#,
         name = esc(&s.name),
+        code_json = serde_json::to_string(&s.code).unwrap_or_else(|_| "\"\"".into()),
         mosaic_block = if mosaic.is_empty() { String::new() } else { format!("<div class=\"mosaic\">{mosaic}</div>") },
     ))
 }
@@ -1724,6 +1899,8 @@ async fn main() {
         .route("/v1/playlists/share/{code}", get(playlist_share_json))
         .route("/p/{code}", get(playlist_landing))
         .route("/p/{code}/cover.jpg", get(playlist_share_cover))
+        .route("/p/{code}/preview/{i}", get(playlist_preview))
+        .route("/p/{code}/art/{i}", get(playlist_row_art))
         .route("/v1/profile", axum::routing::put(profile_put))
         .route("/v1/profile/{handle}", get(profile_get))
         .route("/v1/shares", get(shares).post(send_share))

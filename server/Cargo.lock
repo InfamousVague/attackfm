@@ -70,6 +70,7 @@ dependencies = [
  "axum",
  "base64",
  "rand 0.8.7",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
