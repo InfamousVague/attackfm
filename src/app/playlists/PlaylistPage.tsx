@@ -487,9 +487,9 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               {/* Sharing, for the owner of a list on a server that can: the
                   provider leaves `share` out everywhere else. A guest gets the
                   door out instead. */}
-              {isOwner && share && playlist.role !== undefined && (
+              {share && playlist.role !== undefined && !playlist.origin && (
                 <MenuItem icon={<Users size={15} />} onSelect={() => setSharing(true)}>
-                  Share with friends…
+                  {isOwner ? 'Share with friends…' : 'Who has this…'}
                 </MenuItem>
               )}
               {!isOwner && leave && !playlist.origin && (
@@ -557,7 +557,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
         {/* `role` present is the sign this list came from a server that can
             share; against an older hub the item would open a drawer whose
             every tap went nowhere. */}
-        {isOwner && share && playlist.role !== undefined && (
+        {share && playlist.role !== undefined && !playlist.origin && (
           <SharePlaylistDrawer playlist={playlist} open={sharing} onClose={() => setSharing(false)} />
         )}
       </header>

@@ -1,6 +1,6 @@
 import { Button, Field, IconButton, Select, Text, useToast } from '@glacier/react';
 import { GlassSheet } from '../ux/GlassSheet.tsx';
-import { Check, Copy, Download, RefreshCw, Share2 } from '@glacier/icons';
+import { Check, Copy, Download, Share2 } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -168,7 +168,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
   /*
    * Mint the invite when the drawer opens, once - then reuse it for as long as
    * this page lives, so opening the drawer twice does not litter the registry
-   * with codes. "New code" below is the deliberate way to mint another. Any
+   * with codes. Changing the lifetime or the uses is what mints another. Any
    * member may mint; the server checks the code with the registry when it is
    * spent, so a code on a picture is no more power than a code in a message.
    */
@@ -405,12 +405,6 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
               {saving ? 'Saving…' : 'Save image'}
             </Button>
           </div>
-        )}
-        {identity && invite && (
-          <Button variant="ghost" size="sm" onClick={() => void mint()} disabled={minting}>
-            <RefreshCw size={14} />
-            {minting ? 'Making…' : 'New code'}
-          </Button>
         )}
       </GlassSheet>
     </>

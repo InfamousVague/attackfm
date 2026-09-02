@@ -38,8 +38,38 @@ export function GlassSheet({
 }) {
   const sheet = useRef<HTMLDivElement | null>(null);
   const [drag, setDrag] = useState(0);
+  const dragRef = useRef(0);
   const start = useRef<{ y: number; t: number; on: boolean } | null>(null);
   useSystemBack(open, onClose);
+
+  /*
+   * Why the pull needs a native touchmove listener as well as pointer events.
+   *
+   * On a phone the sheet's body scrolls, so the browser treats a vertical
+   * finger as a candidate scroll. The moment it decides that is what it is -
+   * a few pixels in - it takes the gesture for itself and fires pointercancel,
+   * and the pull above stops at nothing: the sheet twitched a few pixels and
+   * sprang back, which read as "you can't swipe to close". The only way to
+   * keep the gesture is to preventDefault the touchmove while it is a pull
+   * (content at its top, finger going down), and React's own onTouchMove is
+   * passive since 17, so preventDefault there is ignored - hence a listener
+   * attached by hand with passive: false. Upward moves after a pull has
+   * begun are prevented too, so a finger that wavers cannot hand the sheet
+   * to the scroller mid-gesture.
+   */
+  useEffect(() => {
+    const el = sheet.current;
+    if (!open || !el) return;
+    const onTouchMove = (e: TouchEvent) => {
+      const s = start.current;
+      const touch = e.touches[0];
+      if (!s || !s.on || !touch) return;
+      const dy = touch.clientY - s.y;
+      if (dy > 0 || dragRef.current > 0) e.preventDefault();
+    };
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => el.removeEventListener('touchmove', onTouchMove);
+  }, [open]);
 
   // Escape, like every dialog.
   useEffect(() => {
@@ -53,7 +83,10 @@ export function GlassSheet({
 
   // Fresh each open: a sheet that closed mid-drag must not reopen displaced.
   useEffect(() => {
-    if (!open) setDrag(0);
+    if (!open) {
+      setDrag(0);
+      dragRef.current = 0;
+    }
   }, [open]);
 
   if (!open) return null;
@@ -71,19 +104,21 @@ export function GlassSheet({
   const onPointerMove = (e: React.PointerEvent) => {
     const s = start.current;
     if (!s || !s.on) return;
-    const dy = e.clientY - s.y;
-    if (dy > 0) {
-      setDrag(dy);
-      sheet.current?.setAttribute('data-dragging', '');
-    }
+    const dy = Math.max(0, e.clientY - s.y);
+    dragRef.current = dy;
+    setDrag(dy);
+    if (dy > 0) sheet.current?.setAttribute('data-dragging', '');
   };
   const onPointerUp = (e: React.PointerEvent) => {
     const s = start.current;
     start.current = null;
     sheet.current?.removeAttribute('data-dragging');
     if (!s || !s.on) return;
-    const dy = e.clientY - s.y;
+    // A cancel (the browser took the gesture after all) still judges by how
+    // far the sheet had come, not by a clientY the cancel may not carry.
+    const dy = e.type === 'pointercancel' ? dragRef.current : e.clientY - s.y;
     const v = dy / Math.max(1, performance.now() - s.t);
+    dragRef.current = 0;
     if (dy > LET_GO_PX || (dy > 24 && v > FLICK)) onClose();
     else setDrag(0);
   };

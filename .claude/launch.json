@@ -18,6 +18,19 @@
         "site:dev"
       ],
       "port": 5250
+    },
+    {
+      "name": "attackfm-web-alt",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5247",
+        "--strictPort"
+      ],
+      "port": 5247
     }
   ]
 }

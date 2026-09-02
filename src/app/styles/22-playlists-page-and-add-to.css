@@ -1233,11 +1233,59 @@
 }
 
 /*
- * The share drawer: one row per friend, three seats to the right. The seat
- * that is theirs is solid; the rest are ghosts, so the row reads as a state
- * and not as three equal buttons.
+ * The share sheet (SharePlaylist.tsx): the same glass sheet as the invite
+ * card, three rooms inside it - who is in, friends who could be, friends who
+ * cannot be (they are on another server). Each room is a titled list; the
+ * seat a member holds is the solid button, the rest are ghosts, so a row
+ * reads as a state and not as three equal buttons.
  */
-.sharePlaylist__list {
+.shareSheet .glassSheet__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+.shareSheet__title {
+  margin: 0;
+  font-size: var(--glacier-font-size-lg, 1.125rem);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.shareSheet__desc {
+  margin: calc(var(--glacier-space-3) * -1) 0 0;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+}
+
+.shareSheet__room {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.shareSheet__h {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+.shareSheet__count {
+  font-variant-numeric: tabular-nums;
+  padding: 0 0.5em;
+  border-radius: 999px;
+  background: var(--glacier-surface-sunken, rgba(127, 127, 127, 0.15));
+  color: var(--glacier-text);
+  letter-spacing: 0;
+}
+
+.shareSheet__list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1245,7 +1293,7 @@
   flex-direction: column;
 }
 
-.sharePlaylist__row {
+.shareSheet__row {
   display: flex;
   align-items: center;
   gap: var(--glacier-space-3);
@@ -1253,11 +1301,15 @@
   border-block-end: 1px solid var(--glacier-border-subtle, var(--glacier-border));
 }
 
-.sharePlaylist__row:last-child {
+.shareSheet__row:last-child {
   border-block-end: none;
 }
 
-.sharePlaylist__name {
+.shareSheet__row--away {
+  opacity: 0.6;
+}
+
+.shareSheet__name {
   flex: 1;
   min-inline-size: 0;
   overflow: hidden;
@@ -1266,12 +1318,34 @@
   font-weight: var(--glacier-font-weight-medium);
 }
 
-.sharePlaylist__seats {
+.shareSheet__seats {
   display: inline-flex;
+  align-items: center;
   gap: var(--glacier-space-1);
   flex: none;
 }
 
-.sharePlaylist__note {
-  padding-block: var(--glacier-space-3);
+.shareSheet__pill {
+  flex: none;
+  font-size: var(--glacier-font-size-xs);
+  padding: 0.15em 0.6em;
+  border-radius: 999px;
+  border: 1px solid var(--glacier-border-subtle, var(--glacier-border));
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+}
+
+.shareSheet__note,
+.shareSheet__empty {
+  padding-block: var(--glacier-space-2);
+}
+
+.shareSheet__hint {
+  padding-block-start: var(--glacier-space-1);
+}
+
+.shareSheet__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding-block-start: var(--glacier-space-2);
 }

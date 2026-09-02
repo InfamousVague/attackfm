@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.34
+
+- Sharing a playlist has its own sheet now: who is in and the seat they hold, friends on this server one tap from a seat, and friends who are on another server listed honestly as out of reach. Members open the same sheet to see who else has it, and the door out.
+- The invite sheet lost its "New code" button - changing the lifetime or uses already makes a fresh one.
+- Every glass sheet can be pulled shut again on a phone: the browser used to claim the swipe as a scroll a few pixels in.
+
 ## 0.5.33
 
 - The Invite a friend card is tidier: how long the code lasts and how many

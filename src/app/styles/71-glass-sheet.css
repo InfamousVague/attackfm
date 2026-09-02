@@ -60,6 +60,8 @@
   background: transparent;
   border: none;
   cursor: grab;
+  /* The pill is never a scroller: the browser must not claim a finger on it. */
+  touch-action: none;
 }
 
 .glassSheet__handle > span {
