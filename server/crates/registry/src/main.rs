@@ -1256,9 +1256,10 @@ async fn playlist_landing(
             let artist = t.get("artist").and_then(|v| v.as_str()).unwrap_or("");
             format!(
                 "<li class=\"row\" data-i=\"{i}\"><button type=\"button\" class=\"play\" aria-label=\"Preview {t}\">\
-                 <span class=\"n\">{n}</span><span class=\"glyph\" aria-hidden=\"true\"></span></button>\
-                 <span class=\"t\">{t}</span><span class=\"a\">{a}</span>\
-                 <span class=\"bar\" aria-hidden=\"true\"><span></span></span></li>",
+                 <span class=\"n\">{n}</span>\
+                 <svg class=\"ic-play\" aria-hidden=\"true\"><use href=\"#i-play\"/></svg>\
+                 <svg class=\"ic-pause\" aria-hidden=\"true\"><use href=\"#i-pause\"/></svg></button>\
+                 <span class=\"t\">{t}</span><span class=\"a\">{a}</span></li>",
                 n = i + 1,
                 t = esc(title),
                 a = esc(artist)
@@ -1271,7 +1272,7 @@ async fn playlist_landing(
         .map(|c| format!("<div class=\"backdrop\" style=\"background-image:url('{}')\"></div>", esc(c)))
         .unwrap_or_default();
     Html(format!(
-        r#"<!doctype html>
+        r##"<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -1316,32 +1317,68 @@ async fn playlist_landing(
     border-top: 1px solid rgba(255,255,255,0.08); padding: 0.25rem 0.75rem 1rem; }}
   ol {{ list-style: none; margin: 0; padding: 0; }}
   .row {{ position: relative; display: grid; grid-template-columns: 2.5rem 1fr; column-gap: 0.6rem;
-    align-items: center; padding: 0.5rem 0.25rem; border-radius: 0.75rem; }}
+    align-items: center; padding: 0.5rem 0.25rem; border-radius: 0.75rem; cursor: pointer; }}
   .row[data-on] {{ background: rgba(240,53,109,0.14); }}
+  /* The row's button is the app's own play button: a solid accent circle
+     with a filled glyph, 2.5rem, the number resting on it until it is asked. */
   .play {{ grid-row: 1 / 3; width: 2.5rem; height: 2.5rem; border: none; border-radius: 999px;
     background: rgba(255,255,255,0.06); color: #f2f2f4; display: grid; place-items: center;
     cursor: pointer; padding: 0; }}
   .play .n {{ color: #8e8e99; font-variant-numeric: tabular-nums; font-size: 0.85rem; }}
-  .play .glyph {{ display: none; width: 0; height: 0; }}
+  .play svg {{ display: none; width: 18px; height: 18px; }}
   .row:hover .play .n, .row[data-on] .play .n, .row[data-busy] .play .n {{ display: none; }}
-  .row:hover .play .glyph, .row[data-on] .play .glyph, .row[data-busy] .play .glyph {{ display: block;
-    border-left: 12px solid #fff; border-top: 7px solid transparent; border-bottom: 7px solid transparent; margin-left: 3px; }}
-  .row[data-on] .play {{ background: #f0356d; }}
-  .row[data-on] .play .glyph {{ border: none; width: 12px; height: 13px;
-    background: linear-gradient(90deg, #fff 0 4px, transparent 4px 8px, #fff 8px 12px); margin: 0; }}
-  .row[data-busy] .play .glyph {{ border-color: transparent; border-left-color: rgba(255,255,255,0.5); }}
-  .row[data-none] {{ opacity: 0.55; }}
+  .row:hover .play .ic-play, .row[data-busy] .play .ic-play {{ display: block; }}
+  .row[data-on] .play {{ background: #f0356d; color: #0b0b0d; }}
+  .row[data-on] .play .ic-pause {{ display: block; }}
+  .row[data-on] .play .ic-play {{ display: none; }}
+  .row[data-busy] .play {{ color: rgba(255,255,255,0.5); }}
+  .row[data-none] {{ opacity: 0.55; cursor: default; }}
   .t {{ font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
   .a {{ color: #a8a8b3; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-  .bar {{ grid-column: 2; height: 2px; margin-top: 0.3rem; border-radius: 2px; background: rgba(255,255,255,0.08);
-    display: none; }}
-  .row[data-on] .bar {{ display: block; }}
-  .bar > span {{ display: block; height: 100%; width: 0; border-radius: 2px; background: #f0356d; }}
   .foot {{ color: #6b6b75; font-size: 0.75rem; text-align: center; padding: 0.75rem 0 0; }}
+
+  /* The bottom of the card: the app's compact player. Seek line (the swell),
+     elapsed and remaining, then previous · play · next in the app's shapes. */
+  .now {{ flex: none; padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(255,255,255,0.08); background: rgba(12,12,15,0.7);
+    display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 0.75rem; align-items: center; }}
+  .nowMeta {{ grid-column: 1 / -1; display: flex; align-items: center; gap: 0.6rem; min-width: 0; margin-bottom: 0.4rem; }}
+  .nowArt {{ width: 2.5rem; height: 2.5rem; border-radius: 0.5rem; background: #24242b; object-fit: cover; flex: none; }}
+  .nowArt[hidden] {{ display: none; }}
+  .nowWho {{ min-width: 0; display: flex; flex-direction: column; }}
+  .nowTitle {{ font-weight: 600; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .nowArtist {{ color: #a8a8b3; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .seekWrap {{ min-width: 0; }}
+  .seek {{ position: relative; height: 2.25rem; cursor: pointer; touch-action: none; }}
+  .seek svg {{ position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }}
+  .seek .ahead {{ fill: none; stroke: rgba(255,255,255,0.22); stroke-width: 3; stroke-linecap: round; }}
+  .seek .played {{ fill: none; stroke: #f0356d; stroke-width: 3; stroke-linecap: round; }}
+  .seek .playhead {{ position: absolute; top: 0; bottom: 0; width: 2px; background: #f0356d; border-radius: 999px;
+    transform: translateX(-50%); left: 0; }}
+  .seek[data-scrubbing] .playhead {{ box-shadow: 0 0 0 3px rgba(240,53,109,0.35); }}
+  .times {{ display: flex; justify-content: space-between; font-size: 0.8rem; color: #a8a8b3;
+    font-variant-numeric: tabular-nums; margin-top: 0.15rem; }}
+  .transport {{ display: flex; align-items: center; gap: 0.25rem; }}
+  .transport button {{ border: none; background: transparent; color: #f2f2f4; width: 2.25rem; height: 2.25rem;
+    border-radius: 999px; display: grid; place-items: center; cursor: pointer; padding: 0; }}
+  .transport button svg {{ width: 20px; height: 20px; }}
+  .transport .big {{ width: 2.5rem; height: 2.5rem; background: #f0356d; color: #0b0b0d; }}
+  .transport .big svg {{ width: 22px; height: 22px; }}
+  .transport .big .ic-pause {{ display: none; }}
+  .now[data-playing] .transport .big .ic-pause {{ display: block; }}
+  .now[data-playing] .transport .big .ic-play {{ display: none; }}
+  .now[data-idle] .transport button, .now[data-idle] .seek {{ opacity: 0.45; pointer-events: none; }}
+  .now[data-idle] .transport .big {{ opacity: 1; pointer-events: auto; }}
   @media (prefers-reduced-motion: reduce) {{ .backdrop {{ transform: none; }} }}
 </style>
 </head><body>
 {backdrop}
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4.5v15a1 1 0 0 0 1.52.86l12.3-7.5a1 1 0 0 0 0-1.72L7.52 3.64A1 1 0 0 0 6 4.5z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="5" y="4" width="5" height="16" rx="1.5"/><rect x="14" y="4" width="5" height="16" rx="1.5"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 5.5v13a1 1 0 0 1-1.57.82L8 13.2V18a1 1 0 0 1-2 0V6a1 1 0 0 1 2 0v4.8l9.43-6.12A1 1 0 0 1 19 5.5z"/></symbol>
+  <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M5 5.5v13a1 1 0 0 0 1.57.82L16 13.2V18a1 1 0 0 0 2 0V6a1 1 0 0 0-2 0v4.8L6.57 4.68A1 1 0 0 0 5 5.5z"/></symbol>
+</svg>
 <div class="stage"><main class="card">
   <div class="head">
     {mosaic_block}
@@ -1355,7 +1392,29 @@ async fn playlist_landing(
   </div>
   <div class="list">
     <ol id="rows">{rows}</ol>
-    <p class="foot">Tap a song for a thirty-second preview · full songs play in AttackFM</p>
+    <p class="foot">Thirty-second previews · full songs play in AttackFM</p>
+  </div>
+  <div class="now" id="now" data-idle>
+    <div class="nowMeta">
+      <img class="nowArt" id="nowArt" alt="" hidden>
+      <div class="nowWho"><span class="nowTitle" id="nowTitle">Tap a song to preview</span><span class="nowArtist" id="nowArtist">Thirty seconds of each</span></div>
+    </div>
+    <div class="seekWrap">
+      <div class="seek" id="seek" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+        <svg viewBox="0 0 1000 40" preserveAspectRatio="none">
+          <defs><clipPath id="playedClip"><rect id="playedRect" x="0" y="-20" width="0" height="80"/></clipPath></defs>
+          <path class="ahead" id="swell"/>
+          <path class="played" id="swellPlayed" clip-path="url(#playedClip)"/>
+        </svg>
+        <div class="playhead" id="head"></div>
+      </div>
+      <div class="times"><span id="tElapsed">0:00</span><span id="tRemain">-0:00</span></div>
+    </div>
+    <div class="transport" role="group" aria-label="Playback controls">
+      <button type="button" id="btnPrev" aria-label="Previous"><svg><use href="#i-back"/></svg></button>
+      <button type="button" id="btnPlay" class="big" aria-label="Play"><svg class="ic-play"><use href="#i-play"/></svg><svg class="ic-pause"><use href="#i-pause"/></svg></button>
+      <button type="button" id="btnNext" aria-label="Next"><svg><use href="#i-fwd"/></svg></button>
+    </div>
   </div>
 </main></div>
 <audio id="player" preload="none"></audio>
@@ -1364,43 +1423,116 @@ async fn playlist_landing(
   var code = {code_json};
   var audio = document.getElementById('player');
   var rows = document.getElementById('rows');
+  var now = document.getElementById('now');
+  var nowArt = document.getElementById('nowArt'), nowTitle = document.getElementById('nowTitle'), nowArtist = document.getElementById('nowArtist');
+  var seek = document.getElementById('seek'), playedRect = document.getElementById('playedRect'), head = document.getElementById('head');
+  var tElapsed = document.getElementById('tElapsed'), tRemain = document.getElementById('tRemain');
+  var total = rows.children.length;
   var current = null;
+
+  // The swell: the app's seek line - a gentle wave that grows toward the
+  // end, drawn once; the played part is the same path clipped to progress.
+  (function drawSwell() {{
+    var d = '', n = 200;
+    for (var k = 0; k <= n; k++) {{
+      var x = 1000 * k / n, t = k / n;
+      var amp = 2 + 14 * t * t;
+      var y = 20 + Math.sin(t * Math.PI * 14) * amp;
+      d += (k ? ' L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(2);
+    }}
+    document.getElementById('swell').setAttribute('d', d);
+    document.getElementById('swellPlayed').setAttribute('d', d);
+  }})();
+
   function row(i) {{ return rows.querySelector('[data-i="' + i + '"]'); }}
-  function clear() {{
-    if (current !== null) {{ var r = row(current); if (r) {{ r.removeAttribute('data-on'); r.removeAttribute('data-busy'); }} }}
-    current = null;
+  function fmt(s) {{ s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60); }}
+  function progress(p) {{
+    playedRect.setAttribute('width', String(1000 * p));
+    head.style.left = (100 * p) + '%';
+    seek.setAttribute('aria-valuenow', String(Math.round(100 * p)));
   }}
-  function stop() {{ audio.pause(); audio.removeAttribute('src'); audio.load(); clear(); }}
+  function times() {{
+    var d = audio.duration || 0, c = audio.currentTime || 0;
+    tElapsed.textContent = fmt(c); tRemain.textContent = '-' + fmt(Math.max(0, d - c));
+    progress(d ? c / d : 0);
+  }}
+  function setPlaying(on) {{ if (on) now.setAttribute('data-playing', ''); else now.removeAttribute('data-playing'); document.getElementById('btnPlay').setAttribute('aria-label', on ? 'Pause' : 'Play'); }}
+  function clearRow() {{
+    if (current !== null) {{ var r = row(current); if (r) {{ r.removeAttribute('data-on'); r.removeAttribute('data-busy'); }} }}
+  }}
+  function stop() {{ audio.pause(); audio.removeAttribute('src'); audio.load(); clearRow(); current = null; setPlaying(false); progress(0); tElapsed.textContent = '0:00'; tRemain.textContent = '-0:00'; }}
+  function show(i) {{
+    var r = row(i);
+    nowTitle.textContent = r.querySelector('.t').textContent;
+    nowArtist.textContent = r.querySelector('.a').textContent;
+    nowArt.hidden = true; nowArt.removeAttribute('src');
+    var art = new Image();
+    art.onload = function () {{ if (current === i) {{ nowArt.src = art.src; nowArt.hidden = false; }} }};
+    art.src = '/p/' + code + '/art/' + i;
+    now.removeAttribute('data-idle');
+  }}
   function play(i) {{
     var r = row(i); if (!r || r.hasAttribute('data-none')) return;
-    if (current === i) {{ stop(); return; }}
-    stop(); current = i; r.setAttribute('data-busy', '');
+    if (current === i) {{ if (audio.paused) audio.play(); else audio.pause(); return; }}
+    stop(); current = i; r.setAttribute('data-busy', ''); show(i);
     // The registry answers with a redirect to the catalogue's clip, or 404.
     fetch('/p/' + code + '/preview/' + i, {{ method: 'HEAD' }}).then(function (res) {{
       if (current !== i) return;
-      if (!res.ok) {{ r.removeAttribute('data-busy'); r.setAttribute('data-none', ''); current = null; return; }}
+      if (!res.ok) {{ r.removeAttribute('data-busy'); r.setAttribute('data-none', ''); current = null; nowArtist.textContent = 'No preview for this one'; return; }}
       audio.src = res.url; audio.play().then(function () {{
         r.removeAttribute('data-busy'); r.setAttribute('data-on', '');
       }}).catch(function () {{ r.removeAttribute('data-busy'); current = null; }});
     }}).catch(function () {{ r.removeAttribute('data-busy'); current = null; }});
   }}
+  function step(dir) {{
+    if (current === null) {{ if (total) play(0); return; }}
+    if (dir < 0 && audio.currentTime > 3) {{ audio.currentTime = 0; return; }}
+    var k = current + dir;
+    while (k >= 0 && k < total && row(k).hasAttribute('data-none')) k += dir;
+    if (k >= 0 && k < total) play(k);
+  }}
+
   rows.addEventListener('click', function (e) {{
     var li = e.target.closest('.row'); if (!li) return;
     play(parseInt(li.getAttribute('data-i'), 10));
   }});
-  audio.addEventListener('timeupdate', function () {{
-    if (current === null || !audio.duration) return;
-    var bar = row(current).querySelector('.bar > span');
-    if (bar) bar.style.width = (100 * audio.currentTime / audio.duration) + '%';
+  document.getElementById('btnPlay').addEventListener('click', function () {{
+    if (current === null) {{ if (total) play(0); return; }}
+    if (audio.paused) audio.play(); else audio.pause();
   }});
+  document.getElementById('btnPrev').addEventListener('click', function () {{ step(-1); }});
+  document.getElementById('btnNext').addEventListener('click', function () {{ step(1); }});
+
+  // Seeking: tap or drag along the swell.
+  var scrubbing = false;
+  function seekTo(e) {{
+    var b = seek.getBoundingClientRect();
+    var p = Math.min(1, Math.max(0, (e.clientX - b.left) / b.width));
+    if (audio.duration) audio.currentTime = p * audio.duration;
+    progress(p);
+  }}
+  seek.addEventListener('pointerdown', function (e) {{ if (current === null) return; scrubbing = true; seek.setAttribute('data-scrubbing', ''); try {{ seek.setPointerCapture(e.pointerId); }} catch (_) {{}} seekTo(e); }});
+  seek.addEventListener('pointermove', function (e) {{ if (scrubbing) seekTo(e); }});
+  function endScrub(e) {{ if (!scrubbing) return; scrubbing = false; seek.removeAttribute('data-scrubbing'); seekTo(e); }}
+  seek.addEventListener('pointerup', endScrub);
+  seek.addEventListener('pointercancel', endScrub);
+  seek.addEventListener('keydown', function (e) {{
+    if (!audio.duration) return;
+    if (e.key === 'ArrowRight') audio.currentTime = Math.min(audio.duration, audio.currentTime + 5);
+    if (e.key === 'ArrowLeft') audio.currentTime = Math.max(0, audio.currentTime - 5);
+  }});
+
+  audio.addEventListener('play', function () {{ setPlaying(true); }});
+  audio.addEventListener('pause', function () {{ setPlaying(false); }});
+  audio.addEventListener('timeupdate', function () {{ if (!scrubbing) times(); }});
+  audio.addEventListener('durationchange', times);
   audio.addEventListener('ended', function () {{
     var next = current === null ? null : current + 1;
-    clear();
-    if (next !== null && row(next)) play(next);
+    if (next !== null && next < total) play(next); else stop();
   }});
 }})();
 </script>
-</body></html>"#,
+</body></html>"##,
         name = esc(&s.name),
         code_json = serde_json::to_string(&s.code).unwrap_or_else(|_| "\"\"".into()),
         mosaic_block = if mosaic.is_empty() { String::new() } else { format!("<div class=\"mosaic\">{mosaic}</div>") },
