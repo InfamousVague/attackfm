@@ -78,7 +78,15 @@ body {
 
 /* The header is a steady band of the playing song's colour - the accent
    ramp artTint derives from its cover, which the app sets on the document
-   the same way - fading into the card. Nothing playing: the kit's accent. */
+   the same way - fading into the card. Nothing playing: the kit's accent.
+   A gradient cannot be transitioned, but a registered colour property can:
+   the band's colour is one, and it glides from song to song. */
+@property --head-tint {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+
 .head {
   flex: none;
   position: relative;
@@ -88,25 +96,70 @@ body {
   flex-direction: column;
   align-items: center;
   gap: var(--glacier-space-1);
+  --head-tint: var(--glacier-accent-9, var(--glacier-accent-solid));
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--glacier-accent-9, var(--glacier-accent-solid)) 42%, transparent) 0%,
-    color-mix(in srgb, var(--glacier-accent-9, var(--glacier-accent-solid)) 14%, transparent) 70%,
+    color-mix(in srgb, var(--head-tint) 42%, transparent) 0%,
+    color-mix(in srgb, var(--head-tint) 14%, transparent) 70%,
     transparent 100%
   );
-  transition: background 0.6s ease;
+  transition: --head-tint 0.9s ease;
+}
+
+/* The platter box: as wide as the card allows, capped so the list beneath
+   keeps its share of the height on a phone. The picture and the record
+   share the box and crossfade - slow enough that the platter's brake shows
+   through the fade. The record's face is the app's SpinningDisc, which
+   fills whatever box it is given. */
+.platter {
+  position: relative;
+  width: min(100% - 1rem, 20rem, 34dvh);
+  aspect-ratio: 1;
+  margin: 0 auto var(--glacier-space-3);
+}
+
+.platter__cover,
+.platter__disc {
+  position: absolute;
+  inset: 0;
+  transition:
+    opacity 0.7s ease,
+    transform 0.7s ease;
+}
+
+.platter__cover {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.platter__disc {
+  opacity: 0;
+  transform: scale(0.94);
+  pointer-events: none;
+  touch-action: none;
+}
+
+.platter[data-live] .platter__cover {
+  opacity: 0;
+  transform: scale(1.04);
+  pointer-events: none;
+}
+
+.platter[data-live] .platter__disc {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
 }
 
 .mosaic {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2px;
-  width: 9.5rem;
-  aspect-ratio: 1;
+  width: 100%;
+  height: 100%;
   border-radius: var(--glacier-radius-lg, 1rem);
   overflow: hidden;
   background: var(--glacier-surface-sunken, #17171b);
-  margin: 0 auto var(--glacier-space-3);
   box-shadow: var(--glacier-shadow-lg, 0 12px 30px rgba(0, 0, 0, 0.5));
 }
 
@@ -181,6 +234,7 @@ h1 {
 
 .row[data-on] {
   background: color-mix(in srgb, var(--glacier-accent-solid) 14%, transparent);
+  transition: background-color 0.6s ease;
 }
 
 .row[data-none] {
