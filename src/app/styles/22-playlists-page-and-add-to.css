@@ -1473,3 +1473,159 @@
   justify-content: flex-end;
   gap: var(--glacier-space-2);
 }
+
+/* --- the playlist card (the share sheet's Link face) ----------------------
+   A poster, like the invite card: it is rasterised to a PNG by widget/shot.ts
+   from this very DOM, so everything sits on SOLID paint and every picture on
+   it is a data URL. */
+
+.shareSheet__faces {
+  flex: none;
+}
+
+.shareSheet__linkFace {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.playlistCard {
+  inline-size: min(100%, 420px);
+  flex: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 24px 20px;
+  border-radius: 24px;
+  color: #fff;
+  font-family: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background:
+    radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--glacier-accent-solid, #ff5e5e) 55%, transparent), transparent 60%),
+    linear-gradient(160deg, #1b1b20 0%, #101014 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.playlistCard__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: 18px;
+}
+
+.playlistCard__logo {
+  block-size: 22px;
+  inline-size: auto;
+}
+
+.playlistCard__kicker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.playlistCard__art {
+  inline-size: 220px;
+  block-size: 220px;
+  margin: 0 auto 16px;
+  border-radius: 18px;
+  overflow: hidden;
+  display: grid;
+  gap: 2px;
+  background: #24242b;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+.playlistCard__art[data-n='1'] { grid-template-columns: 1fr; }
+.playlistCard__art[data-n='2'] { grid-template-columns: 1fr 1fr; }
+.playlistCard__art[data-n='3'],
+.playlistCard__art[data-n='4'] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.playlistCard__art[data-n='3'] img:first-child { grid-column: 1 / -1; }
+
+.playlistCard__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.playlistCard__artEmpty {
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.playlistCard__name {
+  margin: 0;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.playlistCard__sub {
+  margin: 4px 0 18px;
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.playlistCard__qrRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.playlistCard__qr {
+  flex: none;
+  inline-size: 72px;
+  block-size: 72px;
+  border-radius: 8px;
+  background: #fff;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+.playlistCard__linkWrap {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.playlistCard__linkLabel {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.playlistCard__link {
+  font: 600 13px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.playlistCard__foot {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.shareSheet__actions {
+  flex: none;
+  display: flex;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  max-inline-size: 420px;
+}
+
+.shareSheet__actions > * {
+  flex: 1;
+}

@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.45
+
+- Sharing a playlist opens on a card now, like the invite card: the playlist's picture, its name, who is sharing it and a QR of its link, with Save image and Copy link underneath. Friends, seats and who has it moved behind a Link / Friends toggle at the top.
+
 ## 0.5.44
 
 - Friends no longer read "no library yet": the app now tells attack.fm how big your library is (songs, artists, playlists) and where it lives, and the registry stops wiping those numbers whenever the app sends something else.
