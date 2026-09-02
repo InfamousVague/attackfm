@@ -47,7 +47,20 @@ function toColumns(covers: readonly string[]): string[][] {
   return out;
 }
 
-export function CoverWall({ artworks }: { artworks: readonly (string | null)[] }) {
+export function CoverWall({
+  artworks,
+  loading = 'lazy',
+}: {
+  artworks: readonly (string | null)[];
+  /**
+   * Lazy behind a header, where the wall is one band of a page that scrolls
+   * past it. Eager where the wall IS the page (the registry's playlist link
+   * page hangs it behind everything): there is nothing to defer for, and a
+   * lazy wall that never intersects - a hidden tab, a browser that will not
+   * observe through a filtered, transformed slab - is a wall that never draws.
+   */
+  loading?: 'lazy' | 'eager';
+}) {
   // 160, not 640: this is blurred past the point where detail survives.
   const covers = useMemo(() => mosaicArts(artworks, WALL_COVERS, 160), [artworks]);
   const cols = useMemo(() => toColumns(covers), [covers]);
@@ -68,7 +81,7 @@ export function CoverWall({ artworks }: { artworks: readonly (string | null)[] }
                 where the original started and the seam never shows. Map the same
                 slice again rather than anything that might reorder it. */}
             {[...column, ...column].map((src, j) => (
-              <img key={j} src={src} alt="" loading="lazy" decoding="async" />
+              <img key={j} src={src} alt="" loading={loading} decoding="async" />
             ))}
           </div>
         ))}

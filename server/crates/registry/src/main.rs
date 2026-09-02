@@ -1136,35 +1136,41 @@ async fn playlist_share_cover(
 type PreviewHit = Option<(String, String)>;
 static PREVIEWS: std::sync::OnceLock<Mutex<HashMap<String, PreviewHit>>> = std::sync::OnceLock::new();
 
-async fn deezer_preview(artist: &str, title: &str) -> PreviewHit {
+/// `Err` when the catalogue could not be ASKED (network, timeout, a 5xx),
+/// as distinct from `Ok(None)` when it answered and has no clip. Only the
+/// answer is cached: a blip that was remembered as "no such song" for the
+/// life of the process left a real cover missing from every later visit.
+async fn deezer_preview(artist: &str, title: &str) -> Result<PreviewHit, ()> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(8))
         .user_agent("AttackFM registry (playlist link previews)")
         .build()
-        .ok()?;
+        .map_err(|_| ())?;
     let q = format!("artist:\"{}\" track:\"{}\"", artist.replace('"', ""), title.replace('"', ""));
     let body = client
         .get("https://api.deezer.com/search")
         .query(&[("q", q.as_str()), ("limit", "1")])
         .send()
         .await
-        .ok()?
+        .map_err(|_| ())?
         .error_for_status()
-        .ok()?
+        .map_err(|_| ())?
         .json::<Value>()
         .await
-        .ok()?;
-    let hit = body.get("data")?.as_array()?.first()?;
-    let preview = hit.get("preview")?.as_str()?.trim().to_string();
+        .map_err(|_| ())?;
+    let Some(hit) = body.get("data").and_then(|d| d.as_array()).and_then(|a| a.first()) else {
+        return Ok(None);
+    };
+    let preview = hit.get("preview").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
     if preview.is_empty() {
-        return None;
+        return Ok(None);
     }
     let cover = hit
         .pointer("/album/cover_medium")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    Some((preview, cover))
+    Ok(Some((preview, cover)))
 }
 
 /// The (preview, cover) for song `i` of a shared playlist, cached.
@@ -1182,9 +1188,14 @@ async fn preview_for(state: &AppState, code: &str, i: usize) -> Option<PreviewHi
     if let Some(hit) = cache.lock().unwrap().get(&key) {
         return Some(hit.clone());
     }
-    let hit = deezer_preview(&artist, &title).await;
-    cache.lock().unwrap().insert(key, hit.clone());
-    Some(hit)
+    match deezer_preview(&artist, &title).await {
+        Ok(hit) => {
+            cache.lock().unwrap().insert(key, hit.clone());
+            Some(hit)
+        }
+        // Could not ask: answer "nothing" for this visit, remember nothing.
+        Err(()) => Some(None),
+    }
 }
 
 /// `GET /p/{code}/preview/{i}` - redirects to a thirty-second clip of song i,

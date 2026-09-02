@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.46
+
+- Playlist links on attack.fm now wear the playlist's album covers as a slowly drifting, blurred backdrop behind the card, and the card's header takes the colour of whichever song is previewing.
+
 ## 0.5.45
 
 - Sharing a playlist opens on a card now, like the invite card: the playlist's picture, its name, who is sharing it and a QR of its link, with Save image and Copy link underneath. Friends, seats and who has it moved behind a Link / Friends toggle at the top.

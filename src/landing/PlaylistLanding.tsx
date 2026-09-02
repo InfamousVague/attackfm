@@ -234,7 +234,7 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
   return (
     <div className="stage">
       <div className="wallBackdrop" aria-hidden>
-        <CoverWall artworks={wallArt} />
+        <CoverWall artworks={wallArt} loading="eager" />
       </div>
       <main className="card">
         <div className="head" data-tinted={tint ? '' : undefined}>
