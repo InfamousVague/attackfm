@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.44
+
+- Friends no longer read "no library yet": the app now tells attack.fm how big your library is (songs, artists, playlists) and where it lives, and the registry stops wiping those numbers whenever the app sends something else.
+
 ## 0.5.43
 
 - The join card names the server's owner as the server says it, and the inviter as the inviter - the two are not always the same person.

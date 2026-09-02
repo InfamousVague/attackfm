@@ -1,8 +1,11 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { announce, publishProfile } from '../servers/registry.ts';
 import { useLibrary } from '../library/library.tsx';
+import { usePlaylists } from '../playlists/playlists.tsx';
+import { tracksOfHub } from '../server.ts';
+import { fold } from '../core/fold.ts';
 import { fetchStatsSummary, type StatsSummary } from './stats.ts';
 
 /**
@@ -95,9 +98,38 @@ export function ListeningShareBridge() {
 
   // Favourites ride the publish as names. A ref, so a heart does not restart
   // the whole announce loop - the next pass simply carries the newer list.
-  const { favoriteTracks } = useLibrary();
+  const { favoriteTracks, tracks } = useLibrary();
   const favoriteTracksRef = useRef(favoriteTracks);
   favoriteTracksRef.current = favoriteTracks;
+
+  /*
+   * The library's SIZE - songs, artists, playlists - and where it answers.
+   *
+   * This is what a friend's card on the Friends page shows ("4,692 songs"),
+   * and it is not listening data, so it goes whether or not sharing is on.
+   * Nothing had ever sent these numbers: the registry's announce took them
+   * as zero when absent, so every friend read "no library yet" - and every
+   * glance push above then wrote the zeros again. Sent once the library has
+   * settled after launch, and again whenever its size changes by more than
+   * a handful, so a big import shows up without a relaunch.
+   */
+  const { playlists } = usePlaylists();
+  const songs = tracksOfHub(tracks, server).length;
+  const artists = useMemo(() => new Set(tracksOfHub(tracks, server).map((t) => fold(t.artist))).size, [tracks, server]);
+  const lists = playlists.filter((p) => !p.origin).length;
+  const lastSent = useRef<string>('');
+  useEffect(() => {
+    if (!registry || !server || songs === 0) return;
+    const signature = `${server.url}|${Math.round(songs / 25)}|${Math.round(artists / 10)}|${lists}`;
+    if (signature === lastSent.current) return;
+    const timer = window.setTimeout(() => {
+      lastSent.current = signature;
+      void announce(registry.token, { serverUrl: server.url, songs, playlists: lists, artists }).catch(() => {
+        lastSent.current = '';
+      });
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [registry, server, songs, artists, lists]);
 
   useEffect(() => {
     if (!sharing || !registry || !server) return;

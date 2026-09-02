@@ -559,12 +559,16 @@ async fn remove_friend(
 struct AnnounceBody {
     #[serde(default, rename = "serverUrl")]
     server_url: String,
+    /// The library's size. Optional, and ABSENT MEANS UNCHANGED: these used
+    /// to default to zero, so the glance push (which sends only listening)
+    /// and the Friends page (which sends only the address) each wiped every
+    /// friend's counts to "no library yet" a few times a day.
     #[serde(default)]
-    songs: i64,
+    songs: Option<i64>,
     #[serde(default)]
-    playlists: i64,
+    playlists: Option<i64>,
     #[serde(default)]
-    artists: i64,
+    artists: Option<i64>,
     /// The listening glance - present only while the sender's owner has
     /// sharing ON. Absent keeps whatever was last shared (which then goes
     /// stale on its own; the friends view stops showing week-old numbers).
@@ -588,7 +592,15 @@ async fn announce(
     if !body.server_url.trim().is_empty() {
         state.db.set_server_url(who.sub, body.server_url.trim());
     }
-    state.db.set_stats(who.sub, body.songs, body.playlists, body.artists, now);
+    if let Some(songs) = body.songs {
+        state.db.set_stats(
+            who.sub,
+            songs.max(0),
+            body.playlists.unwrap_or(0).max(0),
+            body.artists.unwrap_or(0).max(0),
+            now,
+        );
+    }
     if let Some(minutes) = body.week_minutes {
         state.db.set_listening(
             who.sub,
