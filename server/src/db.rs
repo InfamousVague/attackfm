@@ -2492,6 +2492,33 @@ impl Db {
             .unwrap_or(0)
     }
 
+    /// The glance an invite shows before anyone joins - counts, nothing named.
+    pub fn artist_count(&self) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT COUNT(DISTINCT artist) FROM tracks WHERE deleted = 0 AND artist <> ''",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    pub fn album_count(&self) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT COUNT(DISTINCT album) FROM tracks WHERE deleted = 0 AND album <> ''",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    pub fn playlist_count(&self) -> i64 {
+        self.lock()
+            .query_row("SELECT COUNT(*) FROM playlists", [], |r| r.get(0))
+            .unwrap_or(0)
+    }
+
     pub fn total_bytes(&self) -> i64 {
         self.lock()
             .query_row(

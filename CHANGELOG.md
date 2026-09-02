@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.42
+
+- An invite link is one tap to join now: opening one in the app raises a card with the server's name, whose it is, and its glance - songs, artists, albums, playlists, members - and a single Join button. No code to type; without an account yet, the sign-up sits on the same card and joining follows straight on.
+
 ## 0.5.41
 
 - Sharing a playlist with friends now lists everyone you are friends with on AttackFM who is on your server - including people you invited who have not opened the new app yet. Your server checks the friend list with attack.fm itself instead of waiting for both sides to say so.

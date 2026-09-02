@@ -21,6 +21,13 @@ export interface ServerInfo {
   /** Whether the box has an ffmpeg, and so whether to offer a quality choice. */
   transcode: boolean;
   tracks: number;
+  /** Whose box it is, as the hub names them. Absent from older hubs. */
+  owner?: string;
+  /** The glance an invite shows: counts only. Absent from older hubs. */
+  artists?: number;
+  albums?: number;
+  playlists?: number;
+  members?: number;
 }
 
 /** Trims a user-typed address into an origin the fetches can be built on. */

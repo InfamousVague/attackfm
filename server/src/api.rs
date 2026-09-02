@@ -44,6 +44,14 @@ pub async fn server_info(State(state): State<Arc<AppState>>) -> ApiResult {
         "needsSetup": state.db.user_count() == 0,
         "transcode": state.ffmpeg,
         "tracks": state.db.track_count(),
+        // The glance an invite shows before anyone joins: how much music,
+        // how many people. Counts, not names - nothing here identifies a
+        // song or a member, and the invite that led here already named the
+        // owner.
+        "artists": state.db.artist_count(),
+        "albums": state.db.album_count(),
+        "playlists": state.db.playlist_count(),
+        "members": state.db.user_count(),
         /*
          * Whether this box downloads, said WITHOUT a sign-in.
          *

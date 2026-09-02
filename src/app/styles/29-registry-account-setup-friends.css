@@ -373,3 +373,88 @@
   border-radius: 0;
   background: none;
 }
+
+/* --- the join card (a tapped invite link) ---------------------------------- */
+
+.joinCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.joinCard__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.joinCard__mark {
+  flex: none;
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: var(--glacier-radius-md, 0.6rem);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: #fff;
+  background: linear-gradient(135deg, var(--glacier-accent-solid, #f0356d), #6a3cff);
+}
+
+.joinCard__who {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.joinCard__name {
+  margin: 0;
+  font-size: var(--glacier-font-size-lg, 1.125rem);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.joinCard__stats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+.joinCard__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-md, 0.6rem);
+  background: var(--glacier-surface-sunken, rgba(127, 127, 127, 0.12));
+}
+
+.joinCard__statIcon {
+  color: var(--glacier-text-muted);
+}
+
+.joinCard__statValue {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-md, 1rem);
+}
+
+.joinCard__statLabel {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.joinCard__join {
+  inline-size: 100%;
+}
+
+.joinCard__account {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
