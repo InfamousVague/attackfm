@@ -1,8 +1,9 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { announce } from '../servers/registry.ts';
-import { fetchStatsSummary } from './stats.ts';
+import { announce, publishProfile } from '../servers/registry.ts';
+import { useLibrary } from '../library/library.tsx';
+import { fetchStatsSummary, type StatsSummary } from './stats.ts';
 
 /**
  * Sharing your listening with friends - the weekly glance behind the friends
@@ -84,17 +85,70 @@ export function ListeningShareBridge() {
       .catch(() => {});
   }, [sharing, server]);
 
+  // The registry's copy of the switch. Off shuts the door on the published
+  // profile at once (the body stays, so on is instant again); on is carried
+  // by the next publish below, which sends the switch with the document.
+  useEffect(() => {
+    if (!registry || sharing) return;
+    void publishProfile(registry.token, { sharing: false }).catch(() => {});
+  }, [sharing, registry]);
+
+  // Favourites ride the publish as names. A ref, so a heart does not restart
+  // the whole announce loop - the next pass simply carries the newer list.
+  const { favoriteTracks } = useLibrary();
+  const favoriteTracksRef = useRef(favoriteTracks);
+  favoriteTracksRef.current = favoriteTracks;
+
   useEffect(() => {
     if (!sharing || !registry || !server) return;
     let live = true;
     const push = async () => {
       try {
         const week = await fetchStatsSummary(server, 'week');
-        if (!live || week.minutes === 0) return;
-        await announce(registry.token, {
-          weekMinutes: week.minutes,
-          weekTopArtist: week.topArtists[0]?.artist ?? '',
-          streakDays: week.streakDays,
+        if (!live) return;
+        // The glance is this week's; a quiet week announces nothing and the
+        // registry's copy ages out on its own. The profile below still goes:
+        // a month, a year and all time are not quiet just because the week was.
+        if (week.minutes > 0) {
+          await announce(registry.token, {
+            weekMinutes: week.minutes,
+            weekTopArtist: week.topArtists[0]?.artist ?? '',
+            streakDays: week.streakDays,
+          });
+        }
+        /*
+         * The whole profile, too - to the registry, where a friend on ANY
+         * hub reads it. The hub's stats are the source (it is what counted
+         * the listens); what travels is names and numbers, never hub ids,
+         * because an id means something on one box only. The reader
+         * resolves songs they own by artist and title.
+         */
+        const [month, year, all] = await Promise.all([
+          fetchStatsSummary(server, 'month'),
+          fetchStatsSummary(server, 'year'),
+          fetchStatsSummary(server, 'all'),
+        ]);
+        if (!live) return;
+        const strip = (s: StatsSummary): Record<string, unknown> => ({
+          ...s,
+          topArtists: s.topArtists.map(({ coverTrackId: _c, ...a }) => a),
+          topTracks: s.topTracks.map(({ trackId: _t, ...t }) => t),
+        });
+        const favorites = favoriteTracksRef.current.slice(0, 200).map((t) => ({
+          title: t.title,
+          artist: t.artist,
+          album: t.album,
+        }));
+        await publishProfile(registry.token, {
+          sharing: true,
+          profile: {
+            v: 1,
+            memberSince: null,
+            serverUrl: server.url,
+            ranges: { week: strip(week), month: strip(month), year: strip(year), all: strip(all) },
+            favorites,
+            favoritesTotal: favoriteTracksRef.current.length,
+          },
         });
       } catch {
         // Offline, or a server without the stats build: nothing to share yet.

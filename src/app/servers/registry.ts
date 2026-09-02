@@ -189,6 +189,46 @@ export async function removeFriend(token: string, accountId: number): Promise<vo
 // --- invites ---------------------------------------------------------------
 
 /** A server owner mints an invite; the code is what an invite link carries. */
+// --- the listening profile, global ------------------------------------------
+
+/**
+ * The profile document an app publishes for its account. Names, never ids:
+ * a track id means something on one hub only, and the whole point of the
+ * registry holding this is that a friend on ANOTHER hub can read it - and
+ * resolve what they own by artist and title.
+ */
+export interface ProfileDoc {
+  v: 1;
+  memberSince: number | null;
+  /** Where it was built. Informational. */
+  serverUrl: string;
+  /** The hub's stats payload per range, with hub ids stripped. */
+  ranges: Partial<Record<'week' | 'month' | 'year' | 'all', Record<string, unknown>>>;
+  favorites: { title: string; artist: string; album: string }[];
+  favoritesTotal: number;
+}
+
+export interface RegistryProfile {
+  handle: string;
+  updatedAt: number;
+  sharing: boolean;
+  profile: ProfileDoc;
+}
+
+/** Publish (or, with sharing false and no document, just shut the door). */
+export async function publishProfile(
+  token: string,
+  body: { sharing: boolean; profile?: ProfileDoc },
+): Promise<void> {
+  await call('/v1/profile', { token, method: 'PUT', body: JSON.stringify(body) });
+}
+
+/** A friend's profile, or your own. 403 when they keep it to themselves or
+ *  you are not friends; 404 when nothing was ever published. */
+export async function fetchRegistryProfile(token: string, handle: string): Promise<RegistryProfile> {
+  return call<RegistryProfile>(`/v1/profile/${encodeURIComponent(handle)}`, { token });
+}
+
 // --- songs sent between friends ---------------------------------------------
 
 /** A song a friend sent you - the NAME of it. Your own hub fetches it. */

@@ -946,6 +946,82 @@ async fn set_membership(
     Ok(Json(json!({ "ok": true })))
 }
 
+// --- profiles ------------------------------------------------------------------------
+
+/// A profile is a few hundred songs' worth of names and numbers; anything
+/// past this is not a profile.
+const PROFILE_MAX_BYTES: usize = 256 * 1024;
+
+#[derive(Deserialize)]
+struct ProfileBody {
+    #[serde(default = "yes")]
+    sharing: bool,
+    /// The document, or absent to only move the switch.
+    #[serde(default)]
+    profile: Option<Value>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// `PUT /v1/profile` - the app publishes the account's listening profile,
+/// built from whichever hub it listens on. Global, so a friend on any other
+/// hub reads the same page.
+async fn profile_put(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<ProfileBody>,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let doc = match body.profile {
+        Some(v) if v.is_object() => {
+            let s = v.to_string();
+            if s.len() > PROFILE_MAX_BYTES {
+                return Err((StatusCode::PAYLOAD_TOO_LARGE, "That profile is too big to keep.".into()));
+            }
+            Some(s)
+        }
+        Some(_) => return Err((StatusCode::BAD_REQUEST, "A profile is an object.".into())),
+        None => None,
+    };
+    state
+        .db
+        .set_profile(who.sub, body.sharing, doc.as_deref(), now_secs())
+        .map_err(db_err)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `GET /v1/profile/{handle}` - a friend's profile (or your own). Friends
+/// only, and only while they share: the same closed door the hubs show.
+async fn profile_get(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(handle): axum::extract::Path<String>,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let account = state
+        .db
+        .account_by_handle(handle.trim())
+        .ok_or((StatusCode::NOT_FOUND, "No one here goes by that handle.".into()))?;
+    let its_me = account.id == who.sub;
+    if !its_me && !state.db.are_friends(who.sub, account.id) {
+        return Err((StatusCode::FORBIDDEN, "Profiles are for friends.".into()));
+    }
+    let (sharing, body, updated_at) = state
+        .db
+        .profile(account.id)
+        .ok_or((StatusCode::NOT_FOUND, "No profile published yet.".into()))?;
+    if !its_me && !sharing {
+        return Err((StatusCode::FORBIDDEN, "they keep their listening to themselves".into()));
+    }
+    if body.is_empty() {
+        return Err((StatusCode::NOT_FOUND, "No profile published yet.".into()));
+    }
+    let profile: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+    Ok(Json(json!({ "handle": account.handle, "updatedAt": updated_at, "sharing": sharing, "profile": profile })))
+}
+
 // --- recovery codes --------------------------------------------------------------
 
 /// Eight codes of twelve characters from an alphabet with no 0/O or 1/I, shown
@@ -1355,6 +1431,8 @@ async fn main() {
         .route("/v1/friends/requests/{id}/accept", post(accept_request))
         .route("/v1/friends/requests/{id}/decline", post(decline_request))
         .route("/v1/friends/{account_id}", axum::routing::delete(remove_friend))
+        .route("/v1/profile", axum::routing::put(profile_put))
+        .route("/v1/profile/{handle}", get(profile_get))
         .route("/v1/shares", get(shares).post(send_share))
         .route("/v1/shares/grants", axum::routing::put(share_grant))
         .route("/v1/shares/{id}/taken", post(share_taken))

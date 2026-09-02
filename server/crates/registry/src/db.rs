@@ -304,6 +304,40 @@ impl Db {
         let _ = c.execute("DELETE FROM friend_requests WHERE id = ?1", [id]);
     }
 
+    // --- profiles ----------------------------------------------------------------
+
+    /// Store what the app published. An empty body with `sharing` alone
+    /// (the switch turned off) keeps the last body and only shuts the door.
+    pub fn set_profile(&self, account_id: i64, sharing: bool, body: Option<&str>, now: i64) -> rusqlite::Result<()> {
+        let c = self.conn.lock().unwrap();
+        match body {
+            Some(b) => c.execute(
+                "INSERT INTO profiles (account_id, sharing, body, updated_at) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(account_id) DO UPDATE SET sharing = excluded.sharing, body = excluded.body, updated_at = excluded.updated_at",
+                rusqlite::params![account_id, sharing as i64, b, now],
+            )?,
+            None => c.execute(
+                "INSERT INTO profiles (account_id, sharing, body, updated_at) VALUES (?1, ?2, '', ?3)
+                 ON CONFLICT(account_id) DO UPDATE SET sharing = excluded.sharing",
+                rusqlite::params![account_id, sharing as i64, now],
+            )?,
+        };
+        Ok(())
+    }
+
+    /// (sharing, body, updated_at) - None when nothing was ever published.
+    pub fn profile(&self, account_id: i64) -> Option<(bool, String, i64)> {
+        let c = self.conn.lock().unwrap();
+        c.query_row(
+            "SELECT sharing, body, updated_at FROM profiles WHERE account_id = ?1",
+            [account_id],
+            |r| Ok((r.get::<_, i64>(0)? != 0, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
     // --- recovery codes --------------------------------------------------------
 
     /// A fresh set replaces the old one whole: a person who mints again has
@@ -944,6 +978,17 @@ CREATE TABLE IF NOT EXISTS shares (
   dismissed_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS shares_to ON shares(to_id, taken_at, dismissed_at);
+
+-- The account's listening profile - the whole thing, as its own app publishes
+-- it from wherever it listens. Global on purpose: a profile is a person's,
+-- not a server's, so a friend sees it from any hub. `sharing` is the door;
+-- the body is kept either way so turning sharing back on is instant.
+CREATE TABLE IF NOT EXISTS profiles (
+  account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  sharing    INTEGER NOT NULL DEFAULT 1,
+  body       TEXT    NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
 
 -- One-time codes that get an account back when the password is gone and no
 -- device holds a key. Only the hash is kept; the codes are shown once.
