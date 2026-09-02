@@ -51,6 +51,7 @@ import { notePlaylistPlayed } from './playlistRecency.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
+import { useOfferShare } from '../nav/shareDoor.ts';
 import type { Track } from '../core/tauri.ts';
 
 interface PlaylistPageProps {
@@ -86,6 +87,20 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   // stays hidden rather than offer a weaker promise than its heading makes.
   const [suggested, setSuggested] = useState<{ trackIds: number[]; ai: boolean } | null>(null);
   const playlist = playlists.find((p) => p.id === id);
+  // The header's share button is THIS list's share while the page is up -
+  // the same sheet the menu's "Share with friends…" / "Who has this…" opens.
+  // Left to the invite card for a list that cannot be shared: a local
+  // library, a hub from before sharing, or a list living on another hub.
+  const shareable = !!playlist && !!share && playlist.role !== undefined && !playlist.origin;
+  useOfferShare(
+    shareable
+      ? {
+          label:
+            !playlist.role || playlist.role === 'owner' ? 'Share this playlist' : 'Who has this playlist',
+          open: () => setSharing(true),
+        }
+      : null,
+  );
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   /** The description being edited, or null when it is only being read. */

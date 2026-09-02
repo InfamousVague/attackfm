@@ -1,5 +1,6 @@
 import { Button, Field, IconButton, Select, Text, useToast } from '@glacier/react';
 import { GlassSheet } from '../ux/GlassSheet.tsx';
+import { useShareDoor } from '../nav/shareDoor.ts';
 import { Check, Copy, Download, Share2 } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
@@ -150,6 +151,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
   const { session } = useServerSession();
   const { toast } = useToast();
   const registry = useRegistryOptional();
+  const door = useShareDoor();
   const [open, setOpen] = useState(false);
   const [invite, setInvite] = useState<Invite | null>(null);
   const [minting, setMinting] = useState(false);
@@ -315,11 +317,14 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
 
   return (
     <>
+      {/* One share button, whatever the page: a page that has something of
+          its own to share (a playlist) claims it through nav/shareDoor.ts and
+          the button opens THAT; otherwise it is the invite card. */}
       <IconButton
         variant="ghost"
-        aria-label="Invite a friend"
-        title="Invite a friend"
-        onClick={() => setOpen(true)}
+        aria-label={door?.label ?? 'Invite a friend'}
+        title={door?.label ?? 'Invite a friend'}
+        onClick={() => (door ? door.open() : setOpen(true))}
       >
         <Share2 size={iconSize} />
       </IconButton>
