@@ -34,7 +34,8 @@
     "ai-ui:check": "node scripts/check-ai-glacier.mjs",
     "check:styles": "node scripts/check-style-guard.mjs",
     "demo:fixtures": "node scripts/make-demo-fixtures.mjs",
-    "demo:build": "vite build --config vite.demo.config.ts"
+    "demo:build": "vite build --config vite.demo.config.ts",
+    "build:landing": "vite build --config vite.landing.config.ts"
   },
   "dependencies": {
     "@glacier/icons": "file:./vendor/@glacier/icons",

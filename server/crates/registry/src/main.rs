@@ -1211,9 +1211,47 @@ async fn playlist_row_art(
     }
 }
 
-/// `GET /p/{code}` - what a playlist LINK opens: a page that unfurls in a
-/// messenger like a Spotify embed (title, cover, "N songs · shared by"),
-/// lists the songs, and hands the app the link by its own scheme.
+/// The landing page's own script and stylesheet, built from the app's kit
+/// (`npm run build:landing`) and embedded here, so the page is the SAME
+/// components the app is made of and there is no asset directory to ship.
+const LANDING_JS: &str = include_str!("../assets/landing.js");
+const LANDING_CSS: &str = include_str!("../assets/landing.css");
+
+async fn landing_js() -> impl IntoResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        LANDING_JS,
+    )
+}
+
+async fn landing_css() -> impl IntoResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        LANDING_CSS,
+    )
+}
+
+/// A cache key for the embedded assets: the bytes change, the name does not.
+fn landing_stamp() -> String {
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    h.update(LANDING_JS.as_bytes());
+    h.update(LANDING_CSS.as_bytes());
+    let d = h.finalize();
+    d.iter().take(6).map(|b| format!("{b:02x}")).collect()
+}
+
+/// `GET /p/{code}` - what a playlist LINK opens: a shell that unfurls in a
+/// messenger like a Spotify embed (Open Graph title, cover, "N songs ·
+/// shared by"), carries the playlist inline, and mounts the page built from
+/// the app's own kit over it. A crawler reads the tags and the noscript
+/// list; a person gets the card, the songs and the player.
 async fn playlist_landing(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(code): axum::extract::Path<String>,
@@ -1243,37 +1281,23 @@ async fn playlist_landing(
              <meta name=\"twitter:image\" content=\"{base}/p/{safe}/cover.jpg\">"
         )
     };
-    let mosaic: String = covers
+    let noscript: String = tracks
         .iter()
-        .take(4)
-        .map(|c| format!("<img src=\"{}\" alt=\"\">", esc(c)))
-        .collect();
-    let rows: String = tracks
-        .iter()
-        .enumerate()
-        .map(|(i, t)| {
-            let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("");
-            let artist = t.get("artist").and_then(|v| v.as_str()).unwrap_or("");
+        .map(|t| {
             format!(
-                "<li class=\"row\" data-i=\"{i}\"><button type=\"button\" class=\"play\" aria-label=\"Preview {t}\">\
-                 <span class=\"n\">{n}</span>\
-                 <svg class=\"ic-play\" aria-hidden=\"true\"><use href=\"#i-play\"/></svg>\
-                 <svg class=\"ic-pause\" aria-hidden=\"true\"><use href=\"#i-pause\"/></svg></button>\
-                 <span class=\"t\">{t}</span><span class=\"a\">{a}</span></li>",
-                n = i + 1,
-                t = esc(title),
-                a = esc(artist)
+                "<li>{} — {}</li>",
+                esc(t.get("title").and_then(|v| v.as_str()).unwrap_or("")),
+                esc(t.get("artist").and_then(|v| v.as_str()).unwrap_or(""))
             )
         })
         .collect();
-    let description = if s.description.is_empty() { String::new() } else { format!("<p class=\"desc\">{}</p>", esc(&s.description)) };
-    let backdrop = covers
-        .first()
-        .map(|c| format!("<div class=\"backdrop\" style=\"background-image:url('{}')\"></div>", esc(c)))
-        .unwrap_or_default();
+    // The playlist, inline, for the page to draw from without a fetch. `<`
+    // is escaped so no song title can close the script tag.
+    let doc = share_json(&s, true).to_string().replace('<', "\\u003c");
+    let stamp = landing_stamp();
     Html(format!(
         r##"<!doctype html>
-<html lang="en"><head>
+<html lang="en" data-theme="dark"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{name} · AttackFM</title>
@@ -1284,258 +1308,16 @@ async fn playlist_landing(
 <meta property="og:url" content="{base}/p/{safe}">
 {image}
 <meta name="description" content="{summary}">
-<style>
-  :root {{ color-scheme: dark; }}
-  * {{ box-sizing: border-box; }}
-  html, body {{ height: 100%; }}
-  body {{ margin: 0; background: #0b0b0d; color: #f2f2f4; overflow: hidden;
-    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }}
-  .backdrop {{ position: fixed; inset: -10%; background-size: cover; background-position: center;
-    filter: blur(60px) saturate(1.3) brightness(0.45); transform: scale(1.1); }}
-  .stage {{ position: fixed; inset: 0; display: grid; place-items: center;
-    padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)); }}
-  .card {{ position: relative; width: min(100%, 30rem); max-height: min(88dvh, 52rem);
-    display: flex; flex-direction: column; border-radius: 1.5rem; overflow: hidden;
-    background: rgba(20, 20, 24, 0.86); backdrop-filter: blur(24px) saturate(1.4);
-    -webkit-backdrop-filter: blur(24px) saturate(1.4); border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: 0 30px 80px rgba(0,0,0,0.6); }}
-  .head {{ flex: none; padding: 1.5rem 1.5rem 1rem; text-align: center; }}
-  .mosaic {{ display: grid; grid-template-columns: 1fr 1fr; gap: 2px; width: 9.5rem; aspect-ratio: 1;
-    border-radius: 1rem; overflow: hidden; background: #17171b; margin: 0 auto 1rem;
-    box-shadow: 0 12px 30px rgba(0,0,0,0.5); }}
-  .mosaic img {{ width: 100%; height: 100%; object-fit: cover; display: block; }}
-  .mosaic img:only-child {{ grid-column: 1 / -1; grid-row: 1 / -1; }}
-  h1 {{ font-size: 1.35rem; margin: 0; line-height: 1.25; overflow-wrap: anywhere; }}
-  .head p {{ color: #a8a8b3; margin: 0.25rem 0 0; font-size: 0.9rem; }}
-  .desc {{ margin-top: 0.5rem !important; }}
-  .actions {{ display: flex; gap: 0.5rem; margin-top: 1rem; }}
-  .open {{ flex: 1; padding: 0.75rem 1rem; text-align: center; border-radius: 999px;
-    background: #f0356d; color: #fff; font-weight: 600; text-decoration: none; font-size: 0.95rem; }}
-  .get {{ flex: 1; padding: 0.75rem 1rem; text-align: center; border-radius: 999px; color: #f2f2f4;
-    background: rgba(255,255,255,0.08); text-decoration: none; font-size: 0.95rem; }}
-  .list {{ flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-    border-top: 1px solid rgba(255,255,255,0.08); padding: 0.25rem 0.75rem 1rem; }}
-  ol {{ list-style: none; margin: 0; padding: 0; }}
-  .row {{ position: relative; display: grid; grid-template-columns: 2.5rem 1fr; column-gap: 0.6rem;
-    align-items: center; padding: 0.5rem 0.25rem; border-radius: 0.75rem; cursor: pointer; }}
-  .row[data-on] {{ background: rgba(240,53,109,0.14); }}
-  /* The row's button is the app's own play button: a solid accent circle
-     with a filled glyph, 2.5rem, the number resting on it until it is asked. */
-  .play {{ grid-row: 1 / 3; width: 2.5rem; height: 2.5rem; border: none; border-radius: 999px;
-    background: rgba(255,255,255,0.06); color: #f2f2f4; display: grid; place-items: center;
-    cursor: pointer; padding: 0; }}
-  .play .n {{ color: #8e8e99; font-variant-numeric: tabular-nums; font-size: 0.85rem; }}
-  .play svg {{ display: none; width: 18px; height: 18px; }}
-  .row:hover .play .n, .row[data-on] .play .n, .row[data-busy] .play .n {{ display: none; }}
-  .row:hover .play .ic-play, .row[data-busy] .play .ic-play {{ display: block; }}
-  .row[data-on] .play {{ background: #f0356d; color: #0b0b0d; }}
-  .row[data-on] .play .ic-pause {{ display: block; }}
-  .row[data-on] .play .ic-play {{ display: none; }}
-  .row[data-busy] .play {{ color: rgba(255,255,255,0.5); }}
-  .row[data-none] {{ opacity: 0.55; cursor: default; }}
-  .t {{ font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-  .a {{ color: #a8a8b3; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-  .foot {{ color: #6b6b75; font-size: 0.75rem; text-align: center; padding: 0.75rem 0 0; }}
-
-  /* The bottom of the card: the app's compact player. Seek line (the swell),
-     elapsed and remaining, then previous · play · next in the app's shapes. */
-  .now {{ flex: none; padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
-    border-top: 1px solid rgba(255,255,255,0.08); background: rgba(12,12,15,0.7);
-    display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 0.75rem; align-items: center; }}
-  .nowMeta {{ grid-column: 1 / -1; display: flex; align-items: center; gap: 0.6rem; min-width: 0; margin-bottom: 0.4rem; }}
-  .nowArt {{ width: 2.5rem; height: 2.5rem; border-radius: 0.5rem; background: #24242b; object-fit: cover; flex: none; }}
-  .nowArt[hidden] {{ display: none; }}
-  .nowWho {{ min-width: 0; display: flex; flex-direction: column; }}
-  .nowTitle {{ font-weight: 600; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-  .nowArtist {{ color: #a8a8b3; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-  .seekWrap {{ min-width: 0; }}
-  .seek {{ position: relative; height: 2.25rem; cursor: pointer; touch-action: none; }}
-  .seek svg {{ position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }}
-  .seek .ahead {{ fill: none; stroke: rgba(255,255,255,0.22); stroke-width: 3; stroke-linecap: round; }}
-  .seek .played {{ fill: none; stroke: #f0356d; stroke-width: 3; stroke-linecap: round; }}
-  .seek .playhead {{ position: absolute; top: 0; bottom: 0; width: 2px; background: #f0356d; border-radius: 999px;
-    transform: translateX(-50%); left: 0; }}
-  .seek[data-scrubbing] .playhead {{ box-shadow: 0 0 0 3px rgba(240,53,109,0.35); }}
-  .times {{ display: flex; justify-content: space-between; font-size: 0.8rem; color: #a8a8b3;
-    font-variant-numeric: tabular-nums; margin-top: 0.15rem; }}
-  .transport {{ display: flex; align-items: center; gap: 0.25rem; }}
-  .transport button {{ border: none; background: transparent; color: #f2f2f4; width: 2.25rem; height: 2.25rem;
-    border-radius: 999px; display: grid; place-items: center; cursor: pointer; padding: 0; }}
-  .transport button svg {{ width: 20px; height: 20px; }}
-  .transport .big {{ width: 2.5rem; height: 2.5rem; background: #f0356d; color: #0b0b0d; }}
-  .transport .big svg {{ width: 22px; height: 22px; }}
-  .transport .big .ic-pause {{ display: none; }}
-  .now[data-playing] .transport .big .ic-pause {{ display: block; }}
-  .now[data-playing] .transport .big .ic-play {{ display: none; }}
-  .now[data-idle] .transport button, .now[data-idle] .seek {{ opacity: 0.45; pointer-events: none; }}
-  .now[data-idle] .transport .big {{ opacity: 1; pointer-events: auto; }}
-  @media (prefers-reduced-motion: reduce) {{ .backdrop {{ transform: none; }} }}
-</style>
+<link rel="stylesheet" href="/p/_/landing.css?v={stamp}">
+<style>html,body{{background:#0b0b0d;color:#f2f2f4;margin:0}}</style>
 </head><body>
-{backdrop}
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4.5v15a1 1 0 0 0 1.52.86l12.3-7.5a1 1 0 0 0 0-1.72L7.52 3.64A1 1 0 0 0 6 4.5z"/></symbol>
-  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="5" y="4" width="5" height="16" rx="1.5"/><rect x="14" y="4" width="5" height="16" rx="1.5"/></symbol>
-  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 5.5v13a1 1 0 0 1-1.57.82L8 13.2V18a1 1 0 0 1-2 0V6a1 1 0 0 1 2 0v4.8l9.43-6.12A1 1 0 0 1 19 5.5z"/></symbol>
-  <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M5 5.5v13a1 1 0 0 0 1.57.82L16 13.2V18a1 1 0 0 0 2 0V6a1 1 0 0 0-2 0v4.8L6.57 4.68A1 1 0 0 0 5 5.5z"/></symbol>
-</svg>
-<div class="stage"><main class="card">
-  <div class="head">
-    {mosaic_block}
-    <h1>{name}</h1>
-    <p>{summary}</p>
-    {description}
-    <div class="actions">
-      <a class="open" href="attackfm://p/{safe}">Open in AttackFM</a>
-      <a class="get" href="https://attack.fm">Get the app</a>
-    </div>
-  </div>
-  <div class="list">
-    <ol id="rows">{rows}</ol>
-    <p class="foot">Thirty-second previews · full songs play in AttackFM</p>
-  </div>
-  <div class="now" id="now" data-idle>
-    <div class="nowMeta">
-      <img class="nowArt" id="nowArt" alt="" hidden>
-      <div class="nowWho"><span class="nowTitle" id="nowTitle">Tap a song to preview</span><span class="nowArtist" id="nowArtist">Thirty seconds of each</span></div>
-    </div>
-    <div class="seekWrap">
-      <div class="seek" id="seek" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
-        <svg viewBox="0 0 1000 40" preserveAspectRatio="none">
-          <defs><clipPath id="playedClip"><rect id="playedRect" x="0" y="-20" width="0" height="80"/></clipPath></defs>
-          <path class="ahead" id="swell"/>
-          <path class="played" id="swellPlayed" clip-path="url(#playedClip)"/>
-        </svg>
-        <div class="playhead" id="head"></div>
-      </div>
-      <div class="times"><span id="tElapsed">0:00</span><span id="tRemain">-0:00</span></div>
-    </div>
-    <div class="transport" role="group" aria-label="Playback controls">
-      <button type="button" id="btnPrev" aria-label="Previous"><svg><use href="#i-back"/></svg></button>
-      <button type="button" id="btnPlay" class="big" aria-label="Play"><svg class="ic-play"><use href="#i-play"/></svg><svg class="ic-pause"><use href="#i-pause"/></svg></button>
-      <button type="button" id="btnNext" aria-label="Next"><svg><use href="#i-fwd"/></svg></button>
-    </div>
-  </div>
-</main></div>
-<audio id="player" preload="none"></audio>
-<script>
-(function () {{
-  var code = {code_json};
-  var audio = document.getElementById('player');
-  var rows = document.getElementById('rows');
-  var now = document.getElementById('now');
-  var nowArt = document.getElementById('nowArt'), nowTitle = document.getElementById('nowTitle'), nowArtist = document.getElementById('nowArtist');
-  var seek = document.getElementById('seek'), playedRect = document.getElementById('playedRect'), head = document.getElementById('head');
-  var tElapsed = document.getElementById('tElapsed'), tRemain = document.getElementById('tRemain');
-  var total = rows.children.length;
-  var current = null;
-
-  // The swell: the app's seek line - a gentle wave that grows toward the
-  // end, drawn once; the played part is the same path clipped to progress.
-  (function drawSwell() {{
-    var d = '', n = 200;
-    for (var k = 0; k <= n; k++) {{
-      var x = 1000 * k / n, t = k / n;
-      var amp = 2 + 14 * t * t;
-      var y = 20 + Math.sin(t * Math.PI * 14) * amp;
-      d += (k ? ' L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(2);
-    }}
-    document.getElementById('swell').setAttribute('d', d);
-    document.getElementById('swellPlayed').setAttribute('d', d);
-  }})();
-
-  function row(i) {{ return rows.querySelector('[data-i="' + i + '"]'); }}
-  function fmt(s) {{ s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60); }}
-  function progress(p) {{
-    playedRect.setAttribute('width', String(1000 * p));
-    head.style.left = (100 * p) + '%';
-    seek.setAttribute('aria-valuenow', String(Math.round(100 * p)));
-  }}
-  function times() {{
-    var d = audio.duration || 0, c = audio.currentTime || 0;
-    tElapsed.textContent = fmt(c); tRemain.textContent = '-' + fmt(Math.max(0, d - c));
-    progress(d ? c / d : 0);
-  }}
-  function setPlaying(on) {{ if (on) now.setAttribute('data-playing', ''); else now.removeAttribute('data-playing'); document.getElementById('btnPlay').setAttribute('aria-label', on ? 'Pause' : 'Play'); }}
-  function clearRow() {{
-    if (current !== null) {{ var r = row(current); if (r) {{ r.removeAttribute('data-on'); r.removeAttribute('data-busy'); }} }}
-  }}
-  function stop() {{ audio.pause(); audio.removeAttribute('src'); audio.load(); clearRow(); current = null; setPlaying(false); progress(0); tElapsed.textContent = '0:00'; tRemain.textContent = '-0:00'; }}
-  function show(i) {{
-    var r = row(i);
-    nowTitle.textContent = r.querySelector('.t').textContent;
-    nowArtist.textContent = r.querySelector('.a').textContent;
-    nowArt.hidden = true; nowArt.removeAttribute('src');
-    var art = new Image();
-    art.onload = function () {{ if (current === i) {{ nowArt.src = art.src; nowArt.hidden = false; }} }};
-    art.src = '/p/' + code + '/art/' + i;
-    now.removeAttribute('data-idle');
-  }}
-  function play(i) {{
-    var r = row(i); if (!r || r.hasAttribute('data-none')) return;
-    if (current === i) {{ if (audio.paused) audio.play(); else audio.pause(); return; }}
-    stop(); current = i; r.setAttribute('data-busy', ''); show(i);
-    // The registry answers with a redirect to the catalogue's clip, or 404.
-    fetch('/p/' + code + '/preview/' + i, {{ method: 'HEAD' }}).then(function (res) {{
-      if (current !== i) return;
-      if (!res.ok) {{ r.removeAttribute('data-busy'); r.setAttribute('data-none', ''); current = null; nowArtist.textContent = 'No preview for this one'; return; }}
-      audio.src = res.url; audio.play().then(function () {{
-        r.removeAttribute('data-busy'); r.setAttribute('data-on', '');
-      }}).catch(function () {{ r.removeAttribute('data-busy'); current = null; }});
-    }}).catch(function () {{ r.removeAttribute('data-busy'); current = null; }});
-  }}
-  function step(dir) {{
-    if (current === null) {{ if (total) play(0); return; }}
-    if (dir < 0 && audio.currentTime > 3) {{ audio.currentTime = 0; return; }}
-    var k = current + dir;
-    while (k >= 0 && k < total && row(k).hasAttribute('data-none')) k += dir;
-    if (k >= 0 && k < total) play(k);
-  }}
-
-  rows.addEventListener('click', function (e) {{
-    var li = e.target.closest('.row'); if (!li) return;
-    play(parseInt(li.getAttribute('data-i'), 10));
-  }});
-  document.getElementById('btnPlay').addEventListener('click', function () {{
-    if (current === null) {{ if (total) play(0); return; }}
-    if (audio.paused) audio.play(); else audio.pause();
-  }});
-  document.getElementById('btnPrev').addEventListener('click', function () {{ step(-1); }});
-  document.getElementById('btnNext').addEventListener('click', function () {{ step(1); }});
-
-  // Seeking: tap or drag along the swell.
-  var scrubbing = false;
-  function seekTo(e) {{
-    var b = seek.getBoundingClientRect();
-    var p = Math.min(1, Math.max(0, (e.clientX - b.left) / b.width));
-    if (audio.duration) audio.currentTime = p * audio.duration;
-    progress(p);
-  }}
-  seek.addEventListener('pointerdown', function (e) {{ if (current === null) return; scrubbing = true; seek.setAttribute('data-scrubbing', ''); try {{ seek.setPointerCapture(e.pointerId); }} catch (_) {{}} seekTo(e); }});
-  seek.addEventListener('pointermove', function (e) {{ if (scrubbing) seekTo(e); }});
-  function endScrub(e) {{ if (!scrubbing) return; scrubbing = false; seek.removeAttribute('data-scrubbing'); seekTo(e); }}
-  seek.addEventListener('pointerup', endScrub);
-  seek.addEventListener('pointercancel', endScrub);
-  seek.addEventListener('keydown', function (e) {{
-    if (!audio.duration) return;
-    if (e.key === 'ArrowRight') audio.currentTime = Math.min(audio.duration, audio.currentTime + 5);
-    if (e.key === 'ArrowLeft') audio.currentTime = Math.max(0, audio.currentTime - 5);
-  }});
-
-  audio.addEventListener('play', function () {{ setPlaying(true); }});
-  audio.addEventListener('pause', function () {{ setPlaying(false); }});
-  audio.addEventListener('timeupdate', function () {{ if (!scrubbing) times(); }});
-  audio.addEventListener('durationchange', times);
-  audio.addEventListener('ended', function () {{
-    var next = current === null ? null : current + 1;
-    if (next !== null && next < total) play(next); else stop();
-  }});
-}})();
-</script>
+<div id="root"></div>
+<noscript><main style="max-width:30rem;margin:2rem auto;padding:1rem;font-family:system-ui,sans-serif">
+<h1>{name}</h1><p>{summary}</p><a href="attackfm://p/{safe}">Open in AttackFM</a><ol>{noscript}</ol></main></noscript>
+<script>window.__SHARE__ = {doc};</script>
+<script type="module" src="/p/_/landing.js?v={stamp}"></script>
 </body></html>"##,
         name = esc(&s.name),
-        code_json = serde_json::to_string(&s.code).unwrap_or_else(|_| "\"\"".into()),
-        mosaic_block = if mosaic.is_empty() { String::new() } else { format!("<div class=\"mosaic\">{mosaic}</div>") },
     ))
 }
 
@@ -2031,6 +1813,8 @@ async fn main() {
         .route("/v1/playlists/share/{code}", get(playlist_share_json))
         .route("/p/{code}", get(playlist_landing))
         .route("/p/{code}/cover.jpg", get(playlist_share_cover))
+        .route("/p/_/landing.js", get(landing_js))
+        .route("/p/_/landing.css", get(landing_css))
         .route("/p/{code}/preview/{i}", get(playlist_preview))
         .route("/p/{code}/art/{i}", get(playlist_row_art))
         .route("/v1/profile", axum::routing::put(profile_put))

@@ -1,0 +1,257 @@
+/*
+ * The registry's playlist page. Layout only: colours, type and every control
+ * come from GlacierUI's tokens and components, the same ones the app wears.
+ */
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--glacier-bg, #0b0b0d);
+  color: var(--glacier-text);
+  font-family: var(--glacier-font-sans, 'Inter Variable', ui-sans-serif, system-ui, sans-serif);
+}
+
+#root {
+  height: 100%;
+}
+
+.backdrop {
+  position: fixed;
+  inset: -10%;
+  background-size: cover;
+  background-position: center;
+  filter: blur(60px) saturate(1.3) brightness(0.45);
+  transform: scale(1.1);
+}
+
+.stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+}
+
+.card {
+  position: relative;
+  width: min(100%, 30rem);
+  max-height: min(88dvh, 52rem);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--glacier-radius-xl, 1.5rem);
+  overflow: hidden;
+  background: var(--glacier-glass-thick, rgba(20, 20, 24, 0.86));
+  backdrop-filter: blur(var(--glacier-blur-lg, 24px)) saturate(var(--glacier-glass-saturate, 1.4));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg, 24px)) saturate(var(--glacier-glass-saturate, 1.4));
+  border: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
+  box-shadow: var(--glacier-shadow-xl, 0 30px 80px rgba(0, 0, 0, 0.6));
+}
+
+.head {
+  flex: none;
+  padding: var(--glacier-space-6) var(--glacier-space-6) var(--glacier-space-4);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+.mosaic {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  width: 9.5rem;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-lg, 1rem);
+  overflow: hidden;
+  background: var(--glacier-surface-sunken, #17171b);
+  margin: 0 auto var(--glacier-space-3);
+  box-shadow: var(--glacier-shadow-lg, 0 12px 30px rgba(0, 0, 0, 0.5));
+}
+
+.mosaic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mosaic[data-n='1'] img {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+}
+
+.mosaic[data-n='3'] img:first-child {
+  grid-column: 1 / -1;
+}
+
+.mosaic--empty {
+  display: grid;
+  place-items: center;
+  color: var(--glacier-text-muted);
+}
+
+h1 {
+  font-size: var(--glacier-font-size-xl, 1.35rem);
+  margin: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.desc {
+  margin-top: var(--glacier-space-2);
+}
+
+.actions {
+  display: flex;
+  gap: var(--glacier-space-2);
+  margin-top: var(--glacier-space-3);
+  width: 100%;
+}
+
+.actions > * {
+  flex: 1;
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
+  padding: var(--glacier-space-1) var(--glacier-space-3) var(--glacier-space-4);
+}
+
+.list ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--glacier-space-3);
+  align-items: center;
+  padding: var(--glacier-space-2) var(--glacier-space-1);
+  border-radius: var(--glacier-radius-md, 0.75rem);
+  cursor: pointer;
+}
+
+.row[data-on] {
+  background: color-mix(in srgb, var(--glacier-accent-solid) 14%, transparent);
+}
+
+.row[data-none] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* The row's button is the kit's IconButton; the number rests on it until it
+   is asked, then the glyph takes over - the same rule the app's rows use. */
+.row__play {
+  grid-row: 1 / 3;
+}
+
+.row__n {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.row__glyph {
+  display: none;
+}
+
+.row:hover .row__n,
+.row[data-on] .row__n {
+  display: none;
+}
+
+.row:hover .row__glyph,
+.row[data-on] .row__glyph {
+  display: block;
+}
+
+.row__t {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row__a {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foot {
+  display: block;
+  text-align: center;
+  padding-top: var(--glacier-space-3);
+}
+
+/* What is playing, above the kit's bar. */
+.nowMeta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3) var(--glacier-space-4) 0;
+  border-top: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
+  min-width: 0;
+}
+
+.nowMeta__who {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.nowMeta__title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nowMeta__artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The kit's PlayerBar, pinned to the card's foot. */
+.now {
+  flex: none;
+}
+
+.now__art {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--glacier-radius-sm, 0.5rem);
+  object-fit: cover;
+  display: block;
+}
+
+.now__art--empty {
+  display: grid;
+  place-items: center;
+  background: var(--glacier-surface-sunken, #24242b);
+  color: var(--glacier-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop {
+    transform: none;
+  }
+}
