@@ -1,8 +1,29 @@
-import { Button, IconButton, PlayerBar, Text } from '@glacier/react';
+import { Button, IconButton, Text, type PlayerRepeat } from '@glacier/react';
 import { ListMusic, Pause, Play } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SpinningDisc } from '../app/player/SpinningDisc.tsx';
 import { CoverWall } from '../app/playlists/CoverWall.tsx';
+import { PlayerStrip } from '../app/player/PlayerStrip.tsx';
+import { StaticConnectProvider } from '../app/player/playbackSync.tsx';
+import { NowPlayingMotionProvider } from '../app/player/nowPlayingMotion.tsx';
+import { PlaybackProvider } from '../app/player/playback.tsx';
+import { EqualizerProvider } from '../app/player/equalizer.tsx';
+import { PluginsContext, type PluginsContextValue } from '../plugins/pluginsContext.ts';
+import type { Track } from '../app/core/tauri.ts';
+
+/** The strip's plugin slots, with no plugins: nothing to draw. */
+const NO_PLUGINS: PluginsContextValue = {
+  all: [],
+  enabled: [],
+  enabledKey: '',
+  isEnabled: () => false,
+  setEnabled: () => {},
+  failures: new Map(),
+  reportCrash: () => {},
+  remoteInstalled: new Map(),
+  reloadRemote: () => {},
+};
+
+const noop = () => {};
 
 export interface SharedTrackDoc {
   artist: string;
@@ -23,8 +44,9 @@ export interface SharedPlaylistDoc {
 
 /**
  * A shared playlist, as a page: the card in the middle, the songs scrolling
- * inside it, and the app's own player at the bottom - GlacierUI's PlayerBar
- * with the swell seek the app's strip uses, its transport, its buttons.
+ * inside it, and the app's own player strip at the bottom - the very
+ * component the desktop and phone dock at their foot (player/PlayerStrip),
+ * fed by this page's preview audio.
  *
  * Previews are the catalogue's thirty-second clips: the registry answers
  * `/p/{code}/preview/{i}` with a redirect to one, or 404 when the catalogue
@@ -42,6 +64,15 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
   const [art, setArt] = useState<string | null>(null);
   const scrubbing = useRef(false);
   const total = share.tracks.length;
+
+  // The strip's own state that a page has to hold for it. The phone face,
+  // always: the card is phone-sized whatever window it sits in, and the
+  // phone strip is the one with the disc.
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const [shuffle, setShuffle] = useState(false);
+  const [repeat, setRepeat] = useState<PlayerRepeat>('off');
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
 
   const stop = useCallback(() => {
     const a = audio.current;
@@ -145,6 +176,35 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
 
   const count = total;
 
+  // The playing song as the strip understands one - a Track. The path is a
+  // scheme of this page's own; nothing resolves it, the strip only labels
+  // and keys by it.
+  const nowTrack = useMemo<Track | null>(() => {
+    if (current === null) return null;
+    const t = share.tracks[current];
+    if (!t) return null;
+    return {
+      path: `preview://${share.code}/${current}`,
+      title: t.title,
+      artist: t.artist,
+      album: t.album ?? '',
+      duration: duration,
+      addedAt: 0,
+      artwork: art,
+      genre: '',
+      lyrics: '',
+    } as Track;
+  }, [current, share, duration, art]);
+
+  const setVolumeState = useCallback((next: number) => {
+    setVolume(next);
+    if (audio.current) audio.current.volume = Math.max(0, Math.min(1, next));
+  }, []);
+  const setMutedState = useCallback((next: boolean) => {
+    setMuted(next);
+    if (audio.current) audio.current.muted = next;
+  }, []);
+
   // The wall behind the header: the app's own CoverWall, fed the covers the
   // link carries plus the catalogue's cover for every song (which 404s
   // quietly where there is none - a missing tile, not a broken wall).
@@ -234,47 +294,83 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
           </Text>
         </div>
 
-        {/* The app's player bar, floating as its own card at the foot, the
-            way the desktop app's does - with the app's SpinningDisc in the
-            bar's artwork slot (turning only while sound is coming out,
-            spooling up while a clip loads). The kit folds the artwork block
-            below a wide window; the same override the app's strip carries
-            keeps the disc in the bar here, with the title lines folded. */}
-        <div className="nowFloat" data-idle={current === null || undefined}>
-          <PlayerBar
-            className="now__bar"
-            position="floating"
-            density="compact"
-            artwork={<SpinningDisc art={art} spinning={playing} spooling={busy !== null} />}
-            title={current === null ? 'Tap a song to preview' : share.tracks[current]?.title}
-            subtitle={current === null ? 'Thirty seconds of each' : share.tracks[current]?.artist}
-            shape="swell"
-          tone="accent"
-          fill="solid"
-          rail="contrast"
-          duration={duration}
-          value={position}
-          onValueChange={(s) => {
-            scrubbing.current = true;
-            setPosition(s);
-          }}
-          onSeekEnd={(s) => {
-            scrubbing.current = false;
-            if (audio.current && current !== null) audio.current.currentTime = s;
-          }}
-          playing={playing}
-          onPlayingChange={(on) => {
-            if (current === null) {
-              if (total) play(0);
-              return;
-            }
-            if (on) void audio.current?.play();
-            else audio.current?.pause();
-          }}
-            onSkipBack={() => step(-1)}
-            onSkipForward={() => step(1)}
-          />
-        </div>
+        {/* The app's player strip - the very component the desktop and the
+            phone dock at their foot (player/PlayerStrip), in the app's own
+            .appPlayer plate, fed by this page's preview audio instead of the
+            app's decks. Connect and plugins are stubbed: there is no hub to
+            sync with and nothing to slot in. */}
+        <StaticConnectProvider>
+          <PluginsContext.Provider value={NO_PLUGINS}>
+           <PlaybackProvider>
+           <EqualizerProvider>
+           <NowPlayingMotionProvider>
+            <div className="appPlayer">
+              <PlayerStrip
+                shellRef={shellRef}
+                dismissed={false}
+                mobileControls
+                openNowPlaying={noop}
+                listLoading={false}
+                npArtMenu={null}
+                artView="cd"
+                track={nowTrack}
+                artwork={art}
+                dispArtwork={art}
+                activeElsewhere={false}
+                activeDeviceName={null}
+                dispTrack={nowTrack}
+                dispDuration={duration}
+                dispPosition={position}
+                dispPlaying={playing}
+                audible={playing && !muted && volume > 0}
+                buffering={busy !== null}
+                downloading={false}
+                meter={null}
+                progress={duration > 0 ? position / duration : 0}
+                pauseStyle="instant"
+                onScrubDisp={(to) => {
+                  scrubbing.current = true;
+                  setPosition(to);
+                }}
+                onSeekEndDisp={(s) => {
+                  scrubbing.current = false;
+                  if (audio.current && current !== null) audio.current.currentTime = s;
+                }}
+                onPlayingChangeDisp={(on) => {
+                  if (current === null) {
+                    if (total) play(0);
+                    return;
+                  }
+                  if (on) void audio.current?.play();
+                  else audio.current?.pause();
+                }}
+                onSkipBackDisp={() => step(-1)}
+                onSkipForwardDisp={() => step(1)}
+                shuffle={shuffle}
+                setShuffle={setShuffle}
+                repeat={repeat}
+                setRepeat={setRepeat}
+                favorite={false}
+                toggleFavoriteFelt={noop}
+                position={position}
+                commitSeek={(to) => {
+                  if (audio.current && current !== null) audio.current.currentTime = to;
+                }}
+                volume={volume}
+                muted={muted}
+                systemVolume={volume}
+                setVolumeState={setVolumeState}
+                setMutedState={setMutedState}
+                setNpQueue={noop}
+                setNpOpen={noop}
+                setFiling={noop}
+              />
+            </div>
+           </NowPlayingMotionProvider>
+           </EqualizerProvider>
+           </PlaybackProvider>
+          </PluginsContext.Provider>
+        </StaticConnectProvider>
         <audio ref={audio} preload="none" />
       </main>
     </div>

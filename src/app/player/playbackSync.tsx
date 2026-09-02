@@ -222,3 +222,31 @@ export function useConnect(): PlaybackSyncValue {
   if (!value) throw new Error('useConnect must be used within a PlaybackSyncProvider');
   return value;
 }
+
+/**
+ * Connect, where there is no hub: a page that mounts the player strip
+ * outside the app (the registry's playlist link page) with nothing to sync
+ * to. Every reader sees "this device, alone, in charge" and every verb is a
+ * no-op - so the strip's device picker and takeover hooks render their idle
+ * faces rather than throwing for a provider that has nothing to provide.
+ */
+export function StaticConnectProvider({ children }: { children: ReactNode }) {
+  const value = useMemo<PlaybackSyncValue>(
+    () => ({
+      connected: false,
+      thisDeviceId: 'here',
+      devices: [],
+      activeDeviceId: null,
+      isActiveHere: true,
+      activeElsewhere: false,
+      session: null,
+      transfer: () => {},
+      sendCommand: () => {},
+      reportState: () => {},
+      registerController: () => {},
+      renameDevice: () => {},
+    }),
+    [],
+  );
+  return <PlaybackSyncContext.Provider value={value}>{children}</PlaybackSyncContext.Provider>;
+}

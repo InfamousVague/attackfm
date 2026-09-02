@@ -210,45 +210,28 @@ h1 {
   padding-top: var(--glacier-space-3);
 }
 
-/* The kit's PlayerBar, floating as its own card at the foot of the playlist
-   card - `position="floating"` gives it the glass, the border, the shadow
-   and the radius; this box gives it room to float in. */
-.nowFloat {
+/* The app's player strip at the card's foot.
+   The strip's own rules arrive through borrowed.css (the .appPlayer plate,
+   the transport, the disc). They expect the app window's tokens, set here
+   for the card, and they dock the plate absolutely to the window's floor -
+   here it sits in the card's flow instead. */
+.card {
+  --app-player-rise: 0.36s;
+  --app-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --app-safe-left: env(safe-area-inset-left, 0px);
+  --app-safe-right: env(safe-area-inset-right, 0px);
+  --app-nav-height: 0px;
+  --app-nav-gap: var(--glacier-space-1);
+  --app-player-height: 0px;
+}
+
+.card .appPlayer {
+  position: static;
+  inset: auto;
+  animation: none;
   flex: none;
-  padding: var(--glacier-space-2) var(--glacier-space-3) calc(var(--glacier-space-3) + env(safe-area-inset-bottom));
-}
-
-.now__bar {
-  width: 100%;
-}
-
-/* The kit folds the artwork block below 34rem of container; the app's strip
-   re-shows it with these same rules (styles/19), keeps only the artwork
-   square and folds the title lines - the disc IS the "now playing" here. */
-.now__bar [class*='_track_'] {
-  display: flex;
-  align-items: stretch;
-  flex: none;
-  min-inline-size: auto;
-  align-self: stretch;
-}
-
-.now__bar [class*='_track_'] [class*='_artwork_'] {
-  inline-size: 2.75rem !important;
-  block-size: 2.75rem !important;
-  flex: none;
-  /* A disc is round. */
-  border-radius: 50%;
-  overflow: visible;
-}
-
-.now__bar [class*='_track_'] [class*='_artwork_'] > * {
-  inline-size: 100%;
-  block-size: 100%;
-}
-
-.now__bar [class*='_lines_'] {
-  display: none;
+  padding: var(--glacier-space-2);
+  padding-block-end: calc(var(--glacier-space-2) + var(--app-safe-bottom));
 }
 
 @media (prefers-reduced-motion: reduce) {
