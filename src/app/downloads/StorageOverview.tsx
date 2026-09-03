@@ -251,10 +251,17 @@ export function StorageOverview() {
   }
 
   const listed = (usage?.bytes ?? 0) + (usage?.pinnedBytes ?? 0);
-  // The folder can hold more than the listings say: a download's .part file is
-  // deliberately not an entry, but its bytes are real.
-  const debris = Math.max(0, (space?.heldBytes ?? listed) - listed);
-  const total = listed + debris;
+  /*
+   * Bytes on disk beyond what the cache tracks. NOT "still downloading" - that
+   * label was wrong and it never cleared: an in-flight `.part` is a sliver and
+   * transient, but this number is dominated by FINISHED files the cache ledger
+   * no longer accounts for - a download from a server you have since left, a
+   * vault from before a library moved, anything the index and the disk drifted
+   * apart on. It is real (heldBytes is a filesystem sum), it is just not a
+   * download in progress, so it reads as "Other files" and is reclaimed by
+   * clearing downloads rather than by waiting for a download to finish.
+   */
+  const other = Math.max(0, (space?.heldBytes ?? listed) - listed);
   /*
    * The empty share of the bar - what the cache could still take before it
    * starts evicting.
@@ -282,6 +289,7 @@ export function StorageOverview() {
   const bookBytes = (kinds?.books.bytes ?? 0) + (kinds?.books.pinnedBytes ?? 0);
   const musicCount = (kinds?.music.count ?? 0) + (kinds?.music.pinnedCount ?? 0);
   const bookCount = (kinds?.books.count ?? 0) + (kinds?.books.pinnedCount ?? 0);
+  const total = listed + other;
   const capacity = Math.max(limit, total);
   const empty = Math.max(0, capacity - total);
 
@@ -317,13 +325,12 @@ export function StorageOverview() {
               data={[
                 { value: musicBytes, tone: 'accent', label: 'Music' },
                 { value: bookBytes, tone: 'success', label: 'Audiobooks' },
-                /* Debris moves off `neutral` so the gray can have it. The kit
-                   offers five tones and only one of them is a gray, so the
-                   empty share and the unfinished downloads cannot both wear
-                   it and stay tellable apart. Warning is the better fit for
-                   debris anyway - a part-downloaded file is a state worth
-                   noticing, where empty space is the absence of one. */
-                { value: debris, tone: 'warning', label: 'Still downloading' },
+                /* Other files sit on `warning` so the gray stays with Free -
+                   the kit has one gray, and the room left and the untracked
+                   bytes have to stay tellable apart. Warning fits: files the
+                   cache cannot manage are a state worth noticing, where empty
+                   space is the absence of one. */
+                { value: other, tone: 'warning', label: 'Other files' },
                 { value: empty, tone: 'neutral', label: 'Free' },
               ]}
               aria-label="What is using the space"
@@ -341,9 +348,9 @@ export function StorageOverview() {
                   ? ` (${formatBytes(kinds.books.pinnedBytes)} kept)`
                   : ''}
               </span>
-              {debris > 0 && (
+              {other > 0 && (
                 <span className="storageBreak__key" data-tone="warning">
-                  Still downloading · {formatBytes(debris)}
+                  Other files · {formatBytes(other)}
                 </span>
               )}
               {empty > 0 && (
