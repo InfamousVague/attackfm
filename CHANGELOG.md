@@ -15,6 +15,15 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.70
+
+- The app tells you when it has found new music for you: a shelf of fresh
+  picks in Discover, and songs queued up in Music Date. It used to build both
+  quietly and never say so — now the bell (and your phone) let you know.
+- One switch for it, under Settings → Notifications → Discovery notifications,
+  on to begin with. It only speaks up for genuinely new things, once each, so
+  it stays a nudge rather than a nag.
+
 ## 0.5.69
 
 - The player bar and the navigation bar are the same height, and stay that way: they now take one number between them instead of each arriving at its own.

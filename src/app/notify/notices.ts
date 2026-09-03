@@ -53,7 +53,7 @@ export interface Notice {
   /** Cover for the row, already an app URL. Null draws the kind's glyph. */
   art: string | null;
   /** Where a press lands, or null for a line of news with nowhere to go. */
-  door: 'downloads' | 'friends' | null;
+  door: 'downloads' | 'friends' | 'discover' | 'date' | null;
   /**
    * The one song this news is about, when it is about one - a single-track
    * landing. It rides into the OS notification's extra payload, so tapping
@@ -111,7 +111,13 @@ function load(): Notice[] {
         title: typeof e.title === 'string' ? e.title : '',
         body: typeof e.body === 'string' ? e.body : '',
         art: typeof e.art === 'string' ? e.art : null,
-        door: e.door === 'downloads' || e.door === 'friends' ? e.door : null,
+        door:
+          e.door === 'downloads' ||
+          e.door === 'friends' ||
+          e.door === 'discover' ||
+          e.door === 'date'
+            ? e.door
+            : null,
         ...(e.song && typeof e.song.title === 'string'
           ? { song: { title: e.song.title, artist: String(e.song.artist ?? '') } }
           : {}),

@@ -119,6 +119,35 @@ export function setOsNotices(value: boolean): void {
   set(OS_NOTIFY_KEY, value, true);
 }
 
+/**
+ * Whether the app tells you about the discovery work it does on its own.
+ *
+ * On by default, and that default is the whole point of the feature: the app
+ * quietly builds a shelf of new music picked for your taste and queues songs
+ * for a date, and until now said nothing about either - so on a phone, where
+ * the server cannot push, that work reached you only if you happened to open
+ * the right page. On, the bell (and the tray) ring when the discovery shelf
+ * gains fresh music and when the date pool grows past its previous peak.
+ *
+ * The one switch governs both watchers - it is the discovery analogue of the
+ * verbose switch, coarse on purpose. It is NOT noise insurance the way "off by
+ * default" would be: the watchers are already seed-silent, rise-only and rolled
+ * up to one row each, so this is for the person who simply does not want to be
+ * told, not the safety net.
+ *
+ * Read at EMIT time by the watchers (NewMusicNotices, MusicDateNotices) rather
+ * than held in state, so flipping it takes effect on the next poll.
+ */
+const DISCOVERY_NOTIFY_KEY = 'attackfm-notify-discovery';
+
+export function discoveryNoticesEnabled(): boolean {
+  return on(DISCOVERY_NOTIFY_KEY, true);
+}
+
+export function setDiscoveryNotices(value: boolean): void {
+  set(DISCOVERY_NOTIFY_KEY, value, true);
+}
+
 // ── Sending your music to a server ──────────────────────────────────────────
 
 const UPLOAD_KEY = 'attackfm-auto-upload';

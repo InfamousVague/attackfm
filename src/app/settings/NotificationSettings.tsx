@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchPushPrefs, setPushPref, type ServerSession } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { PaneSection, SettingRow, SettingsEmpty } from './kit/settingsKit.tsx';
-import { osNoticesEnabled, setOsNotices, setVerboseNotices, verboseNoticesEnabled } from './behaviourPrefs.ts';
+import { discoveryNoticesEnabled, osNoticesEnabled, setDiscoveryNotices, setOsNotices, setVerboseNotices, verboseNoticesEnabled } from './behaviourPrefs.ts';
 import { ensureOsNotifyPermission, sendTestNotification } from '../notify/osNotify.ts';
 
 /**
@@ -79,6 +79,7 @@ export async function primeNotificationsSummary(session: ServerSession): Promise
  */
 function DeviceSection() {
   const [verbose, setVerbose] = useState(verboseNoticesEnabled);
+  const [discovery, setDiscovery] = useState(discoveryNoticesEnabled);
   const [osOn, setOsOn] = useState(osNoticesEnabled);
   // Only ever set by an actual refusal. Before that it is not "denied", it is
   // "never asked" - and saying the former would be a lie on every desktop.
@@ -152,6 +153,26 @@ function DeviceSection() {
           }
         />
       )}
+      {/* The app's own discovery work, as news. On by default: the whole point
+          is that the silent shelf-building should reach you, and the watchers
+          are already seed-silent and rise-only, so this is for the person who
+          simply does not want it rather than a noise guard. Local-only, so it
+          is not in the account's switch list above. */}
+      <SettingRow
+        id="notify-discovery"
+        label="Discovery notifications"
+        hint="New music picked for your taste, and songs the collector has queued up for a date."
+        control={
+          <Switch
+            checked={discovery}
+            onCheckedChange={(v) => {
+              setDiscovery(v);
+              setDiscoveryNotices(v);
+            }}
+            aria-label="Discovery notifications"
+          />
+        }
+      />
       {/* Gates the local-only kinds (download started, stems, AI passes) raised
           by the client's own watchers; the server never sees them. */}
       <SettingRow

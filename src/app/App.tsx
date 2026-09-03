@@ -37,6 +37,8 @@ import { DownloadNotices } from './notify/DownloadNotices.tsx';
 import { VerboseNotices } from './notify/VerboseNotices.tsx';
 import { FriendNotices } from './notify/FriendNotices.tsx';
 import { ShareNotices } from './notify/ShareNotices.tsx';
+import { NewMusicNotices } from './notify/NewMusicNotices.tsx';
+import { MusicDateNotices } from './notify/MusicDateNotices.tsx';
 import { SharedPlaylistBridge } from './playlists/SharedPlaylistBridge.tsx';
 import { NotifyBell } from './notify/NotifyBell.tsx';
 import { ShareServer } from './library/ShareServer.tsx';
@@ -51,6 +53,7 @@ import { setMixOpener } from './nav/openMix.ts';
 import { setArtistDoor } from './nav/artistDoor.ts';
 import { setMusicDateDoor } from './nav/musicDateDoor.ts';
 import { setDownloadsDoor } from './nav/downloadsDoor.ts';
+import { setDiscoverDoor } from './nav/discoverDoor.ts';
 import { settingsBack } from './settings/settingsBack.ts';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
@@ -458,6 +461,13 @@ export function App() {
     setMusicDateDoor(() => setDateOpen(true));
     return () => setMusicDateDoor(null);
   }, []);
+  // Discover's opener, for the "new music picked for you" notification row -
+  // the same module-seam trick beside it, because the bell that draws the row
+  // has no prop path to the nav stack.
+  useEffect(() => {
+    setDiscoverDoor(() => goTab('discover'));
+    return () => setDiscoverDoor(null);
+  }, [goTab]);
 
   stateRef.current = { searchOpen, detail: detail as { kind?: string } | null, tab };
   // The phone's edge-swipe back: a drag in from the left walks the same stack
@@ -845,6 +855,14 @@ export function App() {
                 waits for an answer, so it rings either way. */}
             <FriendNotices />
             <ShareNotices />
+            {/* The discovery pair: the app's own background work - the shelf of
+                new music picked for you, and the Music Date pool filling -
+                turned into a nudge instead of something you had to open the
+                right page to notice. Seed-silent and rise-only, behind the
+                device's "Discovery notifications" switch. Headless, session is
+                all either needs. */}
+            <NewMusicNotices />
+            <MusicDateNotices />
             <SharedPlaylistBridge />
             {/* Music Date, fullscreen: over everything, chrome gone - no nav
                 bar, no player strip, just the introductions. A floating

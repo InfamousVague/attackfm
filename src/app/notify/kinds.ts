@@ -11,7 +11,7 @@
 //! back to its own id rather than vanishing, which is what the pane has always
 //! done and what lets the server add one without a frontend release.
 
-import { Bell, Bot, Disc3, Download, Scissors, Sparkles, TriangleAlert, Users } from '@glacier/icons';
+import { Bell, Bot, Compass, Disc3, Download, Scissors, Sparkles, TriangleAlert, Users } from '@glacier/icons';
 import type { ComponentType } from 'react';
 
 export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
@@ -38,6 +38,16 @@ export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
   friends: {
     label: 'Friend requests',
     hint: 'When somebody asks to be friends.',
+  },
+  // A local-only kind (not a server push kind, so it never appears in the
+  // account's switch list), raised by the client's NewMusicNotices watcher and
+  // gated by the device's "Discovery notifications" switch. Distinct from
+  // 'drops' on purpose: 'drops' is music that LANDED and is yours to play, this
+  // is music picked for you that you do not own yet - a door to Discover, not a
+  // song to start.
+  newmusic: {
+    label: 'New to discover',
+    hint: 'When the discovery shelf has fresh music picked for your taste.',
   },
   // ---- verbose kinds: local-only, behind the device's "verbose" switch ----
   // These never appear in the server's push list (set_pref would 400 on
@@ -88,6 +98,8 @@ export function noticeGlyph(kind: string): ComponentType<{ size?: number }> {
       return Sparkles;
     case 'dates':
       return Disc3;
+    case 'newmusic':
+      return Compass;
     case 'friends':
       return Users;
     case 'download-started':

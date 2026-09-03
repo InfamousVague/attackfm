@@ -5,6 +5,8 @@ import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { noticeGlyph } from './kinds.ts';
 import { clearNotices, dismissNotice, markAllRead, msOf, useNotices, useUnreadKinds, useUnreadNotices } from './notices.ts';
 import { useHasDownloadQueue } from '../../plugins/runtime/pluginHooks.tsx';
+import { discoverDoorOpen, openDiscover } from '../nav/discoverDoor.ts';
+import { musicDateDoorOpen, openMusicDate } from '../nav/musicDateDoor.ts';
 
 /**
  * The bell, and the news behind it.
@@ -226,11 +228,16 @@ export function NotifyBell({
                  * the download queue happened to be empty - which is nearly
                  * always.
                  */
-                canOpen={n.door === 'downloads' ? hasQueue : onOpenFriends != null}
+                canOpen={canOpenDoor(n.door, hasQueue, onOpenFriends != null)}
                 onOpen={() => {
                   setOpen(false);
                   if (n.door === 'downloads') onOpenDownloads();
                   else if (n.door === 'friends') onOpenFriends?.();
+                  // Discover and Music Date are reached through their module
+                  // seams, the same ones the Discover chips knock on - so the
+                  // bell needs no handler threaded down to it for either.
+                  else if (n.door === 'discover') openDiscover();
+                  else if (n.door === 'date') openMusicDate();
                 }}
               />
             ))}
@@ -260,6 +267,35 @@ export function NotifyBell({
   );
 }
 
+/**
+ * Whether a row's door has somewhere to land right now.
+ *
+ * PER DOOR, because a row kept from a time when its destination existed must
+ * not still look pressable once it is gone - the Downloads page follows the
+ * importer, Friends follows a surface that offers it, and the two discovery
+ * doors follow whether their fullscreen/tab seam is registered at all (both
+ * are, for the whole app's life, so those are effectively always open - but
+ * asking keeps a stale row from a build that had neither honest).
+ */
+function canOpenDoor(
+  door: 'downloads' | 'friends' | 'discover' | 'date' | null,
+  hasQueue: boolean,
+  hasFriends: boolean,
+): boolean {
+  switch (door) {
+    case 'downloads':
+      return hasQueue;
+    case 'friends':
+      return hasFriends;
+    case 'discover':
+      return discoverDoorOpen();
+    case 'date':
+      return musicDateDoorOpen();
+    default:
+      return false;
+  }
+}
+
 function NoticeRow({
   notice,
   unseen,
@@ -267,7 +303,7 @@ function NoticeRow({
   onOpen,
 }: {
   canOpen: boolean;
-  notice: { id: string; at: number; kind: string; title: string; body: string; art: string | null; door: 'downloads' | 'friends' | null };
+  notice: { id: string; at: number; kind: string; title: string; body: string; art: string | null; door: 'downloads' | 'friends' | 'discover' | 'date' | null };
   unseen: boolean;
   onOpen: () => void;
 }) {
