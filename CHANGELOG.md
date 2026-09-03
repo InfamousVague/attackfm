@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.68
+
+- The navigation bar's icons are larger again.
+
 ## 0.5.67
 
 - The Library's header fades to black with its shadow underneath as you scroll, the way every other page's does. It had stopped the day the Music/Books toggle wrapped the page in something.

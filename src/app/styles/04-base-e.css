@@ -487,6 +487,6 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
  */
 .appNavBarTab__icon svg,
 .appNavBarPlugins__itemIcon svg {
-  inline-size: 20px;
-  block-size: 20px;
+  inline-size: 24px;
+  block-size: 24px;
 }
