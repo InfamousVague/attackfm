@@ -15,6 +15,15 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.79
+
+- A jam can be handed over as a link, on the same card a playlist gets. It
+  walks anyone on your server straight into the room, and tells anyone else
+  which server it is on.
+- Your profile has a link too, with your handle, your pictures and a QR.
+  Opening it in AttackFM asks to be friends; the page itself shows nothing
+  but your name and your face, so what you listen to stays for friends.
+
 ## 0.5.78
 
 - Invite friends to jam. An online friend on your server now has an “Invite to
