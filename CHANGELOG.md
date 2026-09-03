@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.74
+
+- All songs opens at once now, even on a big library. It used to build every
+  row the moment you tapped in and stutter for a beat before you could touch
+  it; now it draws a screenful and quietly adds more as you scroll.
+
 ## 0.5.73
 
 - The song that is playing now stands out wherever it appears in a list: its

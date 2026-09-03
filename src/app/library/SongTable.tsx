@@ -7,7 +7,7 @@ import {
 import { ArrowDownToLine, CircleCheck, Clock, RotateCcw, X } from '@glacier/icons';
 import { useOnDevice } from '../downloads/useOnDevice.ts';
 import { identityKey, useJustLanded, type IncomingTrack } from '../downloads/incoming.tsx';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useFollowNowPlaying, useNowPlayingPath } from '../player/nowPlayingStore.ts';
 import { NowPlayingBars } from '../player/NowPlayingBars.tsx';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
@@ -25,6 +25,25 @@ import { usePrefetchArt } from '../ux/artPrefetch.ts';
 import { formatClock } from '../ux/format.ts';
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+/** How many rows a flow-mode table draws before it has been scrolled, and how
+ *  many more each time the foot comes near. A screenful with room to spare, so
+ *  opening All songs builds eighty rows rather than six thousand. */
+const FLOW_INITIAL = 80;
+const FLOW_STEP = 80;
+
+/** The nearest ancestor that actually scrolls - the IntersectionObserver root
+ *  the "load more" sentinel is watched against. Null (the viewport) when there
+ *  is none, which is the right default for a page that scrolls the window. */
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  let node: HTMLElement | null = el.parentElement;
+  while (node) {
+    const oy = getComputedStyle(node).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
 
 /*
  * The order the table opens in.
@@ -659,6 +678,78 @@ export function SongTable({
   const rootRef = useRef<HTMLDivElement>(null);
   useFollowNowPlaying(rootRef, '.songTitleCell[data-nowplaying]');
 
+  /*
+   * Draw a screenful, then more as the foot comes near.
+   *
+   * The kit's grid renders every row it is handed, and All songs is thousands -
+   * so opening it built the whole library at once and the page locked up for a
+   * beat before a finger could touch it. Only FLOW mode is virtualised: there
+   * the page itself is the scroller, so the grid is fed just the rows scrolled
+   * to so far and a sentinel at the foot pulls the next block in as it nears the
+   * bottom. A non-flow table is a bounded shelf inside its own small viewport -
+   * short by construction, nothing to window - so it is left whole.
+   *
+   * `limit` only ever climbs, so a row once drawn stays drawn: scrolling back up
+   * never blanks, and a re-sort keeps whatever was on screen rendered.
+   */
+  const [limit, setLimit] = useState(FLOW_INITIAL);
+  const windowed = flow && gridData.length > limit;
+  const shown = useMemo(
+    () => (windowed ? gridData.slice(0, limit) : gridData),
+    [windowed, gridData, limit],
+  );
+  const moreRef = useRef<HTMLDivElement>(null);
+  // Read inside the listeners without re-binding them per growth.
+  const gridLenRef = useRef(gridData.length);
+  gridLenRef.current = gridData.length;
+  useEffect(() => {
+    if (!windowed) return;
+    const el = moreRef.current;
+    if (!el) return;
+    const root = scrollParent(el);
+    const grow = () => setLimit((l) => (l < gridLenRef.current ? l + FLOW_STEP : l));
+
+    // Two triggers on purpose. The observer is the clean one - it fires as the
+    // foot nears the viewport with a screenful of lead time. But some webviews
+    // throttle IntersectionObserver hard when the page is not frontmost (this
+    // app keeps running there for playback), and being stranded at eighty rows
+    // with no way to scroll further is a far worse bug than the lag this fixes.
+    // So a plain scroll listener with a near-bottom check backs it up; the
+    // growing scroll height makes each one fire about once per screenful, so
+    // the pair never runs away.
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) grow();
+      },
+      { root, rootMargin: '800px 0px' },
+    );
+    io.observe(el);
+
+    const scroller: Element | null = root ?? document.scrollingElement;
+    const onScroll = () => {
+      if (scroller && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 800) {
+        grow();
+      }
+    };
+    const target: EventTarget = root ?? window;
+    target.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      io.disconnect();
+      target.removeEventListener('scroll', onScroll);
+    };
+  }, [windowed]);
+  // Keep the playing song drawn as autoplay walks INTO the next block, so its
+  // highlight does not wink out the moment the queue crosses the foot of what
+  // has been drawn. Bounded to one block past the edge on purpose: a skip to a
+  // song a thousand rows down must NOT drag every row up to it into the DOM -
+  // that is the very lag this windowing exists to prevent. Such a far jump just
+  // has no highlight until it is scrolled to, which is where it draws anyway.
+  useEffect(() => {
+    if (!flow || !nowPlaying) return;
+    const i = gridData.findIndex((r) => r.id === nowPlaying);
+    if (i >= limit && i < limit + FLOW_STEP) setLimit((l) => l + FLOW_STEP);
+  }, [flow, nowPlaying, gridData, limit]);
+
   return (
     <SongSelectionContext.Provider value={selectionEntry}>
     {/* display:contents: the wrapper is only a ref to scope the now-playing
@@ -670,7 +761,7 @@ export function SongTable({
       {...hold}
       className={flow ? 'songTable songTable--flow' : 'songTable'}
       columns={columns}
-      data={gridData}
+      data={shown}
       sort={sort}
       onSortChange={setSort}
       // The data is handed over already in sort order (displayed), with the
@@ -718,6 +809,9 @@ export function SongTable({
         if (track) onPlay(track, displayed);
       }}
     />
+    {/* The foot the observer watches: when it nears the viewport, the next
+        block of rows is drawn. Present only while there is more to draw. */}
+    {windowed && <div ref={moreRef} aria-hidden style={{ height: 1 }} />}
     </div>
     {selecting && (
       <SelectionBar
