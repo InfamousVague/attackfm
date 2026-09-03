@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.72
+
+- Opening Settings lands on Settings again. Once you had opened the download
+  queue, the gear kept reopening on it — because closing the sheet with a
+  back swipe forgot which pane you had aimed it at. It forgets properly now.
+
 ## 0.5.71
 
 - A book that is still being copied in now says it is waiting for the copy

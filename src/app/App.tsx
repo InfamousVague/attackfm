@@ -233,7 +233,24 @@ export function App() {
   // there is no pane left. Same handler the header's arrow uses, so the two
   // cannot disagree about what a press means.
   const backOutOfSettings = useCallback(() => {
-    if (!settingsBack()) setSettingsOpen(false);
+    // Closing the whole surface (no pane left to step back through) clears the
+    // aimed pane too. Without this the target stuck: dismissing Settings with
+    // the system-back gesture goes through here rather than onClose, so a
+    // Downloads pane opened once - by hand, or by a playlist import that jumps
+    // you to the queue - was left set, and the next plain Settings open landed
+    // back on Downloads instead of the list.
+    if (!settingsBack()) {
+      setSettingsOpen(false);
+      setSettingsPane(null);
+    }
+  }, []);
+  // Settings, on the list where it belongs. The pane is cleared on the way in
+  // as well as the way out, so a stale target from a previous open (a
+  // Downloads jump, say) can never make the gear open on something other than
+  // the top of Settings.
+  const openSettings = useCallback(() => {
+    setSettingsPane(null);
+    setSettingsOpen(true);
   }, []);
   // Downloads is no longer a place you navigate to - the songs show up where
   // they will live, arriving. This opens the Settings pane that keeps the
@@ -664,7 +681,7 @@ export function App() {
                       variant="ghost"
                       size="sm"
                       aria-label="Settings"
-                      onClick={() => setSettingsOpen(true)}
+                      onClick={openSettings}
                     >
                       <Settings size={16} />
                     </IconButton>
@@ -740,7 +757,7 @@ export function App() {
                   variant="rail"
                   tab={tab}
                   onTab={goTab}
-                  onSettings={() => setSettingsOpen(true)}
+                  onSettings={openSettings}
                   onOpenDownloads={openDownloads}
                 />
               )}
@@ -798,7 +815,7 @@ export function App() {
                 variant="bar"
                 tab={tab}
                 onTab={goTab}
-                onSettings={() => setSettingsOpen(true)}
+                onSettings={openSettings}
                   onOpenDownloads={openDownloads}
               />
             )}
