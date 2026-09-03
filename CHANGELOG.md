@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.78
+
+- Invite friends to jam. An online friend on your server now has an “Invite to
+  jam” button — tap it and a room starts (yours), and they’re asked to join.
+  It sits beside “Listen along”, which follows a friend who’s already playing;
+  either way you end up hearing the same thing together.
+
 ## 0.5.77
 
 - Your week has moved off the Library and onto your profile, under your name.

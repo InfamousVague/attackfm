@@ -74,25 +74,32 @@ function LiveNow() {
           already happening. */}
       {jam.invites.length > 0 && (
         <section className="homeShelf">
-          <h2 className="homeShelfTitle">Wants to listen along</h2>
+          <h2 className="homeShelfTitle">Asking to jam</h2>
           <div className="jamRooms">
-            {jam.invites.map((inv) => (
-              <div key={`${inv.from}\n${inv.at}`} className="jamRoom jamRoom--invite">
-                <span className="jamRoom__art jamRoom__art--face" aria-hidden>
-                  <FriendAvatar handle={inv.from} size="lg" />
-                </span>
-                <span className="jamRoom__name">{inv.from}</span>
-                <span className="jamRoom__meta">wants to hear along with you</span>
-                <span className="jamRoom__actions">
-                  <Button variant="ghost" size="sm" onClick={() => void jam.declineInvite(inv.from)}>
-                    Dismiss
-                  </Button>
-                  <Button variant="solid" size="sm" onClick={() => void jam.acceptInvite(inv.from)}>
-                    Start
-                  </Button>
-                </span>
-              </div>
-            ))}
+            {jam.invites.map((inv) => {
+              // 'jam' = they host and want you in; 'along' = they want to hear
+              // what YOU are playing, so your yes makes your player the clock.
+              const toJam = inv.kind === 'jam';
+              return (
+                <div key={`${inv.from}\n${inv.at}`} className="jamRoom jamRoom--invite">
+                  <span className="jamRoom__art jamRoom__art--face" aria-hidden>
+                    <FriendAvatar handle={inv.from} size="lg" />
+                  </span>
+                  <span className="jamRoom__name">{inv.from}</span>
+                  <span className="jamRoom__meta">
+                    {toJam ? 'invited you to jam' : 'wants to hear along with you'}
+                  </span>
+                  <span className="jamRoom__actions">
+                    <Button variant="ghost" size="sm" onClick={() => void jam.declineInvite(inv.from)}>
+                      Dismiss
+                    </Button>
+                    <Button variant="solid" size="sm" onClick={() => void jam.acceptInvite(inv.from)}>
+                      {toJam ? 'Join' : 'Start'}
+                    </Button>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}

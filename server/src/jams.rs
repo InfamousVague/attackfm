@@ -74,15 +74,23 @@ pub struct Event {
     pub who: String,
 }
 
-/// One friend asking another to listen along. `from` is doing the asking; `to`
-/// is the one already playing, who will HOST the room when they accept - their
-/// player is the music, so the invite goes to the source, not the other way.
+/// One friend asking another into a room, in one of two directions:
+///
+/// - `along`: "let me listen along with you". `to` is already playing, and
+///   accepting makes THEM the host - their player is the music. This is the
+///   ask that rides a friend's now-playing.
+/// - `jam`: "come jam with me". `from` is the host (they have a room already),
+///   and accepting drops `to` into it. This is the ask you send an online
+///   friend to gather people.
+///
 /// Held only until accepted, declined, or it goes stale.
 #[derive(Clone)]
 pub struct Invite {
     pub from_id: i64,
     pub from_name: String,
     pub to_id: i64,
+    /// "along" (accepter hosts) or "jam" (asker hosts, accepter joins).
+    pub kind: String,
     pub at: i64,
 }
 
@@ -353,7 +361,7 @@ pub async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Api
         inv.retain(|i| now - i.at < INVITE_TTL_MS);
         inv.iter()
             .filter(|i| i.to_id == caller.id)
-            .map(|i| json!({ "from": i.from_name, "at": i.at }))
+            .map(|i| json!({ "from": i.from_name, "kind": i.kind, "at": i.at }))
             .collect()
     };
     Ok(Json(json!({ "current": mine, "friends": friends, "invites": invites })))
@@ -379,11 +387,16 @@ fn resolve_friend(state: &AppState, caller_id: i64, name: &str) -> Option<(i64, 
 #[derive(Deserialize)]
 pub struct InviteBody {
     pub to: String,
+    /// "along" (default - accepter hosts) or "jam" (asker hosts). An older
+    /// client sends none and means the listen-along it was built for.
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 
-/// `POST /api/jams/invite {to}` - ask a friend who is playing to let you listen
-/// along. Records the ask; their client sees it on its next feed read and can
-/// accept (which starts the room) or let it go.
+/// `POST /api/jams/invite {to, kind}` - ask a friend into a room. `along` (the
+/// default) asks a friend who is playing to let you listen along and host it;
+/// `jam` asks an online friend to come join the room YOU host. Records the ask;
+/// their client sees it on its next feed read and can accept or let it go.
 pub async fn invite(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -394,12 +407,22 @@ pub async fn invite(
         return Err((StatusCode::FORBIDDEN, "that friend is not on this server".into()));
     };
     if to_id == caller.id {
-        return Err((StatusCode::BAD_REQUEST, "you cannot listen along with yourself".into()));
+        return Err((StatusCode::BAD_REQUEST, "you cannot invite yourself".into()));
     }
+    let kind = match body.kind.as_deref() {
+        Some("jam") => "jam",
+        _ => "along",
+    };
     let now = now_ms();
     let mut inv = state.jams.invites_lock();
     inv.retain(|i| now - i.at < INVITE_TTL_MS && !(i.from_id == caller.id && i.to_id == to_id));
-    inv.push(Invite { from_id: caller.id, from_name: caller.username.clone(), to_id, at: now });
+    inv.push(Invite {
+        from_id: caller.id,
+        from_name: caller.username.clone(),
+        to_id,
+        kind: kind.to_string(),
+        at: now,
+    });
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -422,16 +445,36 @@ pub async fn accept_invite(
         return Err((StatusCode::NOT_FOUND, "no such invite".into()));
     };
     let now = now_ms();
-    {
+    // Take the invite AND its direction: an old one is gone, and the direction
+    // decides who ends up hosting.
+    let kind = {
         let mut inv = state.jams.invites_lock();
-        let before = inv.len();
-        inv.retain(|i| !(i.from_id == from_id && i.to_id == caller.id) && now - i.at < INVITE_TTL_MS);
-        if inv.len() == before {
+        let pos = inv
+            .iter()
+            .position(|i| i.from_id == from_id && i.to_id == caller.id && now - i.at < INVITE_TTL_MS);
+        let Some(pos) = pos else {
             return Err((StatusCode::NOT_FOUND, "that invite is gone".into()));
-        }
-    }
+        };
+        inv.remove(pos).kind
+    };
     let mut jams = state.jams.lock();
     state.jams.sweep(&mut jams);
+
+    // "jam": the ASKER hosts, and accepting drops the caller into their room.
+    if kind == "jam" {
+        let Some(jid) = jams.values().find(|j| j.host_id == from_id).map(|j| j.id.clone()) else {
+            return Err((StatusCode::NOT_FOUND, "their jam has ended".into()));
+        };
+        state.jams.withdraw(&mut jams, caller.id, Some(&jid));
+        let jam = jams.get_mut(&jid).expect("just found it");
+        if !jam.has(caller.id) {
+            jam.members.push(Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now });
+            jam.note("joined", &caller.username);
+        }
+        return Ok(Json(jam.to_json()));
+    }
+
+    // "along": the CALLER hosts (their player is the music), asker follows.
     if let Some(jam) = jams.values_mut().find(|j| j.host_id == caller.id) {
         if !jam.has(from_id) {
             jam.members.push(Member { id: from_id, name: from_name.clone(), joined_at: now, seen_at: now });

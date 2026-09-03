@@ -48,10 +48,13 @@ export interface Jam {
   receivedAt?: number;
 }
 
-/** A friend has asked to listen along with you - `from` is doing the asking,
- *  and accepting makes YOUR player the room's clock. */
+/** A friend has asked you into a room. `kind` is the direction:
+ *  - 'along': they want to listen along with what YOU are playing, so accepting
+ *    makes your player the room's clock.
+ *  - 'jam': they are hosting and want you to come join THEIR room. */
 export interface JamInvite {
   from: string;
+  kind: 'along' | 'jam';
   at: number;
 }
 
@@ -66,16 +69,25 @@ export interface JamsFeed {
 
 export async function fetchJams(session: ServerSession): Promise<JamsFeed> {
   const out = await request<Partial<JamsFeed>>(session.url, '/api/jams', { token: session.token });
-  return { current: out.current ?? null, friends: out.friends ?? [], invites: out.invites ?? [] };
+  return {
+    current: out.current ?? null,
+    friends: out.friends ?? [],
+    invites: (out.invites ?? []).map((i) => ({ ...i, kind: i.kind === 'jam' ? 'jam' : 'along' })),
+  };
 }
 
-/** Ask a friend who is playing (same server) to let you listen along. Their
- *  client sees the ask and can accept, which is what starts the room. */
-export async function inviteToJam(session: ServerSession, to: string): Promise<void> {
+/** Ask a friend into a room. `along` (the default) asks a friend who is playing
+ *  to let you listen along, hosted by them; `jam` asks an online friend to come
+ *  join the room you host. Their client sees the ask and can accept. */
+export async function inviteToJam(
+  session: ServerSession,
+  to: string,
+  kind: 'along' | 'jam' = 'along',
+): Promise<void> {
   await request(session.url, '/api/jams/invite', {
     token: session.token,
     method: 'POST',
-    body: JSON.stringify({ to }),
+    body: JSON.stringify({ to, kind }),
   });
 }
 

@@ -30,7 +30,7 @@ import {
   StatTile,
   Text,
 } from '@glacier/react';
-import { ArrowUpRight, ChartNoAxesColumn, Check, Clock, Flame, Headphones, Music, UserPlus, X } from '@glacier/icons';
+import { ArrowUpRight, ChartNoAxesColumn, Check, Clock, Flame, Headphones, Music, UserPlus, Users, X } from '@glacier/icons';
 import { useJamOptional } from '../player/jam.tsx';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { artistImageKnown, cachedArtistImage, resolveArtistImage } from '../albumArtist/artistImage.ts';
@@ -550,6 +550,17 @@ export function FriendsSection({
               const seen = seenAgo(f.seenAt);
               const online = isOnline(f);
               const glance = weekGlance(f);
+              // The two ways to reach a same-server friend from here. Listen
+              // along follows a friend who is PLAYING (they host); invite-to-jam
+              // gathers an ONLINE friend into a room you host. A playing friend
+              // when you are free gets the more specific of the two; anyone else
+              // online gets the invite (which starts a room if you have none),
+              // and a follower - who does not own the room - gets neither.
+              const sameHub = !!f.serverUrl && server?.url === f.serverUrl.replace(/\/+$/, '');
+              const playing = !!f.nowPlaying?.playing;
+              const showAlong = !!jam && sameHub && playing && !jam.current;
+              const showInvite =
+                !!jam && sameHub && (online || playing) && !showAlong && (!jam.current || jam.hosting);
               // Sharing OFF is its own honest line; a quiet week is another.
               const quiet =
                 f.sharing === false
@@ -635,27 +646,34 @@ export function FriendsSection({
                       happened to be elsewhere. The verb that EVERY row has
                       goes last, so on a wide screen it makes a column. */}
                   <div className="friendRow__actions">
-                    {/* They are playing on the SAME server this device is signed
-                        into, so their music is reachable and the room can sync.
-                        Ask to listen along: they get the invite, and their yes
-                        starts a jam with their player as the clock. Same-server
-                        only ("if we both have access to the server we're on"),
-                        and only while they are actually playing. */}
-                    {jam &&
-                      f.nowPlaying?.playing &&
-                      f.serverUrl &&
-                      server?.url === f.serverUrl.replace(/\/+$/, '') &&
-                      !jam.current && (
-                        <Button
-                          variant="solid"
-                          size="sm"
-                          aria-label={`Listen along with ${f.handle}`}
-                          onClick={() => void jam.invite(f.handle)}
-                        >
-                          <Headphones size={15} />
-                          Listen along
-                        </Button>
-                      )}
+                    {/* Same server, and playing: their music is reachable and
+                        in motion, so the natural verb is to fall in behind it -
+                        they get the ask, and their yes hosts the room. */}
+                    {showAlong && (
+                      <Button
+                        variant="solid"
+                        size="sm"
+                        aria-label={`Listen along with ${f.handle}`}
+                        onClick={() => void jam?.invite(f.handle, 'along')}
+                      >
+                        <Headphones size={15} />
+                        Listen along
+                      </Button>
+                    )}
+                    {/* Same server and online: gather them into a room YOU host
+                        (started on the spot if you have none). Soft when you are
+                        already hosting - it is one more person, not a new room. */}
+                    {showInvite && (
+                      <Button
+                        variant={jam?.current ? 'soft' : 'solid'}
+                        size="sm"
+                        aria-label={`Invite ${f.handle} to jam`}
+                        onClick={() => void jam?.jamWith(f.handle)}
+                      >
+                        <Users size={15} />
+                        Invite to jam
+                      </Button>
+                    )}
                     {/* Their library is somewhere this device is not listening
                         from - offer the walk over. The page decides what that
                         means (a one-tap switch, or the truth about invites). */}

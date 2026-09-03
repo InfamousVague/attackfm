@@ -52,11 +52,14 @@ interface JamValue {
   /** Whether this device is the one setting the pace. */
   hosting: boolean;
   start: () => Promise<void>;
-  /** Ask a friend who is playing (same server) to let you listen along. Their
-   *  accept is what starts the room; this polls faster for a beat so it appears
-   *  promptly. */
-  invite: (to: string) => Promise<boolean>;
-  /** Say yes to a listen-along ask: your player becomes the room's clock. */
+  /** Ask a friend into a room. 'along' (default) asks a playing friend to let
+   *  you listen along (they host); 'jam' asks them to join a room you host. */
+  invite: (to: string, kind?: 'along' | 'jam') => Promise<boolean>;
+  /** Invite an online friend to jam WITH you: start a room if you have none,
+   *  then ask them to join it. The one-tap "come jam" verb. */
+  jamWith: (to: string) => Promise<boolean>;
+  /** Say yes to an ask - for 'along' your player becomes the clock, for 'jam'
+   *  you drop into their room. The server decides from the invite's kind. */
   acceptInvite: (from: string) => Promise<boolean>;
   /** Let a listen-along ask go without a word to the asker. */
   declineInvite: (from: string) => Promise<void>;
@@ -152,7 +155,12 @@ export function JamProvider({ children }: { children: ReactNode }) {
         const key = `${inv.from}\n${inv.at}`;
         if (toldInvites.current.has(key)) continue;
         toldInvites.current.add(key);
-        toast({ message: `${inv.from} wants to listen along` });
+        toast({
+          message:
+            inv.kind === 'jam'
+              ? `${inv.from} invited you to jam`
+              : `${inv.from} wants to listen along`,
+        });
       }
     } catch {
       // An older server without jams, or a moment offline: leave what is here.
@@ -214,31 +222,45 @@ export function JamProvider({ children }: { children: ReactNode }) {
   );
 
   const invite = useCallback(
-    async (to: string): Promise<boolean> => {
+    async (to: string, kind: 'along' | 'jam' = 'along'): Promise<boolean> => {
       if (!session) return false;
       try {
-        await inviteToJamApi(session, to);
-        toast({ message: `Asked ${to} to listen along` });
-        // Poll faster for a beat so the room appears the moment they accept,
-        // rather than waiting out the idle interval. Stops as soon as we are in
-        // a room, or after ~90s if the ask goes unanswered.
-        let tries = 0;
-        const tick = () => {
-          if (jamRef.current) return;
-          void refresh().finally(() => {
-            if (!jamRef.current && ++tries < 30) window.setTimeout(tick, 3000);
-          });
-        };
-        window.setTimeout(tick, 3000);
+        await inviteToJamApi(session, to, kind);
+        toast({ message: kind === 'jam' ? `Invited ${to} to jam` : `Asked ${to} to listen along` });
+        // 'along' only: the room appears when THEY accept, so poll faster for a
+        // beat rather than waiting out the idle interval. 'jam' needs none of
+        // this - you are already the host, the room is already here.
+        if (kind === 'along') {
+          let tries = 0;
+          const tick = () => {
+            if (jamRef.current) return;
+            void refresh().finally(() => {
+              if (!jamRef.current && ++tries < 30) window.setTimeout(tick, 3000);
+            });
+          };
+          window.setTimeout(tick, 3000);
+        }
         return true;
       } catch (e) {
-        toast({
-          message: e instanceof Error && e.message ? e.message : 'Could not ask to listen along.',
-        });
+        toast({ message: e instanceof Error && e.message ? e.message : 'Could not send that invite.' });
         return false;
       }
     },
     [session, toast, refresh],
+  );
+
+  const jamWith = useCallback(
+    async (to: string): Promise<boolean> => {
+      if (!session) return false;
+      // Be the host of a room to invite them into. `start` returns the room
+      // you already have if you were already hosting, so re-inviting a second
+      // friend does not spin up a new one.
+      if (!jamRef.current) {
+        await start();
+      }
+      return invite(to, 'jam');
+    },
+    [session, start, invite],
   );
 
   const acceptInvite = useCallback(
@@ -338,6 +360,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
       hosting,
       start,
       invite,
+      jamWith,
       acceptInvite,
       declineInvite,
       join,
@@ -353,6 +376,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
       hosting,
       start,
       invite,
+      jamWith,
       acceptInvite,
       declineInvite,
       join,
