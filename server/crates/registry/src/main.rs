@@ -54,6 +54,9 @@ struct AppState {
     /// music server it listens from - which makes it the natural place updates
     /// come from, the same way sign-in does.
     bundle_dir: std::path::PathBuf,
+    /// The profile pictures, on disk beside the database. Bytes, not rows:
+    /// the same reason the hub keeps playlist covers out of its tables.
+    images_dir: std::path::PathBuf,
     /// What each account is doing right now, by account id - a heartbeat the
     /// app posts while it is open, with the playing song while sharing is on.
     /// In memory on purpose: presence is the present tense, and a restart
@@ -153,6 +156,147 @@ fn account_json(a: &db::Account) -> Value {
     json!({ "id": a.id, "handle": a.handle })
 }
 
+/// The URL of one of an account's pictures, or null when it has none. Carries
+/// the moment it changed, so a client can cache the bytes forever and still
+/// see a new face the moment there is one.
+fn image_url(state: &AppState, id: i64, handle: &str, kind: &str) -> Value {
+    match state.db.profile_image(id, kind) {
+        Some((_, at)) => Value::from(format!(
+            "{}/v1/profile/image/{}/{kind}?v={at}",
+            public_base(),
+            handle
+        )),
+        None => Value::Null,
+    }
+}
+
+/// The two pictures, for the JSON of an account somebody is looking at.
+fn images_json(state: &AppState, id: i64, handle: &str) -> (Value, Value) {
+    (image_url(state, id, handle, "avatar"), image_url(state, id, handle, "banner"))
+}
+
+/// What a picture actually is, sniffed from the bytes rather than trusted
+/// from the header - the header is the caller's to choose, the magic number
+/// is whatever wrote the file. Anything unrecognised is refused, which is what
+/// keeps this directory from becoming somewhere to park arbitrary uploads.
+fn image_kind(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("jpg");
+    }
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return Some("png");
+    }
+    if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some("webp");
+    }
+    None
+}
+
+/// Two megabytes. The client downscales before it sends, so this is the
+/// ceiling on a mistake rather than a size anything should reach.
+const MAX_IMAGE_BYTES: usize = 2 * 1024 * 1024;
+
+fn image_path(state: &AppState, id: i64, kind: &str, ext: &str) -> std::path::PathBuf {
+    state.images_dir.join(format!("{id}-{kind}.{ext}"))
+}
+
+/// `PUT /v1/profile/image/{kind}` - set your own face or banner. The body is
+/// the image and nothing else.
+async fn profile_image_put(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(kind): axum::extract::Path<String>,
+    body: axum::body::Bytes,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    if kind != "avatar" && kind != "banner" {
+        return Err((StatusCode::NOT_FOUND, "a profile has a picture and a banner".into()));
+    }
+    if body.len() > MAX_IMAGE_BYTES {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "that picture is too big - two megabytes is the limit".into()));
+    }
+    let ext = image_kind(&body).ok_or((
+        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        "that is not a JPEG, PNG or WebP".into(),
+    ))?;
+    std::fs::create_dir_all(&state.images_dir)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Written aside and renamed into place, so a reader never sees half a
+    // picture - the same rule the hub's covers follow.
+    let dest = image_path(&state, who.sub, &kind, ext);
+    let tmp = dest.with_extension(format!("{ext}.part"));
+    std::fs::write(&tmp, &body).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    std::fs::rename(&tmp, &dest).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // A change of format leaves the old file behind; drop it.
+    if let Some((old, _)) = state.db.profile_image(who.sub, &kind) {
+        if old != ext {
+            let _ = std::fs::remove_file(image_path(&state, who.sub, &kind, &old));
+        }
+    }
+    let now = now_secs();
+    state
+        .db
+        .set_profile_image(who.sub, &kind, ext, now)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let account = state.db.account_by_id(who.sub);
+    let handle = account.map(|a| a.handle).unwrap_or_default();
+    Ok(Json(json!({
+        "url": format!("{}/v1/profile/image/{}/{kind}?v={now}", public_base(), handle),
+        "updatedAt": now,
+    })))
+}
+
+/// `DELETE /v1/profile/image/{kind}` - take it off again.
+async fn profile_image_delete(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(kind): axum::extract::Path<String>,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    if let Some((ext, _)) = state.db.profile_image(who.sub, &kind) {
+        let _ = std::fs::remove_file(image_path(&state, who.sub, &kind, &ext));
+    }
+    let _ = state.db.clear_profile_image(who.sub, &kind);
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `GET /v1/profile/image/{handle}/{kind}` - the bytes.
+///
+/// Open, like the cover on a shared playlist: it is a picture somebody chose
+/// to wear, it is fetched by an `<img>` that cannot carry a token, and the
+/// only way to ask for one is to already know the handle.
+async fn profile_image_get(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path((handle, kind)): axum::extract::Path<(String, String)>,
+) -> axum::response::Response {
+    let Some(account) = state.db.account_by_handle(handle.trim()) else {
+        return (StatusCode::NOT_FOUND, "no such account").into_response();
+    };
+    let Some((ext, _)) = state.db.profile_image(account.id, &kind) else {
+        return (StatusCode::NOT_FOUND, "no picture").into_response();
+    };
+    let path = image_path(&state, account.id, &kind, &ext);
+    let Ok(bytes) = std::fs::read(&path) else {
+        return (StatusCode::NOT_FOUND, "no picture").into_response();
+    };
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "webp" => "image/webp",
+        _ => "image/jpeg",
+    };
+    (
+        StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, mime),
+            // The URL carries the moment it changed, so these bytes are the
+            // only bytes that URL will ever mean.
+            (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        bytes,
+    )
+        .into_response()
+}
+
 // --- endpoints --------------------------------------------------------------
 
 async fn health() -> Json<Value> {
@@ -218,9 +362,14 @@ async fn signup(State(state): State<Arc<AppState>>, Json(body): Json<SignupBody>
             .map_err(|_| (StatusCode::BAD_REQUEST, "That device key could not be stored.".into()))?;
     }
 
+    let (avatar, banner) = images_json(&state, account.id, &account.handle);
     Ok(Json(json!({
         "token": issue_token(&state, account.id, &account.handle),
         "account": account_json(&account),
+        // Your own face and banner, so the profile page knows what it wears
+        // without asking after itself as if it were a friend.
+        "avatarUrl": avatar,
+        "bannerUrl": banner,
     })))
 }
 
@@ -239,9 +388,12 @@ async fn login(State(state): State<Arc<AppState>>, Json(body): Json<LoginBody>) 
         .filter(|a| !a.pass_hash.is_empty() && verify_password(&body.password, &a.pass_hash))
         .ok_or((StatusCode::UNAUTHORIZED, "Wrong handle or password.".into()))?;
     state.db.touch_seen(account.id, now_secs());
+    let (avatar, banner) = images_json(&state, account.id, &account.handle);
     Ok(Json(json!({
         "token": issue_token(&state, account.id, &account.handle),
         "account": account_json(&account),
+        "avatarUrl": avatar,
+        "bannerUrl": banner,
     })))
 }
 
@@ -301,9 +453,12 @@ async fn login_device(State(state): State<Arc<AppState>>, Json(body): Json<Devic
         return Err((StatusCode::UNAUTHORIZED, "Could not verify this device.".into()));
     }
     state.db.touch_seen(account.id, now);
+    let (avatar, banner) = images_json(&state, account.id, &account.handle);
     Ok(Json(json!({
         "token": issue_token(&state, account.id, &account.handle),
         "account": account_json(&account),
+        "avatarUrl": avatar,
+        "bannerUrl": banner,
     })))
 }
 
@@ -459,9 +614,12 @@ async fn refresh(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiR
         .db
         .account_by_id(who.sub)
         .ok_or((StatusCode::UNAUTHORIZED, "Account is gone.".into()))?;
+    let (avatar, banner) = images_json(&state, account.id, &account.handle);
     Ok(Json(json!({
         "token": issue_token(&state, account.id, &account.handle),
         "account": account_json(&account),
+        "avatarUrl": avatar,
+        "bannerUrl": banner,
     })))
 }
 
@@ -489,8 +647,10 @@ fn friend_json(state: &AppState, f: &db::Friend) -> Value {
             })
         })
         .unwrap_or(Value::Null);
+    let (avatar, banner) = images_json(state, f.id, &f.handle);
     json!({
         "id": f.id, "handle": f.handle, "serverUrl": f.server_url,
+        "avatarUrl": avatar, "bannerUrl": banner,
         "seenAt": presence.as_ref().map(|p| p.seen_at.max(f.seen_at)).unwrap_or(f.seen_at),
         "online": online,
         "nowPlaying": now_playing,
@@ -1559,7 +1719,11 @@ async fn profile_get(
         return Err((StatusCode::NOT_FOUND, "No profile published yet.".into()));
     }
     let profile: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
-    Ok(Json(json!({ "handle": account.handle, "updatedAt": updated_at, "sharing": sharing, "profile": profile })))
+    let (avatar, banner) = images_json(&state, account.id, &account.handle);
+    Ok(Json(json!({
+        "handle": account.handle, "updatedAt": updated_at, "sharing": sharing, "profile": profile,
+        "avatarUrl": avatar, "bannerUrl": banner,
+    })))
 }
 
 // --- recovery codes --------------------------------------------------------------
@@ -1627,9 +1791,12 @@ async fn login_recovery(State(state): State<Arc<AppState>>, Json(body): Json<Rec
         .filter(|a| state.db.consume_recovery_code(a.id, &recovery_hash(&body.code), now))
         .ok_or((StatusCode::UNAUTHORIZED, "Wrong handle or code, or a code already used.".into()))?;
     state.db.touch_seen(account.id, now);
+    let (avatar, banner) = images_json(&state, account.id, &account.handle);
     Ok(Json(json!({
         "token": issue_token(&state, account.id, &account.handle),
         "account": account_json(&account),
+        "avatarUrl": avatar,
+        "bannerUrl": banner,
     })))
 }
 
@@ -1936,6 +2103,11 @@ async fn main() {
         issuer,
         challenges: Mutex::new(HashMap::new()),
         bundle_dir,
+        images_dir: data
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("profile-images"),
         presence: Mutex::new(HashMap::new()),
     });
 
@@ -1985,6 +2157,11 @@ async fn main() {
         .route("/p/{code}/preview/{i}", get(playlist_preview))
         .route("/p/{code}/art/{i}", get(playlist_row_art))
         .route("/v1/profile", axum::routing::put(profile_put))
+        .route(
+            "/v1/profile/image/{kind}",
+            axum::routing::put(profile_image_put).delete(profile_image_delete),
+        )
+        .route("/v1/profile/image/{handle}/{kind}", get(profile_image_get))
         .route("/v1/profile/{handle}", get(profile_get))
         .route("/v1/shares", get(shares).post(send_share))
         .route("/v1/shares/grants", axum::routing::put(share_grant))

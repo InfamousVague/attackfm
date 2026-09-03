@@ -57,13 +57,23 @@ export function FriendAvatar({
   handle,
   size = 'md',
   className,
+  src,
 }: {
   handle: string;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
+  /** The face they chose. The generated mark below is what a person without
+   *  one wears - and what everyone wore before there was a way to choose. */
+  src?: string | null;
 }) {
   let hue = 7;
   for (const ch of handle) hue = (hue * 31 + ch.codePointAt(0)!) % 360;
+  // A picture that will not load falls back to the mark rather than leaving a
+  // broken-image glyph in the row. It happens for real: the URL is cached
+  // forever by design, and the picture behind it can be taken down.
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [src]);
+  const photo = src && !broken;
   return (
     <span
       className={`friendAvatar friendAvatar--${size}${className ? ` ${className}` : ''}`}
@@ -72,7 +82,11 @@ export function FriendAvatar({
       }}
       aria-hidden
     >
-      {(handle[0] ?? '?').toUpperCase()}
+      {photo ? (
+        <img className="friendAvatar__photo" src={src} alt="" onError={() => setBroken(true)} />
+      ) : (
+        (handle[0] ?? '?').toUpperCase()
+      )}
     </span>
   );
 }
@@ -571,7 +585,7 @@ export function FriendsSection({
                       loading="lazy"
                     />
                   )}
-                  <FriendAvatar handle={f.handle} size="md" className="friendRow__face" />
+                  <FriendAvatar handle={f.handle} size="md" className="friendRow__face" src={f.avatarUrl} />
                   <span className="friendRow__who">
                     <span className="friendRow__handle">{f.handle}</span>
                     <span className="friendRow__meta">

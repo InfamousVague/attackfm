@@ -1,8 +1,7 @@
 import { ArtistLink } from '../ux/ArtistLink.tsx';
-import { Button, Heading, IconButton, Input, Text } from '@glacier/react';
-import { ChevronRight, Copy, LogOut, Radio, Users, UsersRound } from '@glacier/icons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { nearbySupported, useNearby } from './nearby.ts';
+import { Button, Heading, IconButton, Text } from '@glacier/react';
+import { Camera, Copy, ImagePlus, LogOut, Trash2, Users } from '@glacier/icons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useJam } from '../player/jam.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -10,7 +9,12 @@ import { useRegistry } from '../servers/registrySession.tsx';
 import { AccountSetup, FriendAvatar, FriendsSection } from './RegistryFriends.tsx';
 import { FriendProfilePage } from './FriendProfilePage.tsx';
 import { useSharing, setSharing } from './listeningShare.tsx';
-import { type RegistryFriend } from '../servers/registry.ts';
+import {
+  removeProfileImage,
+  uploadProfileImage,
+  type RegistryFriend,
+} from '../servers/registry.ts';
+import { prepareImage, type ImageKind } from './pickImage.ts';
 import { enterServer, remotePath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 
@@ -37,113 +41,14 @@ import type { Track } from '../core/tauri.ts';
 
 // --- live layer (moved whole from the old Friends page) ---------------------
 
-/**
- * Who else is in the room, over Bluetooth and peer-to-peer Wi-Fi - so it
- * works in a car, where nobody shares a network and the person beside you
- * may not be a friend yet.
+/*
+ * The code box and the nearby scan used to sit here.
  *
- * Deliberately a switch rather than a default: this broadcasts a handle to
- * anyone running the app within earshot, which is fine when you are trying
- * to start a jam and nobody's business the rest of the time.
+ * Both were doors INTO a jam, on the page about YOU, and both are answered
+ * where a jam actually happens - the badge on the player, which is on screen
+ * while the music is. A page about a person should not be a control panel for
+ * a room.
  */
-function NearbyListeners({
-  handle,
-  code,
-  onJoin,
-}: {
-  handle: string;
-  code: string | null;
-  onJoin: (code: string) => void;
-}) {
-  const nearby = useNearby(handle, code);
-  if (!nearbySupported()) return null;
-  return (
-    <section className="nearby">
-      <div className="nearby__head">
-        <span className="nearby__title">
-          <Radio size={15} /> Nearby
-        </span>
-        <Button variant={nearby.on ? 'solid' : 'outline'} size="sm" onClick={nearby.on ? nearby.stop : nearby.start}>
-          {nearby.on ? 'Stop looking' : 'Find people near me'}
-        </Button>
-      </div>
-      {nearby.on && (
-        nearby.peers.length === 0 ? (
-          <Text size="sm" tone="muted">
-            Looking… they need this switched on too. {code ? 'Your jam’s code is going out with it.' : 'Start a jam and its code goes out with it.'}
-          </Text>
-        ) : (
-          <div className="nearbyList">
-            {nearby.peers.map((peer) => (
-              <div key={peer.handle} className="nearbyRow">
-                <FriendAvatar handle={peer.handle} size="sm" />
-                <span className="nearbyRow__text">
-                  <span className="nearbyRow__handle">{peer.handle}</span>
-                  <span className="nearbyRow__sub">
-                    {peer.code ? 'Playing something you can join' : 'Nearby'}
-                  </span>
-                </span>
-                {peer.code && (
-                  <Button variant="solid" size="sm" onClick={() => onJoin(peer.code!)}>
-                    Join
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        )
-      )}
-    </section>
-  );
-}
-
-/** The code box: six characters, however they were typed. */
-function JoinJamByCode({ onJoin }: { onJoin: (code: string) => Promise<boolean> }) {
-  const [code, setCode] = useState('');
-  const [tried, setTried] = useState<'joined' | 'failed' | null>(null);
-  // The code is read aloud as often as it is pasted, so it arrives with
-  // spaces, dashes and whatever case the reader felt like.
-  const clean = code.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-  const ready = clean.length >= 4;
-  return (
-    <form
-      className="jamJoin"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!ready) return;
-        setTried(null);
-        void onJoin(clean).then((ok) => {
-          setTried(ok ? 'joined' : 'failed');
-          if (ok) setCode('');
-        });
-      }}
-    >
-      <Input
-        className="jamJoin__field"
-        value={code}
-        onChange={(e) => setCode(e.currentTarget.value)}
-        placeholder="Join with a code"
-        aria-label="Jam code"
-        autoCapitalize="characters"
-        autoCorrect="off"
-        spellCheck={false}
-      />
-      <Button type="submit" variant="outline" size="sm" disabled={!ready}>
-        <Radio size={15} /> <span>Join</span>
-      </Button>
-      {tried === 'joined' && (
-        <Text size="xs" tone="subtle">
-          You are in. The room shows above, and on the player.
-        </Text>
-      )}
-      {tried === 'failed' && (
-        <Text size="xs" tone="danger">
-          No live room has that code - it may have ended, or be on another server.
-        </Text>
-      )}
-    </form>
-  );
-}
 
 function LiveNow() {
   const { session } = useServerSession();
@@ -263,15 +168,11 @@ function LiveNow() {
         </section>
       )}
 
-      {/* Someone in the car reads out six characters and you are in their
-          room. No shared wifi, no friend request first, nothing to scan. */}
-      {!jam.current && <JoinJamByCode onJoin={(code) => jam.join(code)} />}
-
-      <NearbyListeners
-        handle={session.username ?? 'listener'}
-        code={jam.hosting ? (jam.current?.id ?? null) : null}
-        onJoin={(code) => void jam.join(code)}
-      />
+      {/* No code box and no nearby scan below this any more. Both were doors
+          INTO a jam, parked on the page about YOU, and both are answered where
+          a jam actually happens - the badge on the player, which is on screen
+          while the music is. A page about a person should not be a control
+          panel for a room. */}
     </>
   );
 }
@@ -293,12 +194,9 @@ function messageOf(err: unknown): string {
 }
 
 export function ProfilePage({
-  onOpenRoom,
   onPlay,
   onOpenArtist,
 }: {
-  /** Opens one of Profile's rooms - the takeovers App hosts within this tab. */
-  onOpenRoom?: (room: 'stats') => void;
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
 }) {
@@ -312,6 +210,60 @@ export function ProfilePage({
   // by request it is folded back in under you, where it began.
   const [profileFor, setProfileFor] = useState<RegistryFriend | null>(null);
   const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+
+  /*
+   * The two pictures.
+   *
+   * A file input rather than anything cleverer: the OS picker already knows
+   * the camera roll, and its change event is the gesture the upload rides on.
+   * The value is cleared after each pick so choosing the same file twice still
+   * fires. What lands on the registry is a downscaled JPEG (pickImage.ts) -
+   * never the four-thousand-pixel original, and never its EXIF.
+   */
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const wanted = useRef<ImageKind>('avatar');
+  const [picking, setPicking] = useState<ImageKind | null>(null);
+  // Same reason as the avatar's: a banner whose bytes have gone should leave
+  // the card plain, not broken.
+  const [bannerBroken, setBannerBroken] = useState(false);
+
+  const pick = (kind: ImageKind) => {
+    wanted.current = kind;
+    fileInput.current?.click();
+  };
+
+  const chose = async (file: Blob) => {
+    if (!registry) return;
+    const kind = wanted.current;
+    setPicking(kind);
+    setNote(null);
+    try {
+      const small = await prepareImage(file, kind);
+      const { url } = await uploadProfileImage(registry.token, kind, small);
+      apply({ ...registry, [kind === 'avatar' ? 'avatarUrl' : 'bannerUrl']: url });
+    } catch (err) {
+      setNote({ tone: 'bad', text: messageOf(err) });
+    } finally {
+      setPicking(null);
+    }
+  };
+
+  const clearImages = async () => {
+    if (!registry) return;
+    setPicking('avatar');
+    setNote(null);
+    try {
+      await Promise.all([
+        removeProfileImage(registry.token, 'avatar'),
+        removeProfileImage(registry.token, 'banner'),
+      ]);
+      apply({ ...registry, avatarUrl: null, bannerUrl: null });
+    } catch (err) {
+      setNote({ tone: 'bad', text: messageOf(err) });
+    } finally {
+      setPicking(null);
+    }
+  };
 
   const visit = useCallback(
     async (url: string) => {
@@ -344,9 +296,48 @@ export function ProfilePage({
 
   return (
     <div className="homePage profilePage">
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        hidden
+        onChange={(e) => {
+          const file = e.currentTarget.files?.[0];
+          e.currentTarget.value = '';
+          if (file) void chose(file);
+        }}
+      />
       {registry && account ? (
-        <header className="profileHero">
-          <FriendAvatar handle={account.handle} size="lg" className="profileHero__face" />
+        <header className="profileHero" data-bannered={registry.bannerUrl && !bannerBroken ? '' : undefined}>
+          {/* The banner is the page's own weather. Behind everything and
+              aria-hidden: it says nothing a screen reader needs, and the
+              gradient underneath it is what a person without one gets. */}
+          {registry.bannerUrl && !bannerBroken && (
+            <img
+              className="profileHero__banner"
+              src={registry.bannerUrl}
+              alt=""
+              aria-hidden
+              onError={() => setBannerBroken(true)}
+            />
+          )}
+          <button
+            type="button"
+            className="profileHero__faceButton"
+            aria-label={registry.avatarUrl ? 'Change your picture' : 'Choose a picture'}
+            disabled={picking !== null}
+            onClick={() => pick('avatar')}
+          >
+            <FriendAvatar
+              handle={account.handle}
+              size="lg"
+              className="profileHero__face"
+              src={registry.avatarUrl}
+            />
+            <span className="profileHero__faceEdit" aria-hidden>
+              <Camera size={14} />
+            </span>
+          </button>
           <span className="profileHero__body">
             <h1 className="profileHero__handle">@{account.handle}</h1>
             <span className="profileHero__caption">
@@ -355,34 +346,46 @@ export function ProfilePage({
                 : 'Your account, on every server'}
             </span>
           </span>
-          <IconButton
-            variant="ghost"
-            size="sm"
-            className="profileHero__signout"
-            aria-label={`Sign out of @${account.handle}`}
-            title="Sign out"
-            onClick={signOut}
-          >
-            <LogOut size={16} />
-          </IconButton>
+          <span className="profileHero__tools">
+            {/* The banner's own verb, and the only way to be rid of one.
+                Small, in the corner, because a picture you already chose
+                should be quieter than the page it decorates. */}
+            <IconButton
+              variant="ghost"
+              size="sm"
+              aria-label={registry.bannerUrl ? 'Change your banner' : 'Add a banner'}
+              title={registry.bannerUrl ? 'Change your banner' : 'Add a banner'}
+              disabled={picking !== null}
+              onClick={() => pick('banner')}
+            >
+              <ImagePlus size={16} />
+            </IconButton>
+            {(registry.bannerUrl || registry.avatarUrl) && (
+              <IconButton
+                variant="ghost"
+                size="sm"
+                aria-label="Remove your pictures"
+                title="Remove your pictures"
+                disabled={picking !== null}
+                onClick={() => void clearImages()}
+              >
+                <Trash2 size={16} />
+              </IconButton>
+            )}
+            <IconButton
+              variant="ghost"
+              size="sm"
+              className="profileHero__signout"
+              aria-label={`Sign out of @${account.handle}`}
+              title="Sign out"
+              onClick={signOut}
+            >
+              <LogOut size={16} />
+            </IconButton>
+          </span>
         </header>
       ) : (
         <AccountSetup onDone={apply} />
-      )}
-
-      {/* Stats are a DOOR now, not the page. The full "This week" - the tiles,
-          the radar, the day clock - opens as a takeover within the tab; it used
-          to also sit inline here, which made a page about who you are open on a
-          wall of your own numbers. (Music Date's door lived here too; it is at
-          the top of the Booth now.) */}
-      {onOpenRoom && session && (
-        <div className="profileDoors">
-          <button type="button" className="profileDoor" onClick={() => onOpenRoom('stats')}>
-            <span className="profileDoor__title">This week</span>
-            <span className="profileDoor__caption">Your listening, added up</span>
-            <ChevronRight size={16} className="profileDoor__chevron" />
-          </button>
-        </div>
       )}
 
       <LiveNow />

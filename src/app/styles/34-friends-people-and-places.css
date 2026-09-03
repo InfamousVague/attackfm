@@ -450,3 +450,14 @@
 .friendStats__now {
   color: var(--glacier-text);
 }
+
+/* The face somebody chose, filling the mark that stood in for it. The
+   gradient stays underneath: it is what shows while the picture loads, and
+   what a person without one keeps wearing. */
+.friendAvatar__photo {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}

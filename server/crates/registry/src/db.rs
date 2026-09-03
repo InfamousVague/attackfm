@@ -379,6 +379,38 @@ impl Db {
     }
 
     /// (sharing, body, updated_at) - None when nothing was ever published.
+    /// (ext, updated_at) for one of an account's pictures.
+    pub fn profile_image(&self, account_id: i64, kind: &str) -> Option<(String, i64)> {
+        self.conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT ext, updated_at FROM profile_images WHERE account_id = ?1 AND kind = ?2",
+                rusqlite::params![account_id, kind],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn set_profile_image(&self, account_id: i64, kind: &str, ext: &str, now: i64) -> rusqlite::Result<()> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO profile_images (account_id, kind, ext, updated_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(account_id, kind) DO UPDATE SET ext = excluded.ext, updated_at = excluded.updated_at",
+            rusqlite::params![account_id, kind, ext, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_profile_image(&self, account_id: i64, kind: &str) -> rusqlite::Result<()> {
+        self.conn.lock().unwrap().execute(
+            "DELETE FROM profile_images WHERE account_id = ?1 AND kind = ?2",
+            rusqlite::params![account_id, kind],
+        )?;
+        Ok(())
+    }
+
     pub fn profile(&self, account_id: i64) -> Option<(bool, String, i64)> {
         let c = self.conn.lock().unwrap();
         c.query_row(
@@ -1064,6 +1096,20 @@ CREATE INDEX IF NOT EXISTS playlist_shares_owner ON playlist_shares(owner_id, cr
 -- it from wherever it listens. Global on purpose: a profile is a person's,
 -- not a server's, so a friend sees it from any hub. `sharing` is the door;
 -- the body is kept either way so turning sharing back on is instant.
+-- The pictures an account wears: a face, and a banner behind it. The BYTES
+-- live on disk beside the database (main.rs `images_dir`) for the reason the
+-- hub keeps playlist covers there - a picture that changes about once should
+-- not ride on every read of a row that is read constantly. This holds only
+-- what is needed to build its URL: which format, and when it last changed,
+-- which is also the cache-buster.
+CREATE TABLE IF NOT EXISTS profile_images (
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  kind       TEXT    NOT NULL,
+  ext        TEXT    NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (account_id, kind)
+);
+
 CREATE TABLE IF NOT EXISTS profiles (
   account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   sharing    INTEGER NOT NULL DEFAULT 1,

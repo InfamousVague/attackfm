@@ -22,6 +22,10 @@ export interface RegistryAccount {
 export interface RegistrySession {
   token: string;
   account: RegistryAccount;
+  /** Your own pictures, as the registry serves them. Each URL carries the
+   *  moment it changed, so it can be cached forever and still change. */
+  avatarUrl?: string | null;
+  bannerUrl?: string | null;
 }
 
 export class RegistryError extends Error {
@@ -149,6 +153,9 @@ export interface RegistryFriend {
   streakDays?: number | null;
   /** A heartbeat within the last minute or two. Absent from old registries. */
   online?: boolean;
+  /** The face and banner they chose, if any. Absent from old registries. */
+  avatarUrl?: string | null;
+  bannerUrl?: string | null;
   /** What they are hearing right now, while they share and their app is
    *  open; null between songs and once they have gone quiet. */
   nowPlaying?: { title: string; artist: string; album: string; playing: boolean; since: number; at: number } | null;
@@ -178,6 +185,33 @@ export async function postPresence(
   beat: { playing: boolean; title?: string; artist?: string; album?: string },
 ): Promise<void> {
   await call('/v1/presence', { token, method: 'POST', body: JSON.stringify(beat) });
+}
+
+/**
+ * Put a picture on your account - the face friends see, or the banner behind
+ * your own name. Raw bytes, not multipart: the registry sniffs the format
+ * from the magic number, so the body is the image and nothing else.
+ */
+export async function uploadProfileImage(
+  token: string,
+  kind: 'avatar' | 'banner',
+  image: Blob,
+): Promise<{ url: string; updatedAt: number }> {
+  const res = await fetch(`${REGISTRY_URL}/v1/profile/image/${kind}`, {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${token}` },
+    body: image,
+  });
+  if (!res.ok) {
+    const why = await res.text().catch(() => '');
+    throw new Error(why || `that picture was refused (${res.status})`);
+  }
+  return (await res.json()) as { url: string; updatedAt: number };
+}
+
+/** Take one off again. */
+export async function removeProfileImage(token: string, kind: 'avatar' | 'banner'): Promise<void> {
+  await call(`/v1/profile/image/${kind}`, { token, method: 'DELETE' });
 }
 
 export async function fetchFriends(token: string): Promise<FriendsFeed> {

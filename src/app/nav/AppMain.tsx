@@ -298,7 +298,7 @@ export function AppMain({
             <StatsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
           </div>
         ) : (
-          <ProfilePage onOpenRoom={onProfileRoom} onPlay={onPlay} onOpenArtist={onOpenArtist} />
+          <ProfilePage onPlay={onPlay} onOpenArtist={onOpenArtist} />
         )
       ) : (
         // The default is the Library now, and it carries the personalized mixes

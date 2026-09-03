@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.65
+
+- Your profile is yours to dress: tap your picture to choose one, and add a banner behind your name. Both follow your account to every server, and friends see the picture you chose instead of a coloured initial.
+- Profile lost three things that were not about you: the jam code box, the nearby-listeners scan and the "This week" badge. Jams are answered on the player where the music is, and This week is still one tap away under Discover.
+
 ## 0.5.64
 
 - Discover's suggested playlists open. Tapping one used to be the import itself - fifty songs on the strength of a title and a picture; now it opens the list, drawn like any other playlist, with every song and artist, which of them you already have, and Add as its own button on both the card and the page.

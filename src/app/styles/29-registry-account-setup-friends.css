@@ -458,3 +458,88 @@
   flex-direction: column;
   gap: var(--glacier-space-3);
 }
+
+/*
+ * The banner: a picture behind your own name.
+ *
+ * The hero is a card either way; with a banner it becomes a card with weather
+ * in it. The image is absolutely placed and the content sits above it, so
+ * nothing has to move for a picture that may not be there - and a scrim under
+ * the words keeps the handle readable over a photograph nobody vetted for
+ * contrast.
+ */
+.profileHero {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.profileHero__banner {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* Only with a picture behind them: over the plain card this would be a dark
+   smear on a surface that is already dark. */
+.profileHero[data-bannered]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--glacier-bg, #0b0b0d) 82%, transparent),
+    color-mix(in srgb, var(--glacier-bg, #0b0b0d) 45%, transparent)
+  );
+}
+
+.profileHero[data-bannered] {
+  min-block-size: 7.5rem;
+  align-items: flex-end;
+}
+
+/* The face is a button now. It looks exactly as it did - the press target is
+   the picture itself, which is the thing a person aims at. */
+.profileHero__faceButton {
+  position: relative;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.profileHero__faceButton:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* The one mark that says the face can be changed at all: a small camera on
+   its corner, the way every app that lets you do this says it. */
+.profileHero__faceEdit {
+  position: absolute;
+  inset-block-end: -2px;
+  inset-inline-end: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: 50%;
+  background: var(--glacier-surface-raised, #1b1b20);
+  border: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
+  color: var(--glacier-text-muted);
+}
+
+.profileHero__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  flex: none;
+}
