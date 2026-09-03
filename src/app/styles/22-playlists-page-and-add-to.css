@@ -353,8 +353,6 @@
  */
 .libraryToggle {
   display: flex;
-  justify-content: center;
-  padding-inline: var(--glacier-space-4);
   /* The page is a flex column with a generous gap between shelves. Left to
      that gap alone the toggle floats halfway between the header and the
      first shelf, belonging to neither; pulled up, the air above it is a
@@ -362,9 +360,18 @@
   margin-block-start: calc(-1 * var(--glacier-space-5));
 }
 
+/*
+ * Full width, gutter to gutter with the shelves under it: the switch is the
+ * page's own top row, not a pill floating in the middle of it. No padding of
+ * its own - the page already sets the gutter, and adding to it here indented
+ * the switch past everything it sits above.
+ *
+ * Nothing about centring here on purpose. `fullWidth` splits the track evenly
+ * between the two halves and the kit's segment already centres its label in
+ * each; a rule of ours would either restate that or, once it drifted, fight it.
+ */
 .libraryToggle > * {
   inline-size: 100%;
-  max-inline-size: 22rem;
 }
 
 /*

@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.62
+
+- Library: the Music/Books switch is full width now, one half each. And the Books shelf lost its own search box - Search already looks through your books, with a chip to narrow to them, so there is one place to find one instead of two.
+
 ## 0.5.61
 
 - Library: the Music/Books switch moved down under the header, where it reads as a switch rather than chrome painted on the artwork, and the search box came off the page - Search has its own seat in the nav, and two doors to one room is one too many.
