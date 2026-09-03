@@ -5,6 +5,118 @@
   align-items: center;
   gap: var(--glacier-space-4);
   flex-wrap: wrap;
+  /* The Canvas montage is absolutely positioned into this box. Harmless when
+     there is none: nothing else here is positioned. */
+  position: relative;
+}
+
+/*
+ * The artist's own Canvas clips, cross-fading behind their name.
+ *
+ * Only ever present when the library actually holds clips for their songs
+ * (ArtistCanvasStrip renders nothing otherwise), so everything below is gated
+ * on `:has(.artistCanvas)` and an artist with no Canvas keeps the plain
+ * portrait row this header has always been.
+ */
+.artistCanvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-sunken);
+  pointer-events: none;
+}
+
+.artistCanvas__clip {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 1200ms ease;
+  /* A slow drift so a still-ish clip still moves, and so the cut between two
+     of them reads as one shot sliding into the next. Transform only - the
+     crossfade is opacity, so the two never contend for a property. */
+  animation: artistCanvasDrift 24s ease-in-out infinite alternate;
+}
+
+.artistCanvas__clip[data-on] {
+  opacity: 1;
+}
+
+@keyframes artistCanvasDrift {
+  from {
+    transform: scale(1.06) translate3d(-1.5%, 0, 0);
+  }
+  to {
+    transform: scale(1.14) translate3d(1.5%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artistCanvas__clip {
+    animation: none;
+    transition: opacity 400ms ease;
+  }
+}
+
+/*
+ * Dark at the foot where the name sits, clearing toward the top so the clip
+ * reads. Deliberately theme-blind: white type over video is white in both
+ * themes, so the ground under it has to be dark in both.
+ */
+.artistCanvas__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgb(0 0 0 / 0.82) 0%,
+    rgb(0 0 0 / 0.5) 40%,
+    rgb(0 0 0 / 0.16) 72%,
+    rgb(0 0 0 / 0.3) 100%
+  );
+}
+
+/* With clips the header becomes a band: content drops to the foot of it and
+   the montage fills the rest. */
+.artistHero:has(.artistCanvas) {
+  align-items: flex-end;
+  min-block-size: clamp(11rem, 40vw, 16rem);
+  padding: var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg);
+  overflow: hidden;
+  box-shadow: var(--glacier-shadow-2);
+}
+
+/* The clips ARE the portrait now; the round crop beside them is a second,
+   smaller answer to the same question. */
+.artistHero:has(.artistCanvas) .artistHero__art {
+  display: none;
+}
+
+.artistHero:has(.artistCanvas) .artistHero__text,
+.artistHero:has(.artistCanvas) .artistHero__actions {
+  position: relative;
+  z-index: 1;
+}
+
+/* Over video, in both themes. The `*` catches the kit's own muted tone on the
+   song/album count, which sets its colour from a token that assumes a page
+   background rather than a photograph. */
+.artistHero:has(.artistCanvas) .artistHero__text,
+.artistHero:has(.artistCanvas) .artistHero__text * {
+  color: rgb(255 255 255 / 0.92) !important;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 0.5);
+}
+
+/* Last, and important that it is last: this ties with the rule above at the
+   same specificity, so source order is what keeps the name pure white rather
+   than the muted 92%. */
+.artistHero:has(.artistCanvas) .artistHero__name {
+  color: #fff !important;
+  text-shadow: 0 1px 12px rgb(0 0 0 / 0.55);
 }
 
 .artistHero__art {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CounterBadge } from '@glacier/react';
-import { Download, EllipsisVertical, Settings } from '@glacier/icons';
+import { ChartNoAxesColumn, Download, EllipsisVertical, Settings } from '@glacier/icons';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import type { NavDest } from './navSeats.ts';
 
@@ -165,8 +165,25 @@ export function NavMoreMenu({
         {/* Booth and Friends are ordinary destinations now: they take a bar
             seat when there is width for one and fall back here when there is
             not, so they are rendered by the overflow above rather than nailed
-            into this menu. Date and Stats are Profile's rooms. What is left
-            below is what never moves: the queue, and Settings. */}
+            into this menu. What is left below is what never moves: your
+            listening, the queue, and Settings. */}
+
+        {/* Stats is a room of Profile's rather than a tab, and a room has no
+            seat in the bar - so without a door here the only way back to your
+            listening was to remember it was behind Profile. `go` routes it the
+            way every other old tab is routed: the stack redirects 'stats' into
+            the room. */}
+        <button
+          type="button"
+          role="menuitem"
+          className="appNavBarPlugins__item"
+          onClick={() => go('stats')}
+        >
+          <span className="appNavBarPlugins__itemIcon" aria-hidden>
+            <ChartNoAxesColumn size={18} />
+          </span>
+          <span className="appNavBarPlugins__itemLabel">Stats</span>
+        </button>
 
         {/* The queue, whenever an importer exists at all - not only mid-pull:
             the page holds history and retries, and a door that only exists

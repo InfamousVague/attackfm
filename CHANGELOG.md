@@ -15,6 +15,19 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.60
+
+- The Library's Music shelf has a header of its own now, the one Books wears -
+  and behind it, instead of album sleeves, the Spotify Canvases stored through
+  your library, drifting and playing. It runs up under the title bar, and the
+  Music/Books toggle rides on it.
+- Artist pages open on their Canvases too: the clips from their own songs
+  cross-fade behind their name where the round photo used to sit. Artists with
+  no Canvas keep the photo.
+- Stats is back in the ⋮ menu, one press from anywhere.
+- Clip art on those headers starts moving again after a call or a trip to
+  another app, instead of freezing on the frame it was paused at.
+
 ## 0.5.59
 
 - Friends moved into Profile: your friends grid sits under your own profile

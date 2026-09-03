@@ -164,34 +164,21 @@
   flex-direction: column;
 }
 
-/* The toggle bar: a segmented Music/Books control, below the header, above the
-   active pane's scroller. Centred with a cap so it reads as a page control
-   rather than a full-bleed strip jammed under the notch, and with real room
-   above and below it. */
-.libraryToggle {
-  flex: none;
-  padding: var(--glacier-space-4) var(--glacier-space-4) var(--glacier-space-2);
-  display: flex;
-  justify-content: center;
-}
-
-.libraryToggle > * {
-  inline-size: 100%;
-  max-inline-size: 28rem;
-}
-
 /*
- * The Books pane wears a cover-wall hero, and `.appContent:has(.coverWall)`
- * pulls the whole content region up by the header's height so a hero bleeds
- * behind the transparent bar. Inside the Library that dragged the Music/Books
- * toggle up into the notch, on top of the header. The toggle is chrome, not a
- * hero - so when the library host is what holds the wall, the pull-up is off
- * and the toggle sits under the header where it belongs; the books hero then
- * starts below the toggle rather than behind the bar.
+ * The Music/Books toggle now rides INSIDE the showing pane's hero, over the
+ * drifting wall - see `.playlistHead .libraryToggle` in
+ * 22-playlists-page-and-add-to.css, which is where the hero it sits on is
+ * built. Nothing is needed here: it is no longer a strip in this flex column.
+ *
+ * It was one, and it was pulled into the notch for it: `.appContent:has(
+ * .coverWall)` slides the whole content region up by the bar's height so a
+ * hero can bleed behind the glass, and a strip above the pane went up with it.
+ * The fix at the time was to cancel that slide for the Library, which kept the
+ * toggle clear but also stopped the wall short of the top of the screen. Now
+ * the toggle is part of the hero, the slide is wanted again, and both the
+ * Books sleeves and the Music Canvases run up under the bar the way every
+ * other collection page's wall does.
  */
-.appContent:has(.libraryHost):has(.coverWall) {
-  margin-block-start: 0;
-}
 
 .homePage {
   flex: 1;

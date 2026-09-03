@@ -287,6 +287,18 @@ export interface PluginPageProps {
    */
   onOpenPlaylist?: ((id: string) => void) | undefined;
   onOpenSongs?: ((collection: 'liked' | 'all' | 'onrepeat' | 'recent') => void) | undefined;
+  /**
+   * Chrome the HOST needs to sit inside this page's own header.
+   *
+   * The Library renders the books shelf as one of two faces behind a
+   * Music/Books toggle, and that toggle belongs ON the hero - over the drifting
+   * wall, scrolling away with it - rather than in a strip above the page. But
+   * the hero belongs to the page, so the host cannot reach it; this is the page
+   * agreeing to carry a passenger. Optional and ignorable: a page that renders
+   * nothing for it just does not get the toggle, and the host is no worse off
+   * than before the slot existed.
+   */
+  headerSlot?: ReactNode | undefined;
 }
 
 /**

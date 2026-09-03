@@ -1,12 +1,16 @@
 import { SearchEntry } from '../search/SearchEntry.tsx';
 import { usePrefetchArt } from '../ux/artPrefetch.ts';
 import { artSized } from '../server.ts';
-import { Button, IconButton, ScrollArea, SegmentedControl } from '@glacier/react';
-import { Download } from '@glacier/icons';
+import { Button, IconButton, ScrollArea, SegmentedControl, Text } from '@glacier/react';
+import { Download, ListMusic, Play, Shuffle } from '@glacier/icons';
 import { usePluginPages } from '../../plugins/runtime.tsx';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
-import { useCardArt } from '../ux/artLoad.ts';
+import { useCardArt, mosaicArts } from '../ux/artLoad.ts';
+import { CoverWall } from '../playlists/CoverWall.tsx';
+import { useWallClips } from './wallClips.ts';
+import { useServerSession } from '../servers/serverSession.tsx';
+import { shuffled } from '../ux/shuffle.ts';
 import { useRippleWave } from '../ux/rippleWave.ts';
 import { usePlaylists } from '../playlists/playlists.tsx';
 import { isFavouriteBook, shelve } from './bookShelf.ts';
@@ -137,6 +141,94 @@ function AlbumCard({
   );
 }
 
+/**
+ * The Music shelf's header - the same hero Books wears, so the two faces of
+ * the Library are recognisably one page rather than a dressed shelf and a bare
+ * one.
+ *
+ * The wall behind it is the difference: where Books drifts its sleeves, Music
+ * drifts the CANVASES this library already stores - the moving covers Spotify
+ * ships with a song, sampled from the sidecars beside your music. They are the
+ * one piece of art in the library that is already in motion, so a wall built
+ * from them moves twice: the columns drift, and every tile in them plays.
+ *
+ * It degrades in one step. No clips (a server with no Canvas source, or one
+ * that has not stored any yet) and `CoverWall` falls back to the sleeves, which
+ * is the header Books has always worn.
+ */
+function MusicHead({
+  tracks,
+  onPlay,
+  headerSlot,
+}: {
+  tracks: Track[];
+  onPlay: (track: Track, context?: Track[]) => void;
+  /** The Music/Books toggle, riding on the wall - see LibraryView. */
+  headerSlot?: ReactNode;
+}) {
+  const { session } = useServerSession();
+  const clips = useWallClips(session);
+  // 640 for the tile you look at, 160 for the wall that is blurred past detail
+  // - the wall only gets these when there are no clips to draw instead.
+  const covers = useMemo(() => mosaicArts(tracks.map((t) => t.artwork), 4, 640), [tracks]);
+  const wallArt = useMemo(() => tracks.map((t) => t.artwork), [tracks]);
+  const empty = tracks.length === 0;
+
+  return (
+    <header className="playlistHead songPageHead musicHead">
+      <CoverWall artworks={wallArt} clips={clips} />
+      {headerSlot}
+      <div className="playlistHead__cover" aria-hidden>
+        {covers.length >= 4 ? (
+          <div className="tileSquircle tileLikedGrid playlistHead__mosaic">
+            {covers.map((art, i) => (
+              <img key={i} src={art} alt="" />
+            ))}
+          </div>
+        ) : (
+          <div className="tileSquircle tileRecent playlistHead__mosaic">
+            {covers[0] ? <img src={covers[0]} alt="" /> : <ListMusic size={28} />}
+          </div>
+        )}
+      </div>
+      <div className="playlistHead__body">
+        <Text tone="muted" size="xs" className="playlistHead__kicker">
+          Your library
+        </Text>
+        <h2 className="playlistHead__name">Music</h2>
+        <Text tone="muted" size="sm">
+          {tracks.length} {tracks.length === 1 ? 'song' : 'songs'}
+        </Text>
+        <div className="playlistHead__actions">
+          <Button
+            variant="solid"
+            size="sm"
+            disabled={empty}
+            onClick={() => {
+              if (tracks[0]) onPlay(tracks[0], tracks);
+            }}
+          >
+            <Play size={15} fill="currentColor" />
+            Play
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={empty}
+            onClick={() => {
+              const pool = shuffled(tracks);
+              if (pool[0]) onPlay(pool[0], pool);
+            }}
+          >
+            <Shuffle size={15} />
+            Shuffle
+          </Button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
 export function LibraryView({
   view,
   onPlay,
@@ -236,26 +328,46 @@ export function LibraryView({
   const [section, setSection] = useState<'music' | 'books'>('music');
   const active = booksPage ? section : 'music';
 
+  /*
+   * The toggle, built once and handed to whichever pane is showing.
+   *
+   * It rides INSIDE the pane's hero rather than in a strip above it, which is
+   * what lets the wall run up behind it - and means it scrolls away with the
+   * header instead of hanging over the songs. Both panes take it through the
+   * same slot, so there is one control, not two that must be kept in step.
+   */
+  const toggle = booksPage ? (
+    <div className="libraryToggle">
+      <SegmentedControl
+        aria-label="Library section"
+        fullWidth
+        options={[
+          { value: 'music', label: 'Music' },
+          { value: 'books', label: 'Books' },
+        ]}
+        value={active}
+        onValueChange={(v) => setSection(v === 'books' ? 'books' : 'music')}
+      />
+    </div>
+  ) : null;
+
   return (
     <div className="libraryHost">
-      {booksPage && (
-        <div className="libraryToggle">
-          <SegmentedControl
-            aria-label="Library section"
-            fullWidth
-            options={[
-              { value: 'music', label: 'Music' },
-              { value: 'books', label: 'Books' },
-            ]}
-            value={active}
-            onValueChange={(v) => setSection(v === 'books' ? 'books' : 'music')}
-          />
-        </div>
-      )}
       {active === 'books' && booksPage ? (
-        booksPage.render({ onPlay, onOpenArtist, onOpenPlaylist, onOpenSongs })
+        booksPage.render({
+          onPlay,
+          onOpenArtist,
+          onOpenPlaylist,
+          onOpenSongs,
+          headerSlot: toggle,
+        })
       ) : (
     <div className="homePage libraryPage" ref={setRippleRoot}>
+      {/* The hero, and the page's first child on purpose: `.appContent:has(
+          .coverWall)` slides the whole scroller up behind the title bar, so the
+          wall runs to the top of the screen and under the glass. Anything above
+          it here would be dragged under the bar with it. */}
+      <MusicHead tracks={tracks} onPlay={onPlay} headerSlot={toggle} />
       {/* Search, where people look for it: on the page, not behind an icon. */}
       <SearchEntry />
       {/* The desktop's copy of the action row. Everywhere else these two live

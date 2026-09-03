@@ -124,6 +124,52 @@
 }
 
 /*
+ * A Canvas clip in the wall - the Music header's tiles (see CoverWall's
+ * `clips`). Squared off like a sleeve rather than left at the clip's own tall
+ * portrait: the wall is a grid of covers and one 9:16 tile among them would
+ * break the column's rhythm, and at this blur nothing is lost by cropping.
+ *
+ * `flex: none` because a video, unlike an img, has no intrinsic size until its
+ * metadata lands - and a flex child that starts at nothing is a flex child the
+ * column will happily leave at nothing. It also keeps the column's height the
+ * exact sum of its tiles, which is what makes the -50% travel land on the seam.
+ */
+/*
+ * A clip column is sized to the SLAB, not to its tiles - the one measurement
+ * that makes the loop airtight.
+ *
+ * A column travels half its own height per cycle, so that half has to be at
+ * least as tall as the slab; anything less drags empty space through the frame
+ * behind the title for part of every loop. Twenty sleeves make five-deep
+ * columns and clear it without trying. Six clips make two-deep ones, and they
+ * do not: measured here at 763px of half against 867px of slab, which is a
+ * hundred pixels of black crossing the header once a minute.
+ *
+ * A fixed tile height cannot fix it either, because the slab's height follows
+ * the header's and the header grows with its content. Percentages can: the slab
+ * is absolutely positioned with `inset`, so its height is DEFINITE, and a
+ * child's percentage resolves against it. The column takes 220% of the slab and
+ * each of its four tiles a quarter of that - so one half of the column is 110%
+ * of the slab, comfortably over, at every width and every header height.
+ */
+.coverWall[data-kind='clip'] .coverWall__col {
+  block-size: 220%;
+}
+
+.coverWall[data-kind='clip'] .coverWall__col video {
+  inline-size: 100%;
+  /* Four tiles: CLIP_TILES per copy, two copies for the seam. */
+  block-size: 25%;
+  object-fit: cover;
+  display: block;
+  /* A video has no intrinsic size until its metadata lands, and a flex child
+     that starts at nothing is one the column will happily leave at nothing. */
+  flex: none;
+  /* Nothing here is a picture worth showing before it plays. */
+  background: var(--glacier-surface-sunken);
+}
+
+/*
  * Each column carries its covers twice and travels exactly half its own
  * height, so the second copy arrives where the first began and the loop has no
  * seam. One 1-D seam per column now, four of them, rather than the strip's one
@@ -287,6 +333,69 @@
   /* Tall enough that the title, pinned to the header's bottom, clears the bar:
      all this top space is wall, running up behind the glass. */
   padding-block-start: calc(var(--spot-bar) + var(--glacier-space-4));
+}
+
+/*
+ * The Library's Music/Books toggle, riding ON the hero.
+ *
+ * The Library is one page with two faces, and the switch between them belongs
+ * to the hero rather than to a strip above it: over the wall, under the bar,
+ * scrolling away with the header instead of hanging over the songs. The panes
+ * hand it to their own header through `headerSlot` (PluginPageProps), so this
+ * is the same control in both - Music's Canvas wall and Books' sleeves.
+ *
+ * Out of the flow, because the header bottom-aligns its children: left in it
+ * the toggle would sit on the title's baseline beside the sleeve. Absolute puts
+ * it in the forehead - the band of wall above the content, which the
+ * padding-block-start above has already cleared of the bar - and `--spot-bar`
+ * is that same measured bar, declared on the rule above and inherited here.
+ */
+.playlistHead:has(.coverWall) .libraryToggle {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: calc(var(--spot-bar) + var(--glacier-space-2));
+  inset-inline: var(--glacier-space-4);
+  display: flex;
+  justify-content: center;
+  /* Only the control takes a press; the rest of this box is wall the page
+     underneath should still scroll. */
+  pointer-events: none;
+}
+
+.playlistHead:has(.coverWall) .libraryToggle > * {
+  inline-size: 100%;
+  max-inline-size: 22rem;
+  pointer-events: auto;
+}
+
+/* Room for the passenger, on top of the 17rem the wall alone asks for: the
+   toggle sits in the forehead and the title is pinned to the foot, so without
+   this the two meet in the middle on a short screen. */
+.playlistHead:has(.coverWall):has(.libraryToggle) {
+  min-block-size: 21rem;
+}
+
+/*
+ * No wall to ride (a library too thin for one - CoverWall draws nothing below
+ * three sleeves, and a server with no stored Canvases has no clips either). The
+ * header is then an ordinary inset block sitting below the bar, so the toggle
+ * goes back into the flow as its own full-width line above the title.
+ */
+.playlistHead:not(:has(.coverWall)):has(.libraryToggle) {
+  flex-wrap: wrap;
+}
+
+.playlistHead:not(:has(.coverWall)) .libraryToggle {
+  order: -1;
+  flex: 0 0 100%;
+  display: flex;
+  justify-content: center;
+  margin-block-end: var(--glacier-space-2);
+}
+
+.playlistHead:not(:has(.coverWall)) .libraryToggle > * {
+  inline-size: 100%;
+  max-inline-size: 22rem;
 }
 
 /*

@@ -30,6 +30,7 @@ import { ArtistDiscography } from './ArtistDiscography.tsx';
 import { ArtistGaps } from './ArtistGaps.tsx';
 import { ArtistPopular } from './ArtistPopular.tsx';
 import { ArtistAbout } from './ArtistAbout.tsx';
+import { ArtistCanvasStrip } from './ArtistCanvasStrip.tsx';
 import placeholderArt from '../../assets/attack-wave.png';
 
 interface ArtistPageProps {
@@ -209,6 +210,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
   return (
     <div className="homePage artistPage" ref={pageRef}>
       <header className="artistHero">
+        <ArtistCanvasStrip artist={artist} tracks={theirs} session={session} />
         <img {...heroLoad} src={heroArt} alt="" />
         <div className="artistHero__text">
           <h1 className="artistHero__name">{artist}</h1>
