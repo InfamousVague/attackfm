@@ -183,9 +183,14 @@ export function AppMain({
                * one, which is all the key is for.
                */
               `mix:${detail.title}:${detail.tracks.length}`
-            : detail.kind === 'artist'
-              ? `artist:${detail.artist}`
-              : null
+            : detail.kind === 'catalog'
+              ? // And a catalogue list, for the fourth time the same reason:
+                // it wears the playlist head, so it inherits the clear bar and
+                // needs something to publish the scroll that fades it back in.
+                `catalog:${detail.suggestion.id}`
+              : detail.kind === 'artist'
+                ? `artist:${detail.artist}`
+                : null
     : activePage
       ? `page:${activePage.key}`
       : tab === 'home' || tab === 'library' || tab === 'discover'

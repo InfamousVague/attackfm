@@ -197,15 +197,48 @@ export function TopScrim({ resetKey }: { resetKey: string }) {
     };
     // A fresh page mounts parked at the top; start invisible.
     set(0);
+    /*
+     * Does this element scroll vertically ITSELF? Both halves matter: content
+     * taller than the box is not enough, since every `overflow: hidden`
+     * wrapper reports that while sitting at zero forever.
+     */
+    const scrolls = (el: Element) => {
+      if (el.scrollHeight <= el.clientHeight + 1) return false;
+      const flow = getComputedStyle(el).overflowY;
+      return flow === 'auto' || flow === 'scroll' || flow === 'overlay';
+    };
     const onScroll = (event: Event) => {
       const target = event.target;
-      // Only the page scroller (a direct child of the host) drives the scrim -
-      // inner scrollers (track lists, shelves) pass under it untouched.
-      if (!(target instanceof HTMLElement) || target.parentElement !== host) return;
+      if (!(target instanceof HTMLElement)) return;
+      /*
+       * The PAGE's scroller drives the scrim; inner scrollers - a track list,
+       * a shelf's rail - pass under it untouched. "The page" used to mean a
+       * direct child of the host, which held while every page was one and
+       * stopped the day one was wrapped: the Library is inside a `.libraryHost`
+       * now (the Music/Books toggle put it there), so its scrolls were read as
+       * somebody else's and the bar never faded its black in - the wall ran
+       * under a permanently clear header and the rows cut off at a hard edge.
+       *
+       * The honest test is not "how deep is it" but "is anything else
+       * scrolling above it": walk up to the host, and if no ancestor scrolls,
+       * this is the page. That is true at any depth, for the wrappers that
+       * exist now and the ones that come later.
+       */
+      for (let el = target.parentElement; el && el !== host; el = el.parentElement) {
+        if (scrolls(el)) return;
+      }
       set(Math.min(1, Math.max(0, target.scrollTop) / 56));
     };
     host.addEventListener('scroll', onScroll, { capture: true, passive: true });
-    return () => host.removeEventListener('scroll', onScroll, { capture: true });
+    return () => {
+      host.removeEventListener('scroll', onScroll, { capture: true });
+      // Park the bar on the way out. The variable lives on the BAR, which
+      // outlives the page, so a page that ends scrolled used to hand the next
+      // one a solid header it had not earned - visible the moment that page
+      // has a wall of its own to be clear over.
+      if (!bar?.isConnected) bar = win?.querySelector<HTMLElement>('.mobileHeader') ?? null;
+      bar?.style.setProperty('--app-top-scroll', '0');
+    };
   }, [resetKey]);
   return <div ref={ref} className="appTopScrim" aria-hidden="true" />;
 }

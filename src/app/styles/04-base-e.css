@@ -475,3 +475,18 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
   inset-inline-end: calc(var(--np-dock-width) + var(--glacier-space-2));
 }
 
+
+/*
+ * One size for every glyph in the bar, whoever drew it.
+ *
+ * The seats set their own icon size in JSX, which works for the ones this app
+ * draws and not for a PLUGIN's - that icon is chosen by the plugin and arrives
+ * at whatever size it was built at, so it sat visibly smaller than its
+ * neighbours in the same row. Sizing the box here covers both, and means the
+ * next change to how big these are is one number rather than ten.
+ */
+.appNavBarTab__icon svg,
+.appNavBarPlugins__itemIcon svg {
+  inline-size: 20px;
+  block-size: 20px;
+}

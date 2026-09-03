@@ -113,7 +113,7 @@ export function PrimaryNav({
       {
         key: 'discover',
         label: 'Discover',
-        icon: <Telescope size={18} />,
+        icon: <Telescope size={20} />,
         active: tab === 'discover',
         go: () => onTab('discover'),
       },
@@ -126,7 +126,7 @@ export function PrimaryNav({
       {
         key: 'search',
         label: 'Search',
-        icon: <Search size={18} />,
+        icon: <Search size={20} />,
         active: false,
         go: () => openSearchPage(),
       },
@@ -136,7 +136,7 @@ export function PrimaryNav({
       {
         key: 'library',
         label: 'Library',
-        icon: <LibraryBig size={18} />,
+        icon: <LibraryBig size={20} />,
         active: libraryActive,
         go: () => onTab('library'),
       },
@@ -146,7 +146,7 @@ export function PrimaryNav({
     list.push({
       key: 'profile',
       label: 'Profile',
-      icon: <CircleUserRound size={18} />,
+      icon: <CircleUserRound size={20} />,
       active: tab === 'profile' || tab === 'friends',
       go: () => onTab('profile'),
     });
@@ -167,7 +167,7 @@ export function PrimaryNav({
       list.push({
         key: 'booth',
         label: 'Booth',
-        icon: <Disc3 size={18} />,
+        icon: <Disc3 size={20} />,
         active: tab === 'booth',
         go: () => onTab('booth'),
       });
@@ -197,13 +197,13 @@ export function PrimaryNav({
           request: what the machine has for you, the way to look, then what you
           kept. Search opens the overlay rather than routing anywhere. */}
       <NavBarItem
-        icon={<Telescope size={18} />}
+        icon={<Telescope size={20} />}
         label="Discover"
         active={tab === 'discover'}
         onClick={() => onTab('discover')}
       />
       <NavBarItem
-        icon={<Search size={18} />}
+        icon={<Search size={20} />}
         label="Search"
         active={false}
         onClick={() => openSearchPage()}
@@ -211,7 +211,7 @@ export function PrimaryNav({
       {/* Library: the music you saved or made, and - behind its own Music/Books
           toggle - your audiobook shelf. Books no longer holds a rail seat. */}
       <NavBarItem
-        icon={<LibraryBig size={18} />}
+        icon={<LibraryBig size={20} />}
         label="Library"
         active={libraryActive}
         onClick={() => onTab('library')}
@@ -224,14 +224,14 @@ export function PrimaryNav({
       {/* Developer mode only, on the rail as in the bar. */}
       {showBooth && (
         <NavBarItem
-          icon={<Disc3 size={18} />}
+          icon={<Disc3 size={20} />}
           label="Booth"
           active={tab === 'booth'}
           onClick={() => onTab('booth')}
         />
       )}
       <NavBarItem
-        icon={<CircleUserRound size={18} />}
+        icon={<CircleUserRound size={20} />}
         label="Profile"
         active={tab === 'profile'}
         onClick={() => onTab('profile')}
