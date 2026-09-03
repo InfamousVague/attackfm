@@ -30,7 +30,8 @@ import {
   StatTile,
   Text,
 } from '@glacier/react';
-import { ArrowUpRight, ChartNoAxesColumn, Check, Clock, Flame, Music, UserPlus, X } from '@glacier/icons';
+import { ArrowUpRight, ChartNoAxesColumn, Check, Clock, Flame, Headphones, Music, UserPlus, X } from '@glacier/icons';
+import { useJamOptional } from '../player/jam.tsx';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { artistImageKnown, cachedArtistImage, resolveArtistImage } from '../albumArtist/artistImage.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
@@ -206,6 +207,9 @@ export function FriendsSection({
   onOpen?: (friend: RegistryFriend) => void;
 }) {
   const { session: server } = useServerSession();
+  // Listen-along lives here so the ask sits on the friend who is playing. Null
+  // outside the player's provider, which is where a signed-out list renders.
+  const jam = useJamOptional();
   const [feed, setFeed] = useState<FriendsFeed | null>(null);
   // Why the feed is what it is: a registry that cannot be reached says so on
   // the page instead of leaving four skeleton rows "loading" forever.
@@ -631,6 +635,27 @@ export function FriendsSection({
                       happened to be elsewhere. The verb that EVERY row has
                       goes last, so on a wide screen it makes a column. */}
                   <div className="friendRow__actions">
+                    {/* They are playing on the SAME server this device is signed
+                        into, so their music is reachable and the room can sync.
+                        Ask to listen along: they get the invite, and their yes
+                        starts a jam with their player as the clock. Same-server
+                        only ("if we both have access to the server we're on"),
+                        and only while they are actually playing. */}
+                    {jam &&
+                      f.nowPlaying?.playing &&
+                      f.serverUrl &&
+                      server?.url === f.serverUrl.replace(/\/+$/, '') &&
+                      !jam.current && (
+                        <Button
+                          variant="solid"
+                          size="sm"
+                          aria-label={`Listen along with ${f.handle}`}
+                          onClick={() => void jam.invite(f.handle)}
+                        >
+                          <Headphones size={15} />
+                          Listen along
+                        </Button>
+                      )}
                     {/* Their library is somewhere this device is not listening
                         from - offer the walk over. The page decides what that
                         means (a one-tap switch, or the truth about invites). */}

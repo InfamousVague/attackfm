@@ -3,12 +3,16 @@ import type { ReactNode } from 'react';
 import { useToast } from '@glacier/react';
 import { useServerSession } from '../servers/serverSession.tsx';
 import {
+  acceptJamInvite as acceptJamInviteApi,
+  declineJamInvite as declineJamInviteApi,
   endJam as endJamApi,
   fetchJams,
+  inviteToJam as inviteToJamApi,
   joinJam as joinJamApi,
   leaveJam as leaveJamApi,
   startJam as startJamApi,
   type Jam,
+  type JamInvite,
 } from '../server.ts';
 
 /**
@@ -43,9 +47,19 @@ interface JamValue {
   current: Jam | null;
   /** Jams the listener's friends are hosting right now. */
   friendJams: Jam[];
+  /** Friends asking to listen along with THIS listener, waiting to be answered. */
+  invites: JamInvite[];
   /** Whether this device is the one setting the pace. */
   hosting: boolean;
   start: () => Promise<void>;
+  /** Ask a friend who is playing (same server) to let you listen along. Their
+   *  accept is what starts the room; this polls faster for a beat so it appears
+   *  promptly. */
+  invite: (to: string) => Promise<boolean>;
+  /** Say yes to a listen-along ask: your player becomes the room's clock. */
+  acceptInvite: (from: string) => Promise<boolean>;
+  /** Let a listen-along ask go without a word to the asker. */
+  declineInvite: (from: string) => Promise<void>;
   /** Resolves true once in the room; false (having said why) otherwise. */
   join: (id: string) => Promise<boolean>;
   leave: () => Promise<void>;
@@ -73,6 +87,14 @@ export function JamProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const [current, setCurrent] = useState<Jam | null>(null);
   const [friendJams, setFriendJams] = useState<Jam[]>([]);
+  const [invites, setInvites] = useState<JamInvite[]>([]);
+  // Invite asks already announced, so a re-poll of the same standing ask does
+  // not toast it every thirty seconds. Keyed by who + when.
+  const toldInvites = useRef<Set<string>>(new Set());
+  // The current room, read from inside callbacks that must not close over a
+  // stale `current` (the invite fast-poll, the host beat).
+  const jamRef = useRef<Jam | null>(null);
+  jamRef.current = current;
   // The room as last read, and the newest event already told, so a poll
   // can say what changed: who came, who went, who has the clock now - and
   // that the room ended, when it did so without us.
@@ -84,6 +106,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
     if (!session) {
       setCurrent(null);
       setFriendJams([]);
+      setInvites([]);
       lastRoom.current = null;
       return;
     }
@@ -122,6 +145,15 @@ export function JamProvider({ children }: { children: ReactNode }) {
       lastRoom.current = room;
       setCurrent(room);
       setFriendJams(feed.friends);
+      setInvites(feed.invites);
+      // A new ask, said once: "Kayla wants to listen along". The card in Live
+      // now is the place to answer it; this is so it is noticed off that page.
+      for (const inv of feed.invites) {
+        const key = `${inv.from}\n${inv.at}`;
+        if (toldInvites.current.has(key)) continue;
+        toldInvites.current.add(key);
+        toast({ message: `${inv.from} wants to listen along` });
+      }
     } catch {
       // An older server without jams, or a moment offline: leave what is here.
     }
@@ -181,6 +213,64 @@ export function JamProvider({ children }: { children: ReactNode }) {
     [session, refresh, toast],
   );
 
+  const invite = useCallback(
+    async (to: string): Promise<boolean> => {
+      if (!session) return false;
+      try {
+        await inviteToJamApi(session, to);
+        toast({ message: `Asked ${to} to listen along` });
+        // Poll faster for a beat so the room appears the moment they accept,
+        // rather than waiting out the idle interval. Stops as soon as we are in
+        // a room, or after ~90s if the ask goes unanswered.
+        let tries = 0;
+        const tick = () => {
+          if (jamRef.current) return;
+          void refresh().finally(() => {
+            if (!jamRef.current && ++tries < 30) window.setTimeout(tick, 3000);
+          });
+        };
+        window.setTimeout(tick, 3000);
+        return true;
+      } catch (e) {
+        toast({
+          message: e instanceof Error && e.message ? e.message : 'Could not ask to listen along.',
+        });
+        return false;
+      }
+    },
+    [session, toast, refresh],
+  );
+
+  const acceptInvite = useCallback(
+    async (from: string): Promise<boolean> => {
+      if (!session) return false;
+      try {
+        const room = { ...(await acceptJamInviteApi(session, from)), receivedAt: Date.now() };
+        lastRoom.current = room;
+        lastEventAt.current = Math.max(0, ...(room.events ?? []).map((e) => e.at));
+        setCurrent(room);
+        setInvites((prev) => prev.filter((i) => i.from.toLowerCase() !== from.toLowerCase()));
+        void refresh();
+        return true;
+      } catch (e) {
+        toast({
+          message:
+            e instanceof Error && e.message ? e.message : 'Could not start listening along.',
+        });
+        return false;
+      }
+    },
+    [session, refresh, toast],
+  );
+
+  const declineInvite = useCallback(
+    async (from: string) => {
+      setInvites((prev) => prev.filter((i) => i.from.toLowerCase() !== from.toLowerCase()));
+      if (session) await declineJamInviteApi(session, from).catch(() => {});
+    },
+    [session],
+  );
+
   const leave = useCallback(async () => {
     if (!session || !current) return;
     const id = current.id;
@@ -214,8 +304,6 @@ export function JamProvider({ children }: { children: ReactNode }) {
   // followers carry the position forward themselves between updates, so this
   // only has to correct the drift and announce the discontinuities.
   const lastPost = useRef(0);
-  const jamRef = useRef<Jam | null>(null);
-  jamRef.current = current;
   const hostBeat = useCallback(
     async (state: {
       trackId: number | null;
@@ -243,8 +331,36 @@ export function JamProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<JamValue>(
-    () => ({ current, friendJams, hosting, start, join, leave, end, refresh, hostBeat }),
-    [current, friendJams, hosting, start, join, leave, end, refresh, hostBeat],
+    () => ({
+      current,
+      friendJams,
+      invites,
+      hosting,
+      start,
+      invite,
+      acceptInvite,
+      declineInvite,
+      join,
+      leave,
+      end,
+      refresh,
+      hostBeat,
+    }),
+    [
+      current,
+      friendJams,
+      invites,
+      hosting,
+      start,
+      invite,
+      acceptInvite,
+      declineInvite,
+      join,
+      leave,
+      end,
+      refresh,
+      hostBeat,
+    ],
   );
 
   return <JamContext.Provider value={value}>{children}</JamContext.Provider>;

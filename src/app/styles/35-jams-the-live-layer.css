@@ -132,6 +132,27 @@
   white-space: nowrap;
 }
 
+/* A listen-along ask wears the same card as a joinable room, but the picture is
+   the ASKER (there is no album art of theirs to show), and it carries two
+   answers rather than one Join. Faintly tinted in the accent so a question
+   waiting on you does not read as just another room. */
+.jamRoom--invite {
+  border-color: var(--glacier-accent-6);
+  background: var(--glacier-accent-2);
+}
+
+.jamRoom__art--face {
+  display: grid;
+  place-items: center;
+}
+
+.jamRoom__actions {
+  display: flex;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  justify-content: center;
+}
+
 
 /* ---- The endless station ------------------------------------------------ */
 

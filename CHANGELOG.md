@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.76
+
+- Listen along with a friend. When someone on your friends list is playing on
+  the same server as you, their row shows “Listen along” — tap it and they get
+  asked; their yes starts a shared session in sync, their player keeping time.
+  You answer an incoming ask on a card under your profile.
+
 ## 0.5.75
 
 - The moving wall behind Music no longer flashes a blank panel while its

@@ -48,16 +48,53 @@ export interface Jam {
   receivedAt?: number;
 }
 
+/** A friend has asked to listen along with you - `from` is doing the asking,
+ *  and accepting makes YOUR player the room's clock. */
+export interface JamInvite {
+  from: string;
+  at: number;
+}
+
 export interface JamsFeed {
   /** The jam you are in, if any - hosting or following. */
   current: Jam | null;
   /** Jams your friends are hosting that you could join. */
   friends: Jam[];
+  /** People asking to listen along with you, waiting to be answered. */
+  invites: JamInvite[];
 }
 
 export async function fetchJams(session: ServerSession): Promise<JamsFeed> {
   const out = await request<Partial<JamsFeed>>(session.url, '/api/jams', { token: session.token });
-  return { current: out.current ?? null, friends: out.friends ?? [] };
+  return { current: out.current ?? null, friends: out.friends ?? [], invites: out.invites ?? [] };
+}
+
+/** Ask a friend who is playing (same server) to let you listen along. Their
+ *  client sees the ask and can accept, which is what starts the room. */
+export async function inviteToJam(session: ServerSession, to: string): Promise<void> {
+  await request(session.url, '/api/jams/invite', {
+    token: session.token,
+    method: 'POST',
+    body: JSON.stringify({ to }),
+  });
+}
+
+/** Say yes to a listen-along ask: you host the room, they are dropped in. */
+export async function acceptJamInvite(session: ServerSession, from: string): Promise<Jam> {
+  return request<Jam>(session.url, '/api/jams/invite/accept', {
+    token: session.token,
+    method: 'POST',
+    body: JSON.stringify({ from }),
+  });
+}
+
+/** Let a listen-along ask go. The asker simply never sees a room appear. */
+export async function declineJamInvite(session: ServerSession, from: string): Promise<void> {
+  await request(session.url, '/api/jams/invite/decline', {
+    token: session.token,
+    method: 'POST',
+    body: JSON.stringify({ from }),
+  });
 }
 
 export async function startJam(session: ServerSession): Promise<Jam> {

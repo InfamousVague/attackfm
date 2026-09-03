@@ -67,6 +67,35 @@ function LiveNow() {
 
   return (
     <>
+      {/* Someone asked to listen along with you: answering here starts the room
+          with your player as its clock, and drops them in. Its own block above
+          Live now, because it is a question waiting on you rather than a place
+          already happening. */}
+      {jam.invites.length > 0 && (
+        <section className="homeShelf">
+          <h2 className="homeShelfTitle">Wants to listen along</h2>
+          <div className="jamRooms">
+            {jam.invites.map((inv) => (
+              <div key={`${inv.from}\n${inv.at}`} className="jamRoom jamRoom--invite">
+                <span className="jamRoom__art jamRoom__art--face" aria-hidden>
+                  <FriendAvatar handle={inv.from} size="lg" />
+                </span>
+                <span className="jamRoom__name">{inv.from}</span>
+                <span className="jamRoom__meta">wants to hear along with you</span>
+                <span className="jamRoom__actions">
+                  <Button variant="ghost" size="sm" onClick={() => void jam.declineInvite(inv.from)}>
+                    Dismiss
+                  </Button>
+                  <Button variant="solid" size="sm" onClick={() => void jam.acceptInvite(inv.from)}>
+                    Start
+                  </Button>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {(jam.current || liveRooms.length > 0) && (
         <section className="homeShelf">
           <h2 className="homeShelfTitle">Live now</h2>

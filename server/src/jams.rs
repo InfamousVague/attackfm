@@ -74,6 +74,22 @@ pub struct Event {
     pub who: String,
 }
 
+/// One friend asking another to listen along. `from` is doing the asking; `to`
+/// is the one already playing, who will HOST the room when they accept - their
+/// player is the music, so the invite goes to the source, not the other way.
+/// Held only until accepted, declined, or it goes stale.
+#[derive(Clone)]
+pub struct Invite {
+    pub from_id: i64,
+    pub from_name: String,
+    pub to_id: i64,
+    pub at: i64,
+}
+
+/// A listen-along ask is a live nudge, not a standing request: if it is not
+/// answered while the asker is still there wanting it, it has expired.
+const INVITE_TTL_MS: i64 = 120_000;
+
 #[derive(Clone)]
 pub struct Jam {
     pub id: String,
@@ -186,6 +202,9 @@ impl Jam {
 #[derive(Default)]
 pub struct JamState {
     jams: Mutex<HashMap<String, Jam>>,
+    /// Listen-along asks waiting to be answered, newest kept. Separate from the
+    /// rooms because an invite exists BEFORE any room does.
+    invites: Mutex<Vec<Invite>>,
 }
 
 impl JamState {
@@ -236,6 +255,10 @@ impl JamState {
             !jam.members.is_empty() && jam.has(jam.host_id) && now - jam.updated_at.max(jam.created_at) < ROOM_STALE_MS
                 || (!jam.members.is_empty() && jam.members.iter().any(|m| now - m.seen_at < MEMBER_QUIET_MS))
         });
+    }
+
+    fn invites_lock(&self) -> MutexGuard<'_, Vec<Invite>> {
+        self.invites.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Take `id` out of every room but `keep`, handing off where they hosted.
@@ -323,7 +346,145 @@ pub async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Api
         .filter(|j| friend_ids.contains(&j.host_id) && !j.has(caller.id))
         .map(|j| j.to_json())
         .collect();
-    Ok(Json(json!({ "current": mine, "friends": friends })))
+    // Listen-along asks addressed to this caller, freshest kept. Reading the
+    // feed is where a friend discovers someone wants to hear along with them.
+    let invites: Vec<_> = {
+        let mut inv = state.jams.invites_lock();
+        inv.retain(|i| now - i.at < INVITE_TTL_MS);
+        inv.iter()
+            .filter(|i| i.to_id == caller.id)
+            .map(|i| json!({ "from": i.from_name, "at": i.at }))
+            .collect()
+    };
+    Ok(Json(json!({ "current": mine, "friends": friends, "invites": invites })))
+}
+
+/// Resolve a name the client sent - a registry handle or a hub username - to a
+/// (hub id, username), but ONLY when they are the caller's friend on THIS hub.
+/// A listen-along is between friends who share a server, and nothing wider: the
+/// same-server gate the whole feature is asked to honour lives here.
+fn resolve_friend(state: &AppState, caller_id: i64, name: &str) -> Option<(i64, String)> {
+    let want = name.trim();
+    if want.is_empty() {
+        return None;
+    }
+    let uid = state
+        .db
+        .user_by_name_ci(want)
+        .map(|u| u.id)
+        .or_else(|| state.db.member_by_handle(want).map(|(id, _, _, _)| id))?;
+    state.db.friends_of(caller_id).into_iter().find(|(id, _)| *id == uid)
+}
+
+#[derive(Deserialize)]
+pub struct InviteBody {
+    pub to: String,
+}
+
+/// `POST /api/jams/invite {to}` - ask a friend who is playing to let you listen
+/// along. Records the ask; their client sees it on its next feed read and can
+/// accept (which starts the room) or let it go.
+pub async fn invite(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<InviteBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let Some((to_id, _)) = resolve_friend(&state, caller.id, &body.to) else {
+        return Err((StatusCode::FORBIDDEN, "that friend is not on this server".into()));
+    };
+    if to_id == caller.id {
+        return Err((StatusCode::BAD_REQUEST, "you cannot listen along with yourself".into()));
+    }
+    let now = now_ms();
+    let mut inv = state.jams.invites_lock();
+    inv.retain(|i| now - i.at < INVITE_TTL_MS && !(i.from_id == caller.id && i.to_id == to_id));
+    inv.push(Invite { from_id: caller.id, from_name: caller.username.clone(), to_id, at: now });
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct FromBody {
+    pub from: String,
+}
+
+/// `POST /api/jams/invite/accept {from}` - the friend who was asked says yes.
+/// They HOST the room (their player is the music); the asker is dropped in so
+/// they follow the moment they poll. Accepting into a room you already host
+/// just adds them to it.
+pub async fn accept_invite(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<FromBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let Some((from_id, from_name)) = resolve_friend(&state, caller.id, &body.from) else {
+        return Err((StatusCode::NOT_FOUND, "no such invite".into()));
+    };
+    let now = now_ms();
+    {
+        let mut inv = state.jams.invites_lock();
+        let before = inv.len();
+        inv.retain(|i| !(i.from_id == from_id && i.to_id == caller.id) && now - i.at < INVITE_TTL_MS);
+        if inv.len() == before {
+            return Err((StatusCode::NOT_FOUND, "that invite is gone".into()));
+        }
+    }
+    let mut jams = state.jams.lock();
+    state.jams.sweep(&mut jams);
+    if let Some(jam) = jams.values_mut().find(|j| j.host_id == caller.id) {
+        if !jam.has(from_id) {
+            jam.members.push(Member { id: from_id, name: from_name.clone(), joined_at: now, seen_at: now });
+            jam.note("joined", &from_name);
+        }
+        return Ok(Json(jam.to_json()));
+    }
+    // Neither of us stays in another room: the asker leaves whatever they were
+    // following, and a second host device of the acceptor's is stood down.
+    state.jams.withdraw(&mut jams, caller.id, None);
+    state.jams.withdraw(&mut jams, from_id, None);
+    let mut jam = Jam {
+        id: jam_id(&jams),
+        host_id: caller.id,
+        host_name: caller.username.clone(),
+        members: vec![
+            Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now },
+            Member { id: from_id, name: from_name.clone(), joined_at: now, seen_at: now },
+        ],
+        track_id: None,
+        track_title: String::new(),
+        track_artist: String::new(),
+        position_ms: 0,
+        playing: false,
+        queue: Vec::new(),
+        additions: Vec::new(),
+        added_by: HashMap::new(),
+        updated_at: now,
+        clock_device: String::new(),
+        clock_at: 0,
+        events: VecDeque::new(),
+        created_at: now,
+    };
+    jam.note("joined", &caller.username);
+    jam.note("joined", &from_name);
+    let out = jam.to_json();
+    jams.insert(jam.id.clone(), jam);
+    Ok(Json(out))
+}
+
+/// `POST /api/jams/invite/decline {from}` - the ask is let go. Quiet: the asker
+/// simply never sees a room appear.
+pub async fn decline_invite(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<FromBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    if let Some((from_id, _)) = resolve_friend(&state, caller.id, &body.from) {
+        let mut inv = state.jams.invites_lock();
+        inv.retain(|i| !(i.from_id == from_id && i.to_id == caller.id));
+    }
+    Ok(Json(json!({ "ok": true })))
 }
 
 /// `POST /api/jams/{id}/join` - listen along.
