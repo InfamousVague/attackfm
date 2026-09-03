@@ -60,7 +60,10 @@
         {
           "host": "registry.attack.fm",
           "pathPrefix": [
-            "/i"
+            "/i",
+            "/p",
+            "/j",
+            "/u"
           ]
         }
       ]

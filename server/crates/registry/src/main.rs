@@ -1408,6 +1408,194 @@ async fn playlist_share_json(
     Ok(Json(share_json(&s, true)))
 }
 
+// --- jam links -----------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct ShareJamBody {
+    /// The room's own id, which is also the code the app's jam panel prints.
+    #[serde(rename = "jamId")]
+    jam_id: String,
+    /// Which hub the room is on. A jam is rows on one box; this is the box.
+    #[serde(rename = "hubUrl")]
+    hub_url: String,
+    #[serde(default, rename = "hubName")]
+    hub_name: String,
+}
+
+/// `POST /v1/jams/share` - publish a live room as a link.
+///
+/// Nothing about what is PLAYING is kept. A jam moves song to song and a row
+/// written now would be describing a moment that has already passed by the
+/// time anybody opens it - so the link carries the address of the room and
+/// nothing else, and the app fetches the room's state when it gets there.
+/// That is also why there is no expiry column: the room's own life decides
+/// when this link stops working, and the hub is the only thing that knows.
+async fn share_jam(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<ShareJamBody>,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let jam_id: String = body.jam_id.trim().chars().take(64).collect();
+    let hub_url = body.hub_url.trim().trim_end_matches('/').to_string();
+    if jam_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "That jam has no id to point at.".into()));
+    }
+    // A hub address is what the recipient's app is asked to talk to, so it has
+    // to be one - an arbitrary string here would be a link that sends the app
+    // somewhere nobody chose.
+    if !(hub_url.starts_with("http://") || hub_url.starts_with("https://")) || hub_url.len() > 300 {
+        return Err((StatusCode::BAD_REQUEST, "That server address is not one a link can carry.".into()));
+    }
+    let hub_name: String = body.hub_name.trim().chars().take(120).collect();
+    let code = state
+        .db
+        .create_jam_share(&share_code(), who.sub, &jam_id, &hub_url, &hub_name, now_secs())
+        .map_err(db_err)?;
+    Ok(Json(json!({ "code": code, "url": format!("{}/j/{}", public_base(), code) })))
+}
+
+fn jam_share_json(j: &db::JamShare) -> Value {
+    json!({
+        "code": j.code, "jamId": j.jam_id, "hubUrl": j.hub_url, "hubName": j.hub_name,
+        "by": j.owner_handle, "createdAt": j.created_at, "opens": j.opens,
+        "url": format!("{}/j/{}", public_base(), j.code),
+    })
+}
+
+/// `GET /v1/jams/share/{code}` - the room a link points at, for the app.
+/// Public, the way the playlist link is: the link IS the permission to know
+/// where the room is. Being let INTO it is the hub's decision, not this one's.
+async fn jam_share_get(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(code): axum::extract::Path<String>,
+) -> ApiResult {
+    let j = state
+        .db
+        .jam_share(code.trim())
+        .ok_or((StatusCode::NOT_FOUND, "No jam at that link.".into()))?;
+    state.db.bump_jam_opens(&j.code);
+    Ok(Json(jam_share_json(&j)))
+}
+
+/// `GET /j/{code}` - what a jam link opens in a browser.
+async fn jam_landing(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(code): axum::extract::Path<String>,
+) -> Html<String> {
+    let code = code.trim().to_string();
+    let safe = esc(&code);
+    let (doc, title, summary) = match state.db.jam_share(&code) {
+        None => (
+            json!({ "code": code, "state": "missing", "by": "", "hubName": "", "hubUrl": "", "jamId": "" }),
+            "Jam not found".to_string(),
+            "That listening room is not one we know about.".to_string(),
+        ),
+        Some(j) => {
+            let where_ = if j.hub_name.is_empty() { "a music server".to_string() } else { j.hub_name.clone() };
+            (
+                json!({
+                    "code": j.code, "state": "ok", "by": j.owner_handle,
+                    "hubName": j.hub_name, "hubUrl": j.hub_url, "jamId": j.jam_id,
+                }),
+                format!("Listen along with @{}", j.owner_handle),
+                format!("@{} has a jam going on {where_}. Same song, same moment.", j.owner_handle),
+            )
+        }
+    };
+    let base = public_base();
+    let noscript = format!(
+        "<h1>{title}</h1><p>{summary}</p><a href=\"attackfm://j/{safe}\">Open in AttackFM</a>",
+        title = esc(&title),
+        summary = esc(&summary),
+    );
+    landing_shell(
+        &esc(&title),
+        "website",
+        &esc(&summary),
+        &format!("{base}/j/{safe}"),
+        "",
+        &noscript,
+        "__JAM__",
+        &doc.to_string(),
+    )
+}
+
+// --- profile links -------------------------------------------------------------
+
+/// `GET /v1/profile/card/{handle}` - the little that is public about an
+/// account: that the handle exists, and the pictures it wears.
+///
+/// Deliberately NOT the profile. `/v1/profile/{handle}` is friends-only and
+/// stays that way - what somebody listens to is theirs. A shared profile link
+/// is an introduction, not a window: it says who to add, and shows enough face
+/// that the person following it can tell they have the right somebody. Public
+/// because a link handed to a stranger has to render before they have an
+/// account, which is the whole point of handing it over.
+async fn profile_card(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(handle): axum::extract::Path<String>,
+) -> ApiResult {
+    let account = state
+        .db
+        .account_by_handle(handle.trim())
+        .ok_or((StatusCode::NOT_FOUND, "No one here goes by that handle.".into()))?;
+    let (avatar, banner) = images_json(&state, account.id, &account.handle);
+    Ok(Json(json!({ "handle": account.handle, "avatarUrl": avatar, "bannerUrl": banner })))
+}
+
+/// `GET /u/{handle}` - what a profile link opens in a browser.
+async fn profile_landing(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(handle): axum::extract::Path<String>,
+) -> Html<String> {
+    let handle = handle.trim().trim_start_matches('@').to_string();
+    let safe = esc(&handle);
+    let (doc, title, summary, image_tags): (Value, String, String, String) =
+        match state.db.account_by_handle(&handle) {
+        None => (
+            json!({ "handle": handle, "state": "missing", "avatarUrl": null, "bannerUrl": null }),
+            "No such handle".to_string(),
+            "Nobody on AttackFM goes by that name.".to_string(),
+            String::new(),
+        ),
+        Some(account) => {
+            let (avatar, banner) = images_json(&state, account.id, &account.handle);
+            // The banner unfurls wider than the face does, so a messenger gets
+            // the one that was made to be seen at that shape.
+            let og = banner.as_str().or_else(|| avatar.as_str());
+            let tags = og
+                .map(|u| format!("<meta property=\"og:image\" content=\"{}\">", esc(u)))
+                .unwrap_or_default();
+            (
+                json!({
+                    "handle": account.handle, "state": "ok",
+                    "avatarUrl": avatar, "bannerUrl": banner,
+                }),
+                format!("@{}", account.handle),
+                format!("@{} is on AttackFM. Add them and listen along.", account.handle),
+                tags,
+            )
+        }
+        };
+    let base = public_base();
+    let noscript = format!(
+        "<h1>{title}</h1><p>{summary}</p><a href=\"attackfm://u/{safe}\">Open in AttackFM</a>",
+        title = esc(&title),
+        summary = esc(&summary),
+    );
+    landing_shell(
+        &esc(&title),
+        "profile",
+        &esc(&summary),
+        &format!("{base}/u/{safe}"),
+        &image_tags,
+        &noscript,
+        "__PROFILE__",
+        &doc.to_string(),
+    )
+}
+
 /// `GET /p/{code}/cover.jpg` - the first cover, for link previews: a messenger
 /// unfurling the page fetches og:image, and it has to be a plain picture URL.
 async fn playlist_share_cover(
@@ -2073,7 +2261,9 @@ async fn apple_site_association() -> impl IntoResponse {
                 "appIDs": [APPLE_APP_ID],
                 "components": [
                     { "/": "/i/*", "comment": "invite links open the app's Join screen" },
-                    { "/": "/p/*", "comment": "playlist links open in the app" }
+                    { "/": "/p/*", "comment": "playlist links open in the app" },
+                    { "/": "/j/*", "comment": "jam links walk into a live listening room" },
+                    { "/": "/u/*", "comment": "profile links open a person, to add as a friend" }
                 ]
             }]
         }
@@ -2156,6 +2346,11 @@ async fn main() {
         .route("/p/_/landing.css", get(landing_css))
         .route("/p/{code}/preview/{i}", get(playlist_preview))
         .route("/p/{code}/art/{i}", get(playlist_row_art))
+        .route("/v1/jams/share", post(share_jam))
+        .route("/v1/jams/share/{code}", get(jam_share_get))
+        .route("/j/{code}", get(jam_landing))
+        .route("/v1/profile/card/{handle}", get(profile_card))
+        .route("/u/{handle}", get(profile_landing))
         .route("/v1/profile", axum::routing::put(profile_put))
         .route(
             "/v1/profile/image/{kind}",

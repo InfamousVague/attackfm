@@ -1,6 +1,7 @@
 //! Links from outside, delivered into the app.
 //!
-//! Two kinds arrive here now: an invite to a server, and a Spotify link the
+//! Several kinds arrive here: an invite to a server, a playlist shared as a
+//! link, a live listening room, a person's profile, and a Spotify link the
 //! phone was asked to open with AttackFM instead of Spotify.
 //!
 //! An invite is shared as `https://registry.attack.fm/i/<code>`. The registry's
@@ -183,6 +184,68 @@ export function clearPlaylistLink(): void {
   pendingPlaylist = null;
 }
 
+// --- jam links ---------------------------------------------------------------
+//
+// https://registry.attack.fm/j/<code>  or  attackfm://j/<code>: a live
+// listening room. Unlike a playlist, this one can only be WALKED INTO - the
+// room is rows on one hub, so the link names a hub as well as a room and the
+// app has to be on that hub to accept. Same store shape as the others.
+
+let pendingJam: string | null = null;
+const jamSubscribers = new Set<(code: string) => void>();
+
+function jamCodeFromUrl(url: string): string | null {
+  const m = url.match(/\/j\/([^/?#\s]+)/i);
+  return m?.[1]?.trim() || null;
+}
+
+export function onJamLink(handler: (code: string) => void): () => void {
+  jamSubscribers.add(handler);
+  if (pendingJam) handler(pendingJam);
+  return () => {
+    jamSubscribers.delete(handler);
+  };
+}
+
+export function clearJamLink(): void {
+  pendingJam = null;
+}
+
+// --- profile links -----------------------------------------------------------
+//
+// https://registry.attack.fm/u/<handle>  or  attackfm://u/<handle>: a person.
+// The handle is the code, so there is nothing to look up before knowing who
+// this is about - which is why a stale profile link never goes dead the way a
+// minted one can.
+
+let pendingProfile: string | null = null;
+const profileSubscribers = new Set<(handle: string) => void>();
+
+function profileHandleFromUrl(url: string): string | null {
+  const m = url.match(/\/u\/@?([^/?#\s]+)/i);
+  const handle = m?.[1]?.trim();
+  if (!handle) return null;
+  // The path is percent-encoded by whoever built the link; a handle with
+  // nothing to encode passes through this unchanged.
+  try {
+    return decodeURIComponent(handle);
+  } catch {
+    return handle;
+  }
+}
+
+export function onProfileLink(handler: (handle: string) => void): () => void {
+  profileSubscribers.add(handler);
+  if (pendingProfile) handler(pendingProfile);
+  return () => {
+    profileSubscribers.delete(handler);
+  };
+}
+
+export function clearProfileLink(): void {
+  pendingProfile = null;
+}
+
 function deliver(url: string): void {
   const link = spotifyLink(url);
   if (link) {
@@ -194,6 +257,18 @@ function deliver(url: string): void {
   if (playlist) {
     pendingPlaylist = playlist;
     for (const handler of playlistSubscribers) handler(playlist);
+    return;
+  }
+  const jam = jamCodeFromUrl(url);
+  if (jam) {
+    pendingJam = jam;
+    for (const handler of jamSubscribers) handler(jam);
+    return;
+  }
+  const profile = profileHandleFromUrl(url);
+  if (profile) {
+    pendingProfile = profile;
+    for (const handler of profileSubscribers) handler(profile);
     return;
   }
   const code = codeFromUrl(url);

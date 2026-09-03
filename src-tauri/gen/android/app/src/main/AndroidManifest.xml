@@ -166,6 +166,8 @@
                 
                 <data android:pathPrefix="/i" />
                 <data android:pathPrefix="/p" />
+                <data android:pathPrefix="/j" />
+                <data android:pathPrefix="/u" />
                 
             </intent-filter>
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->

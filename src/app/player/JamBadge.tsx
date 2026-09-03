@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Button, IconButton, Popover, Text } from '@glacier/react';
-import { Music, User, Users } from '@glacier/icons';
+import { Music, Share2, User, Users } from '@glacier/icons';
 import { useJamOptional } from './jam.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { ShareJamSheet } from './ShareJam.tsx';
 
 /**
  * Who else is hearing this, on the screen where you are hearing it.
@@ -28,6 +29,9 @@ export function JamBadge() {
   const { session } = useServerSession();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Mounted on first use: the sheet mints a link and draws a card, and this
+  // component is in the transport row of every screen.
+  const [sharing, setSharing] = useState(false);
 
   // No provider (a build without jams) or nobody signed in: a jam is a thing
   // that happens on a server, so without one there is nothing to offer.
@@ -126,6 +130,7 @@ export function JamBadge() {
   }
 
   return (
+    <>
     <Popover
       placement="top-end"
       aria-label={
@@ -201,21 +206,32 @@ export function JamBadge() {
           </ul>
         )}
 
-        {/* The code IS the invitation, and it is wanted at the moment somebody
-            asks - which is here, mid-song, not on a settings page. Same
-            clipboard write as the profile card. */}
-        {jam.hosting && (
-          <button
-            type="button"
-            className="jamLive__code"
-            title="Copy the code"
-            onClick={() => {
-              void navigator.clipboard?.writeText(room.id.toUpperCase()).catch(() => {});
-            }}
-          >
-            Code {room.id.toUpperCase()}
-          </button>
-        )}
+        {/* Two ways to hand the room over, and they are for different people.
+
+            The CODE is for somebody already standing in the app on this
+            server: it is short, and typing it is faster than anything. The
+            LINK is for everybody else - it lands on a page that says whose
+            room this is and offers the app, which a bare code cannot do.
+            Anyone in the room can pass it on; being in it is the permission,
+            and the hub still decides who gets through the door. */}
+        <div className="jamPanel__pass">
+          {jam.hosting && (
+            <button
+              type="button"
+              className="jamLive__code"
+              title="Copy the code"
+              onClick={() => {
+                void navigator.clipboard?.writeText(room.id.toUpperCase()).catch(() => {});
+              }}
+            >
+              Code {room.id.toUpperCase()}
+            </button>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => setSharing(true)}>
+            <Share2 size={14} />
+            Share link
+          </Button>
+        </div>
 
         <div className="jamPanel__actions">
           {/* A host has two exits: hand the room on, or close it. Leaving
@@ -232,5 +248,21 @@ export function JamBadge() {
         </div>
       </div>
     </Popover>
+    {/* HOISTED OUT of the popover, and that is the whole point. Tapping Share
+        dismisses the panel that carries the button, and a sheet rendered
+        inside that panel is unmounted by its own trigger closing - it appears
+        and vanishes in the same frame. Rendered as the popover's SIBLING it
+        outlives the dismissal, and the state that opens it lives out here
+        too. */}
+    {sharing && (
+      <ShareJamSheet
+        jamId={room.id}
+        hostName={room.hostName}
+        listening={room.memberCount}
+        open={sharing}
+        onClose={() => setSharing(false)}
+      />
+    )}
+    </>
   );
 }

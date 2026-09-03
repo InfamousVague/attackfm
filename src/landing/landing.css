@@ -449,3 +449,77 @@ h1 {
   display: block;
   background: var(--glacier-surface-sunken, #17171b);
 }
+
+/*
+ * The profile page's picture: a band with a face across its lower edge - the
+ * same shape the app's profile hero wears and the share card carries, so a
+ * person looks like the same person in all three places.
+ *
+ * Full-bleed, which costs nothing here: the card carries no padding of its
+ * own (its `.head` does), so a first child simply runs to the sides. It takes
+ * the card's own top corners so the band is the card's top rather than a
+ * rectangle laid inside a rounded one.
+ */
+.profileLanding__art {
+  position: relative;
+  block-size: 150px;
+  /* NO overflow clip here. The face hangs below this box on purpose, and a
+     clip on the container cut it in half - the rounding the card's top corners
+     need belongs to the banner itself, which is the only thing that has to be
+     clipped. */
+}
+
+.profileLanding__banner {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+  /* The card's own top corners, taken by the picture that forms them. */
+  border-start-start-radius: var(--glacier-radius-xl, 1.5rem);
+  border-start-end-radius: var(--glacier-radius-xl, 1.5rem);
+}
+
+.profileLanding__banner--bare {
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--glacier-accent-solid, #f0356d) 55%, #17171b),
+    #17171b
+  );
+}
+
+.profileLanding__face {
+  position: absolute;
+  inset-block-end: -34px;
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  inline-size: 104px;
+  block-size: 104px;
+  border-radius: 999px;
+  object-fit: cover;
+  /* The ring separates the face from the band at any brightness; a shadow
+     alone disappears against a pale banner. */
+  border: 3px solid #17171b;
+  display: grid;
+  place-items: center;
+  background: #24242b;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* The face hangs below the band, and the heading needs the room the overhang
+   takes - but as PADDING, not a margin.
+
+   A margin left a strip of bare card between the band and the head's own tint,
+   so the face's lower half sat in a gutter and the card read as three stacked
+   bands rather than one picture with a name under it. Padding puts the head's
+   gradient directly under the band, and the face overlaps onto it the way it
+   overlaps the cover on the profile page itself. */
+.profileLanding .head {
+  padding-block-start: 54px;
+  /* The head's accent wash is off on this page. It exists to give a card with
+     a bare mark at the top some colour; here the band above it already is the
+     colour, and two gradients meeting at the band's lower edge drew a seam
+     across the card that read as a mistake rather than as an edge. */
+  background: none;
+}

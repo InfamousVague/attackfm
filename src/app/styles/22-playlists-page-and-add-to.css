@@ -1533,7 +1533,16 @@
   gap: var(--glacier-space-3);
 }
 
-.playlistCard {
+/* The share card, worn by three different things.
+
+   A playlist, a live jam and a person all share the same picture: the mark and
+   a word at the top, a square of art, a name, a line about it, then the QR and
+   the link. It was the playlist's card and was named for it, which is why the
+   rename - a jam borrowing a class called `playlistCard` would read as a
+   mistake in the markup rather than as one card doing three jobs. Everything
+   sits on solid paint because this DOM is what `widget/shot.ts` rasterises,
+   and a backdrop-filter has no backdrop inside the shot. */
+.shareCard {
   inline-size: min(100%, 420px);
   flex: none;
   box-sizing: border-box;
@@ -1550,26 +1559,26 @@
   overflow: hidden;
 }
 
-.playlistCard__head {
+.shareCard__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-block-end: 18px;
 }
 
-.playlistCard__logo {
+.shareCard__logo {
   block-size: 22px;
   inline-size: auto;
 }
 
-.playlistCard__kicker {
+.shareCard__kicker {
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.7);
 }
 
-.playlistCard__art {
+.shareCard__art {
   inline-size: 220px;
   block-size: 220px;
   margin: 0 auto 16px;
@@ -1581,26 +1590,26 @@
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
 }
 
-.playlistCard__art[data-n='1'] { grid-template-columns: 1fr; }
-.playlistCard__art[data-n='2'] { grid-template-columns: 1fr 1fr; }
-.playlistCard__art[data-n='3'],
-.playlistCard__art[data-n='4'] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
-.playlistCard__art[data-n='3'] img:first-child { grid-column: 1 / -1; }
+.shareCard__art[data-n='1'] { grid-template-columns: 1fr; }
+.shareCard__art[data-n='2'] { grid-template-columns: 1fr 1fr; }
+.shareCard__art[data-n='3'],
+.shareCard__art[data-n='4'] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.shareCard__art[data-n='3'] img:first-child { grid-column: 1 / -1; }
 
-.playlistCard__art img {
+.shareCard__art img {
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
   display: block;
 }
 
-.playlistCard__artEmpty {
+.shareCard__artEmpty {
   display: grid;
   place-items: center;
   color: rgba(255, 255, 255, 0.5);
 }
 
-.playlistCard__name {
+.shareCard__name {
   margin: 0;
   text-align: center;
   font-size: 22px;
@@ -1609,14 +1618,14 @@
   overflow-wrap: anywhere;
 }
 
-.playlistCard__sub {
+.shareCard__sub {
   margin: 4px 0 18px;
   text-align: center;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.72);
 }
 
-.playlistCard__qrRow {
+.shareCard__qrRow {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -1625,7 +1634,7 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
-.playlistCard__qr {
+.shareCard__qr {
   flex: none;
   inline-size: 72px;
   block-size: 72px;
@@ -1635,26 +1644,26 @@
   box-sizing: border-box;
 }
 
-.playlistCard__linkWrap {
+.shareCard__linkWrap {
   min-inline-size: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.playlistCard__linkLabel {
+.shareCard__linkLabel {
   font-size: 10px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.6);
 }
 
-.playlistCard__link {
+.shareCard__link {
   font: 600 13px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
   overflow-wrap: anywhere;
 }
 
-.playlistCard__foot {
+.shareCard__foot {
   margin: 16px 0 0;
   text-align: center;
   font-size: 11px;
@@ -1671,4 +1680,66 @@
 
 .shareSheet__actions > * {
   flex: 1;
+}
+
+/*
+ * The profile card's picture: the face over the band, which is the shape the
+ * profile page itself wears - the card should look like the page it points at.
+ *
+ * Same 220px square as a playlist's mosaic so the three cards stack to the
+ * same height in a gallery, but laid out rather than gridded: the band takes
+ * the top two thirds and the face sits across its lower edge. Both pictures
+ * arrive as data URLs (ShareProfile re-draws them through a canvas), because
+ * this DOM is rasterised and a registry URL would not draw inside the shot.
+ */
+.shareProfileArt {
+  position: relative;
+  display: block;
+  /* The face hangs over the band's lower edge, and the square's own clip cut
+     it in half. The card's corners are rounded by the BANNER instead. */
+  overflow: visible;
+}
+
+/* Scoped under the container, not written bare: `.shareCard__art img` is an
+   element-plus-class selector and beats a lone class, so a bare
+   `.shareProfileArt__face` lost every declaration it made and the face came
+   out 220px square. Measured, not assumed - the computed box said 220. */
+.shareProfileArt .shareProfileArt__banner {
+  position: absolute;
+  inset: 0 0 auto;
+  inline-size: 100%;
+  block-size: 62%;
+  object-fit: cover;
+  display: block;
+  border-start-start-radius: 18px;
+  border-start-end-radius: 18px;
+}
+
+/* No banner is not a hole: the card's own accent, so the face still sits on
+   something rather than on the card's flat backing. */
+.shareProfileArt .shareProfileArt__banner--bare {
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--glacier-accent-solid, #ff5e5e) 65%, #1b1b20),
+    #1b1b20
+  );
+}
+
+.shareProfileArt .shareProfileArt__face {
+  position: absolute;
+  inset-block-start: 38%;
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  inline-size: 96px;
+  block-size: 96px;
+  border-radius: 999px;
+  object-fit: cover;
+  /* The ring is what separates the face from the band behind it at any
+     brightness - a shadow alone disappears against a pale banner. */
+  border: 3px solid #17171b;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  background: #24242b;
+  color: rgba(255, 255, 255, 0.55);
 }

@@ -327,3 +327,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* The room's two ways out to somebody else: the short code to type, and the
+   link to send. One row, because they are the same act done for two different
+   people - and the code only appears for the host, so on a follower's panel
+   this is just the share button, correctly aligned on its own. */
+.jamPanel__pass {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}

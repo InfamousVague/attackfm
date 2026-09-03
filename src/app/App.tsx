@@ -40,6 +40,8 @@ import { ShareNotices } from './notify/ShareNotices.tsx';
 import { NewMusicNotices } from './notify/NewMusicNotices.tsx';
 import { MusicDateNotices } from './notify/MusicDateNotices.tsx';
 import { SharedPlaylistBridge } from './playlists/SharedPlaylistBridge.tsx';
+import { JamLinkBridge } from './player/JamLinkBridge.tsx';
+import { ProfileLinkBridge } from './profile/ProfileLinkBridge.tsx';
 import { NotifyBell } from './notify/NotifyBell.tsx';
 import { ShareServer } from './library/ShareServer.tsx';
 import { CarPlayBridge } from './player/CarPlayBridge.tsx';
@@ -924,6 +926,11 @@ export function App() {
             <NewMusicNotices />
             <MusicDateNotices />
             <SharedPlaylistBridge />
+            {/* The other two links the registry hands out. Beside the playlist
+                one because they are the same kind of thing: a URL arrives, a
+                modal answers it over whatever page is up. */}
+            <JamLinkBridge />
+            <ProfileLinkBridge />
             {/* Music Date, fullscreen: over everything, chrome gone - no nav
                 bar, no player strip, just the introductions. A floating
                 chevron (and the system back) is the way out. */}

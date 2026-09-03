@@ -90,33 +90,33 @@ function PlaylistCard({
   count: number;
 }) {
   return (
-    <div className="playlistCard" ref={cardRef}>
-      <div className="playlistCard__head">
-        <img className="playlistCard__logo" src={logo} alt="AttackFM" />
-        <span className="playlistCard__kicker">Playlist</span>
+    <div className="shareCard" ref={cardRef}>
+      <div className="shareCard__head">
+        <img className="shareCard__logo" src={logo} alt="AttackFM" />
+        <span className="shareCard__kicker">Playlist</span>
       </div>
-      <div className="playlistCard__art" data-n={Math.min(covers.length, 4)}>
+      <div className="shareCard__art" data-n={Math.min(covers.length, 4)}>
         {covers.length > 0 ? (
           covers.slice(0, 4).map((c, i) => <img key={i} src={c} alt="" />)
         ) : (
-          <span className="playlistCard__artEmpty" aria-hidden>
+          <span className="shareCard__artEmpty" aria-hidden>
             <ListMusic size={40} />
           </span>
         )}
       </div>
-      <p className="playlistCard__name">{playlist.name}</p>
-      <p className="playlistCard__sub">
+      <p className="shareCard__name">{playlist.name}</p>
+      <p className="shareCard__sub">
         {count} {count === 1 ? 'song' : 'songs'}
         {by ? ` · shared by @${by}` : ''}
       </p>
-      <div className="playlistCard__qrRow">
-        {qr ? <img className="playlistCard__qr" src={qr} alt="Link as a QR code" /> : <span className="playlistCard__qr" aria-hidden />}
-        <div className="playlistCard__linkWrap">
-          <span className="playlistCard__linkLabel">Scan, or open</span>
-          <span className="playlistCard__link">{link ? link.replace(/^https?:\/\//, '') : 'making the link…'}</span>
+      <div className="shareCard__qrRow">
+        {qr ? <img className="shareCard__qr" src={qr} alt="Link as a QR code" /> : <span className="shareCard__qr" aria-hidden />}
+        <div className="shareCard__linkWrap">
+          <span className="shareCard__linkLabel">Scan, or open</span>
+          <span className="shareCard__link">{link ? link.replace(/^https?:\/\//, '') : 'making the link…'}</span>
         </div>
       </div>
-      <p className="playlistCard__foot">attack.fm · opens in the app, or in any browser</p>
+      <p className="shareCard__foot">attack.fm · opens in the app, or in any browser</p>
     </div>
   );
 }

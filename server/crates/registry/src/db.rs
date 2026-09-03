@@ -357,6 +357,68 @@ impl Db {
         let _ = c.execute("UPDATE playlist_shares SET opens = opens + 1 WHERE code = ?1", [code]);
     }
 
+    // --- jam links -----------------------------------------------------------------
+
+    /// Mint a link for a room, or hand back the one this person already has
+    /// for it. Sharing the same jam twice is the same act twice, and it should
+    /// not leave two links behind that a reader cannot tell apart.
+    pub fn create_jam_share(
+        &self,
+        code: &str,
+        owner_id: i64,
+        jam_id: &str,
+        hub_url: &str,
+        hub_name: &str,
+        now: i64,
+    ) -> rusqlite::Result<String> {
+        let c = self.conn.lock().unwrap();
+        if let Some(existing) = c
+            .query_row(
+                "SELECT code FROM jam_shares WHERE owner_id = ?1 AND jam_id = ?2 AND hub_url = ?3",
+                rusqlite::params![owner_id, jam_id, hub_url],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?
+        {
+            return Ok(existing);
+        }
+        c.execute(
+            "INSERT INTO jam_shares (code, owner_id, jam_id, hub_url, hub_name, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![code, owner_id, jam_id, hub_url, hub_name, now],
+        )?;
+        Ok(code.to_string())
+    }
+
+    pub fn jam_share(&self, code: &str) -> Option<JamShare> {
+        let c = self.conn.lock().unwrap();
+        c.query_row(
+            "SELECT j.code, a.handle, j.jam_id, j.hub_url, j.hub_name, j.created_at, j.opens
+               FROM jam_shares j JOIN accounts a ON a.id = j.owner_id
+              WHERE j.code = ?1",
+            [code],
+            |r| {
+                Ok(JamShare {
+                    code: r.get(0)?,
+                    owner_handle: r.get(1)?,
+                    jam_id: r.get(2)?,
+                    hub_url: r.get(3)?,
+                    hub_name: r.get(4)?,
+                    created_at: r.get(5)?,
+                    opens: r.get(6)?,
+                })
+            },
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
+    pub fn bump_jam_opens(&self, code: &str) {
+        let c = self.conn.lock().unwrap();
+        let _ = c.execute("UPDATE jam_shares SET opens = opens + 1 WHERE code = ?1", [code]);
+    }
+
     // --- profiles ----------------------------------------------------------------
 
     /// Store what the app published. An empty body with `sharing` alone
@@ -949,6 +1011,17 @@ pub struct PlaylistShare {
     pub opens: i64,
 }
 
+/// A live listening room behind a link.
+pub struct JamShare {
+    pub code: String,
+    pub owner_handle: String,
+    pub jam_id: String,
+    pub hub_url: String,
+    pub hub_name: String,
+    pub created_at: i64,
+    pub opens: i64,
+}
+
 /// A song sent between friends, as the recipient's inbox lists it.
 pub struct Share {
     pub id: i64,
@@ -1091,6 +1164,30 @@ CREATE TABLE IF NOT EXISTS playlist_shares (
   opens       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS playlist_shares_owner ON playlist_shares(owner_id, created_at DESC);
+
+-- A live listening room shared as a LINK. A jam is rows on ONE hub - joining
+-- it means being a member of that hub - so unlike a playlist link this cannot
+-- be re-filed anywhere: what is kept is the address of the room, not its
+-- contents. The row is a signpost, and it is deliberately tiny.
+--
+-- Also unlike a playlist, a jam ENDS. Nothing here can know when, so the row
+-- outlives the room and the app is what discovers the room has gone; the page
+-- says what the jam was and offers to open the app, which is the only thing
+-- that can check. `hub_url` is on the row rather than looked up because an
+-- account can listen from several hubs and the room is on exactly one.
+CREATE TABLE IF NOT EXISTS jam_shares (
+  code       TEXT PRIMARY KEY,
+  owner_id   INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  jam_id     TEXT NOT NULL,
+  hub_url    TEXT NOT NULL,
+  hub_name   TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  opens      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS jam_shares_owner ON jam_shares(owner_id, created_at DESC);
+-- One link per room per person: sharing the same jam twice hands out the same
+-- link rather than minting a second one that means the same thing.
+CREATE UNIQUE INDEX IF NOT EXISTS jam_shares_room ON jam_shares(owner_id, jam_id, hub_url);
 
 -- The account's listening profile - the whole thing, as its own app publishes
 -- it from wherever it listens. Global on purpose: a profile is a person's,

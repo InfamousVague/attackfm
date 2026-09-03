@@ -1,7 +1,8 @@
 import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { HomeStatsCards } from '../library/HomeStatsCards.tsx';
+import { ShareProfileSheet } from './ShareProfile.tsx';
 import { Button, Heading, IconButton, Text } from '@glacier/react';
-import { Camera, Copy, ImagePlus, LogOut, Trash2, Users } from '@glacier/icons';
+import { Camera, Copy, ImagePlus, LogOut, Share2, Trash2, Users } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useJam } from '../player/jam.tsx';
 import { useLibrary } from '../library/library.tsx';
@@ -266,6 +267,8 @@ export function ProfilePage({
   // Same reason as the avatar's: a banner whose bytes have gone should leave
   // the card plain, not broken.
   const [bannerBroken, setBannerBroken] = useState(false);
+  // Mounted on first use: the sheet draws a card and re-encodes both pictures.
+  const [sharingProfile, setSharingProfile] = useState(false);
 
   const pick = (kind: ImageKind) => {
     wanted.current = kind;
@@ -424,6 +427,24 @@ export function ProfilePage({
                 ? `Listening from ${hostOf(session.url)}${session.username ? ` as ${session.username}` : ''}`
                 : 'Your account, on every server'}
             </span>
+            {/* Under your own name, where the thing being shared is.
+
+                A handle is only useful to somebody who can find you by it, and
+                until now telling a friend your handle meant telling them the
+                word and hoping they typed it. The card carries the word, the
+                pictures and a QR, and the link behind it opens on a page that
+                offers the app - which is the difference between "I'm @matt on
+                AttackFM" and something a person can act on. It publishes
+                nothing: see ShareProfile, the listening stays for friends. */}
+            <Button
+              variant="soft"
+              size="sm"
+              className="profileHero__share"
+              onClick={() => setSharingProfile(true)}
+            >
+              <Share2 size={15} />
+              Share your profile
+            </Button>
           </span>
         </header>
       ) : (
@@ -487,6 +508,16 @@ export function ProfilePage({
           control here you almost never want and would hate to hit by accident.
           It sat in the hero's corner, a thumb's width from the button that
           changes your picture. */}
+      {registry && account && sharingProfile && (
+        <ShareProfileSheet
+          handle={account.handle}
+          avatarUrl={registry.avatarUrl ?? null}
+          bannerUrl={registry.bannerUrl ?? null}
+          open={sharingProfile}
+          onClose={() => setSharingProfile(false)}
+        />
+      )}
+
       {registry && account && (
         <button type="button" className="profileSignOut" onClick={signOut}>
           <LogOut size={15} />

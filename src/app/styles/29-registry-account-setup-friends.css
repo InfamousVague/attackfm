@@ -587,3 +587,15 @@
   color: var(--glacier-danger-text, #ff8589);
   border-color: color-mix(in srgb, var(--glacier-danger-solid, #e5484d) 45%, transparent);
 }
+
+/* "Share your profile", under your own name in the hero.
+
+   `align-self: start` so the button is its own width rather than the column's:
+   the body is a stretched flex column (the handle and the caption both run its
+   full width), and a button stretched to match would be a bar across the card.
+   The margin is its own because the column's 2px gap belongs to two lines of
+   type sitting close, not to a control under them. */
+.profileHero__share {
+  align-self: start;
+  margin-block-start: var(--glacier-space-3);
+}

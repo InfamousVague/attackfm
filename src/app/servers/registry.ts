@@ -282,6 +282,57 @@ export function playlistShareLink(code: string): string {
   return `${REGISTRY_URL}/p/${code}`;
 }
 
+// --- jam links ---------------------------------------------------------------
+
+/** A live room behind a link. Nothing about what is PLAYING - a jam moves song
+ *  to song, and a link that described one moment would be lying by the time it
+ *  was opened. The address of the room, and who is in charge of it. */
+export interface JamShare {
+  code: string;
+  jamId: string;
+  hubUrl: string;
+  hubName: string;
+  by: string;
+  url: string;
+}
+
+export async function publishJamShare(
+  token: string,
+  body: { jamId: string; hubUrl: string; hubName?: string },
+): Promise<{ code: string; url: string }> {
+  return call('/v1/jams/share', { token, method: 'POST', body: JSON.stringify(body) });
+}
+
+/** Read a room behind a link. Public: the link says WHERE the room is, and the
+ *  hub decides whether you are let into it. */
+export async function fetchJamShare(code: string): Promise<JamShare> {
+  return call<JamShare>(`/v1/jams/share/${encodeURIComponent(code)}`);
+}
+
+export function jamShareLink(code: string): string {
+  return `${REGISTRY_URL}/j/${code}`;
+}
+
+// --- profile links -----------------------------------------------------------
+
+/** The little that is public about an account: the handle exists, and the
+ *  pictures it wears. NOT the listening - `fetchProfile` stays friends-only. */
+export interface ProfileCard {
+  handle: string;
+  avatarUrl: string | null;
+  bannerUrl: string | null;
+}
+
+export async function fetchProfileCard(handle: string): Promise<ProfileCard> {
+  return call<ProfileCard>(`/v1/profile/card/${encodeURIComponent(handle)}`);
+}
+
+/** Your profile as a link. The handle IS the code - there is nothing to mint,
+ *  and a link that stays the same forever is one you can print on something. */
+export function profileLink(handle: string): string {
+  return `${REGISTRY_URL}/u/${encodeURIComponent(handle)}`;
+}
+
 // --- the listening profile, global ------------------------------------------
 
 /**
