@@ -171,6 +171,22 @@ body:has(.npScreen[data-docked]) .djToast {
      it stays exactly 0 where there is no safe area at all (desktop, and any
      phone without an indicator), instead of going negative. */
   --app-nav-chin: calc(var(--app-safe-bottom) * 0.75);
+  /*
+   * The dock's card height: ONE number for the two plates that live down
+   * here, so the player and the nav read as a pair rather than as two things
+   * that happen to be about the same size.
+   *
+   * They were within a pixel of each other and only by luck - the nav's is a
+   * formula, the player's was whatever its disc and transport row added up
+   * to. Either one changing (a bigger glyph, a taller row) walked them apart,
+   * which is what a mismatched pair at the bottom of every screen looks like.
+   *
+   * The island band plus its breathing room, top and bottom. NOT the chin: on
+   * an iPhone that is the drape over the home indicator, a thing only the card
+   * touching the glass has, and copying it onto a plate that floats above
+   * would be dead space rather than a match.
+   */
+  --app-dock-card-height: calc(var(--app-nav-island-height) + var(--app-nav-pad-top) * 2);
   /* The iPhone's own screen corner. In px, not rem: it is the physical curve of
      the glass and does not move when the interface-size setting does. ~55pt is
      the modern Pro; a few points either way is invisible behind a corner this
@@ -495,4 +511,24 @@ div[class*='_viewport_1nbns_'] > div[class*='_item_1nbns_'] {
     var(--app-header-height, calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem)) +
       var(--glacier-space-2)
   );
+}
+
+/*
+ * The player's plate is the dock's other card, and wears the dock's height.
+ * The kit draws the bar itself, so this sizes the element it renders - the
+ * one child of the shell - rather than reaching for a class name the kit
+ * owns and may rename.
+ */
+.appWindow .playerBarShell > * {
+  /*
+   * The kit computes this element's height from its own four variables
+   * (seek + rows + play + padding), set on the element itself, and it holds
+   * that height against a more specific selector of ours - measured, not
+   * assumed: the same rule injected at the end of the document wins, ours in
+   * the sheet does not. So this is the one place the dock's height is
+   * decided, and it says so out loud. The alternative is matching the kit's
+   * arithmetic from outside and re-deriving it every time the kit retunes a
+   * control, which is a worse kind of coupling than one honest override.
+   */
+  height: var(--app-dock-card-height) !important;
 }

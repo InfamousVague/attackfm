@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.69
+
+- The player bar and the navigation bar are the same height, and stay that way: they now take one number between them instead of each arriving at its own.
+
 ## 0.5.68
 
 - The navigation bar's icons are larger again.

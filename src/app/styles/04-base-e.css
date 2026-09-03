@@ -84,7 +84,12 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   z-index: 4;
   /* Border-box, so the tabs centre in the island band and the chin is padding
      below them rather than height stolen from them. */
-  block-size: calc(var(--app-nav-island-height) + var(--app-nav-chin) + var(--app-nav-pad-top));
+  /* The dock's shared card height, plus whatever the chin adds beyond the
+     breathing room it replaces - zero on Android and on any screen with no
+     safe area, the drape over the home indicator on an iPhone. */
+  block-size: calc(
+    var(--app-dock-card-height) + var(--app-nav-chin) - var(--app-nav-pad-top)
+  );
   padding-block-start: var(--app-nav-pad-top);
   padding-block-end: var(--app-nav-chin);
   /* A plain row. It was a three-cell grid with a fixed middle, which existed
