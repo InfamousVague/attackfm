@@ -302,6 +302,11 @@ body:has(.appNavBar) .playerBarShell > * {
   --app-player-height: 0rem;
 }
 
+.appWindow .playerBarShell > * {
+  
+  height: var(--app-dock-card-height) !important;
+}
+
 .soundConsole {
   display: flex;
   flex-direction: column;
@@ -711,6 +716,23 @@ body:has(.appNavBar) .playerBarShell > * {
   aspect-ratio: 1;
   object-fit: cover;
   display: block;
+}
+
+.coverWall[data-kind='clip'] .coverWall__col {
+  block-size: 220%;
+}
+
+.coverWall[data-kind='clip'] .coverWall__col video {
+  inline-size: 100%;
+  
+  block-size: 25%;
+  
+  object-fit: cover;
+  display: block;
+  
+  flex: none;
+  
+  background: var(--glacier-surface-sunken);
 }
 
 @media (prefers-reduced-motion: reduce) {
