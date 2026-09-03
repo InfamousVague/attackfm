@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.64
+
+- Discover's suggested playlists open. Tapping one used to be the import itself - fifty songs on the strength of a title and a picture; now it opens the list, drawn like any other playlist, with every song and artist, which of them you already have, and Add as its own button on both the card and the page.
+
 ## 0.5.63
 
 - Pull-to-refresh no longer fires halfway down a page. On This week - and on any page held inside a bar, now or later - the gesture was watching the wrapper instead of the page, and a wrapper is never scrolled, so a downward drag anywhere read as a pull from the top.

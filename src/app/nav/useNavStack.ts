@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { onSystemBack } from './systemBack.ts';
 import type { Detail, SongCollection } from './AppMain.tsx';
+import type { Suggestion } from '../api/curator.ts';
 import type { Track } from '../core/tauri.ts';
 
 // Page history as a stack with a cursor, so back and forward move through
@@ -104,6 +105,12 @@ export function useNavStack({
       push({ tab: live.current.tab, detail: { kind: 'mix', title, tracks, emptyLabel } }),
     [push],
   );
+  /** A catalogue's own list, opened to be read before it is taken. Stacked
+   *  like a mix, and for the same reason: it has no id here. */
+  const goCatalog = useCallback(
+    (suggestion: Suggestion) => push({ tab: live.current.tab, detail: { kind: 'catalog', suggestion } }),
+    [push],
+  );
   /** A whole-collection song page - Liked or every song - stacked the same way.
    *  The library's own views, opened full instead of in a sheet. */
   const goSongs = useCallback(
@@ -201,6 +208,7 @@ export function useNavStack({
     goAlbum,
     goPlaylist,
     goMix,
+    goCatalog,
     goSongs,
     closeDetail,
     goTab,

@@ -1,6 +1,7 @@
 import type { Track } from '../core/tauri.ts';
 import { useDeveloperMode } from '../settings/developerMode.ts';
 import {
+  IMPORTER_PLUGIN_ID,
   useAcquire,
   useHasDownloadQueue,
   usePluginPages,
@@ -16,6 +17,9 @@ import { MixPage } from '../playlists/MixPage.tsx';
 import { SongPage, type SongCollection } from '../library/SongPage.tsx';
 import { LibraryView } from '../library/LibraryView.tsx';
 import { DiscoverPage } from '../discover/DiscoverPage.tsx';
+import { CatalogListPage } from '../discover/CatalogListPage.tsx';
+import { suggestionTarget } from '../discover/DiscoverPage.tsx';
+import type { Suggestion } from '../api/curator.ts';
 import { BoothPage } from '../booth/BoothPage.tsx';
 import { ProfilePage } from '../profile/ProfilePage.tsx';
 import { StatsPage } from '../profile/StatsPage.tsx';
@@ -42,6 +46,13 @@ export type Detail =
    * so carrying them costs nothing.
    */
   | { kind: 'mix'; title: string; tracks: Track[]; emptyLabel?: string }
+  /**
+   * A list from a CATALOGUE - one of Discover's suggestions - opened to be
+   * read before it is taken. It carries the suggestion for the same reason a
+   * mix carries its tracks: there is nothing here to route to, the list lives
+   * on somebody else's server and reached this device inside a feed.
+   */
+  | { kind: 'catalog'; suggestion: Suggestion }
   | { kind: 'songs'; view: SongCollection };
 
 /**
@@ -60,6 +71,7 @@ export function AppMain({
   onOpenArtist,
   onOpenAlbum,
   onOpenPlaylist,
+  onOpenList,
   onOpenSongs,
   onCloseDetail,
   onOpenDownloads,
@@ -81,6 +93,8 @@ export function AppMain({
   /** Opens one record, credited to the artist it was reached through. */
   onOpenAlbum: (album: string, albumArtist: string) => void;
   onOpenPlaylist: (id: string) => void;
+  /** Open one of Discover's catalogue lists as a page. */
+  onOpenList: (suggestion: Suggestion) => void;
   /** Opens a whole-collection song page (Liked, or every song). */
   onOpenSongs: (view: SongCollection) => void;
   onCloseDetail: () => void;
@@ -232,6 +246,8 @@ export function AppMain({
           onOpenArtist={onOpenArtist}
           onOpenPlaylist={onOpenPlaylist}
         />
+      ) : detail?.kind === 'catalog' ? (
+        <CatalogList suggestion={detail.suggestion} onPlay={onPlay} onOpenArtist={onOpenArtist} />
       ) : detail?.kind === 'songs' ? (
         // Liked or every song, opened full - the library's own views as a page.
         <SongPage view={detail.view} onPlay={onPlay} onOpenArtist={onOpenArtist} />
@@ -254,6 +270,7 @@ export function AppMain({
         // auditions it fetched, the charts, the suggestions, your history's
         // shelves. Its own tab again, so the Library can be only yours.
         <DiscoverPage
+          onOpenList={onOpenList}
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
           onOpenAlbum={onOpenAlbum}
@@ -298,5 +315,43 @@ export function AppMain({
         />
       )}
     </main>
+  );
+}
+
+/**
+ * The catalogue list page, with this box's own way of taking one wired in.
+ *
+ * The page itself knows nothing about importers or stores - it draws a list
+ * and calls Add. Which of those Add means is a question about the device (an
+ * importer plugin, a shop, neither), and it is answered here, exactly as the
+ * Discover card answers it, so the two verbs cannot drift apart.
+ */
+function CatalogList({
+  suggestion,
+  onPlay,
+  onOpenArtist,
+}: {
+  suggestion: Suggestion;
+  onPlay: (track: Track, queue: Track[]) => void;
+  onOpenArtist: (artist: string) => void;
+}) {
+  const acquire = useAcquire();
+  const downloads = useDownloadsOptional();
+  const target = suggestionTarget(suggestion);
+  const viaImporter = acquire.handlersFor(target).some((h) => h.pluginId === IMPORTER_PLUGIN_ID);
+  const job = viaImporter ? downloads?.jobs.find((j) => j.url === suggestion.url) : undefined;
+  const adding =
+    job?.state === 'done' ? 'added' : job?.state === 'queued' || job?.state === 'downloading' ? 'adding' : 'idle';
+  return (
+    <CatalogListPage
+      suggestion={suggestion}
+      onPlay={onPlay}
+      onOpenArtist={onOpenArtist}
+      adding={adding}
+      onAdd={() => {
+        if (viaImporter && downloads) void downloads.enqueue(suggestion.url).catch(() => {});
+        else acquire.acquire(target);
+      }}
+    />
   );
 }

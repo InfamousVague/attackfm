@@ -400,3 +400,89 @@
   grid-template-columns: repeat(auto-fill, minmax(10.2rem, 1fr));
 }
 
+
+/*
+ * Take the list, as its own control.
+ *
+ * The card used to be one button meaning one thing: the tap WAS the import.
+ * It opens the list now, so Add had to become something you can aim at - a
+ * sibling of the card's button rather than a glyph inside it, or the two
+ * verbs would be one target with the smaller one unreachable.
+ */
+.suggestCardTake {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--glacier-space-1);
+  inline-size: 100%;
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-md, 0.75rem);
+  background: transparent;
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: var(--glacier-font-size-xs);
+  cursor: pointer;
+}
+
+.suggestCardTake:hover:not(:disabled) {
+  color: var(--glacier-text);
+  border-color: var(--glacier-border);
+}
+
+/* Taken, or being taken: it stops being a target and says which. */
+.suggestCardTake:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/*
+ * A catalogue row: the same grid as a playlist row, minus the parts a song
+ * this device does not have cannot honour. The row is not a menu trigger and
+ * most of them are not buttons at all, so the affordance has to come from the
+ * ones that ARE - the songs already in the library.
+ */
+/* Wears .playlistRow__main, so only what differs is here: the leading number
+   in place of the artwork (a song this device does not have has no cover to
+   show), and no pointer on the rows that cannot play. */
+.catalogRow__main[role='button'] {
+  cursor: pointer;
+}
+
+.catalogRow__main:not([role='button']) {
+  cursor: default;
+}
+
+/* The number becomes a play glyph on the rows that can play, which is the
+   whole signal: the list reads as a list, and what you own stands out of it. */
+.catalogRow__n {
+  inline-size: 1.5rem;
+  flex: none;
+  text-align: center;
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+}
+
+.catalogRow[data-owned] .catalogRow__n {
+  color: var(--glacier-accent-text, var(--glacier-accent-solid));
+}
+
+.catalogRow__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Not yours yet: the row is legible but plainly not a thing to press. */
+.catalogRow:not([data-owned]) .catalogRow__title,
+.catalogRow:not([data-owned]) .playlistRow__artist {
+  color: var(--glacier-text-muted);
+}
+
+/* Two verbs and a long-ish label: on a phone they must fold rather than run
+   off the edge. Only this page's header - the playlist page's own carries
+   Play and Shuffle, which fit. */
+.playlistPage .playlistHead__actions {
+  flex-wrap: wrap;
+}

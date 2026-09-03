@@ -418,6 +418,7 @@ export function App() {
     goAlbum,
     goPlaylist,
     goMix,
+    goCatalog,
     goSongs,
     closeDetail,
     goTab,
@@ -750,6 +751,7 @@ export function App() {
                   onOpenArtist={go}
                   onOpenAlbum={goAlbum}
                   onOpenPlaylist={goPlaylist}
+                  onOpenList={goCatalog}
                   onOpenSongs={goSongs}
                   onCloseDetail={closeDetail}
                   onOpenDownloads={openDownloads}

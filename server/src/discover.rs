@@ -127,6 +127,13 @@ pub struct Suggestion {
     /// what the client's preview shows before the user commits. Empty for an
     /// album (its card carries cover, title and artist already).
     pub tracks: Vec<String>,
+    /// The same songs with their artist and length. The embed already reads
+    /// all three (imports::fetch_embed_meta builds these for the queue), and
+    /// only the titles used to travel - which was enough for a one-line
+    /// preview and not enough to draw the list as a page. Kept BESIDE
+    /// `tracks` rather than replacing it so a client built before this one
+    /// reads its titles exactly as it always did.
+    pub items: Vec<crate::imports::ImportItem>,
 }
 
 #[derive(Default)]
@@ -164,6 +171,7 @@ async fn build_spotify() -> Vec<Suggestion> {
                 kind: "playlist".to_string(),
                 track_count: total,
                 tracks: titles,
+                items: meta.items,
             });
         }
     }
@@ -218,6 +226,7 @@ async fn build_deezer_genre(client: &reqwest::Client, genre_id: u32, section: &s
             kind: "album".to_string(),
             track_count: nb,
             tracks: Vec::new(),
+            items: Vec::new(),
         });
     }
     out
@@ -265,6 +274,7 @@ async fn build_deezer_trending(client: &reqwest::Client) -> Vec<Suggestion> {
             kind: "track".to_string(),
             track_count: Some(1),
             tracks: Vec::new(),
+            items: Vec::new(),
         });
     }
     out

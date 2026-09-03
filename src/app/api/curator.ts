@@ -338,6 +338,10 @@ export interface Suggestion {
   trackCount: number | null;
   /** Track titles in order, for the preview - absent on an older server. */
   tracks?: string[];
+  /** The same songs with artist and length, which is what a page needs to draw
+   *  them as rows. Absent on an older server, where the titles above are the
+   *  fallback; a list with neither still adds, it just cannot be read first. */
+  items?: { title: string; artist?: string; durationMs?: number | null }[];
 }
 
 export async function fetchDiscover(session: ServerSession): Promise<Suggestion[]> {

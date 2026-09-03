@@ -41,6 +41,7 @@ export function DiscoverPage({
   onOpenArtist,
   onOpenAlbum,
   onOpenPlaylist,
+  onOpenList,
   onOpenSongs,
   onOpenStats,
 }: {
@@ -48,6 +49,8 @@ export function DiscoverPage({
   onOpenArtist: (artist: string) => void;
   onOpenAlbum?: (album: string, albumArtist: string) => void;
   onOpenPlaylist: (id: string) => void;
+  /** Open a catalogue list as a page, to read before taking it. */
+  onOpenList: (suggestion: Suggestion) => void;
   onOpenSongs: (view: SongCollection) => void;
   onOpenStats?: () => void;
 }) {
@@ -120,7 +123,7 @@ export function DiscoverPage({
               importer. Only the cards this box can actually fetch, and only a
               few sections deep - the feed offers dozens, which would bury
               everything above it. Last on the page for the same reason. */}
-          <SuggestedLists />
+          <SuggestedLists onOpen={onOpenList} />
         </>
       )}
     </div>
@@ -129,7 +132,7 @@ export function DiscoverPage({
 
 /** A suggestion as the importer wants it named. Every suggestion is a link
  *  to a list; `kind` says which shape when the server knows. */
-function suggestionTarget(item: Suggestion): AcquireTarget {
+export function suggestionTarget(item: Suggestion): AcquireTarget {
   const kind: AcquireTarget['kind'] =
     item.kind === 'album' ? 'album' : item.kind === 'track' ? 'track' : 'playlist';
   return { kind, title: item.title, url: item.url };
@@ -165,7 +168,7 @@ function addStateOf(job: MusicImportJob | undefined): AddState {
  * read from the download queue; a card the store handles opens the store and
  * makes no such promise.
  */
-function SuggestedLists() {
+function SuggestedLists({ onOpen }: { onOpen: (item: Suggestion) => void }) {
   const { session } = useServerSession();
   const acquire = useAcquire();
   const downloads = useDownloadsOptional();
@@ -246,14 +249,16 @@ function SuggestedLists() {
                   : `Add ${item.title}`;
             return (
               <div className="suggestCard" key={item.id}>
+                {/* The card OPENS the list. Tapping it used to be the import
+                    itself - fifty songs on a title and a picture, with no way
+                    to see what was on it first - and the songs were on the
+                    wire the whole time. Add is its own control now, below,
+                    and does exactly what the tap used to. */}
                 <button
                   type="button"
                   className="suggestCardBody"
-                  aria-label={label}
-                  aria-disabled={state !== 'idle' || undefined}
-                  onClick={() => {
-                    if (state === 'idle') add(item, viaImporter);
-                  }}
+                  aria-label={`${item.title} - see what is on it`}
+                  onClick={() => onOpen(item)}
                 >
                   <div className="suggestCardCover">
                     {item.cover ? (
@@ -268,9 +273,9 @@ function SuggestedLists() {
                         {item.source === 'spotify' ? 'Spotify' : item.source === 'deezer' ? 'Deezer' : item.source}
                       </span>
                     )}
-                    {viaImporter && (
+                    {viaImporter && state !== 'idle' && (
                       <span className="suggestCardAdd" aria-hidden>
-                        {state === 'idle' ? <Plus size={14} /> : <Check size={14} />}
+                        <Check size={14} />
                       </span>
                     )}
                   </div>
@@ -278,6 +283,19 @@ function SuggestedLists() {
                   <span className="suggestCardBlurb">
                     {item.trackCount ? `${item.trackCount} songs` : item.blurb}
                   </span>
+                </button>
+                {/* A sibling of the card's button, never nested inside it -
+                    two verbs, and the smaller one must not ride the tap that
+                    opens the list. */}
+                <button
+                  type="button"
+                  className="suggestCardTake"
+                  aria-label={label}
+                  disabled={state !== 'idle'}
+                  onClick={() => add(item, viaImporter)}
+                >
+                  {state === 'idle' ? <Plus size={14} /> : <Check size={14} />}
+                  <span>{state === 'added' ? 'Added' : state === 'adding' ? 'Adding…' : 'Add'}</span>
                 </button>
               </div>
             );
