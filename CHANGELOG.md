@@ -15,6 +15,19 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.58
+
+- Artist pages gained an About section: who they are (when the DJ has a read
+  on them), how many follow them, the artists near them, and a link out to
+  their catalogue page.
+- Karaoke and the stems: dropping a part now takes effect on the first tap,
+  not after turning it off and on - the app learns whether the song has parts
+  the moment you drop one, from any control that drops it.
+- Pasting a playlist link opens the Downloads pane so you can watch it land,
+  instead of leaving it behind the search you pasted into.
+- The format badge on the Now Playing screen (FLAC, ALAC...) no longer
+  flickers while the art moves.
+
 ## 0.5.57
 
 - OpenSubsonic, both ways, through a new plugin. Your server can answer the apps built for Navidrome, Airsonic and Subsonic - Symfonium, play:Sub, Amperfy and the rest - so they can browse and play your library, with an app password of their own that you can revoke without touching your account. The owner opens that door; it stays shut until they do.

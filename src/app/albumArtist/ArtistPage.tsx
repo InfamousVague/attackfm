@@ -29,6 +29,7 @@ import { useArtistAudition } from './artistAudition.ts';
 import { ArtistDiscography } from './ArtistDiscography.tsx';
 import { ArtistGaps } from './ArtistGaps.tsx';
 import { ArtistPopular } from './ArtistPopular.tsx';
+import { ArtistAbout } from './ArtistAbout.tsx';
 import placeholderArt from '../../assets/attack-wave.png';
 
 interface ArtistPageProps {
@@ -318,6 +319,11 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
           </ScrollArea>
         </section>
       )}
+
+      {/* Who they are, how big, a short discography, the artists near them, and
+          the way out to their catalogue page - after the shelves and before
+          the full song table (which is virtualised and wants to be last). */}
+      <ArtistAbout artist={artist} session={session} profile={profile} onOpenArtist={onOpenArtist} />
 
       {theirs.length > 0 && (
         <section className="homeShelf librarySongs">

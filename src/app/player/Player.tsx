@@ -1046,6 +1046,13 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([n, g]) => `${n}:${g.toFixed(2)}`)
     .join(',');
+  // Whether anything is dropped at all - the transition none->some is what has
+  // to (re)learn whether the current song even has parts (see the effect that
+  // calls stemDropOnTrack). Without it, a drop set from a surface that did not
+  // pre-learn - a saved preset, the console before its parts finished loading -
+  // could not apply until a reload happened to learn it, which is the "turn it
+  // off and on again" a listener had to do.
+  const anyDropped = drop !== '';
   const rackWas = useRef(rack);
   const chainWas = useRef(chain);
   const dropWas = useRef(drop);
@@ -1505,7 +1512,11 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    */
   useEffect(() => {
     stemDropOnTrack(playSession, track ? trackIdFromPath(track.path) : null);
-  }, [track, playSession]);
+    // `anyDropped` so setting a drop on a song whose parts were never probed
+    // learns them at once (and reloads, via the revision door) instead of on
+    // the next toggle. Idempotent per song, so the fader-value ticks in `drop`
+    // are deliberately NOT a dep - only the none<->some flip is.
+  }, [track, playSession, anyDropped]);
 
 
   const playSessionRef = useRef(playSession);

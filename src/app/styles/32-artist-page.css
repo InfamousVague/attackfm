@@ -164,3 +164,77 @@ button.artistAlbum {
   .npScreen__canvas { transition: none; }
 }
 
+
+/* The About section: the read on an artist, their size, a short discography,
+   who is near them, and the way out to their catalogue page. Below the music
+   because none of it is on the disk. */
+.artistAbout {
+  gap: var(--glacier-space-3);
+}
+
+.artistAbout__blurb {
+  max-inline-size: 60ch;
+  line-height: 1.5;
+  color: var(--glacier-text);
+}
+
+.artistAbout__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  flex-wrap: wrap;
+}
+
+.artistAbout__disc {
+  margin: 0;
+  padding-inline-start: 1.1em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+}
+
+.artistAbout__relatedTitle {
+  margin: var(--glacier-space-2) 0 0;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+  color: var(--glacier-text-muted);
+}
+
+/* A round related-artist chip: cover over a name, tap to open their page. */
+.relatedArtist {
+  flex: none;
+  inline-size: 5.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.relatedArtist__art {
+  inline-size: 5rem;
+  block-size: 5rem;
+  border-radius: var(--glacier-radius-full);
+  object-fit: cover;
+  background: var(--glacier-surface-sunken);
+}
+
+.relatedArtist__name {
+  inline-size: 100%;
+  text-align: center;
+  font-size: var(--glacier-font-size-xs);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relatedArtist:hover .relatedArtist__name {
+  text-decoration: underline;
+}

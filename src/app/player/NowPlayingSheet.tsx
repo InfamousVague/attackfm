@@ -1320,6 +1320,23 @@ export function NowPlayingSheet({
   // console's button. Read here rather than inside the console because the
   // whole point is that it shows while the console is SHUT.
   const changes = useSoundChanges();
+  /*
+   * The two facts that ride under the title - the format pill ("FLAC", the
+   * HiFi badge) and where the copy came from - keyed on the VALUES that make
+   * them, not the track object.
+   *
+   * This surface re-renders on every animation frame (useBeat / useLiveLevels
+   * below), and `track` can get a fresh object reference on any library tick
+   * with the very same codec behind it. Recomputing the pills off the object
+   * reconciled them each of those frames, which read as a flicker on the
+   * badge. Memoised on the primitives, the pill is one element for the life of
+   * a song, so the animation frames leave it alone.
+   */
+  const codecText = useMemo(() => (track ? codecLabel(track) : null), [track?.codec, track?.kind, track?.lossless]);
+  const originText = useMemo(
+    () => (track ? originLabel(originFromPath(track.path)) : null),
+    [track?.path],
+  );
   // Subscribed HERE rather than handed down - same reasoning as the strip:
   // whichever component calls useBeat re-renders per animation frame, and it
   // should be the surface drawing the pulse, not the whole deck core.
@@ -1707,9 +1724,7 @@ export function NowPlayingSheet({
           )}
           {/* Which server this song lives on - shown only with more than one
               live, where it is the answer to a question a person has. */}
-          {track && originLabel(originFromPath(track.path)) && (
-            <span className="npScreen__origin">{originLabel(originFromPath(track.path))}</span>
-          )}
+          {originText && <span className="npScreen__origin">{originText}</span>}
           {/* Say whose speakers this is coming out of. The strip has carried
               this since Connect shipped; the full screen showed no sign at
               all, so a phone driving the desktop looked exactly like a phone
@@ -1723,9 +1738,7 @@ export function NowPlayingSheet({
           {/* What the file IS - FLAC, MP3, ALAC - because on a self-hosted
               library the format is a fact about YOUR copy, not the service's
               tier. Absent when the tags never said (old scans). */}
-          {track && codecLabel(track) && (
-            <span className="npScreen__codec">{codecLabel(track)}</span>
-          )}
+          {codecText && <span className="npScreen__codec">{codecText}</span>}
           {/* A caption now, not a door: chapter select moved into the
               transport, where the thumb already is. */}
           {(doorLabel || chapterLabel) && (

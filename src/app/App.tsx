@@ -50,6 +50,7 @@ import { AppMain } from './nav/AppMain.tsx';
 import { setMixOpener } from './nav/openMix.ts';
 import { setArtistDoor } from './nav/artistDoor.ts';
 import { setMusicDateDoor } from './nav/musicDateDoor.ts';
+import { setDownloadsDoor } from './nav/downloadsDoor.ts';
 import { settingsBack } from './settings/settingsBack.ts';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
@@ -446,6 +447,12 @@ export function App() {
   }, [go]);
   // Music Date's opener, for the invitation card on Discover - same seam
   // pattern, same reason: the layer is App's, the door is a leaf's.
+  // The Downloads pane's opener, for the paste-import field that wants to take
+  // you to watch a playlist land - same seam, same reason.
+  useEffect(() => {
+    setDownloadsDoor(openDownloads);
+    return () => setDownloadsDoor(null);
+  }, [openDownloads]);
   useEffect(() => {
     setMusicDateDoor(() => setDateOpen(true));
     return () => setMusicDateDoor(null);
