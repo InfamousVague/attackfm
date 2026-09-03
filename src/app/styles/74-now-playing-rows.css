@@ -1,0 +1,109 @@
+/* --- The playing song, marked wherever it appears in a list ---------------
+   Late in the cascade on purpose: these highlights have to win over the base
+   row backgrounds in the song table and the playlist rows, and the whole point
+   of the chapter is that the currently-playing song reads at a glance in any
+   list it appears in - the accent on its title, the bars over its cover, and a
+   soft accent wash across its row. The row wash is driven off the cell's own
+   `data-nowplaying` / `data-current` through `:has()`, so it needs no per-row
+   class wrangling and survives the grid re-rendering its rows. */
+
+/* The equaliser badge - three accent bars, bouncing. Shared by every surface
+   through the NowPlayingBars component. */
+.nowPlayingBars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  block-size: 0.85rem;
+}
+
+.nowPlayingBars > span {
+  inline-size: 3px;
+  border-radius: 1px;
+  background: var(--glacier-accent-9);
+  block-size: 40%;
+  animation: nowPlayingBar 0.9s ease-in-out infinite;
+}
+
+.nowPlayingBars > span:nth-child(1) {
+  animation-delay: -0.15s;
+}
+.nowPlayingBars > span:nth-child(2) {
+  animation-delay: -0.55s;
+}
+.nowPlayingBars > span:nth-child(3) {
+  animation-delay: -0.85s;
+}
+
+@keyframes nowPlayingBar {
+  0%,
+  100% {
+    block-size: 30%;
+  }
+  50% {
+    block-size: 100%;
+  }
+}
+
+/* Stilled, the bars still read as an equaliser rather than three equal ticks. */
+@media (prefers-reduced-motion: reduce) {
+  .nowPlayingBars > span {
+    animation: none;
+  }
+  .nowPlayingBars > span:nth-child(1) {
+    block-size: 55%;
+  }
+  .nowPlayingBars > span:nth-child(2) {
+    block-size: 95%;
+  }
+  .nowPlayingBars > span:nth-child(3) {
+    block-size: 40%;
+  }
+}
+
+/* The bars sit centred over the row's cover, on a soft scrim so they read on
+   any artwork. The wrapper is the positioning context, sized to the thumb. */
+.songTitleCell__art,
+.playlistRow__art {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  line-height: 0;
+}
+
+.songTitleCell__nowPlaying,
+.playlistRow__nowPlaying {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--glacier-radius-sm);
+  background: rgb(0 0 0 / 0.5);
+}
+
+/* ── The song table (DataGrid rows) ─────────────────────────────────────────
+   The wash is applied to the row AND its cells: a grid cell may paint its own
+   background over the row's, so tinting both is what makes the whole row read
+   as one lit band rather than a striped one. */
+.songTable [role='row']:has(.songTitleCell[data-nowplaying]),
+.songTable [role='row']:has(.songTitleCell[data-nowplaying]) > * {
+  background: var(--glacier-accent-3);
+}
+
+.songTitleCell[data-nowplaying] .songTitle,
+.songTitleCell[data-nowplaying] .songTitle__name {
+  color: var(--glacier-accent-11);
+  font-weight: 600;
+}
+
+/* ── Playlist / mix / catalogue rows (RowMain) ──────────────────────────────
+   RowMain marks its pressable body `data-current`; the row it sits in takes
+   the wash through `:has`. */
+.playlistRow:has(.playlistRow__main[data-current]) {
+  background: var(--glacier-accent-3);
+  border-radius: var(--glacier-radius-md);
+}
+
+.playlistRow__main[data-current] .songTitle {
+  color: var(--glacier-accent-11);
+  font-weight: 600;
+}

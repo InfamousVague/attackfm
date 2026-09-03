@@ -15,6 +15,16 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.73
+
+- The song that is playing now stands out wherever it appears in a list: its
+  row lit in the accent colour, its title with it, and a little equaliser over
+  its cover. Skip to the next song and the mark moves with it.
+- A list you are looking at follows the music: skip while a playlist is open
+  and it scrolls to the song that just came on, if it was off the screen.
+- Importing a playlist opens the download queue, so the songs land somewhere
+  you can watch rather than behind the search you pasted into.
+
 ## 0.5.72
 
 - Opening Settings lands on Settings again. Once you had opened the download

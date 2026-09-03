@@ -7,7 +7,9 @@ import {
 import { ArrowDownToLine, CircleCheck, Clock, RotateCcw, X } from '@glacier/icons';
 import { useOnDevice } from '../downloads/useOnDevice.ts';
 import { identityKey, useJustLanded, type IncomingTrack } from '../downloads/incoming.tsx';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useFollowNowPlaying, useNowPlayingPath } from '../player/nowPlayingStore.ts';
+import { NowPlayingBars } from '../player/NowPlayingBars.tsx';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { SelectionBar, SongSelectionContext } from './songSelection.tsx';
 import { useLibrary } from './library.tsx';
@@ -105,6 +107,7 @@ function SongArt({ artwork }: { artwork: string | null }) {
   const art = useArtLoad(src, 'songArt');
   return <img {...art} src={src} alt="" loading="lazy" />;
 }
+
 
 // The columns that come off on a narrow screen, in the order they would be
 // missed least: an album name the title cell half-implies, and a date that is
@@ -232,6 +235,8 @@ const COLUMNS: DataGridColumn[] = [
     width: '50%',
     sortable: true,
     sortValue: (row) => sortKey(String(row.title)),
+    // Overridden in the component's `columns` memo, which is where the row
+    // context (the menu, the artist link, the now-playing mark) is in scope.
     render: (row) => (
       <div className="songTitleCell">
         <SongArt artwork={row.artwork as string | null} />
@@ -384,6 +389,9 @@ export function SongTable({
   // index resolves the one back to the other.
   const onDevice = useOnDevice();
   const justLanded = useJustLanded();
+  // The song playing right now, so the row that IS it can light up. Subscribed
+  // here (the columns memo below reads it) as well as followed for scroll.
+  const nowPlaying = useNowPlayingPath();
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
   // "on Kevin's server" under the artist, only when more than one server is
   // live - the row's id IS the path, so the origin is free here.
@@ -499,15 +507,29 @@ export function SongTable({
           ? {
               ...col,
               width: narrow ? undefined : col.width,
-              render: (row) => (
+              render: (row) => {
+                const current = (row.id as string) === nowPlaying;
+                return (
                 <SongTitleMenu track={byPath.get(row.id as string) ?? null}>
                   <div
                     className="songTitleCell"
+                    data-nowplaying={current || undefined}
+                    // Announces the playing row to assistive tech - the bars are
+                    // aria-hidden decoration and lean on this, the same contract
+                    // RowMain holds for playlist rows.
+                    aria-current={current ? 'true' : undefined}
                     data-arriving={
                       justLanded.has(identityKey(row.artist as string, row.title as string)) || undefined
                     }
                   >
-                    <SongArt artwork={row.artwork as string | null} />
+                    <span className="songTitleCell__art">
+                      <SongArt artwork={row.artwork as string | null} />
+                      {current && (
+                        <span className="songTitleCell__nowPlaying">
+                          <NowPlayingBars />
+                        </span>
+                      )}
+                    </span>
                     <div className="songTitleText">
                       {/* The on-device mark used to hang here, beside the
                           name. It has moved out into a column of its own, which
@@ -536,7 +558,8 @@ export function SongTable({
                     </div>
                   </div>
                 </SongTitleMenu>
-              ),
+                );
+              },
             }
           : col,
       )
@@ -550,7 +573,7 @@ export function SongTable({
     // onDevice belongs here and was missing: the columns READ it, so without it
     // a download landing rebuilt nothing and the mark only appeared later, when
     // some unrelated dependency happened to change.
-    [onOpenArtist, narrow, byPath, plays, onDevice, justLanded, incomingById, originLabel],
+    [onOpenArtist, narrow, byPath, plays, onDevice, justLanded, incomingById, originLabel, nowPlaying],
   );
 
   // Memoized on the library, not rebuilt per render: the grid memoizes its
@@ -632,8 +655,16 @@ export function SongTable({
     [incomingGridRows, displayedRows],
   );
 
+  // Follow the playing song into view when it changes - see the hook.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useFollowNowPlaying(rootRef, '.songTitleCell[data-nowplaying]');
+
   return (
     <SongSelectionContext.Provider value={selectionEntry}>
+    {/* display:contents: the wrapper is only a ref to scope the now-playing
+        query to THIS table, and generates no box, so the grid stays the flex
+        child its layout expects. */}
+    <div ref={rootRef} style={{ display: 'contents' }}>
     <DataGrid
       aria-label="Songs"
       {...hold}
@@ -687,6 +718,7 @@ export function SongTable({
         if (track) onPlay(track, displayed);
       }}
     />
+    </div>
     {selecting && (
       <SelectionBar
         tracks={displayed}

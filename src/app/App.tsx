@@ -54,6 +54,7 @@ import { setArtistDoor } from './nav/artistDoor.ts';
 import { setMusicDateDoor } from './nav/musicDateDoor.ts';
 import { setDownloadsDoor } from './nav/downloadsDoor.ts';
 import { setDiscoverDoor } from './nav/discoverDoor.ts';
+import { setNowPlayingPath } from './player/nowPlayingStore.ts';
 import { settingsBack } from './settings/settingsBack.ts';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
@@ -279,6 +280,12 @@ export function App() {
   const handoff = deckHandoff();
   // The track the list handed to the player; null until one is opened.
   const [current, setCurrent] = useState<Track | null>(handoff?.track ?? null);
+  // Publish just the playing song's path to the lightweight store every list
+  // reads, so a row anywhere can light itself without the whole track being
+  // threaded down to it. See nowPlayingStore.
+  useEffect(() => {
+    setNowPlayingPath(current?.path ?? null);
+  }, [current?.path]);
   // The list that track was opened from, in the order it was showing - what
   // the player's skips and autoplay walk through. Snapshotted at open, the
   // way a play context should be: re-sorting the table later reorders the

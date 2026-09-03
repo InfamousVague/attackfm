@@ -1,5 +1,7 @@
 import type { Track } from '../core/tauri.ts';
 import { RowArt } from './RowArt.tsx';
+import { useNowPlayingPath } from '../player/nowPlayingStore.ts';
+import { NowPlayingBars } from '../player/NowPlayingBars.tsx';
 
 /**
  * The pressable body of a playlist row: art, title, and - when the row is too
@@ -26,11 +28,16 @@ export function RowMain({
   onPlay: () => void;
   onOpenArtist?: (artist: string) => void;
 }) {
+  // Is this the song playing right now? The row lights in the accent and wears
+  // the bars when it is - see nowPlayingStore for why this is a path compare.
+  const current = useNowPlayingPath() === track.path;
   return (
     <div
       role="button"
       tabIndex={0}
       className="playlistRow__main"
+      data-current={current || undefined}
+      aria-current={current ? 'true' : undefined}
       onClick={onPlay}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
@@ -40,7 +47,14 @@ export function RowMain({
         }
       }}
     >
-      <RowArt artwork={track.artwork} />
+      <span className="playlistRow__art">
+        <RowArt artwork={track.artwork} />
+        {current && (
+          <span className="playlistRow__nowPlaying">
+            <NowPlayingBars />
+          </span>
+        )}
+      </span>
       <span className="playlistRow__text">
         <span className="songTitle">{track.title}</span>
         {onOpenArtist ? (

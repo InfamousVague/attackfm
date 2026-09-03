@@ -1,6 +1,7 @@
 import { Button, Text, useToast } from '@glacier/react';
 import { ListMusic, Play, Plus, Shuffle } from '@glacier/icons';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
+import { useFollowNowPlaying } from '../player/nowPlayingStore.ts';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { shuffled } from '../ux/shuffle.ts';
 import { formatClock, formatTotal } from '../ux/format.ts';
@@ -55,6 +56,10 @@ export function MixPage({
 }) {
   const { create } = usePlaylists();
   const { toast } = useToast();
+  // Follow the playing song into view on a skip - a mix is a list you play
+  // through, like a playlist. RowMain marks the current row (data-current).
+  const pageRef = useRef<HTMLDivElement>(null);
+  useFollowNowPlaying(pageRef, '.playlistRow__main[data-current]');
 
   // Four covers make the quadrant mosaic and load as one artwork, exactly as
   // the playlist head does - see mosaicArts.
@@ -94,7 +99,7 @@ export function MixPage({
      * the now-playing bar. `.homePage.playlistPage` is a compound rule too, so
      * the tighter gap between hero and rows never applied either.
      */
-    <div className="homePage libraryPage playlistPage">
+    <div className="homePage libraryPage playlistPage" ref={pageRef}>
       <header className="playlistHead">
         <CoverWall artworks={tracks.map((t) => t.artwork)} />
         <div className="playlistHead__cover">

@@ -2,15 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Spinner, Text } from '@glacier/react';
 import { Download } from '@glacier/icons';
 import { isMusicImportLink, useDownloadsOptional } from '../../plugins/importsBridge.ts';
-import { openDownloadsPane } from '../nav/downloadsDoor.ts';
-
-/** A pasted PLAYLIST link, by its shape - the one import worth being taken to
- *  watch land. A playlist path on the services the importer takes, or a
- *  `list=` query (YouTube Music). Albums and singles finish too fast to move
- *  the page for. */
-function looksLikePlaylist(url: string): boolean {
-  return /\/playlist\//i.test(url) || /[?&]list=/.test(url);
-}
+import { watchIfPlaylist } from '../nav/downloadsDoor.ts';
 
 /**
  * A pasted music link, in any search field, becomes an import.
@@ -46,7 +38,7 @@ export function ImportFromSearch({ query }: { query: string }) {
     // A playlist takes minutes and many songs; open the Downloads pane so it
     // lands somewhere you can watch, rather than behind the search you pasted
     // into. A single or an album is done before you would look, so it stays.
-    if (looksLikePlaylist(link)) openDownloadsPane();
+    watchIfPlaylist(link);
   }, [link, downloads]);
 
   if (!link) return null;

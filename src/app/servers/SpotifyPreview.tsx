@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { clearSpotifyLink, onSpotifyLink, spotifyEmbedUrl, spotifyWebUrl } from './deepLink.ts';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { planFiling, type FileDestination } from '../downloads/filePlan.ts';
+import { watchIfPlaylist } from '../nav/downloadsDoor.ts';
 import { ChooseDestination } from '../playlists/ChooseDestination.tsx';
 import { openExternal } from '../core/openExternal.ts';
 
@@ -84,6 +85,9 @@ export function SpotifyPreview() {
     void Promise.resolve(downloads.enqueue(link)).then((job) => {
       if (dest) planFiling(job.id, dest, title ?? 'This song');
     });
+    // A playlist is many songs over minutes; take them to the queue to watch it
+    // land. A single or an album finishes before they would look - no-op there.
+    watchIfPlaylist(link);
     setFiled(dest);
   };
 

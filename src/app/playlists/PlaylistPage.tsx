@@ -45,6 +45,7 @@ import { cacheQualityKbps } from '../cache/cacheStore.ts';
 import { shuffled } from '../ux/shuffle.ts';
 import { RowArt } from './RowArt.tsx';
 import { RowMain } from './RowMain.tsx';
+import { useFollowNowPlaying } from '../player/nowPlayingStore.ts';
 import { usePlaylists } from './playlists.tsx';
 import { CoverWall } from './CoverWall.tsx';
 import { notePlaylistPlayed } from './playlistRecency.ts';
@@ -242,6 +243,9 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
    * React treats as a broken component and tears the whole app down.
    */
   const pageRef = useRef<HTMLDivElement>(null);
+  // Follow the playing song into view when it changes while this list is open -
+  // the rows mark the current one through RowMain (data-current). See the hook.
+  useFollowNowPlaying(pageRef, '.playlistRow__main[data-current]');
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(false);
   useEffect(() => {
