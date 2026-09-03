@@ -818,12 +818,14 @@ fn interpret_heuristically(folder_name: &str, inv: &Inventory) -> Vec<BookPlan> 
                         (None, t)
                     }
                 };
+                let author = author
+                    .or_else(|| pack_author.clone())
+                    .or_else(|| author_from_texts(inv))
+                    .or_else(|| first_nonempty_artist(inv))
+                    .unwrap_or_else(|| "Unknown Author".into());
                 BookPlan {
-                    author: author
-                        .or_else(|| pack_author.clone())
-                        .or_else(|| first_nonempty_artist(inv))
-                        .unwrap_or_else(|| "Unknown Author".into()),
-                    title: strip_ordinal(&clean_title(&title)),
+                    title: tidy_title(&strip_ordinal(&clean_title(&title)), &author),
+                    author,
                     folder: sub,
                     year: None,
                 }
@@ -863,14 +865,16 @@ fn interpret_heuristically(folder_name: &str, inv: &Inventory) -> Vec<BookPlan> 
     } else {
         None
     };
-    vec![BookPlan {
-        author: pack_author
-            .clone()
-            .or(tag_artist)
-            .or_else(|| stem_split.as_ref().map(|(a, _)| a.clone()))
-            .or_else(|| first_nonempty_artist(inv))
-            .unwrap_or_else(|| "Unknown Author".into()),
-        title: tag_album
+    let author = pack_author
+        .clone()
+        .or(tag_artist)
+        .or_else(|| stem_split.as_ref().map(|(a, _)| a.clone()))
+        // What the pile SAYS about itself, before the last resort. A
+        // readme naming the author beats a tag that names the studio.
+        .or_else(|| author_from_texts(inv))
+        .or_else(|| first_nonempty_artist(inv))
+        .unwrap_or_else(|| "Unknown Author".into());
+    let title = tag_album
             .map(|t| strip_volume_marker(&t))
             .or_else(|| {
                 if pack_author.is_none() && scan::split_book_folder(folder_name).0.is_none() {
@@ -879,10 +883,75 @@ fn interpret_heuristically(folder_name: &str, inv: &Inventory) -> Vec<BookPlan> 
                     None
                 }
             })
-            .unwrap_or_else(|| strip_volume_marker(&clean_title(&pack_title))),
+        .unwrap_or_else(|| strip_volume_marker(&clean_title(&pack_title)));
+    vec![BookPlan {
+        title: tidy_title(&title, &author),
+        author,
         folder: String::new(),
         year: None,
     }]
+}
+
+/// The last pass over a book's title, once its author is known.
+///
+/// Folders arrive named the way the person who packed them filed them, and
+/// two habits survive everything above: the author's name repeated inside the
+/// title (`mistborn - brandon sanderson`), and the whole thing typed in
+/// lower case. Neither is wrong enough to reject a book over and both look
+/// like a bug on a shelf, so they come off here rather than in six places.
+fn tidy_title(title: &str, author: &str) -> String {
+    let dropped = drop_author_segment(title, author);
+    capitalise_if_shouting_quietly(&dropped)
+}
+
+/// A ` - ` segment that IS the author, removed. Only whole segments: a title
+/// that merely contains the author's surname as a word keeps it, because
+/// `Sanderson's Laws` is a book and not a repetition.
+fn drop_author_segment(title: &str, author: &str) -> String {
+    let author_key = fold_name(author);
+    if author_key.is_empty() {
+        return title.trim().to_string();
+    }
+    let parts: Vec<&str> = title.split(" - ").collect();
+    if parts.len() < 2 {
+        return title.trim().to_string();
+    }
+    let kept: Vec<&str> =
+        parts.iter().copied().filter(|p| fold_name(p) != author_key).collect();
+    // Dropping everything would leave a book with no name at all.
+    if kept.is_empty() || kept.len() == parts.len() {
+        return title.trim().to_string();
+    }
+    kept.join(" - ").trim().to_string()
+}
+
+/// Case-insensitive, punctuation-insensitive, for comparing two spellings of
+/// one person's name.
+fn fold_name(s: &str) -> String {
+    s.chars().filter(|c| c.is_alphanumeric()).flat_map(|c| c.to_lowercase()).collect()
+}
+
+/// A title with no capital letter anywhere gets one per word. A title that
+/// already has any capital is left exactly as its packer typed it - the point
+/// is to fix `mistborn`, not to impose a house style on `The Wind-Up Bird`.
+fn capitalise_if_shouting_quietly(title: &str) -> String {
+    if title.chars().any(|c| c.is_uppercase()) {
+        return title.to_string();
+    }
+    let mut out = String::with_capacity(title.len());
+    let mut fresh = true;
+    for c in title.chars() {
+        if fresh && c.is_alphabetic() {
+            out.extend(c.to_uppercase());
+            fresh = false;
+        } else {
+            out.push(c);
+            if c.is_whitespace() || c == '-' || c == '(' || c == '"' {
+                fresh = true;
+            }
+        }
+    }
+    out
 }
 
 /// A series subfolder's ordinal, removed from its title: `1. Dune` and
@@ -984,18 +1053,66 @@ fn has_a_word(s: &str) -> bool {
 /// "GraphicAudio" or worse - the publisher, not the author. The folder
 /// outranks the tag for authors because the folder was named by a person
 /// filing a book and the tag by a ripper crediting a studio.
+/// The author named in the pile's own text files - `info.txt`, a `.nfo`, a
+/// readme - as a line that says "by Someone" or "Author: Someone".
+///
+/// The module's own docstring says the model is good at reading info.txt, and
+/// that was the whole plan for these files: the heuristic never opened them.
+/// So a pile carrying "by Brandon Sanderson" in plain text, on a hub with no
+/// model - or with one that was unreachable that minute - was filed under
+/// "Unknown Author", which is a shelf entry nobody can find again.
+///
+/// Deliberately narrow. It takes a line that ANNOUNCES an author and looks
+/// like a name, not the first capitalised words in a blurb: a wrong author
+/// is worse than none, because "Unknown Author" reads as a thing to fix and
+/// a plausible wrong name does not.
+fn author_from_texts(inv: &Inventory) -> Option<String> {
+    for (_, body) in &inv.texts {
+        for line in body.lines().take(40) {
+            let line = line.trim();
+            // Per LINE, and every line is its own question: an early `?` here
+            // returned from the whole function on the first line that was not
+            // an author line, which on a real info.txt is line one.
+            let candidate = line
+                .strip_prefix("by ")
+                .or_else(|| line.strip_prefix("By "))
+                .or_else(|| line.strip_prefix("BY "))
+                .or_else(|| {
+                    let (head, rest) = line.split_once(':')?;
+                    matches!(
+                        head.trim().to_ascii_lowercase().as_str(),
+                        "author" | "authors" | "written by"
+                    )
+                    .then_some(rest)
+                });
+            let Some(candidate) = candidate else { continue };
+            let name = candidate.trim().trim_end_matches(['.', ',']).trim();
+            if looks_like_a_name(name) {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Two to four words, letters and the punctuation names carry. The same test
+/// `author_from_dashes` applies to a folder's first segment, named once so
+/// the two readers cannot drift apart.
+fn looks_like_a_name(text: &str) -> bool {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    (2..=4).contains(&words.len())
+        && words.iter().all(|w| {
+            w.chars().all(|c| c.is_alphabetic() || c == '.' || c == '\'' || c == '-')
+        })
+}
+
 fn author_from_dashes(folder: &str) -> Option<(String, String)> {
     let parts: Vec<&str> = folder.split(" - ").collect();
     if parts.len() < 3 {
         return None;
     }
     let first = parts[0].trim();
-    let words: Vec<&str> = first.split_whitespace().collect();
-    let namey = (2..=4).contains(&words.len())
-        && words
-            .iter()
-            .all(|w| w.chars().all(|c| c.is_ascii_alphabetic() || c == '.' || c == '\''));
-    if namey {
+    if looks_like_a_name(first) {
         Some((first.to_string(), parts[1..].join(" - ")))
     } else {
         None
@@ -1096,10 +1213,13 @@ fn chapter_title(stem: &str, common_prefix: &str, n: usize) -> String {
     // "1P01" survives a digits-only test on a technicality and tells a
     // listener nothing; a name earns its keep by containing an actual word.
     if !has_a_word(&cleaned) {
-        format!("Part {n}")
-    } else {
-        cleaned
+        return format!("Part {n}");
     }
+    // The track number comes off, because the file this name is about to be
+    // written into already begins with one: `01 - The Vin` filed as chapter
+    // one was being written out as `01 - 01 - The Vin`, and the same number
+    // twice in a row reads as a mistake because it is one.
+    strip_ordinal(&cleaned)
 }
 
 /// The longest prefix every stem shares, so `mistborn1_001..058` sheds the
@@ -1118,7 +1238,15 @@ fn common_stem_prefix(stems: &[String]) -> String {
             .count();
         len = len.min(matched);
     }
-    first.chars().take(len).collect()
+    // A prefix must not end in the middle of a number. `01 -`, `02 -`, `03 -`
+    // share the leading zero and nothing else, and cutting there left every
+    // chapter called `1 - ...`, `2 - ...` - a shelf position with its tens
+    // column shaved off, which is worse than not stripping at all.
+    let chars: Vec<char> = first.chars().collect();
+    while len > 0 && chars[len - 1].is_ascii_digit() {
+        len -= 1;
+    }
+    chars[..len].iter().collect()
 }
 
 /// How long ago the newest thing in a tree changed, or None when unreadable.
@@ -1179,17 +1307,46 @@ async fn ingest_one(state: Arc<AppState>, job_id: String, folder: String, settle
     // last minute is still arriving, and sorting it now would file a third of
     // a book and sweep the rest into the trash as it landed. Waiting is the
     // whole fix.
+    /*
+     * WAIT for the pile, do not refuse it.
+     *
+     * This used to fail the errand outright, and that was the wrong verb for
+     * the condition: a folder still being copied is not a broken folder, it
+     * is a folder that is not ready YET, and the difference matters because
+     * nothing retried. The job went to `error`, the pile stayed in import/,
+     * and unless somebody noticed the note and pressed again the book simply
+     * never arrived - which is what "it didn't import" looks like from the
+     * outside. Dropping a folder and starting the sort in the same breath is
+     * the NORMAL way to use this, so the normal way was the broken one.
+     *
+     * So the worker waits for the copy to go quiet, saying so while it does,
+     * and only gives up if the pile is still growing much later - by which
+     * point something really is wrong (a stalled transfer, a folder somebody
+     * is writing to on purpose) and a person should look.
+     */
     if !settled {
-        let quiet_pile = pile.clone();
-        let newest = tokio::task::spawn_blocking(move || newest_mtime(&quiet_pile))
-            .await
-            .unwrap_or(None);
-        if let Some(age) = newest {
-            if age < std::time::Duration::from_secs(60) {
-                fail("still arriving — files changed under it in the last minute; try again shortly".into())
-                    .await;
+        const QUIET_FOR: std::time::Duration = std::time::Duration::from_secs(60);
+        const GIVE_UP_AFTER: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+        let began = std::time::Instant::now();
+        loop {
+            let quiet_pile = pile.clone();
+            let newest = tokio::task::spawn_blocking(move || newest_mtime(&quiet_pile))
+                .await
+                .unwrap_or(None);
+            let Some(age) = newest else { break };
+            if age >= QUIET_FOR {
+                break;
+            }
+            if began.elapsed() >= GIVE_UP_AFTER {
+                fail("still arriving after half an hour - the copy may have stalled".into()).await;
                 return;
             }
+            set_job(&state, &job_id, |j| {
+                j.state = "waiting".into();
+                j.error.clear();
+            })
+            .await;
+            tokio::time::sleep(std::time::Duration::from_secs(15)).await;
         }
     }
 
@@ -1490,7 +1647,15 @@ mod tests {
         let named: Vec<String> =
             ["04 - The Vin", "05 - Kelsier"].iter().map(|s| s.to_string()).collect();
         let shared = common_stem_prefix(&named);
-        assert_eq!(chapter_title(&named[0], &shared, 4), "4 - The Vin");
+        // The leading `04 -` is the position the file is about to be given
+        // again by the writer, so the name keeps only the words.
+        assert_eq!(chapter_title(&named[0], &shared, 4), "The Vin");
+        assert_eq!(chapter_title(&named[1], &shared, 5), "Kelsier");
+        // The zero shared by `01`, `02`, `03` is not a prefix worth having.
+        let zeroed: Vec<String> =
+            ["01 - Part One", "02 - Part Two"].iter().map(|s| s.to_string()).collect();
+        let shared = common_stem_prefix(&zeroed);
+        assert_eq!(chapter_title(&zeroed[0], &shared, 1), "Part One");
     }
 
     /// A multi-source pile mixes casings; the shared prefix must come off
@@ -1503,6 +1668,25 @@ mod tests {
         assert_eq!(chapter_title(&stems[0], &shared, 1), "Part 1");
         assert_eq!(chapter_title(&stems[1], &shared, 2), "Part 2");
         assert_eq!(chapter_title(&stems[2], &shared, 3), "Part 3");
+    }
+
+    /// A folder named the way a packer names one: the author again, in lower
+    /// case, with the edition in brackets.
+    #[test]
+    fn a_title_sheds_the_author_and_gets_its_capitals() {
+        assert_eq!(tidy_title("mistborn - brandon sanderson", "Brandon Sanderson"), "Mistborn");
+        // Spelling and punctuation do not have to match to be the same name.
+        assert_eq!(tidy_title("Dune - frank herbert", "Frank Herbert."), "Dune");
+        // A word that merely contains the name is not a repetition of it.
+        assert_eq!(
+            tidy_title("Sanderson's Laws", "Brandon Sanderson"),
+            "Sanderson's Laws"
+        );
+        // Dropping every segment would leave nothing, so nothing is dropped.
+        assert_eq!(tidy_title("Brandon Sanderson", "Brandon Sanderson"), "Brandon Sanderson");
+        // A title that already carries capitals is the packer's own spelling.
+        assert_eq!(tidy_title("The Wind-Up Bird", "Haruki Murakami"), "The Wind-Up Bird");
+        assert_eq!(tidy_title("the wind-up bird", "Haruki Murakami"), "The Wind-Up Bird");
     }
 
     #[test]
