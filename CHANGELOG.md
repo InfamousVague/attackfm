@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.57
+
+- OpenSubsonic, both ways, through a new plugin. Your server can answer the apps built for Navidrome, Airsonic and Subsonic - Symfonium, play:Sub, Amperfy and the rest - so they can browse and play your library, with an app password of their own that you can revoke without touching your account. The owner opens that door; it stays shut until they do.
+- And the other direction: point it at another such server you have an account on, and bring its playlists, albums and starred songs across. Songs you already have are matched rather than downloaded twice, and a playlist from here can be sent back the other way.
+
 ## 0.5.56
 
 - Device storage: the "Still downloading" figure that never cleared is renamed
