@@ -1,6 +1,6 @@
 import { NavBar, NavBarItem } from '@glacier/react';
 import { useNavPill } from './useNavPill.ts';
-import { CircleUserRound, Disc3, LibraryBig, Search, Telescope, UsersRound } from '@glacier/icons';
+import { CircleUserRound, Disc3, LibraryBig, Search, Telescope } from '@glacier/icons';
 import { useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { atSize, useNavSeats, type NavDest } from './navSeats.ts';
@@ -141,20 +141,13 @@ export function PrimaryNav({
         go: () => onTab('library'),
       },
     ];
-    // Friends before Profile: they are the two "people" seats and the one you
-    // visit is other people's, not your own.
-    list.push({
-      key: 'friends',
-      label: 'Friends',
-      icon: <UsersRound size={18} />,
-      active: tab === 'friends',
-      go: () => onTab('friends'),
-    });
+    // Profile carries the people now - Friends folded back in under you, so
+    // the two "people" seats became one.
     list.push({
       key: 'profile',
       label: 'Profile',
       icon: <CircleUserRound size={18} />,
-      active: tab === 'profile',
+      active: tab === 'profile' || tab === 'friends',
       go: () => onTab('profile'),
     });
     // Other plugin pages keep their seats; Books does not, having moved into

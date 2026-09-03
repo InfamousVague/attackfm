@@ -17,7 +17,6 @@ import { SongPage, type SongCollection } from '../library/SongPage.tsx';
 import { LibraryView } from '../library/LibraryView.tsx';
 import { DiscoverPage } from '../discover/DiscoverPage.tsx';
 import { BoothPage } from '../booth/BoothPage.tsx';
-import { FriendsPage } from '../profile/FriendsPage.tsx';
 import { ProfilePage } from '../profile/ProfilePage.tsx';
 import { StatsPage } from '../profile/StatsPage.tsx';
 
@@ -270,23 +269,19 @@ export function AppMain({
           onOpenArtist={onOpenArtist}
           onOpenDj={onOpenDj}
         />
-      ) : tab === 'friends' ? (
-        // The people, their own page now - the grid of artist-backed cards
-        // wants the whole screen. 'friends' was already the tab's old alias
-        // for Profile, and pointing it here is the honest reading of the name.
-        <FriendsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
       ) : tab === 'profile' ? (
-        // Profile: the "about you" home. Its room - This week (the stats) -
-        // is a takeover WITHIN the tab, a back bar returning to the profile.
-        // Music Date used to be a second room here; it lives at the top of
-        // the Booth now, as a fullscreen layer.
+        // Profile: the "about you" home, and the people under it - Friends
+        // folded back in from what used to be its own tab. Its room - This
+        // week (the stats) - is a takeover WITHIN the tab, a back bar
+        // returning to the profile. Music Date used to be a second room here;
+        // it lives at the top of the Booth now, as a fullscreen layer.
         profileRoom === 'stats' ? (
           <div className="profileRoomHost">
             <RoomBar label="This week" onBack={() => onProfileRoom(null)} />
             <StatsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
           </div>
         ) : (
-          <ProfilePage onOpenFriends={onOpenFriends} onOpenRoom={onProfileRoom} />
+          <ProfilePage onOpenRoom={onProfileRoom} onPlay={onPlay} onOpenArtist={onOpenArtist} />
         )
       ) : (
         // The default is the Library now, and it carries the personalized mixes

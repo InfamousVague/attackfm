@@ -644,7 +644,7 @@ export function App() {
                     <NotifyBell
                       iconSize={16}
                       onOpenDownloads={openDownloads}
-                      onOpenFriends={() => goTab('friends')}
+                      onOpenFriends={() => goTab('profile')}
                     />
                     {/* Invite a friend: the shareable join card, at the bell's right hand -
                         a glyph beside a glyph. Hides itself with no server to join. */}
@@ -711,7 +711,7 @@ export function App() {
                   <NotifyBell
                     iconSize={18}
                     onOpenDownloads={openDownloads}
-                    onOpenFriends={() => goTab('friends')}
+                    onOpenFriends={() => goTab('profile')}
                   />
                   {/* Invite a friend: the shareable join card, at the bell's right hand -
                       a glyph beside a glyph. Hides itself with no server to join. */}
@@ -754,7 +754,7 @@ export function App() {
                   onCloseDetail={closeDetail}
                   onOpenDownloads={openDownloads}
                   onOpenStats={() => goTab('stats')}
-                  onOpenFriends={() => goTab('friends')}
+                  onOpenFriends={() => goTab('profile')}
                   profileRoom={tab === 'profile' ? profileRoom : null}
                   onProfileRoom={setProfileRoom}
                   onOpenDj={() => setDjOpen(true)}

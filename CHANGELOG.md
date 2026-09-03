@@ -15,6 +15,17 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.59
+
+- Friends moved into Profile: your friends grid sits under your own profile
+  again, and the separate Friends tab is gone (the bar is Discover, Search,
+  Library, Profile). Opening a friend still takes over the page as before.
+- Profile no longer opens on a wall of your own numbers - "This week" is a
+  card that opens the full stats, not the whole page.
+- The Music/Books toggle at the top of the Library sits below the header now,
+  centred and with room to breathe, instead of jammed into the notch on the
+  Books shelf.
+
 ## 0.5.58
 
 - Artist pages gained an About section: who they are (when the DJ has a read

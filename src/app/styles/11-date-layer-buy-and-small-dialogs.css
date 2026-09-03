@@ -164,11 +164,33 @@
   flex-direction: column;
 }
 
-/* The toggle bar: a segmented Music/Books control, sitting at the very top of
-   the Library with the page's own side padding, above the scroller. */
+/* The toggle bar: a segmented Music/Books control, below the header, above the
+   active pane's scroller. Centred with a cap so it reads as a page control
+   rather than a full-bleed strip jammed under the notch, and with real room
+   above and below it. */
 .libraryToggle {
   flex: none;
-  padding: var(--glacier-space-3) var(--glacier-space-4) 0;
+  padding: var(--glacier-space-4) var(--glacier-space-4) var(--glacier-space-2);
+  display: flex;
+  justify-content: center;
+}
+
+.libraryToggle > * {
+  inline-size: 100%;
+  max-inline-size: 28rem;
+}
+
+/*
+ * The Books pane wears a cover-wall hero, and `.appContent:has(.coverWall)`
+ * pulls the whole content region up by the header's height so a hero bleeds
+ * behind the transparent bar. Inside the Library that dragged the Music/Books
+ * toggle up into the notch, on top of the header. The toggle is chrome, not a
+ * hero - so when the library host is what holds the wall, the pull-up is off
+ * and the toggle sits under the header where it belongs; the books hero then
+ * starts below the toggle rather than behind the bar.
+ */
+.appContent:has(.libraryHost):has(.coverWall) {
+  margin-block-start: 0;
 }
 
 .homePage {

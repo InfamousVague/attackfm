@@ -1,5 +1,5 @@
 import { ArtistLink } from '../ux/ArtistLink.tsx';
-import { Button, IconButton, Input, Text } from '@glacier/react';
+import { Button, Heading, IconButton, Input, Text } from '@glacier/react';
 import { ChevronRight, Copy, LogOut, Radio, Users, UsersRound } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { nearbySupported, useNearby } from './nearby.ts';
@@ -7,22 +7,12 @@ import { useJam } from '../player/jam.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistry } from '../servers/registrySession.tsx';
-import { AccountSetup, FriendAvatar } from './RegistryFriends.tsx';
-import { fetchFriends, type FriendsFeed } from '../servers/registry.ts';
-import { remotePath } from '../server.ts';
-import { fetchStatsSummary, type StatsSummary } from './stats.ts';
-import {
-  DayClock,
-  DayClockSkeleton,
-  GenreBars,
-  GenreBarsSkeleton,
-  HabitBadge,
-  ListeningRadar,
-  ListeningRadarSkeleton,
-  StatTiles,
-  StatTilesSkeleton,
-  profileAxes,
-} from './ProfileCharts.tsx';
+import { AccountSetup, FriendAvatar, FriendsSection } from './RegistryFriends.tsx';
+import { FriendProfilePage } from './FriendProfilePage.tsx';
+import { useSharing, setSharing } from './listeningShare.tsx';
+import { type RegistryFriend } from '../servers/registry.ts';
+import { enterServer, remotePath } from '../server.ts';
+import type { Track } from '../core/tauri.ts';
 
 /**
  * The Profile page: you, and everything social that hangs off you.
@@ -286,133 +276,6 @@ function LiveNow() {
   );
 }
 
-/**
- * You, this week.
- *
- * The number that used to exist only on a friend's card, shown to its owner
- * first. It is the same glance the registry shares - minutes, top artist,
- * streak - so this doubles as the honest preview of what friends can see, and
- * the page never claims to share something it is not showing you.
- */
-function YourWeek() {
-  const { session } = useServerSession();
-  const [week, setWeek] = useState<StatsSummary | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!session) return;
-    let live = true;
-    void fetchStatsSummary(session, 'week')
-      .then((s) => live && setWeek(s))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-  }, [session]);
-
-  if (!session || failed) return null;
-
-  const top = week?.topArtists[0]?.artist ?? null;
-  const axes = week ? profileAxes(week) : [];
-  // A week with nothing in it has no shape to draw, and an empty radar reads
-  // as a broken one rather than an honest zero.
-  const hasHistory = !!week && week.plays > 0;
-
-  return (
-    <section className="homeShelf profileWeek">
-      <div className="profileWeek__head">
-        <h2 className="homeShelfTitle">Your week</h2>
-        {hasHistory && <HabitBadge axes={axes} />}
-      </div>
-
-      {week ? <StatTiles week={week} /> : <StatTilesSkeleton />}
-
-      {/* While the week is on the wire we cannot know whether there is a shape
-          to draw, so the placeholders stand for the whole set. They hold the
-          exact geometry of the figures they replace, which is what keeps the
-          page from jumping when the numbers land. */}
-      {!week && !failed && (
-        <>
-          <ListeningRadarSkeleton />
-          <h3 className="profileWeek__sub">When you listen</h3>
-          <DayClockSkeleton />
-          <h3 className="profileWeek__sub">What you played</h3>
-          <GenreBarsSkeleton />
-        </>
-      )}
-
-      {hasHistory && week && (
-        <>
-          <ListeningRadar axes={axes} />
-
-          <h3 className="profileWeek__sub">When you listen</h3>
-          <DayClock clock={week.clock} />
-
-          {week.topGenres.length > 0 && (
-            <>
-              <h3 className="profileWeek__sub">What you played</h3>
-              <GenreBars genres={week.topGenres} />
-            </>
-          )}
-        </>
-      )}
-
-      {top && (
-        <Text size="sm" tone="muted">
-          Most played:{' '}
-          <strong>
-            <ArtistLink artist={top} />
-          </strong>
-        </Text>
-      )}
-    </section>
-  );
-}
-
-/**
- * The doorway to the people.
- *
- * A handful of faces and a count, because the point of the row is to say
- * "there is something through here" - the grid itself, with its artist
- * photographs, wants the whole screen and now has one.
- */
-function FriendsDoor({ token, onOpen }: { token: string; onOpen: () => void }) {
-  const [feed, setFeed] = useState<FriendsFeed | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    void fetchFriends(token)
-      .then((f) => live && setFeed(f))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [token]);
-
-  const friends = feed?.friends ?? [];
-  const waiting = feed?.incoming.length ?? 0;
-
-  return (
-    <button type="button" className="profileDoor" onClick={onOpen}>
-      <span className="profileDoor__faces">
-        {friends.slice(0, 4).map((f) => (
-          <FriendAvatar key={f.id} handle={f.handle} size="sm" className="profileDoor__face" />
-        ))}
-        {friends.length === 0 && <UsersRound size={18} />}
-      </span>
-      <span className="profileDoor__text">
-        <span className="profileDoor__title">Friends</span>
-        <span className="profileDoor__sub">
-          {friends.length === 0
-            ? 'Nobody yet — add someone by their handle'
-            : `${friends.length} ${friends.length === 1 ? 'friend' : 'friends'}${waiting > 0 ? ` · ${waiting} waiting on you` : ''}`}
-        </span>
-      </span>
-      <ChevronRight size={18} className="profileDoor__chevron" />
-    </button>
-  );
-}
-
 /** The address as people say it - the host, no scheme. */
 function hostOf(url: string): string {
   try {
@@ -424,16 +287,60 @@ function hostOf(url: string): string {
 
 // --- the page ---------------------------------------------------------------
 
+function messageOf(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err ?? '');
+  return raw.trim() || 'That did not work.';
+}
+
 export function ProfilePage({
-  onOpenFriends,
   onOpenRoom,
+  onPlay,
+  onOpenArtist,
 }: {
-  onOpenFriends?: () => void;
   /** Opens one of Profile's rooms - the takeovers App hosts within this tab. */
   onOpenRoom?: (room: 'stats') => void;
+  onPlay: (track: Track, queue: Track[]) => void;
+  onOpenArtist: (artist: string) => void;
 }) {
-  const { session } = useServerSession();
+  const { session, applySession } = useServerSession();
   const { session: registry, account, apply, signOut } = useRegistry();
+  const sharing = useSharing();
+  // A friend opened into their own profile - a takeover of the whole tab, the
+  // way the stats room is. Held HERE, at the page, rather than inside the
+  // friends grid, so it replaces the page instead of sitting in a section of
+  // it. Friends live on Profile now: the grid used to be a tab of its own, and
+  // by request it is folded back in under you, where it began.
+  const [profileFor, setProfileFor] = useState<RegistryFriend | null>(null);
+  const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+
+  const visit = useCallback(
+    async (url: string) => {
+      if (!registry) return;
+      setNote(null);
+      try {
+        const next = await enterServer(url.replace(/\/+$/, ''), registry.token);
+        applySession(next);
+        setNote({ tone: 'ok', text: `Listening from ${hostOf(url)} now.` });
+      } catch (err) {
+        setNote({ tone: 'bad', text: messageOf(err) });
+      }
+    },
+    [registry, applySession],
+  );
+
+  if (profileFor) {
+    return (
+      <FriendProfilePage
+        friend={profileFor}
+        onBack={() => setProfileFor(null)}
+        onPlay={onPlay}
+        onOpenArtist={onOpenArtist}
+        onVisit={(f) => {
+          if (f.serverUrl) void visit(f.serverUrl);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="homePage profilePage">
@@ -463,9 +370,11 @@ export function ProfilePage({
         <AccountSetup onDone={apply} />
       )}
 
-      {/* The room door: This week opens the full stats as a takeover within
-          the tab. (Music Date used to have a door here too; it lives at the
-          top of the Booth now.) */}
+      {/* Stats are a DOOR now, not the page. The full "This week" - the tiles,
+          the radar, the day clock - opens as a takeover within the tab; it used
+          to also sit inline here, which made a page about who you are open on a
+          wall of your own numbers. (Music Date's door lived here too; it is at
+          the top of the Booth now.) */}
       {onOpenRoom && session && (
         <div className="profileDoors">
           <button type="button" className="profileDoor" onClick={() => onOpenRoom('stats')}>
@@ -476,14 +385,45 @@ export function ProfilePage({
         </div>
       )}
 
-      <YourWeek />
-
-      {registry && account && onOpenFriends && (
-        <FriendsDoor token={registry.token} onOpen={onOpenFriends} />
-      )}
-
       <LiveNow />
 
+      {/* The people, folded back under you. Tapping a card opens that friend as
+          a takeover (profileFor above); visiting their server is handled here
+          so the answer lands next to the card that asked. */}
+      {registry && account && (
+        <section className="homeShelf profileFriends">
+          <Heading level={2} noMargin className="homeShelfTitle">
+            Friends
+          </Heading>
+          {note && (
+            <Text size="sm" tone={note.tone === 'ok' ? 'success' : 'danger'}>
+              {note.text}
+            </Text>
+          )}
+          <FriendsSection
+            token={registry.token}
+            me={account.handle}
+            onOpen={setProfileFor}
+            onVisit={(friend) => {
+              if (friend.serverUrl) void visit(friend.serverUrl);
+            }}
+          />
+          <footer className="friendsPage__foot">
+            <Text size="xs" tone="subtle">
+              {sharing
+                ? 'Friends on this server can open your full profile - your stats and your liked songs. Friends elsewhere see your minutes, top artist and streak for the week, nothing more.'
+                : 'You are not sharing your listening, so your card is blank and your profile is a closed door.'}
+            </Text>
+            <button
+              type="button"
+              className="friendsPage__shareToggle"
+              onClick={() => setSharing(!sharing)}
+            >
+              {sharing ? 'Stop sharing my listening' : 'Share my listening'}
+            </button>
+          </footer>
+        </section>
+      )}
     </div>
   );
 }

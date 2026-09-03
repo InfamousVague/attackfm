@@ -152,6 +152,13 @@ export function useNavStack({
         push({ tab: 'library', detail: null });
         return;
       }
+      // Friends folded back into Profile, so the old Friends route lands there
+      // - the grid is under your own profile now.
+      if (next === 'friends') {
+        live.current.closeProfileRoom();
+        push({ tab: 'profile', detail: null });
+        return;
+      }
       // Walking to Profile the normal way always lands on the profile itself.
       if (next === 'profile') live.current.closeProfileRoom();
       push({ tab: next, detail: null });
