@@ -21,34 +21,8 @@
 
 /* ── The Profile page ───────────────────────────────────────────────────────
    You, at the top; then the live layer, the servers, the people. The hero is
-   deliberately quiet - an avatar, a handle, one line of where you are - so the
-   page's weight stays on the sections that DO things. */
-.profileHero {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  padding: var(--glacier-space-3);
-  border-radius: var(--glacier-radius-lg);
-  background: var(--glacier-surface-raised);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  margin-block-end: var(--glacier-space-4);
-}
-
-/* The lg avatar, grown into a hero face - one place, so the friend grid's
-   own lg stays its size. */
-.profileHero__face.friendAvatar--lg {
-  inline-size: 4rem;
-  block-size: 4rem;
-  font-size: 1.5rem;
-}
-
-.profileHero__body {
-  flex: 1;
-  min-inline-size: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
+   a card of your own two pictures (see .profileHero below); everything after
+   it is a section that DOES something. */
 
 .profileHero__handle {
   margin: 0;
@@ -460,53 +434,86 @@
 }
 
 /*
- * The banner: a picture behind your own name.
+ * The hero card: a band of picture, the face on it, the name under both.
  *
- * The hero is a card either way; with a banner it becomes a card with weather
- * in it. The image is absolutely placed and the content sits above it, so
- * nothing has to move for a picture that may not be there - and a scrim under
- * the words keeps the handle readable over a photograph nobody vetted for
- * contrast.
+ * It used to be a row - a small mark beside a handle with the banner washed
+ * behind the strip - which is the shape of a list item, not of a page about a
+ * person. The band is the card's own top now, the face overlaps its edge, and
+ * the whole thing reads as a header before a word of it is read.
  */
 .profileHero {
   position: relative;
+  display: block;
+  /* The page is a flex column and this card is taller than a row: without
+     `flex: none` it is SHRUNK to fit rather than scrolled to, which clipped
+     the face in half and hid the handle underneath it entirely. */
+  flex: none;
+  padding: 0 var(--glacier-space-4) var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   overflow: hidden;
-  isolation: isolate;
+}
+
+/* The band. Its own height whether or not a picture has been chosen: the card
+   should not change shape the moment one is, and the gradient underneath is a
+   perfectly good banner for somebody who never picks one. */
+.profileHero__cover {
+  position: relative;
+  margin-inline: calc(-1 * var(--glacier-space-4));
+  block-size: 8rem;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--glacier-accent-solid) 38%, var(--glacier-surface-raised)),
+    var(--glacier-surface-raised)
+  );
 }
 
 .profileHero__banner {
   position: absolute;
   inset: 0;
-  z-index: -2;
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
+  display: block;
 }
 
-/* Only with a picture behind them: over the plain card this would be a dark
-   smear on a surface that is already dark. */
-.profileHero[data-bannered]::after {
+/* A wash at the foot of the band only, so the face and the name below it never
+   sit on whatever the top of somebody's photograph happens to be. */
+.profileHero__cover[data-bannered]::after {
   content: '';
   position: absolute;
   inset: 0;
-  z-index: -1;
   background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--glacier-bg, #0b0b0d) 82%, transparent),
-    color-mix(in srgb, var(--glacier-bg, #0b0b0d) 45%, transparent)
+    to bottom,
+    transparent 45%,
+    color-mix(in srgb, var(--glacier-surface-raised) 78%, transparent)
   );
 }
 
-.profileHero[data-bannered] {
-  min-block-size: 7.5rem;
-  align-items: flex-end;
+.profileHero__coverTools {
+  position: absolute;
+  inset-block-start: var(--glacier-space-2);
+  inset-inline-end: var(--glacier-space-2);
+  display: flex;
+  gap: var(--glacier-space-1);
 }
 
-/* The face is a button now. It looks exactly as it did - the press target is
-   the picture itself, which is the thing a person aims at. */
+/* Legible on a photograph of anything: the buttons carry their own ground
+   rather than trusting the picture behind them to be dark. */
+.profileHero__coverButton {
+  background: color-mix(in srgb, var(--glacier-bg, #0b0b0d) 55%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgb(255 255 255 / 0.92);
+}
+
+/* The face, ON the band: pulled up over its edge, ringed in the card's own
+   colour so it reads as a layer above the picture rather than a hole in it. */
 .profileHero__faceButton {
   position: relative;
-  flex: none;
+  display: block;
+  margin-block-start: -2.5rem;
   padding: 0;
   border: 0;
   background: none;
@@ -520,26 +527,63 @@
   opacity: 0.7;
 }
 
-/* The one mark that says the face can be changed at all: a small camera on
-   its corner, the way every app that lets you do this says it. */
+.profileHero__face.friendAvatar--lg {
+  inline-size: 5rem;
+  block-size: 5rem;
+  font-size: 1.75rem;
+  box-shadow: 0 0 0 3px var(--glacier-surface-raised);
+}
+
+/* The one mark that says the face can be changed at all. */
 .profileHero__faceEdit {
   position: absolute;
-  inset-block-end: -2px;
-  inset-inline-end: -2px;
+  inset-block-end: 0;
+  inset-inline-end: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  inline-size: 1.5rem;
-  block-size: 1.5rem;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
   border-radius: 50%;
   background: var(--glacier-surface-raised, #1b1b20);
   border: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
   color: var(--glacier-text-muted);
 }
 
-.profileHero__tools {
+.profileHero__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-block-start: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+/*
+ * Sign out, at the very foot of the page.
+ *
+ * It lived in the hero's corner, a thumb's width from the button that changes
+ * your picture - and it is the one control here you almost never want and
+ * would most hate to hit by accident. Last, quiet, and full width, so it is
+ * unmissable when looked for and never in the way.
+ */
+.profileSignOut {
   display: flex;
   align-items: center;
-  gap: var(--glacier-space-1);
-  flex: none;
+  justify-content: center;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  margin-block-start: var(--glacier-space-4);
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg, 1rem);
+  background: transparent;
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  cursor: pointer;
+}
+
+.profileSignOut:hover {
+  color: var(--glacier-danger-text, #ff8589);
+  border-color: color-mix(in srgb, var(--glacier-danger-solid, #e5484d) 45%, transparent);
 }

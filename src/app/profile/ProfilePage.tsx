@@ -308,19 +308,57 @@ export function ProfilePage({
         }}
       />
       {registry && account ? (
-        <header className="profileHero" data-bannered={registry.bannerUrl && !bannerBroken ? '' : undefined}>
-          {/* The banner is the page's own weather. Behind everything and
-              aria-hidden: it says nothing a screen reader needs, and the
-              gradient underneath it is what a person without one gets. */}
-          {registry.bannerUrl && !bannerBroken && (
-            <img
-              className="profileHero__banner"
-              src={registry.bannerUrl}
-              alt=""
-              aria-hidden
-              onError={() => setBannerBroken(true)}
-            />
-          )}
+        /*
+         * The hero card: a band of your own picture, your face sitting ON it,
+         * and your name under both.
+         *
+         * It was a row - a small round mark beside a handle, with the banner
+         * washed behind the whole strip - and that is a list item, not a
+         * profile. The banner is the card's top now and the face overlaps its
+         * edge, which is the shape a person recognises as "this page is about
+         * me" before reading a word of it. Both pictures are chosen from here:
+         * the camera on the face, the corner button for the band.
+         */
+        <header className="profileHero">
+          <div className="profileHero__cover" data-bannered={registry.bannerUrl && !bannerBroken ? '' : undefined}>
+            {registry.bannerUrl && !bannerBroken && (
+              <img
+                className="profileHero__banner"
+                src={registry.bannerUrl}
+                alt=""
+                aria-hidden
+                onError={() => setBannerBroken(true)}
+              />
+            )}
+            {/* On the band itself, where the thing it changes is. */}
+            <span className="profileHero__coverTools">
+              <IconButton
+                variant="ghost"
+                size="sm"
+                className="profileHero__coverButton"
+                aria-label={registry.bannerUrl ? 'Change your banner' : 'Add a banner'}
+                title={registry.bannerUrl ? 'Change your banner' : 'Add a banner'}
+                disabled={picking !== null}
+                onClick={() => pick('banner')}
+              >
+                <ImagePlus size={16} />
+              </IconButton>
+              {(registry.bannerUrl || registry.avatarUrl) && (
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  className="profileHero__coverButton"
+                  aria-label="Remove your pictures"
+                  title="Remove your pictures"
+                  disabled={picking !== null}
+                  onClick={() => void clearImages()}
+                >
+                  <Trash2 size={16} />
+                </IconButton>
+              )}
+            </span>
+          </div>
+
           <button
             type="button"
             className="profileHero__faceButton"
@@ -338,6 +376,7 @@ export function ProfilePage({
               <Camera size={14} />
             </span>
           </button>
+
           <span className="profileHero__body">
             <h1 className="profileHero__handle">@{account.handle}</h1>
             <span className="profileHero__caption">
@@ -345,43 +384,6 @@ export function ProfilePage({
                 ? `Listening from ${hostOf(session.url)}${session.username ? ` as ${session.username}` : ''}`
                 : 'Your account, on every server'}
             </span>
-          </span>
-          <span className="profileHero__tools">
-            {/* The banner's own verb, and the only way to be rid of one.
-                Small, in the corner, because a picture you already chose
-                should be quieter than the page it decorates. */}
-            <IconButton
-              variant="ghost"
-              size="sm"
-              aria-label={registry.bannerUrl ? 'Change your banner' : 'Add a banner'}
-              title={registry.bannerUrl ? 'Change your banner' : 'Add a banner'}
-              disabled={picking !== null}
-              onClick={() => pick('banner')}
-            >
-              <ImagePlus size={16} />
-            </IconButton>
-            {(registry.bannerUrl || registry.avatarUrl) && (
-              <IconButton
-                variant="ghost"
-                size="sm"
-                aria-label="Remove your pictures"
-                title="Remove your pictures"
-                disabled={picking !== null}
-                onClick={() => void clearImages()}
-              >
-                <Trash2 size={16} />
-              </IconButton>
-            )}
-            <IconButton
-              variant="ghost"
-              size="sm"
-              className="profileHero__signout"
-              aria-label={`Sign out of @${account.handle}`}
-              title="Sign out"
-              onClick={signOut}
-            >
-              <LogOut size={16} />
-            </IconButton>
           </span>
         </header>
       ) : (
@@ -426,6 +428,17 @@ export function ProfilePage({
             </button>
           </footer>
         </section>
+      )}
+
+      {/* The last thing on the page, and deliberately: signing out is the one
+          control here you almost never want and would hate to hit by accident.
+          It sat in the hero's corner, a thumb's width from the button that
+          changes your picture. */}
+      {registry && account && (
+        <button type="button" className="profileSignOut" onClick={signOut}>
+          <LogOut size={15} />
+          <span>Sign out of @{account.handle}</span>
+        </button>
       )}
     </div>
   );

@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.66
+
+- The profile header is a proper card now: your banner across the top, your picture sitting on it, your name underneath, and both pictures chosen from the card itself. Sign out moved to the very bottom of the page, well away from the button that changes your face.
+
 ## 0.5.65
 
 - Your profile is yours to dress: tap your picture to choose one, and add a banner behind your name. Both follow your account to every server, and friends see the picture you chose instead of a coloured initial.
