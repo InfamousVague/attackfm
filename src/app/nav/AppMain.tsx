@@ -268,7 +268,6 @@ export function AppMain({
           onOpenPlaylist={onOpenPlaylist}
           onOpenSongs={onOpenSongs}
           onOpenDownloads={hasQueue ? onOpenDownloads : undefined}
-          onOpenStats={onOpenStats}
         />
       ) : tab === 'discover' ? (
         // Discover: what the machine has for you - the mixes it built, the
@@ -303,7 +302,7 @@ export function AppMain({
             <StatsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
           </div>
         ) : (
-          <ProfilePage onPlay={onPlay} onOpenArtist={onOpenArtist} />
+          <ProfilePage onPlay={onPlay} onOpenArtist={onOpenArtist} onOpenStats={onOpenStats} />
         )
       ) : (
         // The default is the Library now, and it carries the personalized mixes
@@ -316,7 +315,6 @@ export function AppMain({
           onOpenPlaylist={onOpenPlaylist}
           onOpenSongs={onOpenSongs}
           onOpenDownloads={hasQueue ? onOpenDownloads : undefined}
-          onOpenStats={onOpenStats}
         />
       )}
     </main>

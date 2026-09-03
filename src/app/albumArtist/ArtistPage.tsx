@@ -270,6 +270,20 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
           hero has gone with it. */}
       <div ref={sentinelRef} className="songPageHead__sentinel" aria-hidden />
 
+      {/* Who they are, how big, a short discography, the artists near them,
+          and the way out to their catalogue page - a card of its own, directly
+          under the hero card.
+
+          It used to sit near the bottom, after every shelf, on the reasoning
+          that none of it is on the disk. That reasoning describes where the
+          DATA comes from, not what a reader wants: arriving on an artist you
+          have one song by, the first question is who this is, and the answer
+          was five screens down past the songs you already own. It reads as
+          the second half of the header now - the header says the name, this
+          says the person - and it still costs nothing when the catalogue has
+          nothing to say, because it draws nothing at all then. */}
+      <ArtistAbout artist={artist} session={session} profile={profile} onOpenArtist={onOpenArtist} />
+
       <ArtistPopular
         popular={popular}
         artist={artist}
@@ -321,11 +335,6 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
           </ScrollArea>
         </section>
       )}
-
-      {/* Who they are, how big, a short discography, the artists near them, and
-          the way out to their catalogue page - after the shelves and before
-          the full song table (which is virtualised and wants to be last). */}
-      <ArtistAbout artist={artist} session={session} profile={profile} onOpenArtist={onOpenArtist} />
 
       {theirs.length > 0 && (
         <section className="homeShelf librarySongs">

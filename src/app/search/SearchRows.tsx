@@ -1,5 +1,5 @@
 import { ArtistLink } from '../ux/ArtistLink.tsx';
-import { BookAudio, Check, ChevronRight, Disc3, Heart, ListEnd, ListMusic, ListStart, Music, Play, Plus, Tag, User, Users, X } from '@glacier/icons';
+import { BookAudio, Check, ChevronRight, Disc3, ListEnd, ListMusic, ListStart, Music, Play, Plus, Tag, User, Users, X } from '@glacier/icons';
 import type { ReactNode } from 'react';
 import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
@@ -26,8 +26,6 @@ export interface RowCtx {
   acquire: AcquireValue;
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
-  /** Love a song already in the library, straight from its row. */
-  favorite: { is: (path: string) => boolean; toggle: (path: string) => void };
   query: string;
   tracks: readonly Track[];
 }
@@ -36,7 +34,7 @@ export interface RowCtx {
  *  replace every row's element type - which would drop the open context menu
  *  and reset each row on every letter. */
 export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
-  const { position, cursor, setCursor, open, like, queue, adding, acquire, onPlay, onOpenArtist, favorite, query, tracks } = ctx;
+  const { position, cursor, setCursor, open, like, queue, adding, acquire, onPlay, onOpenArtist, query, tracks } = ctx;
   const n = position.get(item.id);
   const active = n !== undefined && n === cursor;
   const seat = {
@@ -76,21 +74,12 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
                 <SongSub track={item.track} why={item.why} query={query} />
               </span>
             </button>
+            {/* The heart used to lead this row and it lives in the menu now
+                (TrackMenu carries Love, and Add to playlist beside it). The
+                two that stayed are the queue verbs, which are hover
+                affordances with keys of their own - Q and N - rather than a
+                third control competing for a thumb. */}
             <span className="searchRow__verbs">
-              <button
-                type="button"
-                className="searchVerb searchVerb--heart"
-                title={favorite.is(item.track.path) ? 'Loved' : 'Love this song'}
-                aria-label={
-                  favorite.is(item.track.path)
-                    ? `Remove ${item.track.title} from Liked`
-                    : `Love ${item.track.title}`
-                }
-                aria-pressed={favorite.is(item.track.path)}
-                onClick={() => favorite.toggle(item.track.path)}
-              >
-                <Heart size={15} fill={favorite.is(item.track.path) ? 'currentColor' : 'none'} />
-              </button>
               <button
                 type="button"
                 className="searchVerb"
@@ -303,9 +292,13 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
         </button>
       );
       // A song you can pull down is a song you can LIKE before it lands: the
-      // heart queues the same download and promises the favourite, so it
-      // walks straight into Liked while it is still on the wire. Always
-      // visible - this verb exists for a thumb, not a hovering pointer.
+      // like queues the same download and promises the favourite, so it walks
+      // straight into Liked while it is still on the wire. That heart was a
+      // button on the row - deliberately, for a thumb rather than a hovering
+      // pointer - and it is in the long-press menu now with the rest of a
+      // song's verbs, because a row carrying a title, an artist and its own
+      // tap-to-add did not have the width for a fourth thing to aim at. The
+      // tap on the row still adds; the hold is where liking and filing live.
       if (!isArtist && item.result.kind === 'track' && can && !have) {
         const liked = state === 'liked';
         // Long-press for the not-owned menu, whose reason to exist is "file
@@ -319,21 +312,7 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
             onLike={() => like(item)}
             liked={liked}
           >
-            <div className="searchRowSeat searchRowSeat--slim">
-              {row}
-              <span className="searchRow__verbs" data-always>
-                <button
-                  type="button"
-                  className="searchVerb searchVerb--heart"
-                  title="Like and download"
-                  aria-label={`Like ${item.result.title} and download it`}
-                  aria-pressed={liked}
-                  onClick={() => like(item)}
-                >
-                  <Heart size={15} fill={liked ? 'currentColor' : 'none'} />
-                </button>
-              </span>
-            </div>
+            <div className="searchRowSeat searchRowSeat--slim">{row}</div>
           </CatalogTrackMenu>
         );
       }

@@ -1,4 +1,5 @@
 import { usePrefetchArt } from '../ux/artPrefetch.ts';
+import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
 import { artSized } from '../server.ts';
 import { Button, IconButton, ScrollArea, SegmentedControl, Text } from '@glacier/react';
 import { Download, ListMusic, Play, Shuffle } from '@glacier/icons';
@@ -15,7 +16,6 @@ import { usePlaylists } from '../playlists/playlists.tsx';
 import { isFavouriteBook, shelve } from './bookShelf.ts';
 import { ShelfSkeleton } from '../ux/ShelfSkeleton.tsx';
 import { PlaylistShowcase } from '../playlists/PlaylistShowcase.tsx';
-import { HomeStatsCards } from './HomeStatsCards.tsx';
 import { TrackMenu } from './TrackMenu.tsx';
 import { isDesktopApp } from '../core/platform.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
@@ -194,7 +194,7 @@ function MusicHead({
         <Text tone="muted" size="sm">
           {tracks.length} {tracks.length === 1 ? 'song' : 'songs'}
         </Text>
-        <div className="playlistHead__actions">
+        <EdgeScrollRow className="playlistHead__actions">
           <Button
             variant="solid"
             size="sm"
@@ -209,6 +209,7 @@ function MusicHead({
           <Button
             variant="ghost"
             size="sm"
+            className="musicHead__shuffle"
             disabled={empty}
             onClick={() => {
               const pool = shuffled(tracks);
@@ -218,7 +219,7 @@ function MusicHead({
             <Shuffle size={15} />
             Shuffle
           </Button>
-        </div>
+        </EdgeScrollRow>
       </div>
     </header>
   );
@@ -232,10 +233,7 @@ export function LibraryView({
   onOpenPlaylist,
   onOpenSongs,
   onOpenDownloads,
-  onOpenStats,
 }: {
-  /** Opens the stats page - the mini cards' one destination. */
-  onOpenStats?: () => void;
   /** Which face the page wears: the shelves, or every song as one table.
    *  Flipped by the app header's "All" button - the page just renders it. */
   view: 'summary' | 'all';
@@ -440,10 +438,6 @@ export function LibraryView({
               </button>
             ))}
           </Shelf>
-
-          {/* This week's listening at a glance, linking into the full page.
-              Renders nothing until there is a week to speak of. */}
-          {onOpenStats && <HomeStatsCards onOpenStats={onOpenStats} />}
 
           {recentlyAdded.length === 0 && favoriteTracks.length === 0 && (
             <div className="emptyState emptyState--tall">

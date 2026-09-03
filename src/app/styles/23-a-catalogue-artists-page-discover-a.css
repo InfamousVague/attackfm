@@ -458,33 +458,8 @@
 }
 
 
-/* Love and add-to-playlist beside the Add on a Popular row: same round
-   target as the add, borderless so the add stays the one framed control.
-   The heart fills to the accent when it is loved. */
-.catalogTrack__love {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
-  border: none;
-  border-radius: var(--glacier-radius-full);
-  background: transparent;
-  color: var(--glacier-text-muted);
-  cursor: pointer;
-}
-
-.catalogTrack__love:hover:not(:disabled) {
-  background: var(--glacier-hover);
-  color: var(--glacier-text);
-}
-
-.catalogTrack__love:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.catalogTrack__love[aria-pressed='true'] {
-  color: var(--glacier-accent-solid);
-}
+/* No love or add button on a Popular row any more: both verbs moved into the
+   long-press menu every row already wore (TrackMenu when you own the song,
+   CatalogTrackMenu when you do not), which is where the rest of a song's
+   verbs live. The row is a rank, a sleeve, a title, a play count, a time and
+   one add - the row's own class rules below still dress those. */

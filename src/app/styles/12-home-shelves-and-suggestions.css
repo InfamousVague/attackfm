@@ -480,9 +480,29 @@
   color: var(--glacier-text-muted);
 }
 
-/* Two verbs and a long-ish label: on a phone they must fold rather than run
-   off the edge. Only this page's header - the playlist page's own carries
-   Play and Shuffle, which fit. */
-.playlistPage .playlistHead__actions {
-  flex-wrap: wrap;
+/* This row used to WRAP on a narrow phone - three buttons becoming two lines
+   of furniture standing between the header and the songs. It scrolls sideways
+   now instead (`.edgeScroll`, styles/04), which keeps the header one row tall
+   at every width and fades whichever end still has a button on it. */
+
+/*
+ * The library header drops Shuffle on a narrow phone.
+ *
+ * Measured rather than guessed: Play and Shuffle together are 192px, and the
+ * space the header leaves them beside the cover is 193px at a 390-wide screen,
+ * 190 at 375 and 175 at 360. So they fit an iPhone 14 exactly and overflow
+ * every phone narrower than one - which is where the page used to gain a
+ * horizontal scroll of its own and could be dragged off its layout.
+ *
+ * The row scrolls now, so nothing can push the page sideways again whatever
+ * happens to these widths. This is the other half: on the narrowest screens a
+ * header whose verbs have to be scrolled to is worse than a header with one
+ * verb, and Play is the one that matters - shuffling the whole library is a
+ * mood, and it is still a tap away inside the player. Only the library's own
+ * header; a playlist's Shuffle is a real choice about that list.
+ */
+@media (max-width: 389px) {
+  .musicHead .musicHead__shuffle {
+    display: none;
+  }
 }

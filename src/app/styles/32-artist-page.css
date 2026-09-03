@@ -278,10 +278,33 @@ button.artistAlbum {
 
 
 /* The About section: the read on an artist, their size, a short discography,
-   who is near them, and the way out to their catalogue page. Below the music
-   because none of it is on the disk. */
+   who is near them, and the way out to their catalogue page.
+
+   A CARD, and directly under the hero rather than below the music. Sitting at
+   the foot of the page it was a shelf like any other; sitting immediately
+   under the header it is answering the header's question, and a shelf that
+   ran edge to edge under a card read as the start of the page's content. The
+   surface is the profile hero's, so the two stacked blocks at the top of an
+   artist page are recognisably a pair. */
 .artistAbout {
   gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  /* Taller than its flex row on a narrow screen (a long blurb, a related
+     strip), and a flex child is shrunk to fit before it is scrolled to - the
+     same trap the profile hero documents. */
+  flex: none;
+}
+
+/* The related-artist strip is the one thing here that goes edge to edge, and
+   inside a padded card it would stop short of both sides with a visible
+   margin instead of running off them. Pulled back out to the card's edges so
+   it still reads as a strip that continues. */
+.artistAbout .homeShelfScroll {
+  margin-inline: calc(var(--glacier-space-4) * -1);
+  padding-inline: var(--glacier-space-4);
 }
 
 .artistAbout__blurb {
@@ -349,4 +372,20 @@ button.artistAlbum {
 
 .relatedArtist:hover .relatedArtist__name {
   text-decoration: underline;
+}
+
+/* Popular's heading row: the title, and the one verb that acts on the whole
+   list. A flex row rather than the bare <h2> the other shelves use, because
+   this is the only shelf on the page with a control beside its name. */
+.artistPopularHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+/* The heading inside the row keeps its own margins off - the row owns the
+   spacing now, and a stray block margin would push the button out of line. */
+.artistPopularHead .homeShelfTitle {
+  margin: 0;
 }

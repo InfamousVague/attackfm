@@ -1,6 +1,7 @@
 import { Button, SearchField, Text } from '@glacier/react';
+import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
-import { Heart, Play, Repeat, Shuffle } from '@glacier/icons';
+import { Heart, ListPlus, Play, Repeat, Shuffle } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -16,6 +17,7 @@ import onRepeatChip from '../../assets/chip-on-repeat.webp';
 import likedChip from '../../assets/chip-liked.webp';
 import allSongsChip from '../../assets/chip-all-songs.webp';
 import { CoverWall } from '../playlists/CoverWall.tsx';
+import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { tracksOfHub } from '../server.ts';
 
 /**
@@ -183,6 +185,10 @@ export function SongPage({
    * no typo rescue, no network.
    */
   const [filter, setFilter] = useState('');
+  // Whether the "Add all" sheet is up. Mounted only once it has been asked
+  // for: the dialog reads every playlist and builds a cover for each, which
+  // is real work for a control most visits never touch.
+  const [filingAll, setFilingAll] = useState(false);
   const filtering = filter.trim().length > 0;
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -325,7 +331,7 @@ export function SongPage({
             {totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}
           </Text>
 
-          <div className="playlistHead__actions">
+          <EdgeScrollRow className="playlistHead__actions">
             <Button variant="solid" size="sm" onClick={playAll} disabled={empty}>
               <Play size={15} fill="currentColor" />
               Play
@@ -334,7 +340,20 @@ export function SongPage({
               <Shuffle size={15} />
               Shuffle
             </Button>
-          </div>
+            {/* The whole list into a playlist, in one act.
+
+                Filing a hundred liked songs one long-press at a time is not a
+                thing anybody does; they give up and the list stays where it
+                is. The dialog behind this is the same one a single song opens,
+                and it already took a list - nothing here needed inventing, the
+                verb was just never offered. It files what is SHOWN, so a
+                filtered All songs files the songs you filtered to, which is
+                the list you are looking at and therefore the one you meant. */}
+            <Button variant="ghost" size="sm" onClick={() => setFilingAll(true)} disabled={empty}>
+              <ListPlus size={15} />
+              Add all
+            </Button>
+          </EdgeScrollRow>
         </div>
       </header>
       {/* Sits just under the hero: once this leaves the top of the page, the
@@ -396,6 +415,14 @@ export function SongPage({
             )}
           </div>
         </section>
+      )}
+
+      {filingAll && (
+        <AddToPlaylistDialog
+          tracks={shown}
+          open={filingAll}
+          onClose={() => setFilingAll(false)}
+        />
       )}
     </div>
   );

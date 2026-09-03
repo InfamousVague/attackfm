@@ -10,6 +10,7 @@ import {
   SearchField,
   useToast,
 } from '@glacier/react';
+import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
 import {
   AudioLines,
   Check,
@@ -481,7 +482,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             </form>
           )}
 
-          <div className="playlistHead__actions">
+          <EdgeScrollRow className="playlistHead__actions">
             <Button variant="solid" size="sm" onClick={playAll} disabled={rows.length === 0}>
               <Play size={15} fill="currentColor" />
               Play
@@ -571,7 +572,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                 </MenuItem>
               )}
             </Menu>
-          </div>
+          </EdgeScrollRow>
         </div>
         {/* `role` present is the sign this list came from a server that can
             share; against an older hub the item would open a drawer whose

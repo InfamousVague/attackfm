@@ -1,4 +1,5 @@
 import { chapterNumbers, chapterTitleWords, frontMatterTitle, spokenChapterNumber } from './chapterNumber.ts';
+import { useEdgeFade } from '../ux/edgeFade.ts';
 import { SpectrumArt } from './SpectrumArt.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { chapterPreview } from './chapterOpening.ts';
@@ -813,6 +814,9 @@ export function NowPlayingSheet({
    * already takes fifty would be the worse of the two.
    */
   const { analyser } = useNowPlayingMotion();
+  // The action strip runs off the side of a narrow phone; it scrolls, and
+  // fades at whichever end still has a button on it.
+  const actionsRef = useEdgeFade<HTMLDivElement>();
   // The room, if any: the queue panel labels itself for it.
   const jamRoom = useJamOptional()?.current ?? null;
   /*
@@ -2001,7 +2005,7 @@ export function NowPlayingSheet({
           the docked split hides the strip, so this row's volume popover is
           the only fader a desktop book listener has. */}
       {(track?.kind !== 'book' || !isMobile) && (
-      <div className="npScreen__actions">
+      <div className="npScreen__actions edgeScroll" ref={actionsRef}>
         <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
           <ListMusic size={20} />
         </IconButton>

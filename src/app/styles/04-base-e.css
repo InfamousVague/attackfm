@@ -495,3 +495,65 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
   inline-size: 24px;
   block-size: 24px;
 }
+
+/*
+ * A row of controls that scrolls sideways rather than wrapping or running off
+ * the screen, fading at whichever end still has something on it.
+ *
+ * Two rows wear this: the collection header's verbs (Play / Shuffle / Add) and
+ * the Now Playing action strip. Both are a handful of buttons that fit every
+ * phone except the narrow ones, and both used to fail on those - the header's
+ * wrapped onto a second line, turning three buttons into a block of furniture
+ * above the songs, and the library's ran off the side and gave the whole PAGE
+ * a horizontal scroll, so it could be dragged off its own layout.
+ *
+ * The fade is an opacity mask, not a painted gradient, because these rows sit
+ * over the Now Playing artwork and over a collection header's cover wall: any
+ * colour chosen for a gradient would be right on one of those and a smear on
+ * the other. Its width comes from `useEdgeFade`, which sets both custom
+ * properties from the scroll position - so a row that fits has no fade at all,
+ * and the fade grows in as you push off from an edge rather than snapping on.
+ */
+.edgeScroll {
+  /* Both default to zero, which makes the mask fully opaque: a row that never
+     scrolls looks exactly as it did before it was given this class, even if
+     the hook never runs. */
+  --edge-start: 0px;
+  --edge-end: 0px;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  /* Not `visible`: a scroll container cannot have one axis visible and the
+     other scrolling - the pair computes to auto/auto and the row would grow
+     its own vertical scrollbar over a button's focus ring. */
+  overflow-y: hidden;
+  /* On the scroll axis only. Containing the CROSS axis here would eat the
+     vertical drag that belongs to the page this row is sitting in. */
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--edge-start),
+    #000 calc(100% - var(--edge-end)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--edge-start),
+    #000 calc(100% - var(--edge-end)),
+    transparent 100%
+  );
+}
+
+.edgeScroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* A flex child in a scroller shrinks to fit by default, which is the one thing
+   this row must never do: the buttons would compress to their labels' ellipsis
+   instead of overflowing into the scroll they are here to have. */
+.edgeScroll > * {
+  flex: none;
+}

@@ -1,5 +1,6 @@
-import { Check, Headphones, Heart, ListPlus, Music, Play, Plus, X } from '@glacier/icons';
-import { useEffect, useRef, useState } from 'react';
+import { Button } from '@glacier/react';
+import { Check, Headphones, ListPlus, Music, Play, Plus, X } from '@glacier/icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
@@ -57,8 +58,8 @@ export function ArtistPopular({
   audition,
 }: ArtistPopularProps) {
   const { isFavorite, toggleFavorite } = useLibrary();
-  // The song a visible "add to playlist" tap is filing, for the sheet.
-  const [filing, setFiling] = useState<Track | null>(null);
+  // Whether the "add these to a playlist" sheet is up.
+  const [filing, setFiling] = useState(false);
   /*
    * A heart given while the copy was still on its way is a heart on the copy
    * once it lands: adopt it the moment it appears. Without this the row's
@@ -76,10 +77,35 @@ export function ArtistPopular({
       toggleFavorite(copy.path);
     }
   }, [popular, loved, audition, isFavorite, toggleFavorite]);
+  /*
+   * Which of these are songs on this device, and so which of them a playlist
+   * can actually be given. A catalogue row is a name, not a file - filing one
+   * means writing a want and starting a download, which is what the row's own
+   * long-press offers per song and is not what "add these to a playlist"
+   * should quietly do a dozen times over.
+   */
+  const ownedHere = useMemo(
+    () => popular.map((t) => t.mine).filter((t): t is Track => !!t),
+    [popular],
+  );
+
   if (popular.length === 0) return null;
   return (
     <section className="homeShelf">
-      <h2 className="homeShelfTitle">Popular</h2>
+      <div className="artistPopularHead">
+        <h2 className="homeShelfTitle">Popular</h2>
+        {/* Named by what it will actually file, never by what is on screen: a
+            chart of ten songs you own three of files three, and a button that
+            says "Add all" and adds three is a button that lied. */}
+        {ownedHere.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={() => setFiling(true)}>
+            <ListPlus size={15} />
+            {ownedHere.length === popular.length
+              ? 'Add all'
+              : `Add ${ownedHere.length} of these`}
+          </Button>
+        )}
+      </div>
       {/* The artist's best-known songs as the CATALOGUE ranks them, not as
           your own shelf does. This used to be a list of your play counts,
           which meant an artist you owned two songs by had a "top songs" of
@@ -200,62 +226,13 @@ export function ArtistPopular({
               <span className="catalogTrack__time" aria-live={canListen ? 'polite' : undefined}>
                 {word ?? formatClock(t.duration, '--:--')}
               </span>
-              {/* Love it, wherever it is: an owned song toggles the heart in
-                  the library; a catalogue song is loved AND pulled down, and
-                  lands in Liked when the download arrives (see the incoming
-                  band). The one control on every row the listener asked for. */}
-              {mine ? (
-                <button
-                  type="button"
-                  className="catalogTrack__love"
-                  aria-label={isFavorite(mine.path) ? `Remove ${t.title} from Liked` : `Love ${t.title}`}
-                  aria-pressed={isFavorite(mine.path)}
-                  onClick={() => toggleFavorite(mine.path)}
-                >
-                  <Heart size={15} fill={isFavorite(mine.path) ? 'currentColor' : 'none'} />
-                </button>
-              ) : copy ? (
-                /* A copy is here to listen to: the heart ADOPTS it - the
-                   same act as on any audition - rather than fetching it
-                   again through the importer's door. A heart given while it
-                   was still on its way reads as kept the moment it lands (the
-                   effect above the list makes it so). */
-                <button
-                  type="button"
-                  className="catalogTrack__love"
-                  aria-label={
-                    isFavorite(copy.path) || loved.has(t.id) ? `Remove ${t.title} from Liked` : `Keep ${t.title}`
-                  }
-                  aria-pressed={isFavorite(copy.path) || loved.has(t.id)}
-                  onClick={() => toggleFavorite(copy.path)}
-                >
-                  <Heart size={15} fill={isFavorite(copy.path) || loved.has(t.id) ? 'currentColor' : 'none'} />
-                </button>
-              ) : t.catalogue ? (
-                <button
-                  type="button"
-                  className="catalogTrack__love"
-                  aria-label={loved.has(t.id) ? `${t.title} loved` : `Love ${t.title}`}
-                  aria-pressed={loved.has(t.id)}
-                  disabled={!session}
-                  /* On its way already: promise the heart, do not fetch twice. */
-                  onClick={() => loveSong(t.catalogue!, heard !== 'fetching')}
-                >
-                  <Heart size={15} fill={loved.has(t.id) ? 'currentColor' : 'none'} />
-                </button>
-              ) : null}
-              {/* Add to a playlist - only a song you actually have can be
-                  filed; a catalogue row loves-and-downloads first. */}
-              {mine && (
-                <button
-                  type="button"
-                  className="catalogTrack__love"
-                  aria-label={`Add ${t.title} to a playlist`}
-                  onClick={() => setFiling(mine)}
-                >
-                  <ListPlus size={15} />
-                </button>
-              )}
+              {/* No heart and no add on the row itself. Every row here wears
+                  a long-press menu already - TrackMenu when you own the song,
+                  CatalogTrackMenu when you do not - and both carry Love and
+                  Add to playlist. On a phone this row was a rank, a sleeve, a
+                  title, a play count, a time and then three more controls, and
+                  the two that moved are the two the menu was already offering
+                  twice over. Press and hold a row for them. */}
               {/* Nothing to add for a song you already have, and nothing to
                   add when this row came from your own library in the first
                   place (the catalogue was unreachable). */}
@@ -371,7 +348,9 @@ export function ArtistPopular({
           );
         })}
       </ol>
-      <AddToPlaylistDialog track={filing} open={filing !== null} onClose={() => setFiling(null)} />
+      {filing && (
+        <AddToPlaylistDialog tracks={ownedHere} open={filing} onClose={() => setFiling(false)} />
+      )}
     </section>
   );
 }

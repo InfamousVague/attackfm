@@ -1,4 +1,5 @@
 import { ArtistLink } from '../ux/ArtistLink.tsx';
+import { HomeStatsCards } from '../library/HomeStatsCards.tsx';
 import { Button, Heading, IconButton, Text } from '@glacier/react';
 import { Camera, Copy, ImagePlus, LogOut, Trash2, Users } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -225,7 +226,10 @@ function messageOf(err: unknown): string {
 export function ProfilePage({
   onPlay,
   onOpenArtist,
+  onOpenStats,
 }: {
+  /** Opens This week - the strip under the hero is its door. */
+  onOpenStats: () => void;
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
 }) {
@@ -418,6 +422,19 @@ export function ProfilePage({
       ) : (
         <AccountSetup onDone={apply} />
       )}
+
+      {/*
+        Your week, directly under your face.
+
+        It lived on the Library, which is a page about the MUSIC - and a strip
+        of your own minutes and your own streak is not about the music, it is
+        about you. Here it sits on the page that already is, one line under the
+        name it belongs to, and it is the door into the full stats room that
+        the removed "This week" badge used to be. Self-sufficient as ever: no
+        week to speak of and it draws nothing at all, so the profile does not
+        open on a strip of zeros.
+      */}
+      <HomeStatsCards onOpenStats={onOpenStats} />
 
       <LiveNow />
 

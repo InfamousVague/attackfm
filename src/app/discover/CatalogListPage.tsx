@@ -1,4 +1,5 @@
 import { Button, Text } from '@glacier/react';
+import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
 import { Check, ListMusic, Play, Plus } from '@glacier/icons';
 import { useMemo } from 'react';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
@@ -114,7 +115,7 @@ export function CatalogListPage({
             {rows.length > 0 ? ` · ${have.length} already yours` : ''}
           </Text>
 
-          <div className="playlistHead__actions">
+          <EdgeScrollRow className="playlistHead__actions">
             {/* Play is offered only for what is HERE, and says so rather than
                 counting: a Play that silently skipped four fifths of a list
                 would be a lie about what you were about to hear, and the
@@ -138,7 +139,7 @@ export function CatalogListPage({
                   ? 'Adding…'
                   : 'Add the list'}
             </Button>
-          </div>
+          </EdgeScrollRow>
         </div>
       </header>
 

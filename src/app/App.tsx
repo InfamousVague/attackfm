@@ -493,6 +493,27 @@ export function App() {
     return () => setDiscoverDoor(null);
   }, [goTab]);
 
+  /*
+   * Which of the app's two standing glyphs the header carries here.
+   *
+   * A detail page LENDS the header its own verbs - Play, Shuffle, a
+   * collection's menu - and these two sit at the end of them. On a narrow
+   * phone that is a row of the page's controls with two pieces of app
+   * furniture crowding the end of it, and neither belongs to what is on
+   * screen. The bell stands down on every collection page; on an artist page
+   * both do, because an artist is somebody else's and offering to invite a
+   * friend to MY server from their page reads as an offer to share them.
+   */
+  const detailKind = detail?.kind ?? null;
+  const onArtist = detailKind === 'artist';
+  const onCollection =
+    detailKind === 'playlist' ||
+    detailKind === 'mix' ||
+    detailKind === 'catalog' ||
+    detailKind === 'songs';
+  const chromeBell = !onArtist && !onCollection;
+  const chromeShare = !onArtist;
+
   stateRef.current = { searchOpen, detail: detail as { kind?: string } | null, tab };
   // The phone's edge-swipe back: a drag in from the left walks the same stack
   // the header arrows do, with the page following the thumb. Touch-only and
@@ -742,15 +763,30 @@ export function App() {
                   {/* After the lent buttons, not before: the collection header
                       slides Play and Shuffle in and out of this slot, and a
                       bell placed ahead of them would shift sideways every time
-                      a page scrolled. Last means it never moves. */}
-                  <NotifyBell
-                    iconSize={18}
-                    onOpenDownloads={openDownloads}
-                    onOpenFriends={() => goTab('profile')}
-                  />
+                      a page scrolled. Last means it never moves.
+
+                      Not on every page, though. A detail page lends this row
+                      its OWN verbs - Play, Shuffle, a collection's menu - and
+                      the app's two standing glyphs sit at the end of them,
+                      crowding the row on a phone with app furniture that has
+                      nothing to do with what is on screen. So the bell stands
+                      down on collections (a playlist, a mix, a catalogue list,
+                      a song collection), and on an artist page both do: an
+                      artist is somebody else's, and "invite a friend to my
+                      server" read as an offer to share THEM. Neither is lost -
+                      the news is a page in the nav's ⋮ menu and the invite is
+                      in Settings; this is about what the top of a page is
+                      for. */}
+                  {chromeBell && (
+                    <NotifyBell
+                      iconSize={18}
+                      onOpenDownloads={openDownloads}
+                      onOpenFriends={() => goTab('profile')}
+                    />
+                  )}
                   {/* Invite a friend: the shareable join card, at the bell's right hand -
                       a glyph beside a glyph. Hides itself with no server to join. */}
-                  <ShareServer iconSize={18} />
+                  {chromeShare && <ShareServer iconSize={18} />}
                 </span>
               </header>
             )}

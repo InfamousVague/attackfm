@@ -779,7 +779,6 @@ export function SearchPage({
     acquire,
     onPlay,
     onOpenArtist,
-    favorite: { is: isFavorite, toggle: toggleFavorite },
     query,
     tracks,
   };

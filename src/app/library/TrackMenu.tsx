@@ -12,6 +12,7 @@ import {
   Sparkles,
   Trash2,
   CopyCheck,
+  Heart,
 } from '@glacier/icons';
 import { Send } from '@glacier/icons';
 import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -21,6 +22,7 @@ import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { SongSelectionContext } from './songSelection.tsx';
 import { WrongSongModal } from './WrongSongModal.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
+import { useLibrary } from './library.tsx';
 import { isHeld, onOfflineChange, pinTrack, unpinTrack, vaultKey } from '../downloads/offline.ts';
 import { cacheQualityKbps, markPinned } from '../cache/cacheStore.ts';
 import { estimateBytes, extFor, wantedQuality } from '../cache/cacheQuality.ts';
@@ -61,6 +63,7 @@ export function TrackMenu({
   className?: string;
 }) {
   const { playNext, addToQueue, inJam } = useQueueControls();
+  const { isFavorite, toggleFavorite } = useLibrary();
   const { toast } = useToast();
   /** One queue verb, said once. See the note at the menu items. */
   const queued = (t: Track, next: boolean) => {
@@ -213,6 +216,23 @@ export function TrackMenu({
             {selection && (
               <MenuItem icon={<CopyCheck size={15} />} onSelect={() => selection.start(track.path)}>
                 Select songs…
+              </MenuItem>
+            )}
+            {/* Love, in the menu.
+
+                It was only ever a button on the row - a heart on the search
+                result, a heart on the artist's Popular list - and those rows
+                also carry a title, an artist, a time and an add, which on a
+                phone is more controls than fingers. The heart moved in here
+                so the row can be a row; the menu is where a song's verbs
+                already live, and this is the one every list had its own copy
+                of. Books are not loved: Liked is a songs list. */}
+            {track.kind !== 'book' && (
+              <MenuItem
+                icon={<Heart size={15} fill={isFavorite(track.path) ? 'currentColor' : 'none'} />}
+                onSelect={() => toggleFavorite(track.path)}
+              >
+                {isFavorite(track.path) ? 'Remove from Liked' : 'Love this song'}
               </MenuItem>
             )}
             <MenuItem icon={<ListMusic size={15} />} onSelect={() => setFiling(true)}>

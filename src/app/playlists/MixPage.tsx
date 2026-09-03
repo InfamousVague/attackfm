@@ -1,4 +1,5 @@
 import { Button, Text, useToast } from '@glacier/react';
+import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
 import { ListMusic, Play, Plus, Shuffle } from '@glacier/icons';
 import { useMemo, useRef } from 'react';
 import { useFollowNowPlaying } from '../player/nowPlayingStore.ts';
@@ -137,7 +138,7 @@ export function MixPage({
             {totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}
           </Text>
 
-          <div className="playlistHead__actions">
+          <EdgeScrollRow className="playlistHead__actions">
             {/* Play and Shuffle lead, matching the playlist page this mirrors
                 - a station or mix is for turning ON, and for a while the only
                 header verb here was Add, which made keeping a copy read as
@@ -167,7 +168,7 @@ export function MixPage({
               <Plus size={15} />
               Add
             </Button>
-          </div>
+          </EdgeScrollRow>
         </div>
       </header>
 
