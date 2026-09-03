@@ -15,6 +15,18 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.77
+
+- Your week has moved off the Library and onto your profile, under your name.
+- Play and the rest of a collection's buttons stay on one line on a narrow
+  phone: the row slides sideways instead of stacking or running off the edge.
+  So does the row of controls under Now Playing.
+- The artist page opens with who they are: About is a card under the header
+  now, not five screens down.
+- Love and Add to playlist have moved off song rows and into the menu you get
+  by pressing and holding one, so a row is a row.
+- All songs, Liked and an artist's Popular can go into a playlist in one act.
+
 ## 0.5.76
 
 - Listen along with a friend. When someone on your friends list is playing on
