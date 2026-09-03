@@ -1446,6 +1446,42 @@ CREATE TABLE IF NOT EXISTS server_prefs (
   value TEXT NOT NULL
 );
 
+-- The Subsonic door (subsonic.rs). A per-user app password, separate from
+-- the account's: the protocol's token scheme is md5(password + salt), which
+-- needs the password itself on this side, and the account password is an
+-- argon2 hash on purpose. So a Subsonic client gets its own random secret,
+-- shown once in Settings and revocable there, and never the real one.
+CREATE TABLE IF NOT EXISTS subsonic_secrets (
+  user_id    INTEGER PRIMARY KEY,
+  secret     TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+-- A Subsonic client's saved play queue (savePlayQueue / getPlayQueue): the
+-- song ids, which one is current and how far in, so the same person picks
+-- up on another client where this one left off.
+-- Another OpenSubsonic server this member imports from and exports to
+-- (subsonic_remote.rs): where it is and who they are there. The password is
+-- kept as typed because that API's token is md5(password + salt) - the same
+-- class of secret as the Spotify cookie, never read back out by any route.
+CREATE TABLE IF NOT EXISTS subsonic_accounts (
+  user_id     INTEGER PRIMARY KEY,
+  url         TEXT NOT NULL,
+  username    TEXT NOT NULL,
+  password    TEXT NOT NULL,
+  server_type TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS subsonic_queue (
+  user_id    INTEGER PRIMARY KEY,
+  ids        TEXT NOT NULL,
+  current    INTEGER,
+  position   INTEGER NOT NULL DEFAULT 0,
+  changed    INTEGER NOT NULL,
+  changed_by TEXT NOT NULL DEFAULT ''
+);
+
 -- The enumeration probes both by track_id, which neither primary key serves:
 -- favorites is keyed (user_id, track_id) and playlist_tracks (playlist_id,
 -- position). Without these it full-scans both on every pass.
@@ -3248,6 +3284,184 @@ impl Db {
     // --- the listening log --------------------------------------------------
 
     /// Appends one qualifying play.
+    // --- the Subsonic door (subsonic.rs) ---------------------------------------
+
+    pub fn subsonic_secret(&self, user_id: i64) -> Option<String> {
+        self.lock()
+            .query_row("SELECT secret FROM subsonic_secrets WHERE user_id = ?1", params![user_id], |r| r.get(0))
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn set_subsonic_secret(&self, user_id: i64, secret: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO subsonic_secrets (user_id, secret, created_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(user_id) DO UPDATE SET secret = excluded.secret, created_at = excluded.created_at",
+            params![user_id, secret, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_subsonic_secret(&self, user_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute("DELETE FROM subsonic_secrets WHERE user_id = ?1", params![user_id])?;
+        Ok(())
+    }
+
+    /// (url, username, password, server_type)
+    pub fn subsonic_account(&self, user_id: i64) -> Option<(String, String, String, String)> {
+        self.lock()
+            .query_row(
+                "SELECT url, username, password, server_type FROM subsonic_accounts WHERE user_id = ?1",
+                params![user_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn set_subsonic_account(&self, user_id: i64, url: &str, username: &str, password: &str, server_type: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO subsonic_accounts (user_id, url, username, password, server_type, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(user_id) DO UPDATE SET url = excluded.url, username = excluded.username,
+               password = excluded.password, server_type = excluded.server_type, created_at = excluded.created_at",
+            params![user_id, url, username, password, server_type, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_subsonic_account(&self, user_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute("DELETE FROM subsonic_accounts WHERE user_id = ?1", params![user_id])?;
+        Ok(())
+    }
+
+    /// (ids json, current, position, changed, changed_by)
+    pub fn subsonic_queue(&self, user_id: i64) -> Option<(String, Option<i64>, i64, i64, String)> {
+        self.lock()
+            .query_row(
+                "SELECT ids, current, position, changed, changed_by FROM subsonic_queue WHERE user_id = ?1",
+                params![user_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn set_subsonic_queue(
+        &self,
+        user_id: i64,
+        ids_json: &str,
+        current: Option<i64>,
+        position: i64,
+        changed_by: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO subsonic_queue (user_id, ids, current, position, changed, changed_by)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(user_id) DO UPDATE SET ids = excluded.ids, current = excluded.current,
+               position = excluded.position, changed = excluded.changed, changed_by = excluded.changed_by",
+            params![user_id, ids_json, current, position, now_ms(), changed_by],
+        )?;
+        Ok(())
+    }
+
+    /// Favourites with when they were starred: (track_id, added_at ms).
+    pub fn favorites_with_time(&self, user_id: i64) -> Vec<(i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT f.track_id, f.added_at FROM favorites f
+               JOIN tracks t ON t.id = f.track_id AND t.deleted = 0
+              WHERE f.user_id = ?1 ORDER BY f.added_at DESC",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+    }
+
+    /// Play counts per track for one listener, off the cheap `plays` log.
+    pub fn play_counts(&self, user_id: i64) -> std::collections::HashMap<i64, i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare("SELECT track_id, COUNT(*) FROM plays WHERE user_id = ?1 GROUP BY track_id") else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+    }
+
+    /// Live, adopted tracks matching `where_sql` (a fragment over the tracks
+    /// table's columns), with their paths - the Subsonic door's one query
+    /// shape. Auditions another member has not adopted are never listed:
+    /// they are that member's, not the library's.
+    pub fn subsonic_tracks(
+        &self,
+        where_sql: &str,
+        args: &[&dyn rusqlite::ToSql],
+        order_sql: &str,
+        limit: i64,
+        offset: i64,
+    ) -> Vec<(Track, String)> {
+        let conn = self.lock();
+        let sql = format!(
+            "SELECT {}, rel_path FROM tracks
+              WHERE deleted = 0 AND (curator_user_id IS NULL OR curator_promoted = 1) AND ({where_sql})
+              ORDER BY {order_sql} LIMIT {} OFFSET {}",
+            Self::TRACK_COLS,
+            limit.max(0),
+            offset.max(0)
+        );
+        let Ok(mut stmt) = conn.prepare(&sql) else {
+            return Vec::new();
+        };
+        stmt.query_map(args, |r| Ok((Self::read_track(r)?, r.get::<_, String>(26)?)))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+    }
+
+    /// Every album, grouped the way the library groups them - by album artist
+    /// (the track artist where none is tagged) and album, case-blind - with
+    /// the numbers a Subsonic album row carries.
+    /// (album_artist, album, year, songs, duration_ms, added_at, art_id, genre)
+    pub fn subsonic_albums(&self) -> Vec<(String, String, Option<i64>, i64, i64, i64, String, String)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT MAX(COALESCE(NULLIF(album_artist, ''), artist)) AS aa, MAX(album), MIN(year), COUNT(*),
+                    COALESCE(SUM(duration_ms), 0), MIN(added_at), COALESCE(MAX(art_id), ''), COALESCE(MAX(NULLIF(genre, '')), '')
+               FROM tracks
+              WHERE deleted = 0 AND (curator_user_id IS NULL OR curator_promoted = 1) AND kind IS NOT 'book'
+              GROUP BY lower(COALESCE(NULLIF(album_artist, ''), artist)), lower(album)
+              ORDER BY aa COLLATE NOCASE, MAX(album) COLLATE NOCASE",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?))
+        })
+        .map(|rows| rows.flatten().collect())
+        .unwrap_or_default()
+    }
+
+    /// Raw genre tags with song and album counts; tags may be comma-joined
+    /// as they came off the files, which the caller splits.
+    pub fn subsonic_genres(&self) -> Vec<(String, i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT genre, COUNT(*), COUNT(DISTINCT lower(COALESCE(NULLIF(album_artist, ''), artist)) || '|' || lower(album))
+               FROM tracks WHERE deleted = 0 AND genre != '' AND (curator_user_id IS NULL OR curator_promoted = 1)
+              GROUP BY genre",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+    }
+
     pub fn record_play(&self, user_id: i64, track_id: i64) -> rusqlite::Result<()> {
         self.lock().execute(
             "INSERT INTO plays (user_id, track_id, played_at) VALUES (?1, ?2, ?3)",

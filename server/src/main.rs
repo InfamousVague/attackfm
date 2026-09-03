@@ -42,6 +42,9 @@ mod bookshape;
 mod auth;
 mod canvas;
 mod wall;
+mod subsonic_wire;
+mod subsonic;
+mod subsonic_remote;
 mod collector;
 mod connect;
 mod curator;
@@ -893,6 +896,17 @@ async fn main() {
         .route("/api/transcribe/status", get(transcribe::status))
         .route("/api/transcribe/jobs", get(transcribe::jobs))
         .route("/api/transcribe/{track_id}", get(transcribe::get).post(transcribe::queue))
+        // The Subsonic door: this library in the API the Subsonic clients
+        // speak, behind the owner's switch (subsonic.rs).
+        .route("/rest/{method}", get(subsonic::dispatch).post(subsonic::dispatch))
+        .route("/api/subsonic", get(subsonic::status))
+        .route("/api/subsonic/secret", post(subsonic::mint_secret).delete(subsonic::revoke_secret))
+        .route("/api/subsonic/flag", post(subsonic_remote::set_flag))
+        .route("/api/subsonic/remote", get(subsonic_remote::status).put(subsonic_remote::connect).delete(subsonic_remote::disconnect))
+        .route("/api/subsonic/remote/import", post(subsonic_remote::import))
+        .route("/api/subsonic/remote/jobs", get(subsonic_remote::list_jobs))
+        .route("/api/subsonic/remote/export", post(subsonic_remote::export))
+        .route("/api/subsonic/remote/{what}", get(subsonic_remote::browse))
         .nest_service("/plugins", ServeDir::new(&plugins_dir))
         .nest_service(
             "/api/assets",

@@ -1,0 +1,15 @@
+{
+  "id": "opensubsonic",
+  "name": "OpenSubsonic",
+  "version": "0.1.0",
+  "description": "Open this library to Subsonic apps, and bring playlists, albums and stars over from another one.",
+  "author": "AttackFM",
+  "tags": [
+    "Import",
+    "Playlists",
+    "Server"
+  ],
+  "entry": "plugin.ts",
+  "requiresServer": true,
+  "public": true
+}

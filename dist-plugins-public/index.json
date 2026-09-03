@@ -3,6 +3,24 @@
   "name": "AttackFM plugins",
   "plugins": [
     {
+      "id": "opensubsonic",
+      "name": "OpenSubsonic",
+      "version": "0.1.0",
+      "description": "Open this library to Subsonic apps, and bring playlists, albums and stars over from another one.",
+      "author": "AttackFM",
+      "tags": [
+        "Import",
+        "Playlists",
+        "Server"
+      ],
+      "entry": "opensubsonic-0.1.0.js",
+      "api": 1,
+      "bytes": 14373,
+      "sha256": "b716c696a9b7c05632118f27d68fb933ec0494b6e1355b50bd048d1470ea6b09",
+      "requiresServer": true,
+      "public": true
+    },
+    {
       "id": "pedals",
       "name": "Pedals",
       "version": "0.3.4",

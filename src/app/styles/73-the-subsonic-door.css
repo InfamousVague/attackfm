@@ -1,0 +1,119 @@
+/*
+ * The OpenSubsonic page (the plugin's own, styled here because a plugin
+ * bundle carries no stylesheet - the same arrangement the downloads cards
+ * have). One column of sections, each a list of things to tick, and the
+ * running job pinned above them.
+ */
+
+.subsonicPage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-5);
+  padding: var(--glacier-space-5) var(--glacier-space-5) var(--glacier-space-8);
+  max-inline-size: 52rem;
+  margin-inline: auto;
+}
+
+.subsonicPage__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+.subsonicPage__head h2 {
+  margin: 0;
+  font-size: var(--glacier-font-size-xl, 1.35rem);
+  overflow-wrap: anywhere;
+}
+
+/* The job in flight. It sits above the picking, because while it runs it is
+   the only thing on this page anybody is looking at. */
+.subsonicJob {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg, 1rem);
+  background: var(--glacier-surface-sunken, rgba(127, 127, 127, 0.1));
+  border: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
+}
+
+.subsonicJob__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+
+.subsonicJob__head > span:first-child {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subsonicJob__made {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.subsonicJob__log ul {
+  margin: var(--glacier-space-2) 0 0;
+  padding-inline-start: var(--glacier-space-5);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.subsonicJob__log summary {
+  cursor: pointer;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.subsonicPick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.subsonicPick h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin: 0;
+  font-size: var(--glacier-font-size-md, 1rem);
+}
+
+.subsonicList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.subsonicList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) 0;
+  border-block-end: var(--glacier-hairline, 1px) solid var(--glacier-border-subtle);
+  min-inline-size: 0;
+}
+
+.subsonicList li:last-child {
+  border-block-end: none;
+}
+
+/* The one verb, and it stays put while the lists above it scroll past. */
+.subsonicPage__go {
+  position: sticky;
+  inset-block-end: var(--glacier-space-3);
+  display: flex;
+  justify-content: center;
+  padding-block: var(--glacier-space-2);
+}

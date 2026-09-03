@@ -54,7 +54,7 @@ pub fn resolve_in_root(root: &Path, rel: &str) -> Option<PathBuf> {
 /// bytes. The result was every m4a in the library failing on iPhone with
 /// MEDIA_ERR_SRC_NOT_SUPPORTED while playing fine in the desktop app. The
 /// registered name for AAC/ALAC in an MP4 container is `audio/mp4`.
-fn audio_mime(path: &Path) -> &'static str {
+pub(crate) fn audio_mime(path: &Path) -> &'static str {
     match path
         .extension()
         .and_then(|e| e.to_str())

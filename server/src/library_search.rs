@@ -34,7 +34,7 @@ pub struct LibrarySearchQuery {
 /// fills in while a word is still being typed. Tokens are joined bare -
 /// FTS's implicit AND. Apostrophes stay: the tokenizer splits `don't` into
 /// two terms, and stripping it would make `dont` match nothing.
-fn fts_expression(q: &str) -> Option<String> {
+pub(crate) fn fts_expression(q: &str) -> Option<String> {
     let tokens: Vec<String> = q
         .split_whitespace()
         .filter_map(|word| {

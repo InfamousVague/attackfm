@@ -43,6 +43,10 @@ pub async fn server_info(State(state): State<Arc<AppState>>) -> ApiResult {
         // No users yet: whoever registers first becomes the admin.
         "needsSetup": state.db.user_count() == 0,
         "transcode": state.ffmpeg,
+        // The Subsonic door (subsonic.rs): whether other players' apps can
+        // listen here. A capability, like transcode - the client shows the
+        // Settings row only where it is true.
+        "subsonic": crate::subsonic::enabled(),
         "tracks": state.db.track_count(),
         // The glance an invite shows before anyone joins: how much music,
         // how many people. Counts, not names - nothing here identifies a
