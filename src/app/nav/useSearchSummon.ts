@@ -99,19 +99,53 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
      * lands on an <svg> or one of its <path>s has an SVGElement target, and
      * on a screen made of album art and icons that is most of the screen.
      */
-    const scrolls = (el: Element) => el.scrollHeight > el.clientHeight + 1;
-    const pageOf = (target: EventTarget | null): Element | null => {
-      let el = target instanceof Element ? target : null;
-      while (el && el.parentElement !== host) el = el.parentElement;
-      // A direct child that does not scroll - the top scrim, any decorative
-      // layer - reports scrollTop 0 forever, which would arm the pull from
-      // anywhere on a page that IS scrolled down. Fall back to the child that
-      // actually scrolls.
-      if (el && !scrolls(el)) {
-        const real = Array.from(host.children).find(scrolls);
-        if (real) return real;
+    /*
+     * Does this element actually scroll vertically?
+     *
+     * Both halves matter. Overflowing content is not enough: `.appContent`
+     * and every `overflow: hidden` wrapper report scrollHeight past
+     * clientHeight while sitting at scrollTop 0 forever, and judging the
+     * gesture against one of those arms the pull from anywhere. And a
+     * declared `auto` is not enough either - a scroller with nothing to
+     * scroll is at the top by definition, which is a fine thing to measure
+     * but a poor thing to pick over a real one further up.
+     */
+    const scrolls = (el: Element) => {
+      if (el.scrollHeight <= el.clientHeight + 1) return false;
+      const flow = getComputedStyle(el).overflowY;
+      return flow === 'auto' || flow === 'scroll' || flow === 'overlay';
+    };
+    /** The first vertical scroller at or above `el`, stopping inside `host`. */
+    const scrollerAt = (el: Element | null): Element | null => {
+      let node: Element | null = el;
+      while (node && node !== host) {
+        if (scrolls(node)) return node;
+        node = node.parentElement;
       }
-      return el;
+      return null;
+    };
+    const pageOf = (target: EventTarget | null): Element | null => {
+      /*
+       * The scroller the finger is actually in, however deep it sits.
+       *
+       * This used to insist on a DIRECT child of the host, which held for as
+       * long as every page was one. It stopped holding the moment a page was
+       * wrapped: the stats room is a bar plus the page inside a
+       * `.profileRoomHost`, so the direct child was the wrapper - 750 of 750,
+       * never scrolled, scrollTop 0 whatever the page below it was doing -
+       * and the pull armed at any scroll position. Walking up from the touch
+       * instead finds the real scroller at any depth, and keeps working for
+       * the next page that grows a wrapper.
+       */
+      const found = scrollerAt(target instanceof Element ? target : null);
+      if (found) return found;
+      // The touch landed on something that scrolls nothing at all (a scrim, a
+      // fixed bar). Fall back to whatever page IS scrolling under it, at any
+      // depth - and to nothing rather than to a wrapper, since `null` leaves
+      // the gesture unarmed, which is the safe way to be wrong.
+      const deep = host.querySelectorAll('*');
+      for (const el of deep) if (scrolls(el)) return el;
+      return null;
     };
     const onStart = (e: TouchEvent) => {
       const t = e.touches[0];

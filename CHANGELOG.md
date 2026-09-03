@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.63
+
+- Pull-to-refresh no longer fires halfway down a page. On This week - and on any page held inside a bar, now or later - the gesture was watching the wrapper instead of the page, and a wrapper is never scrolled, so a downward drag anywhere read as a pull from the top.
+
 ## 0.5.62
 
 - Library: the Music/Books switch is full width now, one half each. And the Books shelf lost its own search box - Search already looks through your books, with a chip to narrow to them, so there is one place to find one instead of two.
