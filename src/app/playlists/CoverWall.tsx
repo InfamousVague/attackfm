@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { mosaicArts } from '../ux/artLoad.ts';
 import { useLoopArt } from '../ux/loopArt.ts';
 
@@ -52,6 +52,18 @@ const WALL_CLIPS = 6;
 const CLIP_MINIMUM = 2;
 
 /**
+ * How long the wall waits for the clips to be paintable before going with
+ * whatever is ready.
+ *
+ * The wall does not switch to video the moment the URLs arrive - it switches
+ * when the video can be SEEN, which is a different event and several hundred
+ * kilobytes later. Long enough for a phone on a slow connection to get a first
+ * frame; short enough that a server whose clips are unreachable settles onto
+ * its sleeves rather than sitting on the question.
+ */
+const WARM_MS = 6000;
+
+/**
  * Tiles per column, per copy - and this one is geometry, not taste.
  *
  * A column scrolls by travelling half its own height, so the half has to be at
@@ -99,6 +111,94 @@ function toClipColumns(clips: readonly string[]): string[][] {
   );
 }
 
+/**
+ * Warm the clips off-screen, and report the ones that can actually be painted.
+ *
+ * The wall used to flip to video the instant `/api/wall` answered, and an
+ * answer is only a list of URLs: every tile became a <video> with nothing
+ * decoded behind it, so the whole band went to the sunken surface colour -
+ * white, on the light theme - for as long as the clips took to arrive. The
+ * sleeves it had just thrown away were sitting right there.
+ *
+ * So the flip waits. Each clip is loaded into a detached element and reports
+ * `loadeddata`, which is precisely the promise this needs: a first frame
+ * exists, and an element pointed at the same URL will paint rather than blink.
+ * A clip that errors is dropped from the set, which means a server with two
+ * broken clips out of six falls back to its sleeves on the honest count rather
+ * than building a wall of holes.
+ *
+ * The warming elements are let go shortly after the flip. They exist to put
+ * the first frames in the cache, not to hold decoders open behind a wall that
+ * is already playing its own.
+ */
+function useWarmedClips(reel: readonly string[]): string[] {
+  const [ready, setReady] = useState<string[]>([]);
+  // The reel is a new array on every render of the header; its CONTENT is what
+  // this effect is about, so it turns on the joined list rather than identity.
+  const key = reel.join('\n');
+
+  useEffect(() => {
+    const list = key ? key.split('\n') : [];
+    if (list.length === 0) {
+      setReady([]);
+      return;
+    }
+    let live = true;
+    const warm = new Set<string>();
+    const elements: HTMLVideoElement[] = [];
+    let outstanding = list.length;
+    let deadline = 0;
+    let release = 0;
+
+    const drop = () => {
+      for (const v of elements) {
+        v.removeAttribute('src');
+        v.load();
+      }
+      elements.length = 0;
+    };
+
+    const flush = () => {
+      if (!live) return;
+      live = false;
+      window.clearTimeout(deadline);
+      // Order follows the reel, not the order they happened to finish in, so
+      // the wall deals the same clips into the same columns every time.
+      setReady(list.filter((src) => warm.has(src)));
+      // A beat after the real tiles mount, so the frames these hold are still
+      // warm when the wall asks for them.
+      release = window.setTimeout(drop, 1500);
+    };
+
+    for (const src of list) {
+      const v = document.createElement('video');
+      elements.push(v);
+      v.muted = true;
+      v.playsInline = true;
+      v.preload = 'auto';
+      const settle = (ok: boolean) => {
+        if (ok) warm.add(src);
+        outstanding -= 1;
+        if (outstanding === 0) flush();
+      };
+      v.addEventListener('loadeddata', () => settle(true), { once: true });
+      v.addEventListener('error', () => settle(false), { once: true });
+      v.src = src;
+      v.load();
+    }
+
+    deadline = window.setTimeout(flush, WARM_MS);
+    return () => {
+      live = false;
+      window.clearTimeout(deadline);
+      window.clearTimeout(release);
+      drop();
+    };
+  }, [key]);
+
+  return ready;
+}
+
 export function CoverWall({
   artworks,
   clips,
@@ -126,13 +226,15 @@ export function CoverWall({
   // 160, not 640: this is blurred past the point where detail survives.
   const covers = useMemo(() => mosaicArts(artworks, WALL_COVERS, 160), [artworks]);
   const reel = useMemo(() => (clips ?? []).slice(0, WALL_CLIPS), [clips]);
-  // Clips win when there are enough of them; otherwise the sleeves, exactly as
-  // before. Decided here rather than by the caller so every wall falls back the
-  // same way.
-  const moving = reel.length >= CLIP_MINIMUM;
+  // Not the clips the server OFFERED - the ones that have a frame to show.
+  const warmed = useWarmedClips(reel);
+  // Clips win when there are enough of them; otherwise the sleeves. Decided
+  // here rather than by the caller so every wall falls back the same way, and
+  // counted after warming so "enough" means enough that will actually paint.
+  const moving = warmed.length >= CLIP_MINIMUM;
   const cols = useMemo(
-    () => (moving ? toClipColumns(reel) : toColumns(covers)),
-    [moving, reel, covers],
+    () => (moving ? toClipColumns(warmed) : toColumns(covers)),
+    [moving, warmed, covers],
   );
   // A column of one cover tiled is wallpaper; keep the minimum on the whole set.
   if (!moving && covers.length < WALL_MINIMUM) return null;
@@ -152,7 +254,12 @@ export function CoverWall({
                 slice again rather than anything that might reorder it. */}
             {[...column, ...column].map((src, j) =>
               moving ? (
-                <WallClip key={j} src={src} />
+                // A sleeve behind every clip. The clips are warm by the time
+                // they mount, but "warm" is one frame and a wall is twelve
+                // elements starting at once - the poster is what any of them
+                // wears in the gap, and it is the same art the wall would have
+                // shown had there been no clips at all.
+                <WallClip key={j} src={src} poster={covers.length ? covers[j % covers.length] : undefined} />
               ) : (
                 <img key={j} src={src} alt="" loading={loading} decoding="async" />
               ),
@@ -171,13 +278,20 @@ export function CoverWall({
  * `onEnded` restarts it: WebKit drops `loop` after the decoder is interrupted
  * (a call, another app taking the session), and a wall with one dead column is
  * worse than one that never moved.
+ *
+ * The poster is a cover from the same library, and it is what this tile shows
+ * for as long as the clip has nothing - including forever, if the decoder
+ * refuses it outright. A clip that never plays then reads as a still sleeve in
+ * a moving wall, which is a wall; the alternative was a flat panel of surface
+ * colour, which is a hole.
  */
-function WallClip({ src }: { src: string }) {
+function WallClip({ src, poster }: { src: string; poster?: string }) {
   return (
     <video
       className="coverWall__clip"
       data-loop-art=""
       src={src}
+      poster={poster}
       autoPlay
       loop
       muted

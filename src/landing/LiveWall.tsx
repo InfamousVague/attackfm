@@ -10,7 +10,7 @@ import { useMemo } from 'react';
 const DURATIONS = ['46s', '55s', '64s', '73s'];
 const COLUMNS = DURATIONS.length;
 
-type Tile = { kind: 'img' | 'video'; src: string };
+type Tile = { kind: 'img' | 'video'; src: string; poster?: string };
 
 function shuffled<T>(items: readonly T[]): T[] {
   const out = [...items];
@@ -25,7 +25,16 @@ export function LiveWall({ covers, canvases }: { covers: string[]; canvases: str
   const cols = useMemo(() => {
     const tiles: Tile[] = shuffled([
       ...covers.map((src) => ({ kind: 'img' as const, src })),
-      ...canvases.map((src) => ({ kind: 'video' as const, src })),
+      // Every clip carries a sleeve as its poster. A <video> with nothing
+      // decoded yet paints its background, and on this page that is the page:
+      // the wall came up as a set of blank panels among the covers and filled
+      // in one by one. A cover behind each clip means the wall is complete on
+      // the first frame it draws and the clips start moving inside it.
+      ...canvases.map((src, i) => ({
+        kind: 'video' as const,
+        src,
+        poster: covers.length ? covers[i % covers.length] : undefined,
+      })),
     ]);
     const out: Tile[][] = Array.from({ length: COLUMNS }, () => []);
     tiles.forEach((t, i) => out[i % COLUMNS]!.push(t));
@@ -42,7 +51,19 @@ export function LiveWall({ covers, canvases }: { covers: string[]; canvases: str
         >
           {[...tiles, ...tiles].map((t, j) =>
             t.kind === 'video' ? (
-              <video key={j} src={t.src} muted loop autoPlay playsInline preload="metadata" />
+              <video
+                key={j}
+                src={t.src}
+                poster={t.poster}
+                muted
+                loop
+                autoPlay
+                playsInline
+                // `auto`, not `metadata`: metadata is enough to size a video
+                // and not enough to show one, so the tile sat on its poster
+                // waiting for a play that had nothing buffered to play.
+                preload="auto"
+              />
             ) : (
               <img key={j} src={t.src} alt="" loading="eager" decoding="async" />
             ),

@@ -160,12 +160,19 @@
   inline-size: 100%;
   /* Four tiles: CLIP_TILES per copy, two copies for the seam. */
   block-size: 25%;
+  /* Covers the poster as well as the frames - a square sleeve standing in for
+     a tile cropped from a 9:16 clip, so the swap to the first frame does not
+     jump. */
   object-fit: cover;
   display: block;
   /* A video has no intrinsic size until its metadata lands, and a flex child
      that starts at nothing is one the column will happily leave at nothing. */
   flex: none;
-  /* Nothing here is a picture worth showing before it plays. */
+  /* The last resort only. Every clip tile carries a sleeve as its poster, so
+     what shows before the first frame is album art; this is what is under it
+     on a library with clips but no artwork at all. It used to be what the
+     whole band went to while the clips loaded, which on the light theme was a
+     white panel where the covers had just been. */
   background: var(--glacier-surface-sunken);
 }
 
