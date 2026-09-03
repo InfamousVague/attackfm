@@ -181,7 +181,12 @@ function ImportDoorway() {
         ? 'working out what it is'
         : j.state === 'filing'
           ? 'filing the chapters'
-          : j.state;
+          : // The pile is still being written to. Saying "waiting" alone
+            // reads like the app is stuck; what it is waiting FOR is the
+            // copy, and that is the one thing that explains the delay.
+            j.state === 'waiting'
+            ? 'waiting for the copy to finish'
+            : j.state;
 
   const errored = jobs.filter((j) => j.state === 'error').length;
   const clearErrors = async () => {

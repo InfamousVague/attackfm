@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.71
+
+- A book that is still being copied in now says it is waiting for the copy
+  to finish, and files itself when the copy lands. It used to give up.
+- Books arrive under the author's own name, with the chapters numbered once
+  instead of twice.
+
 ## 0.5.70
 
 - The app tells you when it has found new music for you: a shelf of fresh
