@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.55
+
+- Books moved into the Library, behind a Music/Books toggle at the top of the
+  page (Music by default). The Books icon has left the nav bar, and the bar now
+  reads Discover, Search, Library, then the rest.
+
 ## 0.5.54
 
 - Discover is back, as its own tab beside the Library, and everything the

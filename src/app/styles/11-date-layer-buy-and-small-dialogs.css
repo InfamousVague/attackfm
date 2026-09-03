@@ -153,6 +153,24 @@
    The front door: a greeting over horizontal shelves. The page scrolls as a
    whole (each shelf scrolls sideways inside it), and the bottom padding keeps
    the last shelf clear of the floating player and the tab bar. */
+/* The Library host: a non-scrolling column that holds the Music/Books toggle
+   above the active pane. The pane below (the music .homePage or the books
+   .discoverPage) is the scroller, so the toggle stays put while the shelves
+   move under it. */
+.libraryHost {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The toggle bar: a segmented Music/Books control, sitting at the very top of
+   the Library with the page's own side padding, above the scroller. */
+.libraryToggle {
+  flex: none;
+  padding: var(--glacier-space-3) var(--glacier-space-4) 0;
+}
+
 .homePage {
   flex: 1;
   min-height: 0;

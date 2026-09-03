@@ -146,6 +146,12 @@ export function useNavStack({
         live.current.openSearch();
         return;
       }
+      // Books moved into the Library (a Music/Books toggle), so its old page
+      // route lands on the Library now - the shelf is a tap away there.
+      if (next.startsWith('books:')) {
+        push({ tab: 'library', detail: null });
+        return;
+      }
       // Walking to Profile the normal way always lands on the profile itself.
       if (next === 'profile') live.current.closeProfileRoom();
       push({ tab: next, detail: null });

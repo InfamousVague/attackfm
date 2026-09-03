@@ -41,10 +41,9 @@ export function PrimaryNav({
    *  whatever you were doing, and it gives that page back when it closes. */
 }) {
   const pages = usePluginPages();
-  // The Books shelf holds a bar seat of its own (by request - a nightly
-  // audiobook is a daily destination, the Booth is not). Found by plugin id
-  // so the seat simply vanishes if the plugin is ever switched off.
-  const booksPage = pages.find((pg) => pg.key.split(':')[0] === 'books') ?? null;
+  // Books no longer holds a nav seat: it is a Music/Books toggle at the top of
+  // the Library page now. The books plugin still owns the shelf; the Library
+  // finds and renders it. So the generic plugin-page loop below skips it.
   // Downloads is a plugin surface, not a core one: the tab appears only while an
   // importer is actually running (it provides the downloads bridge). With no
   // importer - a fresh install, or anyone who has not added a plugin source -
@@ -110,14 +109,19 @@ export function PrimaryNav({
   useNavPill(barRef);
   const dests = useMemo<NavDest[]>(() => {
     const list: NavDest[] = [
+      // Discover FIRST, by request: what the machine has for you leads the bar.
+      {
+        key: 'discover',
+        label: 'Discover',
+        icon: <Telescope size={18} />,
+        active: tab === 'discover',
+        go: () => onTab('discover'),
+      },
       /*
-       * Search, back in the bar - by request, fourth time around (a tab, a
-       * pull-down summons, an icon, a bar on the page, and now an icon
-       * again beside the bars) - and FIRST, also by request. Never ACTIVE,
-       * because it is not a place: it opens the drawer over whatever you
-       * were doing and gives the page back when it closes. openSearchPage
-       * is the same global door the on-page bars use, so there is still
-       * exactly one way in.
+       * Search second. Never ACTIVE, because it is not a place: it opens the
+       * drawer over whatever you were doing and gives the page back when it
+       * closes. openSearchPage is the same global door the on-page bars use,
+       * so there is still exactly one way in.
        */
       {
         key: 'search',
@@ -126,6 +130,9 @@ export function PrimaryNav({
         active: false,
         go: () => openSearchPage(),
       },
+      // Then the Library - what you kept and made. Books used to hold a seat
+      // of their own here; they are a Music/Books toggle at the top of the
+      // Library now, so the shelf and the songs share one destination.
       {
         key: 'library',
         label: 'Library',
@@ -133,25 +140,7 @@ export function PrimaryNav({
         active: libraryActive,
         go: () => onTab('library'),
       },
-      // Right after the Library, because the two are the same question asked
-      // twice: what YOU kept, and what the machine has for you.
-      {
-        key: 'discover',
-        label: 'Discover',
-        icon: <Telescope size={18} />,
-        active: tab === 'discover',
-        go: () => onTab('discover'),
-      },
     ];
-    if (booksPage) {
-      list.push({
-        key: booksPage.key,
-        label: booksPage.label,
-        icon: booksPage.icon,
-        active: tab === booksPage.key,
-        go: () => onTab(booksPage.key),
-      });
-    }
     // Friends before Profile: they are the two "people" seats and the one you
     // visit is other people's, not your own.
     list.push({
@@ -168,8 +157,10 @@ export function PrimaryNav({
       active: tab === 'profile',
       go: () => onTab('profile'),
     });
+    // Other plugin pages keep their seats; Books does not, having moved into
+    // the Library's toggle.
     for (const pg of pages) {
-      if (pg.key === booksPage?.key) continue;
+      if (pg.pluginId === 'books') continue;
       list.push({
         key: pg.key,
         label: pg.label,
@@ -189,7 +180,7 @@ export function PrimaryNav({
       });
     }
     return list;
-  }, [pages, booksPage, libraryActive, tab, onTab, showBooth]);
+  }, [pages, libraryActive, tab, onTab, showBooth]);
 
   const seats = useNavSeats(barRef, dests.length);
   /*
@@ -209,30 +200,34 @@ export function PrimaryNav({
 
   const primaryItems = (
     <>
-      {/* Library leads: the music you saved or made. Discover sits beside it
-          as the place the machine keeps everything it has for you - always
-          seated, whether or not anything here can fetch. */}
-      <NavBarItem
-        icon={<LibraryBig size={18} />}
-        label="Library"
-        active={libraryActive}
-        onClick={() => onTab('library')}
-      />
+      {/* Discover, Search, Library - the order the phone bar keeps too, by
+          request: what the machine has for you, the way to look, then what you
+          kept. Search opens the overlay rather than routing anywhere. */}
       <NavBarItem
         icon={<Telescope size={18} />}
         label="Discover"
         active={tab === 'discover'}
         onClick={() => onTab('discover')}
       />
+      <NavBarItem
+        icon={<Search size={18} />}
+        label="Search"
+        active={false}
+        onClick={() => openSearchPage()}
+      />
+      {/* Library: the music you saved or made, and - behind its own Music/Books
+          toggle - your audiobook shelf. Books no longer holds a rail seat. */}
+      <NavBarItem
+        icon={<LibraryBig size={18} />}
+        label="Library"
+        active={libraryActive}
+        onClick={() => onTab('library')}
+      />
       {/* Downloads is NOT a nav destination. On the phone it is an icon on the
           library page (where the music it is fetching ends up); on the desktop
           it is the chip above the player strip, and only while something is
           actually in flight. A queue you visit occasionally does not deserve a
           permanent seat in a bar of four. */}
-      {/* Search's seat lives in `dests` above, beside Library - restored by
-          request after a spell as only the on-page bars. Both doors stay:
-          the bars are where you look when you are already on the page, the
-          seat is for everywhere else. */}
       {/* Developer mode only, on the rail as in the bar. */}
       {showBooth && (
         <NavBarItem
@@ -242,24 +237,27 @@ export function PrimaryNav({
           onClick={() => onTab('booth')}
         />
       )}
-      {/* Plugin pages ride the rail as their own items on the desktop, which
-          has the vertical room; the phone bar folds them into its Plugins
-          button (cascading up out of the bar) instead. */}
       <NavBarItem
         icon={<CircleUserRound size={18} />}
         label="Profile"
         active={tab === 'profile'}
         onClick={() => onTab('profile')}
       />
-      {pages.map((pg) => (
-        <NavBarItem
-          key={pg.key}
-          icon={pg.icon}
-          label={pg.label}
-          active={tab === pg.key}
-          onClick={() => onTab(pg.key)}
-        />
-      ))}
+      {/* Plugin pages ride the rail as their own items on the desktop, which
+          has the vertical room; the phone bar folds them into its Plugins
+          button (cascading up out of the bar) instead. Books is not among them
+          - it lives in the Library's toggle. */}
+      {pages
+        .filter((pg) => pg.pluginId !== 'books')
+        .map((pg) => (
+          <NavBarItem
+            key={pg.key}
+            icon={pg.icon}
+            label={pg.label}
+            active={tab === pg.key}
+            onClick={() => onTab(pg.key)}
+          />
+        ))}
     </>
   );
 

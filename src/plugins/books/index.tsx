@@ -10,8 +10,9 @@ import { BooksPage } from './BooksPage.tsx';
  * separate downloader plugins (Audible today), whose saves
  * land in the library as `kind = 'book'` and appear here automatically.
  *
- * No server floor: a desktop with local book files shelves them too. Its page
- * rides the nav's ⋮ menu alongside the plugin pages.
+ * No server floor: a desktop with local book files shelves them too. Its shelf
+ * is a Music/Books toggle at the top of the Library page - turn the plugin off
+ * and the toggle goes with it.
  */
 export const books: Plugin = {
   id: 'books',
@@ -22,8 +23,9 @@ export const books: Plugin = {
   version: '1.0.0',
   details:
     'The reading side of audiobooks, built in: your shelf of books, however they got into the ' +
-    'library, played back with chapters and your place kept across devices. Turn it off and the ' +
-    'shelf and its Library row simply go away. Getting books IN is a separate job — the Audible ' +
+    'library, played back with chapters and your place kept across devices. It shows as a ' +
+    'Music/Books toggle at the top of the Library; turn it off and that toggle goes away. ' +
+    'Getting books IN is a separate job — the Audible ' +
     'downloader does it for books you own, and anything dropped in the library\u2019s Audiobooks ' +
     'folder is shelved here too.',
   pages: [{ id: 'shelf', label: 'Books', icon: <BookAudio size={18} />, Content: BooksPage }],

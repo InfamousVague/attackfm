@@ -1,8 +1,9 @@
 import { SearchEntry } from '../search/SearchEntry.tsx';
 import { usePrefetchArt } from '../ux/artPrefetch.ts';
 import { artSized } from '../server.ts';
-import { Button, IconButton, ScrollArea } from '@glacier/react';
+import { Button, IconButton, ScrollArea, SegmentedControl } from '@glacier/react';
 import { Download } from '@glacier/icons';
+import { usePluginPages } from '../../plugins/runtime.tsx';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { useCardArt } from '../ux/artLoad.ts';
@@ -226,7 +227,34 @@ export function LibraryView({
     useMemo(() => recentlyAdded.map((t) => artSized(t.artwork, 640)), [recentlyAdded]),
   );
 
+  // Books live here now, behind a toggle at the top of the page rather than a
+  // seat of their own in the nav. The books plugin still owns the shelf - so
+  // this finds its page and renders it, and the toggle only appears while the
+  // plugin is on. Music is the default face; the choice is per session.
+  const pluginPages = usePluginPages();
+  const booksPage = pluginPages.find((pg) => pg.pluginId === 'books') ?? null;
+  const [section, setSection] = useState<'music' | 'books'>('music');
+  const active = booksPage ? section : 'music';
+
   return (
+    <div className="libraryHost">
+      {booksPage && (
+        <div className="libraryToggle">
+          <SegmentedControl
+            aria-label="Library section"
+            fullWidth
+            options={[
+              { value: 'music', label: 'Music' },
+              { value: 'books', label: 'Books' },
+            ]}
+            value={active}
+            onValueChange={(v) => setSection(v === 'books' ? 'books' : 'music')}
+          />
+        </div>
+      )}
+      {active === 'books' && booksPage ? (
+        booksPage.render({ onPlay, onOpenArtist, onOpenPlaylist, onOpenSongs })
+      ) : (
     <div className="homePage libraryPage" ref={setRippleRoot}>
       {/* Search, where people look for it: on the page, not behind an icon. */}
       <SearchEntry />
@@ -331,6 +359,8 @@ export function LibraryView({
             <SongTable onPlay={onPlay} onOpenArtist={onOpenArtist} tracks={tracks} />
           </div>
         </section>
+      )}
+    </div>
       )}
     </div>
   );

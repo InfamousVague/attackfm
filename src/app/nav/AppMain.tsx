@@ -104,7 +104,12 @@ export function AppMain({
   // are - the deny-list that lights it treats an unmatched tab as Library.
   const showBooth = useDeveloperMode();
   const pages = usePluginPages();
-  const activePage = detail ? null : (pages.find((pg) => pg.key === tab) ?? null);
+  // Books is no longer a standalone page - it is a toggle inside the Library -
+  // so a tab that still names it (a session that predates the move) falls
+  // through to the Library rather than rendering the shelf on its own.
+  const activePage = detail
+    ? null
+    : (pages.find((pg) => pg.key === tab && pg.pluginId !== 'books') ?? null);
   // Downloads only exists while an importer runs; without one, a tab left on
   // 'downloads' from a past session falls through to Home rather than a page
   // that should not be here.
