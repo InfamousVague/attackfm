@@ -165,10 +165,10 @@
 }
 
 /*
- * The Music/Books toggle now rides INSIDE the showing pane's hero, over the
- * drifting wall - see `.playlistHead .libraryToggle` in
- * 22-playlists-page-and-add-to.css, which is where the hero it sits on is
- * built. Nothing is needed here: it is no longer a strip in this flex column.
+ * The Music/Books toggle sits UNDER the showing pane's hero, as the first row
+ * of the page's content - see `.libraryToggle` in
+ * 22-playlists-page-and-add-to.css. Nothing is needed here: it is not a strip
+ * in this flex column, it is inside the pane.
  *
  * It was one, and it was pulled into the notch for it: `.appContent:has(
  * .coverWall)` slides the whole content region up by the bar's height so a

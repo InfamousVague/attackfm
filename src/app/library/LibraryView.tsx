@@ -1,4 +1,3 @@
-import { SearchEntry } from '../search/SearchEntry.tsx';
 import { usePrefetchArt } from '../ux/artPrefetch.ts';
 import { artSized } from '../server.ts';
 import { Button, IconButton, ScrollArea, SegmentedControl, Text } from '@glacier/react';
@@ -159,12 +158,9 @@ function AlbumCard({
 function MusicHead({
   tracks,
   onPlay,
-  headerSlot,
 }: {
   tracks: Track[];
   onPlay: (track: Track, context?: Track[]) => void;
-  /** The Music/Books toggle, riding on the wall - see LibraryView. */
-  headerSlot?: ReactNode;
 }) {
   const { session } = useServerSession();
   const clips = useWallClips(session);
@@ -177,7 +173,6 @@ function MusicHead({
   return (
     <header className="playlistHead songPageHead musicHead">
       <CoverWall artworks={wallArt} clips={clips} />
-      {headerSlot}
       <div className="playlistHead__cover" aria-hidden>
         {covers.length >= 4 ? (
           <div className="tileSquircle tileLikedGrid playlistHead__mosaic">
@@ -331,10 +326,17 @@ export function LibraryView({
   /*
    * The toggle, built once and handed to whichever pane is showing.
    *
-   * It rides INSIDE the pane's hero rather than in a strip above it, which is
-   * what lets the wall run up behind it - and means it scrolls away with the
-   * header instead of hanging over the songs. Both panes take it through the
-   * same slot, so there is one control, not two that must be kept in step.
+   * It sits UNDER the pane's hero: the first row of the page's content, where
+   * a section switch reads as a switch rather than as chrome painted on the
+   * artwork. It rode on the hero for a while and that cost it twice - it had
+   * to be lifted out of the header's flow and given a forehead to sit in, and
+   * on the wall it competed with the very covers it was standing on.
+   *
+   * Below the header there is no notch to dodge either: the slide that pulls
+   * a full-bleed hero up behind the title bar (`.appContent:has(.coverWall)`)
+   * takes the header with it and leaves everything after it in ordinary flow,
+   * which is where this now is. Both panes take it through the same slot, so
+   * there is one control and not two to keep in step.
    */
   const toggle = booksPage ? (
     <div className="libraryToggle">
@@ -367,9 +369,11 @@ export function LibraryView({
           .coverWall)` slides the whole scroller up behind the title bar, so the
           wall runs to the top of the screen and under the glass. Anything above
           it here would be dragged under the bar with it. */}
-      <MusicHead tracks={tracks} onPlay={onPlay} headerSlot={toggle} />
-      {/* Search, where people look for it: on the page, not behind an icon. */}
-      <SearchEntry />
+      <MusicHead tracks={tracks} onPlay={onPlay} />
+      {toggle}
+      {/* No search field here: Search is its own page now (and its own seat in
+          the nav), so a second box on this one asked the same question twice
+          and answered it in a smaller room. */}
       {/* The desktop's copy of the action row. Everywhere else these two live
           in the app header (see App.tsx) - but the desktop has no such header,
           it has a title bar and a rail, so the page keeps them. */}

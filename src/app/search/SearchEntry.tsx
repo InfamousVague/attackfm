@@ -1,26 +1,19 @@
-import { SearchField } from '@glacier/react';
 import type { Filter } from './searchModel.tsx';
 
 /**
- * The way into search, sitting on the page it searches.
+ * The door to the search page, as a call rather than a control.
  *
- * Search has been a tab, then a pull-down summons, then a nav icon. Each move
- * was a smaller version of the same question - where does a person look when
- * they want to look something up - and the answer they all missed is that they
- * look at the page they are already on. So the bar lives at the top of Library
- * and Discover: not a place to navigate to, just there, the way it is in every
- * app that gets this right.
+ * Search has been a tab, then a pull-down summons, then a nav icon, then a bar
+ * standing on the pages it searched. It is a SEAT IN THE NAV now, which is
+ * where it started and where it belongs: a page you go to, not a box that
+ * follows you. The bar that used to sit on Library came off with that move -
+ * two doors to one room, one of them a picture of the other's field, and the
+ * page underneath paying for the inch.
  *
- * The field is a picture of a field. It never takes a keystroke - tapping the
- * wrapper hands the whole thing to the search page, where a real one is
- * waiting. That keeps ONE search implementation rather than a small one here
- * and a big one there, and it means a tap cannot raise the keyboard over a
- * page that is about to be replaced.
- *
- * It opens through a listener rather than a prop because Discover is a PLUGIN
- * page - its props are the plugin page contract (onPlay, onOpenArtist), and
- * widening that contract so one button can reach App would make every future
- * plugin page carry a search dependency it does not use.
+ * What is left is the ask itself. It travels as an event rather than a prop
+ * because the callers are a nav bar and a plugin page, and widening the plugin
+ * page contract so one button could reach App would make every future plugin
+ * carry a search dependency it does not use.
  */
 
 const OPEN_EVENT = 'afm-open-search';
@@ -53,31 +46,4 @@ export function onOpenSearchPage(handler: (open: OpenSearch) => void): () => voi
   const fire = (e: Event) => handler((e as CustomEvent<OpenSearch>).detail ?? {});
   window.addEventListener(OPEN_EVENT, fire);
   return () => window.removeEventListener(OPEN_EVENT, fire);
-}
-
-export function SearchEntry({ placeholder, scope }: { placeholder?: string; scope?: Filter }) {
-  const text = placeholder ?? 'Search your library';
-  return (
-    <div
-      className="searchEntry"
-      role="button"
-      tabIndex={0}
-      aria-label={text}
-      onClick={() => openSearchPage({ scope, placeholder: text })}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          openSearchPage({ scope, placeholder: text });
-        }
-      }}
-    >
-      <SearchField
-        className="pageSearch"
-        placeholder={text}
-        tabIndex={-1}
-        aria-hidden="true"
-        readOnly
-      />
-    </div>
-  );
 }

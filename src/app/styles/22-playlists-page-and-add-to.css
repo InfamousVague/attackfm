@@ -336,64 +336,33 @@
 }
 
 /*
- * The Library's Music/Books toggle, riding ON the hero.
+ * The Library's Music/Books toggle, under the hero.
  *
- * The Library is one page with two faces, and the switch between them belongs
- * to the hero rather than to a strip above it: over the wall, under the bar,
- * scrolling away with the header instead of hanging over the songs. The panes
- * hand it to their own header through `headerSlot` (PluginPageProps), so this
- * is the same control in both - Music's Canvas wall and Books' sleeves.
+ * The Library is one page with two faces, and the switch between them is the
+ * first row of the page's content: below the header, above the shelves. It
+ * rode ON the hero for a while, over the drifting wall, and that cost it
+ * twice - it had to be pulled out of the header's flow and given a forehead
+ * to sit in (which in turn made the header taller on every screen), and on
+ * the wall it competed with the very covers it stood on.
  *
- * Out of the flow, because the header bottom-aligns its children: left in it
- * the toggle would sit on the title's baseline beside the sleeve. Absolute puts
- * it in the forehead - the band of wall above the content, which the
- * padding-block-start above has already cleared of the bar - and `--spot-bar`
- * is that same measured bar, declared on the rule above and inherited here.
+ * Ordinary flow here, so nothing above needs to make room: the slide that
+ * pulls a full-bleed hero up behind the title bar takes the HEADER with it
+ * and leaves what follows alone. Both panes hand it over through the same
+ * slot (`headerSlot`, PluginPageProps), so this one rule dresses it on
+ * Music's Canvas wall and on the Books shelf alike.
  */
-.playlistHead:has(.coverWall) .libraryToggle {
-  position: absolute;
-  z-index: 2;
-  inset-block-start: calc(var(--spot-bar) + var(--glacier-space-2));
-  inset-inline: var(--glacier-space-4);
+.libraryToggle {
   display: flex;
   justify-content: center;
-  /* Only the control takes a press; the rest of this box is wall the page
-     underneath should still scroll. */
-  pointer-events: none;
+  padding-inline: var(--glacier-space-4);
+  /* The page is a flex column with a generous gap between shelves. Left to
+     that gap alone the toggle floats halfway between the header and the
+     first shelf, belonging to neither; pulled up, the air above it is a
+     fraction of the air below and it reads as the header's own last line. */
+  margin-block-start: calc(-1 * var(--glacier-space-5));
 }
 
-.playlistHead:has(.coverWall) .libraryToggle > * {
-  inline-size: 100%;
-  max-inline-size: 22rem;
-  pointer-events: auto;
-}
-
-/* Room for the passenger, on top of the 17rem the wall alone asks for: the
-   toggle sits in the forehead and the title is pinned to the foot, so without
-   this the two meet in the middle on a short screen. */
-.playlistHead:has(.coverWall):has(.libraryToggle) {
-  min-block-size: 21rem;
-}
-
-/*
- * No wall to ride (a library too thin for one - CoverWall draws nothing below
- * three sleeves, and a server with no stored Canvases has no clips either). The
- * header is then an ordinary inset block sitting below the bar, so the toggle
- * goes back into the flow as its own full-width line above the title.
- */
-.playlistHead:not(:has(.coverWall)):has(.libraryToggle) {
-  flex-wrap: wrap;
-}
-
-.playlistHead:not(:has(.coverWall)) .libraryToggle {
-  order: -1;
-  flex: 0 0 100%;
-  display: flex;
-  justify-content: center;
-  margin-block-end: var(--glacier-space-2);
-}
-
-.playlistHead:not(:has(.coverWall)) .libraryToggle > * {
+.libraryToggle > * {
   inline-size: 100%;
   max-inline-size: 22rem;
 }
@@ -838,55 +807,6 @@
 .homePage > .pageSearch,
 .discoverPage > .pageSearch {
   max-inline-size: 34rem;
-}
-
-/*
- * The search bar that lives ON Library and Discover.
- *
- * A wrapper rather than a bare field because the field is inert - it is a
- * picture of the search page's own field, and the wrapper takes the tap (see
- * SearchEntry.tsx). The kit's field supplies every visual; this only places
- * it and keeps the same readable measure the pages give their own search.
- */
-.searchEntry {
-  display: block;
-  inline-size: 100%;
-  max-inline-size: 34rem;
-  cursor: pointer;
-}
-
-/* Inert: taps belong to the wrapper, so the field cannot take focus and raise
-   a keyboard over a page that is about to be replaced. */
-.searchEntry > * {
-  pointer-events: none;
-}
-
-.searchEntry input {
-  cursor: pointer;
-}
-
-/*
- * The bar keeps the search page's measure, not the page's section rhythm.
- *
- * No inline margin: both pages already pad themselves by space-4, and adding
- * a margin on top of that indented the bar to twice the gutter of everything
- * below it - the bar sat at 36px while the shelves started at 18.
- *
- * The negative block margin is the deliberate half. These pages put a wide
- * rhythm between their sections (measured: 36px) while the search page sets
- * space-4 under its field (18px). A search bar is a control belonging to the
- * top of the page, not a section peer, so it takes the tighter measure - and
- * matching the two is what stops the layout jumping when the tap swaps one
- * field for the other.
- *
- * Pulling back by exactly space-4 lands it there, because the page rhythm is
- * two of them. Written as the negative of the token rather than a literal so
- * it tracks the scale; if the page rhythm itself is ever retuned this needs
- * re-measuring, which is why the number it targets is written down: 18px.
- */
-.libraryPage > .searchEntry,
-.discoverPage > .searchEntry {
-  margin-block-end: calc(-1 * var(--glacier-space-4));
 }
 
 /* Home's local-search results: the same square cards the shelves use, laid out

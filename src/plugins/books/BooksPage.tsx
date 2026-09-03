@@ -271,7 +271,6 @@ function BooksHeader({
   totalSeconds = 0,
   cover = null,
   onResume,
-  headerSlot,
 }: {
   blurb: string;
   onAdded: () => void;
@@ -286,9 +285,6 @@ function BooksHeader({
   cover?: string | null;
   /** Picks the book up where it was left - the shelf's one honest verb. */
   onResume?: (() => void) | null;
-  /** The host's own chrome, riding on this hero - the Library's Music/Books
-   *  toggle. Sits over the wall and scrolls away with it. */
-  headerSlot?: ReactNode;
 }) {
   /*
    * The same hero every collection wears - Liked songs, All songs, a
@@ -299,7 +295,6 @@ function BooksHeader({
   return (
     <header className="playlistHead songPageHead booksHead">
       <CoverWall artworks={covers} />
-      {headerSlot}
       <div className="playlistHead__cover" aria-hidden>
         <div className="tileSquircle playlistHead__mosaic booksHero">
           {cover ? (
@@ -1276,9 +1271,11 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
   if (shelf.length === 0) {
     return (
       <div ref={pageRef} className="discoverPage booksPage">
-        {/* The toggle rides the EMPTY shelf too: it is the only way back to
-            Music, and a shelf with no books is exactly where you want it. */}
-        <BooksHeader blurb="Your audiobook shelf." onAdded={rescan} headerSlot={headerSlot} />
+        {/* The toggle sits under the EMPTY shelf's header too: it is the only
+            way back to Music, and a shelf with no books is exactly where you
+            want it. */}
+        <BooksHeader blurb="Your audiobook shelf." onAdded={rescan} />
+        {headerSlot}
         <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
         <ImportDoorway />
         <Text tone="muted" size="sm">
@@ -1446,8 +1443,9 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
         totalSeconds={totalSeconds}
         cover={headerCover}
         onResume={resumeBook ? () => readBook(resumeBook) : null}
-        headerSlot={headerSlot}
       />
+      {/* The host's Music/Books toggle, under the hero rather than on it. */}
+      {headerSlot}
       <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
 
       {/* Above the shelves, because "is my book ready yet" is the question you
