@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.81
+
+- Sharing your profile is what the share button at the top of the page does
+  while you are on it, so there is one share on the screen instead of two.
+
 ## 0.5.80
 
 - Moving playback back to the device you started on works. It could hand the
