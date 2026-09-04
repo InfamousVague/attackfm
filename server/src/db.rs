@@ -4082,10 +4082,30 @@ impl Db {
 
     /// Live tracks the user has NEVER logged a play for, newest additions
     /// first - the pool "fresh finds" and discovery mixes draw from.
+    /*
+     * Songs this listener has never played - and only songs, and only ones
+     * that are theirs to be shown.
+     *
+     * Both callers are Home shelves: the "fresh finds" row, and the candidate
+     * list handed to the AI that writes the mixes. Neither wants an audiobook
+     * chapter, and neither should see somebody else's unadopted audition - a
+     * collector pull belongs to the listener who pulled it until a listen or a
+     * heart adopts it, which is exactly the rule `tracks_since` already states
+     * and enforces a few hundred lines up. This was the one door that did not
+     * ask, so another member's audition and every chapter of every book were
+     * eligible material for your Home mix.
+     *
+     * Found by the audit in PR #3, which was right about it; the predicate is
+     * main's own, lifted from `tracks_since` rather than reinvented.
+     */
     pub fn unplayed(&self, user_id: i64, limit: i64) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT t.id FROM tracks t WHERE t.deleted = 0
+               AND COALESCE(t.kind, 'music') <> 'book'
+               AND (t.curator_user_id IS NULL
+                    OR COALESCE(t.curator_promoted, 0) = 1
+                    OR t.curator_user_id = ?1)
                AND NOT EXISTS (SELECT 1 FROM plays p WHERE p.user_id = ?1 AND p.track_id = t.id)
              ORDER BY t.added_at DESC LIMIT ?2",
         ) else {
@@ -10549,6 +10569,64 @@ mod audition_visibility {
             "another listener must NEVER be sent it: {seen_by_bob:?}"
         );
         assert!(seen_by_bob.contains(&"Shared".to_string()), "the ordinary library is unaffected");
+    }
+
+    /// The Home shelves ask `unplayed` for material, and it used to ask only
+    /// "never played, newest first" - so another listener's unadopted audition
+    /// and every chapter of every audiobook were eligible to be dealt to you,
+    /// and handed to the AI that writes your mixes. The same rule
+    /// `tracks_since` enforces above applies here.
+    #[test]
+    fn unplayed_hides_books_and_another_listeners_audition() {
+        let dir = std::env::temp_dir().join(format!("afm-unplayed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open(&dir.join("t.sqlite")).unwrap();
+        let alice = db.create_user("alice", "x", true).unwrap();
+        let bob = db.create_user("bob", "x", false).unwrap();
+
+        db.upsert_track(&track("song.flac", "Ordinary Song"), 1).unwrap();
+        db.upsert_track(&track("chapter.m4b", "Chapter One"), 2).unwrap();
+        db.upsert_track(&track("hers.flac", "Alices Audition"), 3).unwrap();
+        db.upsert_track(&track("adopted.flac", "Adopted Pull"), 4).unwrap();
+
+        let book = db.track_id_by_path("chapter.m4b").unwrap();
+        let hers = db.track_id_by_path("hers.flac").unwrap();
+        let adopted = db.track_id_by_path("adopted.flac").unwrap();
+        {
+            let c = db.lock();
+            c.execute("UPDATE tracks SET kind = 'book' WHERE id = ?1", params![book]).unwrap();
+            c.execute(
+                "UPDATE tracks SET curator_user_id = ?1, curator_promoted = 0 WHERE id = ?2",
+                params![alice, hers],
+            )
+            .unwrap();
+            // Bought for alice but already adopted: it is ordinary library now.
+            c.execute(
+                "UPDATE tracks SET curator_user_id = ?1, curator_promoted = 1 WHERE id = ?2",
+                params![alice, adopted],
+            )
+            .unwrap();
+        }
+
+        let titles = |uid: i64| -> Vec<String> {
+            db.unplayed(uid, 100)
+                .into_iter()
+                .filter_map(|id| db.track(id).map(|t| t.title))
+                .collect()
+        };
+
+        let bobs = titles(bob);
+        assert!(bobs.contains(&"Ordinary Song".to_string()), "the plain library still comes through");
+        assert!(bobs.contains(&"Adopted Pull".to_string()), "an adopted pull is ordinary library");
+        assert!(!bobs.contains(&"Chapter One".to_string()), "a book is not mix material: {bobs:?}");
+        assert!(
+            !bobs.contains(&"Alices Audition".to_string()),
+            "another listener's audition must never be dealt: {bobs:?}"
+        );
+
+        // The buyer still sees her own, exactly as she does everywhere else.
+        assert!(titles(alice).contains(&"Alices Audition".to_string()), "the buyer keeps hers");
     }
 
     #[test]
