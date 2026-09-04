@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.86
+
+- A song you kept that has already downloaded no longer sits in Liked Songs
+  saying it is waiting its turn. It was landing as an audition, which the
+  waiting band was not looking at — so it never settled, and never made it
+  into Liked at all.
+
 ## 0.5.85
 
 - The DJ has a new voice: Laura, bright and quick. Pick a different one under
