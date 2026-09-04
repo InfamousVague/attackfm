@@ -131,11 +131,27 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
-            <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
-            <!-- HAND-EDITED: no autoVerify on open.spotify.com. Spotify's
-                 assetlinks will never name this app, and below Android 12 one
-                 unverifiable host fails verification for every host here -
-                 registry.attack.fm included. Re-apply if the plugin rewrites. -->
+            <!-- SPOTIFY, HAND-WRITTEN AND DELIBERATELY OUTSIDE THE GENERATED
+                 BLOCK BELOW.
+
+                 No autoVerify, and it cannot be allowed to acquire one:
+                 Spotify's assetlinks.json will never name this app, so the
+                 host can never verify. On Android 11 and below the verifier
+                 is all-or-nothing across the app - one unverifiable host and
+                 NOTHING is auto-approved, attack.fm and registry.attack.fm
+                 included. That is the whole point of the app-link work, lost
+                 to one attribute.
+
+                 It used to live in tauri.conf.json's deep-link list with the
+                 attribute stripped here by hand, and a comment asking the next
+                 person to re-apply it. The 0.5.96 build proved that does not
+                 hold: adding a host to that list made the plugin rewrite the
+                 whole region and hand autoVerify straight back to Spotify.
+                 Generated config cannot express "this host, but unverified",
+                 so this filter is not generated. Leave it here.
+
+                 Without autoVerify the app still appears in the "open with"
+                 chooser for a Spotify link, which is all this was ever for. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <!-- ChromeOS ARC++ uses a different action for deep links -->
@@ -145,12 +161,27 @@
                 <data android:scheme="https" />
                 <data android:scheme="http" />
                 <data android:host="open.spotify.com" />
-                
-                
                 <data android:pathPrefix="/track" />
                 <data android:pathPrefix="/album" />
                 <data android:pathPrefix="/artist" />
                 <data android:pathPrefix="/playlist" />
+            </intent-filter>
+            <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
+            <intent-filter android:autoVerify="true" >
+                <action android:name="android.intent.action.VIEW" />
+                <!-- ChromeOS ARC++ uses a different action for deep links -->
+                <action android:name="org.chromium.arc.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="attack.fm" />
+                
+                
+                <data android:pathPrefix="/i" />
+                <data android:pathPrefix="/p" />
+                <data android:pathPrefix="/j" />
+                <data android:pathPrefix="/u" />
                 
             </intent-filter>
             <intent-filter android:autoVerify="true" >
@@ -161,15 +192,6 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" />
                 <data android:scheme="http" />
-                <!-- Both hosts in ONE filter: Android crosses hosts with
-                     pathPrefixes, so this matches /i /p /j /u on either.
-                     attack.fm is what links are MINTED with now
-                     (AFM_REGISTRY_PUBLIC on the registry service);
-                     registry.attack.fm stays forever because every link
-                     already sent to somebody points at it. Generated from
-                     tauri.conf.json plugins.deep-link.mobile - edited here
-                     too so the tracked file matches without a regen. -->
-                <data android:host="attack.fm" />
                 <data android:host="registry.attack.fm" />
                 
                 

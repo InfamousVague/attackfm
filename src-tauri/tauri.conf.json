@@ -49,15 +49,6 @@
       },
       "mobile": [
         {
-          "host": "open.spotify.com",
-          "pathPrefix": [
-            "/track",
-            "/album",
-            "/artist",
-            "/playlist"
-          ]
-        },
-        {
           "host": "attack.fm",
           "pathPrefix": [
             "/i",
