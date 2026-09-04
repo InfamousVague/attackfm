@@ -51,6 +51,7 @@ mod curator;
 mod fx;
 mod db;
 mod discover;
+mod dlna;
 mod discovery;
 mod mixes;
 mod mood;
@@ -178,6 +179,13 @@ pub struct AppState {
     /// AttackFM Connect: device registry + the authoritative playback session,
     /// so any device can see and drive what's playing on any other.
     pub connect: Arc<connect::ConnectState>,
+    /// Speakers on this hub's own network (UPnP/DLNA), and the cache of the
+    /// last look around. Empty and harmless on a hub that is not on a LAN.
+    pub dlna: Arc<dlna::DlnaState>,
+    /// The port this hub is actually listening on. Needed to build a URL a
+    /// SPEAKER can fetch: it has to be this machine's LAN address and real
+    /// port, not the public name a phone came in by.
+    pub port: u16,
     /// Live listening rooms: friends following one host's clock.
     pub jams: Arc<jams::JamState>,
     /// The curator: the always-running process that learns what this listener
@@ -442,6 +450,8 @@ async fn main() {
         stations: stations::StationState::new(),
         discover: discover::DiscoverState::new(),
         connect: connect::ConnectState::new(),
+        dlna: dlna::DlnaState::new(),
+        port,
         jams: jams::JamState::new(),
         curator: curator::CuratorState::new(),
         audiobooks: Arc::new(audiobooks::BookQueue::default()),
@@ -822,6 +832,16 @@ async fn main() {
         .route("/api/radio", get(radio::radio))
         .route("/api/rewind", get(rewind::rewind))
         .route("/api/connect", get(connect::connect))
+        // Speakers on the hub's own network. Literal segments before the
+        // parameterised ones, the same way the jam invite routes are ordered.
+        .route("/api/speakers", get(dlna::list))
+        .route("/api/speakers/rescan", post(dlna::rescan))
+        .route("/api/speakers/add", post(dlna::add))
+        .route("/api/speakers/{id}/play", post(dlna::play))
+        .route("/api/speakers/{id}/transport", post(dlna::transport))
+        .route("/api/speakers/{id}/seek", post(dlna::seek))
+        .route("/api/speakers/{id}/volume", post(dlna::volume))
+        .route("/api/speakers/{id}/state", get(dlna::speaker_state))
         .route("/api/users", get(api::list_users))
         .route("/api/users/{id}", delete(api::delete_user))
         .route("/api/users/{id}/revoke", post(api::revoke_streams))
