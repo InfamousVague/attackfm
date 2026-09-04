@@ -226,7 +226,14 @@ export function useNpChrome({
       // would not come down.
       const kept = await keepCanvas(url);
       if (!controller.signal.aborted) setNpCanvas(kept ?? url);
-    });
+    })
+      /* Unawaited, and it runs again on every track change while the sheet is
+         open - so anything that throws in there (the lookup, the cache, the
+         download) is an unhandled rejection once per song. A clip is
+         decoration; not having one is the ordinary case. */
+      .catch(() => {
+        if (!controller.signal.aborted) setNpCanvas(null);
+      });
     }
     return () => controller.abort();
   }, [npOpen, track?.title, track?.artist, track?.kind, playSession]);

@@ -189,8 +189,26 @@ export function subscribeDiag(cb: () => void): () => void {
  * where it was going and what class of failure it was - and names the usual
  * causes rather than pretending to have diagnosed one.
  */
+/**
+ * Where a failed fetch was going, stamped on the error by the wrapper below.
+ *
+ * A `TypeError: Failed to fetch` carries nothing: not the URL, not the host,
+ * not the method. Every caller that catches one knows where it was going and
+ * says so; the ones that do NOT catch produce a line that names no host at
+ * all, which is the least useful thing this log can hold - four of them
+ * collapse into one `(×4)` even when they came from four different servers.
+ */
+const WENT_TO = Symbol.for('afm.fetch.url');
+
+function stampedUrl(err: unknown): string | undefined {
+  if (typeof err !== 'object' || err === null) return undefined;
+  const at = (err as Record<symbol, unknown>)[WENT_TO];
+  return typeof at === 'string' ? at : undefined;
+}
+
 export function describeFailure(err: unknown, url?: string): string {
-  const where = url ? ` → ${redactUrl(url)}` : '';
+  const at = url ?? stampedUrl(err);
+  const where = at ? ` → ${redactUrl(at)}` : '';
   if (err instanceof DOMException && err.name === 'AbortError') {
     return `timed out or was cancelled${where}`;
   }
@@ -228,6 +246,52 @@ export function diagReport(context: Record<string, string | number | boolean | n
  * Catch what never reached a `try` - a render that threw, a promise nobody
  * awaited. Installed once from the entry module.
  */
+/**
+ * Stamp every failed fetch with where it was going.
+ *
+ * `request()` records its own line and knows its URL, so this changes nothing
+ * for anything that goes through it. What it fixes is the OTHER kind: a raw
+ * fetch whose rejection nobody caught, which reaches the log through
+ * `unhandledrejection` as a bare "could not connect" naming no host - so a
+ * report can say the app failed to reach something without saying what, and
+ * several different failures collapse into one line because their text is
+ * identical.
+ *
+ * Deliberately not a second log line: the error is stamped and rethrown, and
+ * `describeFailure` reads the stamp. Whoever ends up reporting the failure -
+ * a caller's catch, or the global handler - gets the destination, and there is
+ * still exactly one entry per failure.
+ *
+ * A symbol key, non-enumerable, so nothing that serialises or compares errors
+ * sees a new property. The wrapper awaits and rethrows the SAME error, so
+ * behaviour is unchanged for every caller including the ones that inspect it.
+ */
+function installFetchStamp(): void {
+  const native = window.fetch;
+  if (typeof native !== 'function') return;
+  window.fetch = async function afmFetch(input: RequestInfo | URL, init?: RequestInit) {
+    try {
+      return await native.call(window, input, init);
+    } catch (err) {
+      try {
+        const at =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : (input as Request).url;
+        if (at && typeof err === 'object' && err !== null) {
+          Object.defineProperty(err, WENT_TO, { value: at, enumerable: false, configurable: true });
+        }
+      } catch {
+        // A frozen error, or an input shape with no url. The line simply
+        // reads as it did before this existed.
+      }
+      throw err;
+    }
+  };
+}
+
 export function installGlobalDiag(): void {
   if (typeof window === 'undefined') return;
   /*
@@ -253,6 +317,7 @@ export function installGlobalDiag(): void {
   window.addEventListener('unhandledrejection', (e) => {
     recordDiag('promise', describeFailure(e.reason));
   });
+  installFetchStamp();
   // The debounced write's safety net. `pagehide` and a hidden `visibilitychange`
   // are the only events a mobile webview reliably gets before it is frozen or
   // killed - `beforeunload` is not delivered on iOS.

@@ -294,15 +294,32 @@ export function fetchLyrics(track: Track): Promise<TrackLyrics> {
    * reload.
    */
   if (track.kind === 'book') {
-    return fetchTranscript(track).then((lines) => (lines ? { synced: lines, plain: null } : NONE));
+    return fetchTranscript(track)
+      .then((lines) => (lines ? { synced: lines, plain: null } : NONE))
+      .catch(() => NONE);
   }
   const held = cache.get(track.path);
   if (held) return held;
-  const looked = lookup(track).then(({ lyrics, settled }) => {
-    // An unsettled answer is served but not kept: the next open asks again.
-    if (!settled) cache.delete(track.path);
-    return lyrics;
-  });
+  const looked = lookup(track)
+    .then(({ lyrics, settled }) => {
+      // An unsettled answer is served but not kept: the next open asks again.
+      if (!settled) cache.delete(track.path);
+      return lyrics;
+    })
+    /*
+     * "Never rejects" is a PROMISE this function makes, and it was only ever
+     * true by inspection - `lookup` guards the lyrics provider and the hub's
+     * aligner, so nothing was expected to escape. Four surfaces call this on
+     * every track change (the panel, the backdrop, the sheet and the Player's
+     * has-lyrics test) and NONE of them catches, because the contract said
+     * they did not have to. One escape is therefore four unhandled rejections
+     * per song. Made true here rather than asked of four callers: the
+     * contract is this function's to keep.
+     */
+    .catch(() => {
+      cache.delete(track.path);
+      return NONE;
+    });
   cache.set(track.path, looked);
   return looked;
 }

@@ -2538,7 +2538,11 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   /** Starts the incoming deck the moment its file is ready, and the blend. */
   const beginCrossfade = (next: Track, token: number) => {
     void (async () => {
-      const url = await loadAudioUrl(next.path);
+      // Guarded for the reason the prefetch above is: this runs unawaited at
+      // the end of every song, and a blend that cannot resolve its file
+      // should let the ordinary advance take over silently rather than
+      // becoming an unhandled rejection.
+      const url = await loadAudioUrl(next.path).catch(() => null);
       if (token !== xfadeToken.current || !url) return;
       const idle = idleAudio();
       const active = activeAudio();
@@ -2649,6 +2653,15 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         if (xfadeRef.current || pendingPlay.current) return;
         prefetched.current = { forPath: current.path, next, url };
         setIdleSrc(url);
+      } catch {
+        /*
+         * A `finally` is not a `catch`, and this had only the former: the
+         * block released the busy flag and then RETHREW into a promise
+         * nobody awaits, which is an unhandled rejection on every warm that
+         * fails. Warming the next track is a courtesy - the song plays
+         * whether or not it happened - so a failure is nothing to report and
+         * nothing to say.
+         */
       } finally {
         prefetchBusy.current = false;
       }
