@@ -15,6 +15,32 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.98
+
+- The curator has been rebuilt around what you actually tell it. Hearts and
+  keeps are its strongest signal now; a song you hearted can never read as
+  disliked because you skipped it once. Nothing under ten seconds counts
+  either way. Turning a song up, rewinding to hear a part again, and coming
+  back to it within the week all count for it.
+- New songs are judged by whether they connect to you - how they sound, the
+  scene they come from, and the era they are from - and never by how famous
+  they are. Your Daily Mixes, daylist and mood mixes will reshuffle once as
+  they are rebuilt on the new model; the shelves and their names are the same.
+- Made for you draws only from what you may hear. On a shared server another
+  member's not-yet-adopted finds and audiobook chapters stay out of your mixes,
+  and adopting a find is your own gesture - a housemate playing it does not
+  do it for you.
+- Music Date: the default deck is all taste now. Charts and fresh releases
+  are their own decks - two new chips beside New and Tiny - and only songs
+  that fit you make it onto them. A pass tells the collector what to stop
+  looking for; two passes on the same artist and it stops bringing them.
+- The DJ and the radio share the curator's model, and their explore picks
+  come from inside your scene rather than the whole box. Both know the hour:
+  late nights lean slower and softer, mornings lift. Station chips play what
+  they say - a genre station stays in its genre.
+- Thumbs in the DJ and on the radio: a thumb down is remembered everywhere
+  songs are dealt.
+
 ## 0.5.97
 
 - The curator now learns more from how you listen: where in a song you moved
