@@ -841,6 +841,7 @@ async fn main() {
         )
         .route("/api/discoveries", get(discovery::feed))
         .route("/api/new-music", get(discovery::new_music))
+        .route("/api/trending", get(trending::shelves))
         .route("/api/discoveries/dismiss", post(discovery::dismiss))
         .route("/api/dj/react", post(reactions::react))
         .route("/api/related", get(discovery::related))
