@@ -12,6 +12,14 @@ Environment=AFM_REGISTRY_BIND=127.0.0.1
 # registry sits clear of both at 8795 (Caddy fronts registry.attack.fm to it).
 Environment=AFM_REGISTRY_PORT=8795
 Environment=AFM_REGISTRY_DATA=/opt/attackfm/registry/registry.sqlite3
+# The hostname links are MINTED with. Every share URL the registry hands back -
+# an invite, a playlist, a jam, a profile - is built from this (public_base()),
+# and so are the profile-image URLs that ride in friend payloads. It is
+# attack.fm rather than registry.attack.fm because a link you send somebody
+# should be the name of the thing; Caddy proxies /i /p /j /u /v1 and the two
+# app-link files there to this same process. registry.attack.fm keeps working
+# and always will - every link already sent to anybody points at it.
+Environment=AFM_REGISTRY_PUBLIC=https://attack.fm
 ExecStart=/opt/attackfm/bin/attackfm-registry
 Restart=on-failure
 # The registry catches SIGTERM via ctrl_c handling; give it a moment to drain.

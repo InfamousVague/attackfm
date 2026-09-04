@@ -118,7 +118,13 @@ targets:
         # entitlement like CarPlay. The registry serves the matching
         # apple-app-site-association. Spotify's host is deliberately absent:
         # its AASA will never list this app.
+        # Two hosts. attack.fm is what the registry MINTS links with now
+        # (AFM_REGISTRY_PUBLIC); registry.attack.fm stays for good, because
+        # every link already sent to somebody points at it. Both serve the
+        # same apple-app-site-association - attack.fm proxies it to the
+        # registry, so there is one copy to keep right.
         com.apple.developer.associated-domains:
+          - applinks:attack.fm
           - applinks:registry.attack.fm
     scheme:
       environmentVariables:

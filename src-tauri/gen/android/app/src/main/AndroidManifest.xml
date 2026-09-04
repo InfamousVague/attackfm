@@ -161,6 +161,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" />
                 <data android:scheme="http" />
+                <!-- Both hosts in ONE filter: Android crosses hosts with
+                     pathPrefixes, so this matches /i /p /j /u on either.
+                     attack.fm is what links are MINTED with now
+                     (AFM_REGISTRY_PUBLIC on the registry service);
+                     registry.attack.fm stays forever because every link
+                     already sent to somebody points at it. Generated from
+                     tauri.conf.json plugins.deep-link.mobile - edited here
+                     too so the tracked file matches without a regen. -->
+                <data android:host="attack.fm" />
                 <data android:host="registry.attack.fm" />
                 
                 

@@ -21,6 +21,7 @@
 	<true/>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
+		<string>applinks:attack.fm</string>
 		<string>applinks:registry.attack.fm</string>
 	</array>
 	<key>com.apple.security.application-groups</key>

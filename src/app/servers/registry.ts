@@ -13,6 +13,28 @@ const REGISTRY_URL =
   (import.meta.env?.VITE_REGISTRY_URL as string | undefined)?.replace(/\/$/, '') ||
   'https://registry.attack.fm';
 
+/**
+ * Where a link you SEND somebody points, which is not where the API lives.
+ *
+ * Same process, same box - Caddy fronts /i /p /j /u and /v1 on both names - but
+ * a link is a thing a person reads before they tap it, and `registry.` is an
+ * implementation detail leaking into the one string the app asks people to
+ * pass around. So the API keeps the subdomain and links wear the bare name.
+ *
+ * Deliberately a SEPARATE constant rather than repointing REGISTRY_URL. That
+ * one is also the base for /v1 calls and for the OTA bundle the ship script
+ * publishes and reads back; moving it would move all of that at once for no
+ * gain. Two constants, one job each.
+ *
+ * The registry mints some of these itself (playlists and jams are coded
+ * server-side, and their URL comes back in the response) - it has the same
+ * split, as AFM_REGISTRY_PUBLIC on the service unit. Both halves have to say
+ * the same thing or a playlist link and an invite link disagree.
+ */
+const SHARE_URL =
+  (import.meta.env?.VITE_SHARE_URL as string | undefined)?.replace(/\/$/, '') ||
+  'https://attack.fm';
+
 /** A signed-in registry identity: the token servers trust, and who it is. */
 export interface RegistryAccount {
   id: number;
@@ -279,7 +301,7 @@ export async function fetchPlaylistShare(code: string): Promise<SharedPlaylist> 
 }
 
 export function playlistShareLink(code: string): string {
-  return `${REGISTRY_URL}/p/${code}`;
+  return `${SHARE_URL}/p/${code}`;
 }
 
 // --- jam links ---------------------------------------------------------------
@@ -310,7 +332,7 @@ export async function fetchJamShare(code: string): Promise<JamShare> {
 }
 
 export function jamShareLink(code: string): string {
-  return `${REGISTRY_URL}/j/${code}`;
+  return `${SHARE_URL}/j/${code}`;
 }
 
 // --- profile links -----------------------------------------------------------
@@ -330,7 +352,7 @@ export async function fetchProfileCard(handle: string): Promise<ProfileCard> {
 /** Your profile as a link. The handle IS the code - there is nothing to mint,
  *  and a link that stays the same forever is one you can print on something. */
 export function profileLink(handle: string): string {
-  return `${REGISTRY_URL}/u/${encodeURIComponent(handle)}`;
+  return `${SHARE_URL}/u/${encodeURIComponent(handle)}`;
 }
 
 // --- the listening profile, global ------------------------------------------
@@ -459,21 +481,26 @@ export async function previewInvite(code: string): Promise<InvitePreview> {
  *
  * What a tap on it actually does, and why it is not simpler:
  *
- * `GET /i/{code}` on the registry serves a landing page (invite_landing in
- * crates/registry) - the server's name, who sent it, an "Open in AttackFM"
- * button pointing at `attackfm://i/{code}`, and the code in plain text to
- * paste. With the app installed the OS opens the https link in the app
- * DIRECTLY - Android verifies it against the registry's
- * /.well-known/assetlinks.json, iOS against its apple-app-site-association,
- * both served by the registry binary - and the page is only what a browser
- * without the app sees. (An earlier note here called Associated Domains a
+ * `GET /i/{code}` serves a landing page (invite_landing in crates/registry) -
+ * the server's name, who sent it, an "Open in AttackFM" button pointing at
+ * `attackfm://i/{code}`, and the code in plain text to paste. With the app
+ * installed the OS opens the https link in the app DIRECTLY - Android verifies
+ * it against /.well-known/assetlinks.json, iOS against
+ * apple-app-site-association, both served by the registry binary and proxied
+ * onto attack.fm by Caddy so ONE copy answers for both hostnames - and the
+ * page is only what a browser without the app sees.
+ *
+ * Both hosts are claimed by the apps, so an old build that only knows
+ * registry.attack.fm still opens those links natively; an attack.fm link on
+ * that build lands on the page instead, where the "Open in AttackFM" button
+ * is one tap through the custom scheme. Nothing is stranded either way. (An earlier note here called Associated Domains a
  * provisioning trap like CarPlay; it is not - automatic signing enables it.)
  */
 export function inviteLink(code: string): string {
-  return `${REGISTRY_URL}/i/${code}`;
+  return `${SHARE_URL}/i/${code}`;
 }
 
-export { REGISTRY_URL };
+export { REGISTRY_URL, SHARE_URL };
 
 // --- the servers this account can reach ------------------------------------
 

@@ -30,3 +30,69 @@ music.example.com {
 		max_size 2GB
 	}
 }
+
+
+# ---------------------------------------------------------------------------
+# attack.fm - the marketing site, and the links people send each other.
+#
+# The registry is ONE process on this box (127.0.0.1:8795, see
+# attackfm-registry.service). It answers on registry.attack.fm and, with this
+# block, on attack.fm too - same process, two names. Nothing is duplicated and
+# nothing is moved; a name was added.
+#
+# Why: a share link is the one string this app asks a person to pass to another
+# person, and "registry." is an implementation detail. Links are now MINTED as
+# attack.fm/i/CODE (AFM_REGISTRY_PUBLIC on the service unit, SHARE_URL in
+# src/app/servers/registry.ts). registry.attack.fm keeps answering forever -
+# every link already sent to anybody points at it.
+#
+# `handle` blocks, not bare matchers: they are mutually exclusive and run in
+# written order, so the proxy cannot be reordered behind file_server by Caddy's
+# own directive sorting. Get that wrong and attack.fm/i/CODE returns the
+# marketing site's 404 instead of an invite.
+# NOT `attack.fm, www.attack.fm`. www is handled by Gandi's webredir at
+# 217.70.184.50, not this box - a site block for it makes Caddy retry an ACME
+# challenge forever against an IP it does not control. There is a commented-out
+# block next to this one on the box saying exactly that; heed it.
+attack.fm {
+	# Scoped to the static half on purpose. `encode` drops Content-Length on
+	# what it touches, and the proxied half serves profile images (already
+	# compressed - gzipping them is pure cost) plus JSON the app reads.
+	# The music server's own block has the long-form version of this warning.
+	# The four link shapes. /p/* is not optional even if you only care about
+	# invites: EVERY landing page loads its stylesheet and script from
+	# /p/_/landing.css and /p/_/landing.js, so without /p the invite page
+	# renders unstyled.
+	#
+	# /v1/* rides along because the registry builds profile-image URLs from
+	# the same public base (image_url() in crates/registry) - an avatar in a
+	# friends list would 404 on attack.fm without it. It is the same API the
+	# subdomain already exposes, CORS is allow_origin(Any), so this exposes
+	# nothing new.
+	@links path /i/* /p/* /j/* /u/* /v1/*
+	handle @links {
+		reverse_proxy 127.0.0.1:8795
+	}
+
+	# The two files the app stores fetch to verify that this app may open
+	# these links. Proxied rather than copied into the static tree for two
+	# reasons: one source of truth, and the registry generates assetlinks
+	# from AFM_ANDROID_CERT_SHA256 rather than holding it as a literal.
+	# A static copy would also be deleted by the next `npm run deploy:site`
+	# (rsync --delete), silently, months later.
+	# Two EXACT paths, never /.well-known/* - that prefix is also where ACME
+	# puts its HTTP challenges, and proxying it away breaks certificate
+	# renewal on a domain that renews silently until the day it does not.
+	@applinks path /.well-known/assetlinks.json /.well-known/apple-app-site-association
+	handle @applinks {
+		reverse_proxy 127.0.0.1:8795
+	}
+
+	# Everything else is the static site: the marketing pages, /listen (the
+	# web app), /art, /deadcatbounce.
+	handle {
+		encode zstd gzip
+		root * /opt/attackfm-site
+		file_server
+	}
+}

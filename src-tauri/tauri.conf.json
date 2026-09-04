@@ -58,6 +58,15 @@
           ]
         },
         {
+          "host": "attack.fm",
+          "pathPrefix": [
+            "/i",
+            "/p",
+            "/j",
+            "/u"
+          ]
+        },
+        {
           "host": "registry.attack.fm",
           "pathPrefix": [
             "/i",

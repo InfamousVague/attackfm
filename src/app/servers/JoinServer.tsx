@@ -110,7 +110,7 @@ export function JoinServer() {
       <Field label="Or paste an invite link">
         <Input
           size="sm"
-          placeholder="https://registry.attack.fm/i/ABC123"
+          placeholder="https://attack.fm/i/ABC123"
           leadingIcon={<Link2 size={14} />}
           aria-label="Invite link"
           onChange={(e) => {
