@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.94
+
+- The buttons on your banner — reposition, change, remove — take a tap again.
+  The soft fade drawn over the band was sitting on top of them and catching
+  every press, which only started biting once you actually had a banner to
+  set.
+
 ## 0.5.93
 
 - Choosing a profile picture or a banner now asks which part of it you meant:
