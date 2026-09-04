@@ -52,10 +52,24 @@ const WEIGHT_CONFIDENCE: f32 = 120.0;
 /// whole ranking function does.
 const TAG_CONFIDENCE: f32 = 25.0;
 
-/// A skip inside this many milliseconds is a rejection of the CHOICE, not of
-/// the song - the listener did not hear enough to judge it, they heard enough
-/// to know they did not want it now. Weighted hardest for that reason.
+/// Under this, a sitting is a mis-tap, the wrong song in a queue, the moment
+/// before "not this one" - and it says NOTHING, either way. By the listener's
+/// own rule. The client stops writing these at ten seconds (listens.ts
+/// MIN_MS); this is the same line held on the server, because a Subsonic
+/// scrobble or an older client can still deliver one, and until now a
+/// five-second mis-tap on a song you love was the STRONGEST negative verdict
+/// in the whole system - minus one, times the machine-surface confidence -
+/// and taught the model, hard, that you hated it.
+const MISTAP_MS: i64 = 10_000;
+
+/// A bail between the mis-tap line and here is a rejection of the CHOICE,
+/// not of the song - they heard enough to know they did not want it now.
+/// Weighted hardest for that reason.
 const INSTANT_SKIP_MS: i64 = 15_000;
+
+/// A song they came back to this week gets its positive verdicts scaled up.
+/// Coming back, unprompted, is the truest "I like this" after a heart.
+const REPEAT_BONUS: f32 = 1.25;
 
 /// The house ranking, and the value every per-user weight is pulled toward.
 /// These are the old hardcoded curator weights (0.45 lyric / 0.30 tempo /
@@ -121,7 +135,7 @@ impl Weights {
 /// This is deliberately a plain struct fed from a query rather than something
 /// this module fetches itself: the same shape can be built from `listen_events`
 /// for the real model and by hand in a test, and neither path can drift.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Verdict {
     pub track_id: i64,
     /// When it happened, unix seconds.
@@ -137,6 +151,32 @@ pub struct Verdict {
     pub context: String,
     /// Whether the listener has hearted this track.
     pub hearted: bool,
+    /*
+     * The shape of the sitting, from the ledger's newer columns. Every one is
+     * optional in the sense that an event written before they existed - or by
+     * an older client - carries the defaults, and every rule below degrades to
+     * the old behaviour when they are absent.
+     */
+    /// Deck position when the sitting closed, ms: WHERE they bailed. When
+    /// known, this outranks `ms_listened` as the measure of how far they got,
+    /// because a seek makes the two differ and the position is the truth.
+    pub ended_at_ms: Option<i64>,
+    /// A hand on the dial, mid-song. Nobody turns up a song they are about
+    /// to skip.
+    pub volume_ups: i64,
+    /// Rewound to hear a part again - the most deliberate approval a listener
+    /// gives short of a heart.
+    pub seek_backs: i64,
+    /// "iPhone/local", "macOS/speaker" - platform and the route the sound
+    /// took.
+    pub device: String,
+    /// The listener put this track on one of their own playlists. Explicit
+    /// approval, of the same family as a heart.
+    pub playlisted: bool,
+    /// Sittings on this same track in the seven days BEFORE this one, not
+    /// counting bails. Coming back is the truest "I like this" after a heart,
+    /// and one listen says little where three say a lot.
+    pub returns: i64,
 }
 
 impl Verdict {
@@ -147,8 +187,14 @@ impl Verdict {
     /// seconds of a ninety-second interlude the same as thirty seconds of an
     /// hour-long mix, and calls both of them the same kind of success.
     fn heard_fraction(&self) -> f32 {
-        match self.duration_ms {
-            Some(d) if d > 0 => (self.ms_listened as f32 / d as f32).clamp(0.0, 1.0),
+        match (self.duration_ms, self.ended_at_ms) {
+            // The bail position, when the ledger has it. Audible time and
+            // position part company the moment a seek is involved: thirty
+            // seconds heard after a jump to the last chorus is a listener who
+            // went LOOKING for the best part, not one who gave up a tenth of
+            // the way in. Where they were when they left is the verdict.
+            (Some(d), Some(e)) if d > 0 => (e as f32 / d as f32).clamp(0.0, 1.0),
+            (Some(d), _) if d > 0 => (self.ms_listened as f32 / d as f32).clamp(0.0, 1.0),
             // No duration to divide by: fall back to the old bar, but as a
             // ratio against it rather than a cliff.
             _ => (self.ms_listened as f32 / 30_000.0).clamp(0.0, 1.0),
@@ -161,9 +207,18 @@ impl Verdict {
     /// positive 0.15, so every skip still dragged the centroid toward the
     /// thing that was skipped - a listener who rejects a genre a hundred times
     /// was slowly taught to like it. Rejection has to be able to push away.
+    /// A sitting too short to have been a decision. Excluded from everything:
+    /// not a verdict, not "heard", not "rejected".
+    pub fn is_mistap(&self) -> bool {
+        !self.completed && !self.hearted && self.ms_listened < MISTAP_MS
+    }
+
     pub fn sentiment(&self) -> f32 {
+        if self.is_mistap() {
+            return 0.0;
+        }
         let heard = self.heard_fraction();
-        let base = if self.completed {
+        let mut base = if self.completed {
             1.0
         } else if self.skipped {
             // An instant skip is the strongest negative available; a skip near
@@ -178,8 +233,28 @@ impl Verdict {
             // Neither flag: they left. How far they got is the whole story.
             heard * 1.4 - 0.4
         };
-        let hearted = if self.hearted { 0.6 } else { 0.0 };
-        (base + hearted).clamp(-1.0, 1.0)
+        /*
+         * A heart is a FLOOR, not a bonus. It used to add 0.6 to whatever the
+         * listen said, so a hearted song skipped once read as slightly
+         * negative - the listener's own explicit yes, outvoted by one bad
+         * moment. The listener said hearts are the strongest signal they
+         * give; so a hearted song can never score below "liked", and a
+         * completed hearted song is the top of the scale.
+         */
+        if self.hearted || self.playlisted {
+            base = base.max(0.5);
+        }
+        /*
+         * What their hands said. A rewind to hear a part again and a hand on
+         * the volume are approval nobody records - and they are only meaning-
+         * ful once the song had a real chance: gated on a quarter heard, so a
+         * volume-up during a song they then bail on does not read as praise.
+         */
+        if heard > 0.25 {
+            let bonus = 0.15 * (self.seek_backs.min(2) as f32) + 0.10 * (self.volume_ups.min(1) as f32);
+            base += bonus.min(0.3);
+        }
+        base.clamp(-1.0, 1.0)
     }
 
     /// How much this verdict counts, before recency.
@@ -195,18 +270,41 @@ impl Verdict {
     /// and "you were right about this", and only the second one can teach a
     /// recommender anything.
     pub fn confidence(&self) -> f32 {
-        match self.context.as_str() {
+        if self.is_mistap() {
+            return 0.0;
+        }
+        let surface = match self.context.as_str() {
+            // Explicit approval with no listen behind it - a heart from the
+            // shelf, a Music Date keep. The listener said so in words.
+            "heart" => 1.8,
+            "date" => 1.6,
+            // A pass on the date deck: a no, but on thirty seconds of a
+            // stranger, so lighter than a skip of a song they chose to start.
+            "date-pass" => 0.8,
             // The machine chose. Its successes and failures both teach most.
-            "discover" | "booth" | "home" | "date" => 1.4,
+            "discover" | "booth" | "home" | "mix" => 1.4,
             // A shelf the machine built, but the listener picked a row.
-            "playlist" | "library" | "songs" => 1.0,
+            "playlist" => 1.2,
+            "library" | "songs" => 1.0,
             // The listener brought the intent with them.
             "artist" | "album" => 0.7,
             "search" => 0.4,
             // Books are a different product with a different completion curve.
             c if c.starts_with("books") => 0.0,
             _ => 0.9,
-        }
+        };
+        // A hearted song's verdicts count more: the listener has already told
+        // us what they think of it, and a listen that agrees is confirmation.
+        let heart = if self.hearted { 1.5 } else { 1.0 };
+        // A room, not a person. A speaker in the kitchen or a cast to the TV
+        // is often playing to more than one pair of ears, and a bail there
+        // says less about this listener than one on their own headphones.
+        let room = if self.device.ends_with("/speaker") || self.device.ends_with("/cast") {
+            0.9
+        } else {
+            1.0
+        };
+        surface * heart * room
     }
 
     /// Recency decay, 1.0 for today.
@@ -217,7 +315,13 @@ impl Verdict {
 
     /// The signed, decayed contribution this verdict makes.
     pub fn weight(&self, now: i64) -> f32 {
-        self.sentiment() * self.confidence() * self.recency(now)
+        let w = self.sentiment() * self.confidence() * self.recency(now);
+        // Came back to it this week: the yes is louder. Never the no.
+        if w > 0.0 && self.returns >= 1 {
+            w * REPEAT_BONUS
+        } else {
+            w
+        }
     }
 }
 
@@ -258,6 +362,10 @@ pub struct UserTaste {
     pub heard: HashSet<i64>,
     /// What they actively pushed away, for a harder exclusion than `heard`.
     pub rejected: HashSet<i64>,
+    /// What an AVERAGE track in this library scores on each term, for this
+    /// listener - the value a track gets when it cannot answer the term at
+    /// all. See `neutral_of` for why this is not simply 0.5.
+    pub neutral: [f32; 5],
 }
 
 impl UserTaste {
@@ -275,6 +383,7 @@ impl UserTaste {
             weights: PRIOR,
             heard: HashSet::new(),
             rejected: HashSet::new(),
+            neutral: [0.5; 5],
         }
     }
 
@@ -299,18 +408,6 @@ impl UserTaste {
         v
     }
 
-    /// How much this listener should be pushed away from what they know.
-    ///
-    /// Adaptive and deliberately conservative early: a new listener is shown
-    /// things close to the little we know works, and the net widens as the
-    /// model earns the right to take risks. Returning a fraction rather than a
-    /// bool lets each surface decide how much of it to apply - the DJ and the
-    /// curated shelves are for listening and want a little, Date and Discover
-    /// are for finding and want more.
-    pub fn exploration(&self) -> f32 {
-        // 0.12 with nothing known, rising toward 0.45 as evidence accumulates.
-        0.12 + 0.33 * shrink(self.evidence, 400.0)
-    }
 }
 
 /// Build a listener's model from their verdicts and the library's features.
@@ -338,9 +435,17 @@ pub fn build(
     let mut tag_seen: HashMap<String, f32> = HashMap::new();
 
     for v in verdicts {
+        // A mis-tap is not a meeting. It is not in `heard` - the DJ would
+        // otherwise never deal the song again on the strength of a thumb
+        // slipping - and it is certainly not in `rejected`.
+        if v.is_mistap() {
+            continue;
+        }
         taste.heard.insert(v.track_id);
         let w = v.weight(now);
-        if w < -0.05 {
+        // Pushed away, not merely not-loved: a late bail on a machine pick is
+        // -0.1 × 1.4 and should not retire a song for six months.
+        if w < -0.25 {
             taste.rejected.insert(v.track_id);
         }
         if w == 0.0 {
@@ -380,8 +485,8 @@ pub fn build(
 
     taste.lyric = (lyric_w > 0.0).then(|| lyric_sum.iter().map(|x| x / lyric_w).collect());
     taste.sonic = (sonic_w > 0.0).then(|| sonic_sum.iter().map(|x| x / sonic_w).collect());
-    taste.tempo = spread_of(&mut tempos);
-    taste.energy = spread_of(&mut energies);
+    taste.tempo = spread_of(&mut tempos, 4.0);
+    taste.energy = spread_of(&mut energies, 0.05);
 
     // Each tag's affinity is its mean sentiment, shrunk by how often it was
     // seen. One lucky completion of a polka track does not make you a polka
@@ -399,8 +504,47 @@ pub fn build(
         })
         .collect();
 
+    taste.neutral = neutral_of(&taste, feats);
     taste.weights = fit_weights(verdicts, feats, &taste, now);
     taste
+}
+
+/// What an average track in this library scores on each term, for this
+/// listener: the mean of the term over every track that can answer it.
+///
+/// THIS IS WHERE A WHOLE TERM WAS RANKING BACKWARDS. A track that could not
+/// answer a term used to get 0.5, "neutral". But a real cosine between two
+/// embeddings from the same model runs 0.7-0.95, which maps to 0.85-0.97 - so
+/// any track WITH a vector outscored every track without one, on that term,
+/// regardless of taste. Harmless if coverage were random. It is not: the
+/// sonic vector exists for 23% of the library, and enrichment reaches the
+/// machine-chosen pool tracks first - on the live hub, 14% of the songs the
+/// main listener FINISHED had one against 36% of the songs they instantly
+/// skipped. The sonic term was, in effect, a "has been enriched" detector,
+/// and "has been enriched" correlates with "was pushed at you", and it ranked
+/// what they would skip above what they would finish (AUC 0.35 on its own).
+///
+/// With the fallback sitting at the typical value, an unknown track is an
+/// average track, and only actual similarity moves it.
+fn neutral_of(taste: &UserTaste, feats: &HashMap<i64, &TrackFeatures>) -> [f32; 5] {
+    let mut sum = [0.0f32; 5];
+    let mut n = [0u32; 5];
+    for f in feats.values() {
+        let raw = terms_raw(f, taste);
+        for i in 0..5 {
+            if let Some(x) = raw[i] {
+                sum[i] += x;
+                n[i] += 1;
+            }
+        }
+    }
+    let mut out = [0.5f32; 5];
+    for i in 0..5 {
+        if n[i] > 0 {
+            out[i] = sum[i] / n[i] as f32;
+        }
+    }
+    out
 }
 
 fn accumulate(sum: &mut Vec<f32>, wsum: &mut f32, v: &[f32], w: f32) {
@@ -417,7 +561,14 @@ fn accumulate(sum: &mut Vec<f32>, wsum: &mut f32, v: &[f32], w: f32) {
 }
 
 /// Weighted median and a robust spread, or None when there is nothing to say.
-fn spread_of(vals: &mut Vec<(f64, f32)>) -> Option<(f64, f64)> {
+///
+/// `floor` is the narrowest spread the caller will accept, IN THE UNITS OF
+/// THE VALUE. It used to be a fixed 4.0 for everything - right for tempo in
+/// bpm, and on energy's 0..1 scale it meant every track in the library sat
+/// inside the band and the whole term read ~1.0 for everyone. A term that
+/// cannot vary cannot predict, and the weight fitter duly learned to ignore
+/// it. Passing the floor is what brings the term back to life.
+fn spread_of(vals: &mut Vec<(f64, f32)>, floor: f64) -> Option<(f64, f64)> {
     if vals.len() < 3 {
         return None;
     }
@@ -440,7 +591,7 @@ fn spread_of(vals: &mut Vec<(f64, f32)>) -> Option<(f64, f64)> {
     let med = at(0.5);
     // Half the interquartile range, floored so a listener who plays exactly
     // one tempo does not get an infinitely narrow, unsatisfiable target.
-    let spread = ((at(0.75) - at(0.25)) / 2.0).max(4.0);
+    let spread = ((at(0.75) - at(0.25)) / 2.0).max(floor);
     Some((med, spread))
 }
 
@@ -481,43 +632,49 @@ pub fn tags_of(f: &TrackFeatures) -> Vec<String> {
 /// a track whose outcome is already known, which is the whole basis of
 /// learning the weights.
 pub fn terms(f: &TrackFeatures, taste: &UserTaste) -> [f32; 5] {
+    let raw = terms_raw(f, taste);
+    let mut out = [0.0f32; 5];
+    for i in 0..5 {
+        // A term the track cannot answer scores as an average track would -
+        // NOT as 0.5, which for a cosine term is far below any real value and
+        // turned "has this feature at all" into a ranking signal.
+        out[i] = raw[i].unwrap_or(taste.neutral[i]);
+    }
+    out
+}
+
+/// Each term where the track can answer it, None where it cannot.
+pub fn terms_raw(f: &TrackFeatures, taste: &UserTaste) -> [Option<f32>; 5] {
     let lyric = match (&taste.lyric, &f.lyric_vec) {
-        (Some(c), Some(v)) => (crate::curator::cosine(c, v) + 1.0) / 2.0,
-        _ => 0.5,
+        (Some(c), Some(v)) => Some((crate::curator::cosine(c, v) + 1.0) / 2.0),
+        _ => None,
     };
     let sonic = match (&taste.sonic, &f.sonic_vec) {
-        (Some(c), Some(v)) => (crate::curator::cosine(c, v) + 1.0) / 2.0,
-        _ => 0.5,
+        (Some(c), Some(v)) => Some((crate::curator::cosine(c, v) + 1.0) / 2.0),
+        _ => None,
     };
     let tempo = match (taste.tempo, f.bpm) {
         (Some((med, spread)), Some(b)) => {
-            (-(((med - b).abs() / spread.max(1.0)) as f32)).exp().clamp(0.0, 1.0)
+            Some((-(((med - b).abs() / spread.max(1.0)) as f32)).exp().clamp(0.0, 1.0))
         }
-        _ => 0.5,
+        _ => None,
     };
     let energy = match (taste.energy, f.energy) {
         (Some((med, spread)), Some(e)) => {
-            (-(((med - e).abs() / spread.max(0.05)) as f32)).exp().clamp(0.0, 1.0)
+            Some((-(((med - e).abs() / spread.max(0.05)) as f32)).exp().clamp(0.0, 1.0))
         }
-        _ => 0.5,
+        _ => None,
     };
     let tags = if taste.tags.is_empty() {
-        0.5
+        None
     } else {
-        let ts = tags_of(f);
-        if ts.is_empty() {
-            0.5
+        // Mean affinity over the track's tags the listener has an opinion on,
+        // mapped from [-1,1] to [0,1]. No opinion on any of them: no answer.
+        let hits: Vec<f32> = tags_of(f).iter().filter_map(|t| taste.tags.get(t).copied()).collect();
+        if hits.is_empty() {
+            None
         } else {
-            // Mean affinity over the track's tags, mapped from [-1,1] to [0,1].
-            let sum: f32 = ts.iter().filter_map(|t| taste.tags.get(t)).sum();
-            let hits = ts.iter().filter(|t| taste.tags.contains_key(*t)).count();
-            if hits == 0 {
-                // Nothing known about this track's tags. Slightly below
-                // neutral: unknown is not the same as agreeable.
-                0.45
-            } else {
-                ((sum / hits as f32) + 1.0) / 2.0
-            }
+            Some(((hits.iter().sum::<f32>() / hits.len() as f32) + 1.0) / 2.0)
         }
     };
     [lyric, sonic, tempo, tags, energy]
@@ -651,6 +808,7 @@ fn fit_weights(
         history.tempo = sub.tempo;
         history.energy = sub.energy;
         history.tags = sub.tags;
+        history.neutral = neutral_of(&history, feats);
     }
 
     // Weighted correlation between each term and the outcome on the held-out half.
@@ -765,8 +923,8 @@ fn build_descriptive(
     }
     t.lyric = (lyric_w > 0.0).then(|| lyric_sum.iter().map(|x| x / lyric_w).collect());
     t.sonic = (sonic_w > 0.0).then(|| sonic_sum.iter().map(|x| x / sonic_w).collect());
-    t.tempo = spread_of(&mut tempos);
-    t.energy = spread_of(&mut energies);
+    t.tempo = spread_of(&mut tempos, 4.0);
+    t.energy = spread_of(&mut energies, 0.05);
     t.tags = tag_score
         .into_iter()
         .filter_map(|(tag, total)| {
@@ -823,6 +981,7 @@ mod tests {
             skipped: false,
             context: ctx.into(),
             hearted: false,
+            ..Default::default()
         }
     }
 
@@ -833,11 +992,106 @@ mod tests {
         let mut v = verdict(1, 0, "discover");
         v.completed = false;
         v.skipped = true;
-        v.ms_listened = 4_000;
+        // Twelve seconds: past the mis-tap line, inside the instant-skip one.
+        v.ms_listened = 12_000;
         assert!(v.sentiment() < -0.5, "an instant skip must push AWAY: {}", v.sentiment());
 
         let done = verdict(1, 0, "discover");
         assert!(done.sentiment() > 0.9, "a completion is a yes: {}", done.sentiment());
+    }
+
+    /// A track that cannot answer a term scores as an average track would,
+    /// not as a stranger at 0.5 - because real cosines sit far above 0.5 and
+    /// the gap made "has been enriched" outrank "you like it".
+    #[test]
+    fn a_missing_feature_scores_as_an_average_track_not_a_stranger() {
+        let mut a = feat(1, 120.0, "rock", None);
+        a.sonic_vec = Some(vec![1.0, 0.0]);
+        let mut b = feat(2, 120.0, "rock", None);
+        b.sonic_vec = Some(vec![0.9, 0.1]);
+        let c = feat(3, 120.0, "rock", None); // never enriched
+        let mut feats = HashMap::new();
+        feats.insert(1i64, &a);
+        feats.insert(2i64, &b);
+        feats.insert(3i64, &c);
+        let vs = vec![verdict(1, 0, "discover"), verdict(2, 0, "discover")];
+        let t = build(7, &vs, &feats, 0);
+        let known = terms(&a, &t)[1];
+        let unknown = terms(&c, &t)[1];
+        assert!(known > 0.9, "a track near the centroid scores high: {known}");
+        assert!(unknown > 0.9, "an unknown sits at the library's typical value, not 0.5: {unknown}");
+        assert!(t.neutral[1] > 0.9);
+    }
+
+    /// The listener's own rule: under ten seconds says nothing. A four-second
+    /// bail on a song used to be the strongest negative verdict in the whole
+    /// system; now it is not a verdict, not a meeting, and not a rejection.
+    #[test]
+    fn a_mistap_says_nothing_either_way() {
+        let mut v = verdict(1, 0, "discover");
+        v.completed = false;
+        v.skipped = true;
+        v.ms_listened = 4_000;
+        assert!(v.is_mistap());
+        assert_eq!(v.sentiment(), 0.0, "a mis-tap has no opinion");
+        assert_eq!(v.weight(0), 0.0);
+
+        let f = feat(1, 120.0, "country", None);
+        let mut feats = HashMap::new();
+        feats.insert(1i64, &f);
+        let t = build(7, &[v], &feats, 0);
+        assert!(!t.heard.contains(&1), "a mis-tap is not a meeting");
+        assert!(!t.rejected.contains(&1), "and certainly not a rejection");
+
+        // A hearted song cannot be a mis-tap: the heart already spoke.
+        let mut h = verdict(2, 0, "discover");
+        h.completed = false;
+        h.skipped = true;
+        h.ms_listened = 4_000;
+        h.hearted = true;
+        assert!(!h.is_mistap());
+        assert!(h.sentiment() >= 0.5, "a heart is a floor: {}", h.sentiment());
+    }
+
+    /// Hands on the controls. A rewind to hear a part again and a hand on
+    /// the volume are approval, but only once the song had a real chance.
+    #[test]
+    fn engagement_counts_only_after_a_real_hearing() {
+        let mut v = verdict(1, 0, "discover");
+        v.completed = false;
+        v.skipped = false;
+        v.duration_ms = Some(200_000);
+        v.ms_listened = 100_000;
+        let plain = v.sentiment();
+        v.seek_backs = 2;
+        v.volume_ups = 1;
+        assert!(v.sentiment() > plain + 0.29, "two rewinds and a volume-up add 0.3");
+
+        let mut early = verdict(1, 0, "discover");
+        early.completed = false;
+        early.skipped = true;
+        early.duration_ms = Some(200_000);
+        early.ms_listened = 14_000;
+        let bail = early.sentiment();
+        early.volume_ups = 1;
+        assert_eq!(early.sentiment(), bail, "a volume-up before a real hearing is not praise");
+    }
+
+    /// Came back to it this week: the yes is louder, and never the no.
+    #[test]
+    fn a_repeat_amplifies_a_yes_and_never_a_no() {
+        let mut yes = verdict(1, 0, "discover");
+        let once = yes.weight(0);
+        yes.returns = 2;
+        assert!((yes.weight(0) - once * REPEAT_BONUS).abs() < 1e-5);
+
+        let mut no = verdict(1, 0, "discover");
+        no.completed = false;
+        no.skipped = true;
+        no.ms_listened = 12_000;
+        let once = no.weight(0);
+        no.returns = 2;
+        assert_eq!(no.weight(0), once, "a repeat never makes a no louder");
     }
 
     #[test]
@@ -941,7 +1195,7 @@ mod tests {
                 let mut v = verdict(1, i * 3600, "discover");
                 v.completed = false;
                 v.skipped = true;
-                v.ms_listened = 3_000;
+                v.ms_listened = 12_000;
                 v
             })
             .collect();
@@ -962,16 +1216,6 @@ mod tests {
         }
         let s = score(&f, &cold);
         assert!(s > 0.4 && s < 0.6, "a cold score is neutral, got {s}");
-    }
-
-    #[test]
-    fn exploration_starts_cautious_and_opens_up() {
-        let cold = UserTaste::cold(1);
-        let mut warm = UserTaste::cold(1);
-        warm.evidence = 2000.0;
-        assert!(cold.exploration() < 0.2, "a new listener is shown safe things");
-        assert!(warm.exploration() > cold.exploration(), "evidence buys risk");
-        assert!(warm.exploration() < 0.5, "never a coin flip");
     }
 
     #[test]
@@ -1075,6 +1319,9 @@ mod eval {
 
             let mut old_rows = Vec::new();
             let mut new_rows = Vec::new();
+            // Each term on its own, so a term that ranks BACKWARDS shows
+            // itself instead of hiding inside a blended number.
+            let mut term_rows: Vec<Vec<(f32, bool)>> = vec![Vec::new(); 5];
             for v in test {
                 let Some(f) = by_id.get(&v.track_id) else { continue };
                 let liked = v.sentiment() > 0.25;
@@ -1084,6 +1331,10 @@ mod eval {
                 }
                 old_rows.push((crate::curator::score(f, &old), liked));
                 new_rows.push((score(f, &taste), liked));
+                let t = terms(f, &taste);
+                for i in 0..5 {
+                    term_rows[i].push((t[i], liked));
+                }
             }
             if new_rows.len() < 20 {
                 continue;
@@ -1097,6 +1348,13 @@ mod eval {
                 auc(new_rows),
                 w.lyric, w.sonic, w.tempo, w.tags, w.energy
             );
+            let names = ["lyric", "sonic", "tempo", "tags", "energy"];
+            let per: Vec<String> = term_rows
+                .into_iter()
+                .enumerate()
+                .map(|(i, rows)| format!("{}={:.3}", names[i], auc(rows)))
+                .collect();
+            println!("{:<18} per-term auc: {}", "", per.join("  "));
         }
         println!();
     }

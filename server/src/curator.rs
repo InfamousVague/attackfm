@@ -1002,6 +1002,80 @@ pub(crate) fn taste_for(state: &Arc<AppState>, user: i64) -> Option<Taste> {
 /// library row - a candidate from the catalogue, which has no track id and may
 /// be missing any of the three. Each term falls back to a neutral 0.5, so a
 /// candidate is never punished for what could not be measured.
+/// Everything one listener has ever said about a song, as verdicts - the ONE
+/// place that builds them, so every surface hears the same evidence.
+///
+/// Three sources, in order of how loudly the listener spoke:
+///
+/// 1. The listen ledger (`listen_events`), joined to hearts and playlists.
+///    Each sitting is a verdict already: how far, whether they bailed, what
+///    their hands did.
+/// 2. Hearts with no sitting behind them. A heart from a shelf, a browse, a
+///    friend's profile - the listener said yes without pressing play, and
+///    until now that yes was INVISIBLE to the model, which only ever read
+///    `favorites` as a flag on a listen that may never have happened. A
+///    synthetic completed verdict, context "heart", dated when it was starred.
+/// 3. Music Date decisions. A keep is a yes on a stranger (context "date"); a
+///    pass is a no (context "date-pass"), the lightest no we record because it
+///    was thirty seconds of something they never chose.
+///
+/// `top_plays` survives only as the fallback for a listener with none of the
+/// above - a hub that predates the ledger, or an account whose client never
+/// reported. Those stand-ins are stamped NOW rather than at the window's edge:
+/// they represent recent listening, and dating them 180 days back would decay
+/// them to nothing the moment recency actually works.
+pub(crate) fn verdicts_for(state: &Arc<AppState>, user: i64, now: i64) -> Vec<crate::taste::Verdict> {
+    use crate::taste::Verdict;
+    let since_ms = now - crate::taste::WINDOW_DAYS * 86_400_000;
+    let mut verdicts = state.db.taste_verdicts(user, since_ms, 4000);
+
+    let mut seen: HashSet<i64> = verdicts.iter().map(|v| v.track_id).collect();
+    for (track_id, added_at) in state.db.favorites_with_time(user) {
+        if added_at < since_ms || seen.contains(&track_id) {
+            continue;
+        }
+        seen.insert(track_id);
+        verdicts.push(Verdict {
+            track_id,
+            at: added_at / 1000,
+            ms_listened: 30_000,
+            completed: true,
+            hearted: true,
+            context: "heart".into(),
+            ..Default::default()
+        });
+    }
+    for (track_id, verdict, at) in state.db.date_verdict_rows(user, since_ms) {
+        // The deck's own words - collector.rs writes "kept" and "passed".
+        // Anything that is not a keep is a pass: the deck has never had a
+        // third answer, and an unknown spelling reading as a no is the safer
+        // mistake.
+        let kept = matches!(verdict.as_str(), "kept" | "keep");
+        verdicts.push(Verdict {
+            track_id,
+            at: at / 1000,
+            ms_listened: if kept { 30_000 } else { 12_000 },
+            duration_ms: Some(30_000),
+            completed: kept,
+            skipped: !kept,
+            context: if kept { "date".into() } else { "date-pass".into() },
+            ..Default::default()
+        });
+    }
+
+    if verdicts.len() < 8 {
+        let top = state.db.top_plays(user, now - WINDOW_30D_MS, 60);
+        verdicts.extend(top.into_iter().map(|(id, _)| Verdict {
+            track_id: id,
+            at: now / 1000,
+            ms_listened: 30_000,
+            completed: true,
+            ..Default::default()
+        }));
+    }
+    verdicts
+}
+
 /// The new per-user model for one listener, or None when they have not given
 /// the machine anything to go on yet.
 ///
@@ -1012,29 +1086,9 @@ pub(crate) fn user_taste_for(
     state: &Arc<AppState>,
     user: i64,
 ) -> Option<(crate::taste::UserTaste, Vec<TrackFeatures>)> {
-    let since_ms = now_ms() - crate::taste::WINDOW_DAYS * 86_400_000;
-    let mut verdicts = state.db.taste_verdicts(user, since_ms, 4000);
-    if verdicts.len() < 8 {
-        let top = state.db.top_plays(user, now_ms() - WINDOW_30D_MS, 60);
-        if top.len() < TASTE_MIN_TRACKS {
-            return None;
-        }
-        verdicts = top
-            .into_iter()
-            .map(|(id, _)| crate::taste::Verdict {
-                track_id: id,
-                // Stamped NOW, not at the window's edge: these stand in for
-                // recent listening, and dating them 180 days back would decay
-                // them to nothing the moment recency actually works.
-                at: now_ms() / 1000,
-                ms_listened: 30_000,
-                duration_ms: None,
-                completed: true,
-                skipped: false,
-                context: String::new(),
-                hearted: false,
-            })
-            .collect();
+    let verdicts = verdicts_for(state, user, now_ms());
+    if verdicts.len() < TASTE_MIN_TRACKS {
+        return None;
     }
     let all = state.db.all_features();
     let taste = {
@@ -1135,26 +1189,9 @@ async fn curate_cycle(state: &Arc<AppState>) {
          * synthetic verdicts are marked completed with an empty context, which
          * is exactly the old behaviour: a play is a play.
          */
-        let since_ms = now_ms() - crate::taste::WINDOW_DAYS * 86_400_000;
-        let mut verdicts = state.db.taste_verdicts(user, since_ms, 4000);
-        if verdicts.len() < 8 {
-            let top = state.db.top_plays(user, since, 60);
-            if top.len() < 4 {
-                continue;
-            }
-            verdicts = top
-                .into_iter()
-                .map(|(id, _)| crate::taste::Verdict {
-                    track_id: id,
-                    at: now_ms() / 1000,
-                    ms_listened: 30_000,
-                    duration_ms: None,
-                    completed: true,
-                    skipped: false,
-                    context: String::new(),
-                    hearted: false,
-                })
-                .collect();
+        let verdicts = verdicts_for(state, user, now_ms());
+        if verdicts.len() < 4 {
+            continue;
         }
         let taste = crate::taste::build(user, &verdicts, &by_id, now_ms() / 1000);
         if taste.heard.len() < 4 {

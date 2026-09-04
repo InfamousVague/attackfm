@@ -3823,7 +3823,11 @@ impl Db {
             "SELECT le.track_id, le.started_at, le.ms_listened, le.duration_ms,
                     le.completed, le.skipped, le.context,
                     EXISTS(SELECT 1 FROM favorites f
-                           WHERE f.user_id = le.user_id AND f.track_id = le.track_id)
+                           WHERE f.user_id = le.user_id AND f.track_id = le.track_id),
+                    le.ended_at_ms, le.volume_ups, le.seek_backs, le.device,
+                    EXISTS(SELECT 1 FROM playlist_tracks pt
+                           JOIN playlists p ON p.id = pt.playlist_id
+                           WHERE p.user_id = le.user_id AND pt.track_id = le.track_id)
              FROM listen_events le
              JOIN tracks t ON t.id = le.track_id AND t.deleted = 0
                           AND COALESCE(t.kind, 'music') <> 'book'
@@ -3833,20 +3837,48 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, since_ms, limit], |r| {
-            Ok(crate::taste::Verdict {
-                track_id: r.get(0)?,
-                at: r.get::<_, i64>(1)? / 1000,
-                ms_listened: r.get(2)?,
-                duration_ms: r.get(3).ok(),
-                completed: r.get::<_, i64>(4)? != 0,
-                skipped: r.get::<_, i64>(5)? != 0,
-                context: r.get::<_, String>(6).unwrap_or_default(),
-                hearted: r.get::<_, i64>(7)? != 0,
+        let mut rows: Vec<crate::taste::Verdict> = stmt
+            .query_map(params![user_id, since_ms, limit], |r| {
+                Ok(crate::taste::Verdict {
+                    track_id: r.get(0)?,
+                    at: r.get::<_, i64>(1)? / 1000,
+                    ms_listened: r.get(2)?,
+                    duration_ms: r.get(3).ok(),
+                    completed: r.get::<_, i64>(4)? != 0,
+                    skipped: r.get::<_, i64>(5)? != 0,
+                    context: r.get::<_, String>(6).unwrap_or_default(),
+                    hearted: r.get::<_, i64>(7)? != 0,
+                    ended_at_ms: r.get(8).ok(),
+                    volume_ups: r.get(9).unwrap_or(0),
+                    seek_backs: r.get(10).unwrap_or(0),
+                    device: r.get::<_, String>(11).unwrap_or_default(),
+                    playlisted: r.get::<_, i64>(12).unwrap_or(0) != 0,
+                    returns: 0,
+                })
             })
-        })
-        .map(|rows| rows.filter_map(Result::ok).collect())
-        .unwrap_or_default()
+            .map(|it| it.filter_map(Result::ok).collect())
+            .unwrap_or_default();
+
+        /*
+         * Returns: how many times they had already come back to this track in
+         * the week before each sitting. Counted here, over the rows already in
+         * hand, rather than as a correlated subquery per row - the rows arrive
+         * newest first, so a per-track list of times answers it in one pass.
+         * Bails do not count as coming back.
+         */
+        let mut times: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+        for v in &rows {
+            if !v.skipped {
+                times.entry(v.track_id).or_default().push(v.at);
+            }
+        }
+        const WEEK: i64 = 7 * 24 * 60 * 60;
+        for v in rows.iter_mut() {
+            if let Some(ts) = times.get(&v.track_id) {
+                v.returns = ts.iter().filter(|t| **t < v.at && v.at - **t <= WEEK).count() as i64;
+            }
+        }
+        rows
     }
 
     pub fn recent_plays(&self, user_id: i64, limit: i64) -> Vec<i64> {
@@ -9451,6 +9483,23 @@ impl Db {
              ON CONFLICT(user_id, track_id) DO UPDATE SET verdict = excluded.verdict, at = excluded.at",
             params![user_id, track_id, verdict, now_ms()],
         );
+    }
+
+    /// Every date verdict with its wording and when: (track_id, verdict, at ms).
+    /// The taste model reads these as explicit yes/no rows - a keep is a heart
+    /// that never went through the shelf, a pass is a no on thirty seconds.
+    pub fn date_verdict_rows(&self, user_id: i64, since_ms: i64) -> Vec<(i64, String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT track_id, verdict, at FROM date_verdicts WHERE user_id = ?1 AND at >= ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since_ms], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+        })
+        .map(|rows| rows.flatten().collect())
+        .unwrap_or_default()
     }
 
     /// Auditions this listener has already judged, so the deck never re-deals
