@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.85
+
+- The DJ has a new voice: Laura, bright and quick. Pick a different one under
+  the AI settings whenever you like.
+
 ## 0.5.84
 
 - The DJ voice picker now lists every voice on your server's account, your own
