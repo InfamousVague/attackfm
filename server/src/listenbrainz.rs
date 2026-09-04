@@ -63,10 +63,16 @@ const OBSCURE_LISTENERS: i64 = 15_000;
 /// Similar artists taken per seed, and candidate tracks per new artist. Low on
 /// purpose: these are gambles, and artist-level adoption decides whether the
 /// catalog gets deepened later.
-const SIMS_PER_SEED: usize = 3;
+///
+/// Raised (3/4/4 -> 5/6/6) with the chart lanes cut to twenty-five each:
+/// these two graphs are the only sources that encode "same scene", and at
+/// 24 + 16 candidates a day against a Deezer walk that can file 432 they
+/// were a rounding error in the pool they were supposed to shape. The rate
+/// etiquette below is untouched; a run is still a handful of requests.
+const SIMS_PER_SEED: usize = 5;
 const TRACKS_PER_NEW_ARTIST: usize = 2;
-const SEEDS_PER_RUN: usize = 4;
-const RELS_PER_WALK: usize = 4;
+const SEEDS_PER_RUN: usize = 6;
+const RELS_PER_WALK: usize = 6;
 
 const HARVEST_EVERY_MS: i64 = 6 * 60 * 60 * 1000;
 const WALK_EVERY_MS: i64 = 12 * 60 * 60 * 1000;
@@ -300,8 +306,10 @@ pub(crate) async fn artist_popularity(c: &reqwest::Client, mbids: &[String]) -> 
 /// strict Deezer resolve -> a couple of tracks each into the shared pool.
 pub async fn harvest_similar(state: &Arc<AppState>, user: i64) {
     let Some(c) = client() else { return };
-    let since = now_ms() - 30 * 24 * 60 * 60 * 1000;
-    let seeds = state.db.top_artists(user, since, SEEDS_PER_RUN as i64);
+    // Hearts and keeps first, finished listens after, never play starts -
+    // the same seed list as the taste walk, so the two graphs grow from the
+    // same statement of taste.
+    let seeds = discovery::seed_artists(state, user, SEEDS_PER_RUN);
     if seeds.is_empty() {
         return;
     }
@@ -312,7 +320,7 @@ pub async fn harvest_similar(state: &Arc<AppState>, user: i64) {
         .map(|a| discovery::artist_key_public(&a))
         .collect();
 
-    for (seed_name, _weight) in seeds {
+    for seed_name in seeds {
         let Some(mbid) = artist_mbid(state, &c, &seed_name).await else { continue };
         let sims = similar_artists(&c, &mbid).await;
         if sims.is_empty() {
@@ -329,10 +337,43 @@ pub async fn harvest_similar(state: &Arc<AppState>, user: i64) {
             .collect();
         // Highest similarity first - small AND close beats small and random.
         small.sort_by_key(|(_, _, score)| -*score);
-        for (_, name, _) in small.into_iter().take(SIMS_PER_SEED) {
-            discovery::ingest_artist_by_name(state, user, &c, name, &seed_name, TRACKS_PER_NEW_ARTIST)
-                .await;
+        // The score used to be discarded right here, after the sort. It
+        // travels now, as the thread's strength - normalised to the seed's
+        // own closest neighbour, because LB's raw number is a co-listening
+        // count that runs to thousands for a big seed and tens for a small
+        // one, and only the shape WITHIN one list means anything across them.
+        let top = small.first().map(|(_, _, s)| (*s).max(1) as f64).unwrap_or(1.0);
+        for (_, name, score) in small.into_iter().take(SIMS_PER_SEED) {
+            let strength = ((*score).max(0) as f64 / top).clamp(0.05, 1.0);
+            let added = discovery::ingest_artist_by_name(
+                state, user, &c, name, &seed_name, "lb_similar", strength, TRACKS_PER_NEW_ARTIST,
+            )
+            .await;
+            for ext_id in added {
+                let _ = state.db.tag_discovery_lane(user, &ext_id, "scene", strength);
+            }
         }
+    }
+}
+
+/// A MusicBrainz artist-artist relation type as a thread kind, and how
+/// strong that thread is.
+///
+/// Members and founders shared a band with the artist you hearted (1.0); the
+/// person behind a name or a subgroup is the same people under another
+/// banner (0.8); a collaboration, a supporting musician, and the long tail
+/// of MB's vocabulary ("tribute", "named after") is one record's worth of
+/// shared history or less (0.6). MB's labels are many and specific
+/// ("instrumental supporting musician", "original member"), so this matches
+/// the words that carry the meaning rather than the exact string.
+pub(crate) fn relation_kind(mb_type: &str) -> (&'static str, f64) {
+    let t = mb_type.to_ascii_lowercase();
+    if t.contains("member") || t.contains("founder") {
+        ("mb_member", 1.0)
+    } else if t.contains("person") || t.contains("subgroup") {
+        ("mb_side", 0.8)
+    } else {
+        ("mb_collab", 0.6)
     }
 }
 
@@ -340,7 +381,17 @@ pub async fn harvest_similar(state: &Arc<AppState>, user: i64) {
 /// side projects and collaborators, popularity-gated, into the pool.
 pub async fn scene_walk(state: &Arc<AppState>, user: i64) {
     let Some(c) = client() else { return };
-    let hearts = state.db.hearted_obscure_artists(user, OBSCURE_LISTENERS);
+    // The obscure hearts first, as ever - the walk exists for the artists no
+    // co-listening graph can see - then everyone else the listener has said
+    // yes to (a Music Date keep, a finished song), so a listener whose
+    // hearts are all walked keeps digging rather than stopping.
+    let mut hearts = state.db.hearted_obscure_artists(user, OBSCURE_LISTENERS);
+    for name in discovery::seed_artists(state, user, SEEDS_PER_RUN) {
+        let key = discovery::artist_key_public(&name);
+        if !hearts.iter().any(|h| discovery::artist_key_public(h) == key) {
+            hearts.push(name);
+        }
+    }
     let Some(artist) = hearts
         .into_iter()
         .find(|a| state.db.scene_walk_due(user, &discovery::artist_key_public(a), WALK_EVERY_MS))
@@ -364,22 +415,32 @@ pub async fn scene_walk(state: &Arc<AppState>, user: i64) {
 
     // Any relation that points at another ARTIST is scene provenance: band
     // members, side projects, collaborations. Shared history is the quality
-    // gate that defuses obscurity-equals-junk.
-    let mut related: Vec<(String, String)> = rels
+    // gate that defuses obscurity-equals-junk. The relation's TYPE is kept
+    // as the thread's kind - a band-mate, a side project and a one-off
+    // collaborator are three different distances from the artist you
+    // hearted, and all three used to be thrown away at the door.
+    let mut related: Vec<(String, String, &'static str, f64)> = rels
         .iter()
         .filter_map(|r| {
             let a = r.get("artist")?;
+            let (kind, strength) = relation_kind(r.get("type").and_then(|t| t.as_str()).unwrap_or(""));
             Some((
                 a.get("id")?.as_str()?.to_string(),
                 a.get("name")?.as_str()?.to_string(),
+                kind,
+                strength,
             ))
         })
         .collect();
-    related.dedup_by(|a, b| a.0 == b.0);
+    // One row per artist, the closest relation winning: a member who also
+    // guested on a record is a member.
+    related.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+    let mut seen: HashSet<String> = HashSet::new();
+    related.retain(|r| seen.insert(r.0.clone()));
     if related.is_empty() {
         return;
     }
-    let mbids: Vec<String> = related.iter().map(|(m, _)| m.clone()).collect();
+    let mbids: Vec<String> = related.iter().map(|(m, _, _, _)| m.clone()).collect();
     let pop = artist_popularity(&c, &mbids).await;
     let owned_artists: HashSet<String> = state
         .db
@@ -387,14 +448,41 @@ pub async fn scene_walk(state: &Arc<AppState>, user: i64) {
         .into_iter()
         .map(|a| discovery::artist_key_public(&a))
         .collect();
-    for (m, name) in related.into_iter().take(RELS_PER_WALK * 2) {
+    for (m, name, kind, strength) in related.into_iter().take(RELS_PER_WALK * 2) {
         if pop.get(&m).copied().unwrap_or(0) > POP_CEILING_LISTENERS {
             continue;
         }
         if owned_artists.contains(&discovery::artist_key_public(&name)) {
             continue;
         }
-        discovery::ingest_artist_by_name(state, user, &c, &name, &artist, TRACKS_PER_NEW_ARTIST)
-            .await;
+        let added = discovery::ingest_artist_by_name(
+            state, user, &c, &name, &artist, kind, strength, TRACKS_PER_NEW_ARTIST,
+        )
+        .await;
+        for ext_id in added {
+            let _ = state.db.tag_discovery_lane(user, &ext_id, "scene", strength);
+        }
+    }
+}
+
+#[cfg(test)]
+mod relation_kinds {
+    use super::*;
+
+    /// MusicBrainz's relation vocabulary, folded to the three distances a
+    /// card can name.
+    #[test]
+    fn a_relation_type_names_its_thread() {
+        assert_eq!(relation_kind("member of band"), ("mb_member", 1.0));
+        assert_eq!(relation_kind("original member"), ("mb_member", 1.0));
+        assert_eq!(relation_kind("founder"), ("mb_member", 1.0));
+        assert_eq!(relation_kind("is person"), ("mb_side", 0.8));
+        assert_eq!(relation_kind("subgroup"), ("mb_side", 0.8));
+        assert_eq!(relation_kind("collaboration"), ("mb_collab", 0.6));
+        assert_eq!(relation_kind("instrumental supporting musician"), ("mb_collab", 0.6));
+        // The long tail and an absent type are the loosest thread, never no
+        // thread: MB only lists a relation because the history is shared.
+        assert_eq!(relation_kind("tribute").0, "mb_collab");
+        assert_eq!(relation_kind("").0, "mb_collab");
     }
 }

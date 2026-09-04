@@ -53,8 +53,14 @@ const FRESH_PER_USER: usize = 30;
 /// "more top hits" was the standing request. The lane now counts its own
 /// rows: bounded exactly as before, but never starved by the rest of the
 /// pool's politics.
-const TREND_KEEP: usize = 50;
-const FRESH_KEEP: usize = 60;
+///
+/// Twenty-five each, down from fifty and sixty. These two lanes hang off
+/// nothing of the listener's - a chart row has no anchor - and at 110 of a
+/// 200-row pool they were more than half of it, which is the "too random"
+/// the listener named. The connected lanes (the taste walk, the small-artist
+/// engine) now get the room.
+const TREND_KEEP: usize = 25;
+const FRESH_KEEP: usize = 25;
 
 fn meta_key() -> &'static str {
     "trending.fetched_at"
@@ -71,6 +77,9 @@ struct Found {
     /// The lane's own standing, 0-1: chart position or fresh listen share.
     rank: f64,
     lane: &'static str,
+    /// When it came out, when the catalogue said - the editorial selection
+    /// carries the album's `release_date`; the chart does not.
+    released: Option<String>,
 }
 
 /// The server-wide sweep: fetch once, fan to every active listener.
@@ -161,12 +170,18 @@ fn fan_to(state: &Arc<AppState>, user: i64, found: &[Found]) {
          * client already renders nothing for an empty seed, and scoring
          * renormalises over the terms it can answer.
          */
-        if state
+        // Only a row the pool TOOK gets its lane tag and its date. A song the
+        // listener already judged is refused at the door and must not leave
+        // a lane row behind - that fossil would block nothing useful and
+        // count against the lane's room.
+        if let Ok(true) = state
             .db
             .add_discovery(user, &f.ext_id, &f.title, &f.artist, &f.cover, &f.url, &f.preview, "", f.rank)
-            .is_ok()
         {
             let _ = state.db.tag_discovery_lane(user, &f.ext_id, f.lane, f.rank);
+            if let Some(released) = &f.released {
+                state.db.set_discovery_released(user, &f.ext_id, released);
+            }
             *count += 1;
             *room -= 1;
         }
@@ -211,6 +226,7 @@ async fn chart_tracks() -> Vec<Found> {
                 // Position IS the rank: first on the chart is 1.0.
                 rank: 1.0 - (i as f64) / total,
                 lane: "trending",
+                released: t.get("release_date").and_then(Value::as_str).map(str::to_string),
             })
         })
         .collect()
@@ -243,6 +259,7 @@ async fn fresh_releases() -> Vec<Found> {
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
+        let released = album.get("release_date").and_then(Value::as_str).map(str::to_string);
         tokio::time::sleep(GAP).await;
         let Ok(resp) = c
             .get(format!("https://api.deezer.com/album/{album_id}/tracks"))
@@ -277,6 +294,7 @@ async fn fresh_releases() -> Vec<Found> {
             // Editorial order IS the rank: the lead pick is 1.0.
             rank: 1.0 - (i as f64) / total,
             lane: "fresh",
+            released,
         });
     }
     out

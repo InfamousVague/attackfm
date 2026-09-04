@@ -951,6 +951,10 @@ pub(crate) async fn buy_outcome(
             bpm: None,
             lyric_vec: None,
             score: d.score,
+            energy: None,
+            brightness: None,
+            rhythmic: None,
+            released: None,
         };
         let user2 = user;
         tokio::spawn(async move {
@@ -1860,6 +1864,10 @@ pub async fn audition(
         bpm: None,
         lyric_vec: None,
         score: 0.0,
+        energy: None,
+        brightness: None,
+        rhythmic: None,
+        released: None,
     };
     let outcome =
         buy_outcome(&state, caller.id, &d, false, Some("You asked to hear it, from the artist's page."))

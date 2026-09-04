@@ -813,6 +813,35 @@ CREATE TABLE IF NOT EXISTS discovery_lanes (
   PRIMARY KEY (user_id, ext_id)
 );
 
+-- Every thread between a pool candidate and something of the listener's.
+--
+-- `discoveries.seed` is ONE artist name, overwritten by whichever harvester
+-- last saw the candidate. That was the whole record of why a song was in the
+-- pool: no second anchor, no relation kind, no strength - a candidate reached
+-- from two of your artists kept only the later one, and a card could say
+-- nothing truer than "because you play X". This table is the thread itself,
+-- one row per (candidate, your artist, how they connect). `kind` is the
+-- source of the connection: 'deezer_related' (the catalogue's neighbour
+-- graph, strength 1/(1+rank)), 'lb_similar' (ListenBrainz co-listening, the
+-- score normalised to the seed's top neighbour), 'mb_member' / 'mb_side' /
+-- 'mb_collab' (a MusicBrainz relationship: shared a band, a side project, a
+-- collaboration), 'same_artist' (their own back catalogue), 'keep' (an
+-- artist from a Music Date keep). `anchor_key` is the pool's identity fold
+-- of the artist (discovery::artist_key, the same vocabulary as an 'artist'
+-- rejection); `anchor_name` is the name as the library spells it, for the
+-- card. Anchors are written only after `add_discovery` ACCEPTED the row, so
+-- a judged song cannot acquire threads it will never be dealt on.
+CREATE TABLE IF NOT EXISTS discovery_anchors (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ext_id      TEXT    NOT NULL,
+  anchor_key  TEXT    NOT NULL,
+  kind        TEXT    NOT NULL,
+  strength    REAL    NOT NULL,
+  anchor_name TEXT    NOT NULL DEFAULT '',
+  PRIMARY KEY (user_id, ext_id, anchor_key, kind)
+);
+CREATE INDEX IF NOT EXISTS discovery_anchors_anchor ON discovery_anchors(user_id, anchor_key);
+
 -- One listener's mood profile: what they have ACTUALLY been playing lately,
 -- clustered. Rebuilt daily by the programmer; read whole by scoring, the
 -- station builder and the settings pane. A JSON blob like transcripts, for the
@@ -6235,6 +6264,11 @@ impl Db {
     /// Files a harvested candidate. Existing rows keep whatever has already
     /// been learned about them - a re-harvest must not wipe a tempo that cost
     /// a preview download to measure.
+    ///
+    /// Returns whether the row was taken - inserted or refreshed. `false`
+    /// means the judged-song guard below refused it, and a caller must write
+    /// NOTHING else about the candidate (no anchors, no lane): a song the
+    /// listener already passed on has no business acquiring threads.
     #[allow(clippy::too_many_arguments)]
     pub fn add_discovery(
         &self,
@@ -6247,12 +6281,12 @@ impl Db {
         preview: &str,
         seed: &str,
         popularity: f64,
-    ) -> rusqlite::Result<()> {
+    ) -> rusqlite::Result<bool> {
         // A song this listener has already ruled on as a preview date is not
         // a discovery, whatever id the catalogue gives it this time. Checked
         // HERE, in the one door every harvester (taste walk, on-demand seed,
         // the charts) comes through, so no lane can forget to ask.
-        self.lock().execute(
+        let changed = self.lock().execute(
             "INSERT INTO discoveries
                (user_id, ext_id, title, artist, cover, url, preview, seed, popularity, found_at)
              SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
@@ -6274,17 +6308,97 @@ impl Db {
                 crate::discovery::key_of(artist, title)
             ],
         )?;
-        Ok(())
+        Ok(changed > 0)
     }
 
-    /// Candidates that have not been listened to yet, oldest find first.
+    /// One thread between a pool candidate and an artist of the listener's.
+    /// Only ever called after `add_discovery` returned true - see there.
+    ///
+    /// The same (candidate, artist, kind) seen again keeps the STRONGER of
+    /// the two strengths: a neighbour that was eighth in one walk and second
+    /// in the next is as close as the closer sighting says.
+    pub fn add_discovery_anchor(
+        &self,
+        user_id: i64,
+        ext_id: &str,
+        anchor_name: &str,
+        kind: &str,
+        strength: f64,
+    ) {
+        let key = crate::discovery::artist_key_public(anchor_name);
+        if key.is_empty() || kind.is_empty() {
+            return;
+        }
+        let _ = self.lock().execute(
+            "INSERT INTO discovery_anchors (user_id, ext_id, anchor_key, kind, strength, anchor_name)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(user_id, ext_id, anchor_key, kind) DO UPDATE SET
+               strength = MAX(strength, excluded.strength),
+               anchor_name = excluded.anchor_name",
+            params![user_id, ext_id, key, kind, strength.clamp(0.0, 1.0), anchor_name.trim()],
+        );
+    }
+
+    /// Why one candidate is in the pool: (artist as the library spells it,
+    /// kind, strength), strongest thread first. The card's reason is drawn
+    /// from these and never written by a model.
+    pub fn discovery_anchors_for(&self, user_id: i64, ext_id: &str) -> Vec<(String, String, f64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT CASE WHEN anchor_name = '' THEN anchor_key ELSE anchor_name END, kind, strength
+             FROM discovery_anchors WHERE user_id = ?1 AND ext_id = ?2
+             ORDER BY strength DESC, kind",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, ext_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, f64>(2)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Every thread in one listener's pool, as (ext_id, anchor_key, kind,
+    /// strength) - one read for a whole rescore, where a lookup per row
+    /// would be hundreds.
+    pub fn discovery_anchor_rows(&self, user_id: i64) -> Vec<(String, String, String, f64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT ext_id, anchor_key, kind, strength FROM discovery_anchors WHERE user_id = ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, f64>(3)?,
+            ))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Candidates that have not been listened to yet, the best-connected
+    /// first and, among equals, the least famous.
+    ///
+    /// This used to be `ORDER BY popularity DESC` - the most famous
+    /// candidates were measured first, so the chart rows became offerable
+    /// while the small connected finds the whole pipeline exists for sat
+    /// unmeasured behind them. The sum of a candidate's anchor strengths is
+    /// how many threads tie it to this listener; a row with none (a chart
+    /// pick) waits its turn.
     pub fn discoveries_needing_work(&self, user_id: i64, limit: i64) -> Vec<DiscoveryRow> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT ext_id, title, artist, cover, url, preview, seed, popularity, bpm,
-                    lyric_vec, vec_dims, score
-             FROM discoveries WHERE user_id = ?1 AND checked_at = 0
-             ORDER BY popularity DESC LIMIT ?2",
+            "SELECT d.ext_id, d.title, d.artist, d.cover, d.url, d.preview, d.seed, d.popularity, d.bpm,
+                    d.lyric_vec, d.vec_dims, d.score, d.energy, d.brightness, d.rhythmic, d.released
+             FROM discoveries d WHERE d.user_id = ?1 AND d.checked_at = 0
+             ORDER BY (SELECT COALESCE(SUM(a.strength), 0) FROM discovery_anchors a
+                        WHERE a.user_id = d.user_id AND a.ext_id = d.ext_id) DESC,
+                      d.popularity ASC
+             LIMIT ?2",
         ) else {
             return Vec::new();
         };
@@ -6321,7 +6435,7 @@ impl Db {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT ext_id, title, artist, cover, url, preview, seed, popularity, bpm,
-                    lyric_vec, vec_dims, score
+                    lyric_vec, vec_dims, score, energy, brightness, rhythmic, released
              FROM discoveries WHERE user_id = ?1 AND checked_at > 0",
         ) else {
             return Vec::new();
@@ -6442,7 +6556,12 @@ impl Db {
         let mut weight: std::collections::HashMap<String, (String, f32)> = Default::default();
         for (artist, w, at) in rows {
             let key = crate::taste::artist_key(&artist);
-            if key.is_empty() || rejected.contains(&key) {
+            // The rejection ledger is written in the POOL's fold
+            // (discovery::artist_key: accents and joiners dropped), not the
+            // taste model's trim-and-lowercase - "The National" dismissed
+            // is "national" on file, and a lookup by "the national" would
+            // never find it. Ask in the vocabulary the answer is kept in.
+            if key.is_empty() || rejected.contains(&crate::discovery::artist_key_public(&artist)) {
                 continue;
             }
             let age_days = ((now_ms - at).max(0) as f32) / 86_400_000.0;
@@ -6646,7 +6765,7 @@ impl Db {
         let conn = self.lock();
         conn.query_row(
             "SELECT ext_id, title, artist, cover, url, preview, seed, popularity, bpm,
-                    lyric_vec, vec_dims, score
+                    lyric_vec, vec_dims, score, energy, brightness, rhythmic, released
              FROM discoveries WHERE user_id = ?1 AND ext_id = ?2",
             params![user_id, ext_id],
             discovery_from_row,
@@ -6660,7 +6779,7 @@ impl Db {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT ext_id, title, artist, cover, url, preview, seed, popularity, bpm,
-                    lyric_vec, vec_dims, score
+                    lyric_vec, vec_dims, score, energy, brightness, rhythmic, released
              FROM discoveries WHERE user_id = ?1 AND checked_at > 0
              ORDER BY score DESC LIMIT ?2",
         ) else {
@@ -6681,6 +6800,11 @@ impl Db {
         // block the candidate from ever being fanned to this listener again.
         let _ = self.lock().execute(
             "DELETE FROM discovery_lanes WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id],
+        );
+        // And its threads: a candidate that is gone hangs off nothing.
+        let _ = self.lock().execute(
+            "DELETE FROM discovery_anchors WHERE user_id = ?1 AND ext_id = ?2",
             params![user_id, ext_id],
         );
     }
@@ -10549,6 +10673,15 @@ pub struct DiscoveryRow {
     pub bpm: Option<f64>,
     pub lyric_vec: Option<Vec<f32>>,
     pub score: f64,
+    /// What the preview SOUNDED like, on the analyser's 0..1 scales - the
+    /// same energy and brightness a library track carries, so a candidate
+    /// can answer the energy and texture terms. None until listened to.
+    pub energy: Option<f64>,
+    pub brightness: Option<f64>,
+    pub rhythmic: Option<f64>,
+    /// When it came out, as the catalogue spelled it ("2019-04-12" or
+    /// "2019"); `taste::released_year` reads the year off it.
+    pub released: Option<String>,
 }
 
 fn discovery_from_row(r: &rusqlite::Row) -> rusqlite::Result<DiscoveryRow> {
@@ -10573,6 +10706,10 @@ fn discovery_from_row(r: &rusqlite::Row) -> rusqlite::Result<DiscoveryRow> {
         bpm: r.get(8)?,
         lyric_vec: vec,
         score: r.get(11)?,
+        energy: r.get(12)?,
+        brightness: r.get(13)?,
+        rhythmic: r.get(14)?,
+        released: r.get::<_, Option<String>>(15)?.filter(|s| !s.trim().is_empty()),
     })
 }
 
@@ -11516,6 +11653,163 @@ mod judged_candidates {
         let you = db.create_user("you", "", false).unwrap();
         offer(&db, you, "dz-2", "Boards of Canada", "Dayvan Cowboy");
         assert!(db.discovery_get(you, "dz-2").is_some());
+    }
+}
+
+#[cfg(test)]
+mod pool_threads {
+    //! Why a candidate is in the pool, kept as data: which artists of the
+    //! listener's it hangs off and how (`discovery_anchors`), what the pool
+    //! grows FROM (`heart_weighted_artists`), and which candidates get
+    //! listened to first (`discoveries_needing_work`).
+
+    use super::*;
+
+    fn fresh(name: &str) -> Db {
+        let d = std::env::temp_dir().join(format!("afm-threads-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    /// A plain library row by one artist.
+    fn add_track(db: &Db, rel: &str, artist: &str) -> i64 {
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind)
+                 VALUES (?1,?1,?2,?2,'Al',0,0,'music')",
+                params![rel, artist],
+            )
+            .unwrap();
+        db.track_id_by_path(rel).expect("indexed")
+    }
+
+    fn offer(db: &Db, me: i64, ext: &str, artist: &str, title: &str, popularity: f64) -> bool {
+        db.add_discovery(me, ext, title, artist, "", "", "https://p/preview.mp3", "seed", popularity)
+            .unwrap()
+    }
+
+    /// The judged-song guard refuses a row, and a refused row must not
+    /// acquire threads: `add_discovery` now SAYS whether it took the row,
+    /// and anchors are written only on a yes.
+    #[test]
+    fn anchors_are_written_only_after_an_accepted_insert() {
+        let db = fresh("guard");
+        let me = db.create_user("me", "", true).unwrap();
+
+        assert!(offer(&db, me, "dz-1", "Boards of Canada", "Roygbiv", 0.2), "a fresh offer is taken");
+        db.add_discovery_anchor(me, "dz-1", "Big Thief", "deezer_related", 0.5);
+        db.add_discovery_anchor(me, "dz-1", "Autechre", "lb_similar", 0.9);
+        let anchors = db.discovery_anchors_for(me, "dz-1");
+        assert_eq!(anchors.len(), 2);
+        assert_eq!(anchors[0].0, "Autechre", "strongest thread first: {anchors:?}");
+        assert_eq!(anchors[0].1, "lb_similar");
+
+        // Re-seen from another walk: the row is refreshed (true), and the
+        // same thread seen closer keeps the closer strength.
+        assert!(offer(&db, me, "dz-1", "Boards of Canada", "Roygbiv", 0.3), "an upsert is still a yes");
+        db.add_discovery_anchor(me, "dz-1", "Big Thief", "deezer_related", 0.8);
+        db.add_discovery_anchor(me, "dz-1", "Big Thief", "deezer_related", 0.4);
+        let big_thief = db
+            .discovery_anchors_for(me, "dz-1")
+            .into_iter()
+            .find(|(a, _, _)| a == "Big Thief")
+            .unwrap();
+        assert!((big_thief.2 - 0.8).abs() < 1e-9, "the stronger sighting wins: {}", big_thief.2);
+
+        // A song the listener already passed on is refused at the door.
+        db.record_candidate_verdict(me, &crate::discovery::key_of("Boards of Canada", "Dayvan Cowboy"), "passed");
+        assert!(!offer(&db, me, "dz-2", "Boards of Canada", "Dayvan Cowboy", 0.5), "a judged key is refused");
+        assert!(db.discovery_get(me, "dz-2").is_none());
+        // ... and the harvester, following the rule, writes nothing else -
+        // but even one that did not would leave no thread on a row that
+        // is not there once the candidate is forgotten.
+        assert!(db.discovery_anchors_for(me, "dz-2").is_empty());
+
+        // Forgetting a candidate takes its threads with it.
+        db.forget_discovery(me, "dz-1");
+        assert!(db.discovery_anchors_for(me, "dz-1").is_empty());
+    }
+
+    /// The seed list is what the listener SAID yes to. A heart outranks any
+    /// number of play starts; a finished listen counts, quietly; a play that
+    /// was merely started counts for nothing; a dismissed artist never seeds.
+    #[test]
+    fn seeds_come_from_hearts_before_play_counts_and_never_from_a_rejected_artist() {
+        let db = fresh("seeds");
+        let me = db.create_user("me", "", true).unwrap();
+        let now = now_ms();
+
+        let loved = add_track(&db, "loved.flac", "Big Thief");
+        let finished = add_track(&db, "finished.flac", "Autechre");
+        let started = add_track(&db, "started.flac", "Drake");
+        let refused = add_track(&db, "refused.flac", "The National");
+
+        // One heart.
+        db.set_favorite(me, loved, true).unwrap();
+        // Two finished listens: 0.4 each, 0.8 - still under one heart.
+        let tags = (String::new(), String::new(), String::new(), String::new());
+        for _ in 0..2 {
+            db.insert_listen(me, finished, &tags, now, 200_000, Some(200_000), true, false, "library", &ListenShape::default())
+                .unwrap();
+        }
+        // Five play STARTS, none finished: the old seed list's favourite.
+        for _ in 0..5 {
+            db.record_play(me, started).unwrap();
+        }
+        // Hearted AND dismissed as an artist last week: the dismiss endpoint
+        // writes the pool's fold ("national", joiners dropped).
+        db.set_favorite(me, refused, true).unwrap();
+        db.reject_discovery(me, "artist", &crate::discovery::artist_key_public("The National"));
+
+        let seeds: Vec<String> =
+            db.heart_weighted_artists(me, 0, now).into_iter().map(|(name, _)| name).collect();
+        assert_eq!(seeds, vec!["Big Thief".to_string(), "Autechre".to_string()], "{seeds:?}");
+        assert!(!seeds.iter().any(|s| s == "Drake"), "play starts are not a yes");
+        assert!(!seeds.iter().any(|s| s == "The National"), "a dismissed artist never seeds");
+
+        // Somebody else's hearts are not mine.
+        let you = db.create_user("you", "", false).unwrap();
+        assert!(db.heart_weighted_artists(you, 0, now).is_empty());
+    }
+
+    /// Measurement used to start with the most famous candidate. The
+    /// connected go first now - the sum of their threads, strongest first -
+    /// and among the unconnected the least famous, so a small find is
+    /// offerable before a chart row.
+    #[test]
+    fn work_is_ordered_connected_first_then_least_famous() {
+        let db = fresh("order");
+        let me = db.create_user("me", "", true).unwrap();
+
+        assert!(offer(&db, me, "chart-hit", "Drake", "Big Hit", 0.95));
+        assert!(offer(&db, me, "chart-small", "Nobody", "Small Chart Row", 0.10));
+        assert!(offer(&db, me, "one-thread", "Autechre", "Tri Repetae", 0.30));
+        db.add_discovery_anchor(me, "one-thread", "Boards of Canada", "lb_similar", 0.6);
+        assert!(offer(&db, me, "two-threads", "Plaid", "Eyen", 0.90));
+        db.add_discovery_anchor(me, "two-threads", "Boards of Canada", "lb_similar", 0.5);
+        db.add_discovery_anchor(me, "two-threads", "Autechre", "deezer_related", 0.5);
+
+        let order: Vec<String> =
+            db.discoveries_needing_work(me, 10).into_iter().map(|d| d.ext_id).collect();
+        assert_eq!(
+            order,
+            vec!["two-threads", "one-thread", "chart-small", "chart-hit"],
+            "connected first, then the least famous: {order:?}"
+        );
+
+        // And what a row carries reads back: the sound and the date land on
+        // the candidate for the scorer to use.
+        db.set_discovery_measured(me, "one-thread", 0.7, 0.6, 0.4);
+        db.set_discovery_released(me, "one-thread", "1995-11-06");
+        let row = db.discovery_get(me, "one-thread").unwrap();
+        assert_eq!(row.energy, Some(0.7));
+        assert_eq!(row.brightness, Some(0.6));
+        assert_eq!(row.rhythmic, Some(0.4));
+        assert_eq!(row.released.as_deref(), Some("1995-11-06"));
+        // First writer wins on the date.
+        db.set_discovery_released(me, "one-thread", "2020");
+        assert_eq!(db.discovery_get(me, "one-thread").unwrap().released.as_deref(), Some("1995-11-06"));
     }
 }
 

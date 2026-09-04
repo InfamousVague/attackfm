@@ -723,6 +723,13 @@ pub fn score(f: &TrackFeatures, taste: &UserTaste) -> f32 {
 /// The terms it cannot answer stay neutral and their weight is redistributed
 /// across the ones it can, so a candidate is never punished for the
 /// server simply not knowing something about it.
+///
+/// `energy` and `brightness` are what the preview SOUNDED like, on the
+/// analyser's scales (features.rs), and `year` is when it came out - the
+/// three answers that used to be missing for every candidate, which left
+/// "sounds similar" and "same era" as words in a prior no candidate could
+/// ever be scored on.
+#[allow(clippy::too_many_arguments)]
 pub fn score_candidate(
     taste: &UserTaste,
     lyric_vec: Option<&[f32]>,
@@ -730,6 +737,8 @@ pub fn score_candidate(
     seed_tags: &[String],
     seed_artist: &str,
     year: Option<i64>,
+    energy: Option<f64>,
+    brightness: Option<f64>,
 ) -> f32 {
     let w = taste.weights;
     let mut total = 0.0f32;
@@ -745,6 +754,20 @@ pub fn score_candidate(
     if let Some(e) = band(taste.era, year.filter(|y| *y > 1900).map(|y| y as f64), 3.0) {
         total += w.era * e;
         used += w.era;
+    }
+    // The same bands, floors and units as `terms_raw` gives a library track.
+    if let Some(e) = band(taste.energy, energy, 0.05) {
+        total += w.energy * e;
+        used += w.energy;
+    }
+    // Texture is the brightness half only. A thirty-second preview yields a
+    // dynamic range too, but the library's band for it is fitted on ninety
+    // seconds from the middle of whole files, and a clip cut to a chorus is
+    // not the same measure; brightness is a property of the spectrum and
+    // survives the cut.
+    if let Some(t) = band(taste.brightness, brightness, 0.05) {
+        total += w.texture * t;
+        used += w.texture;
     }
 
     if let (Some(c), Some(v)) = (&taste.lyric, lyric_vec) {
@@ -768,6 +791,21 @@ pub fn score_candidate(
         return 0.5;
     }
     (total / used).clamp(0.0, 1.0)
+}
+
+/// The year a catalogue's release date names: the leading four digits of
+/// "2019-04-12" or of a bare "2019". None for anything else - an empty
+/// string, prose, or Deezer's "0000-00-00" for a date it does not know,
+/// which is a year no band was ever formed in.
+pub fn released_year(released: &str) -> Option<i64> {
+    let s = released.trim();
+    let mut digits = s.chars().take_while(|c| c.is_ascii_digit());
+    let year: String = digits.by_ref().take(4).collect();
+    // Exactly four: "201" is not a year and "20190" is not one either.
+    if year.len() != 4 || digits.next().is_some() {
+        return None;
+    }
+    year.parse::<i64>().ok().filter(|y| *y > 1000)
 }
 
 /// Every tag the library associates with one artist, for seeding a candidate.
@@ -1390,6 +1428,55 @@ mod tests {
         assert_eq!(mine.blend_from_prior(0.0), PRIOR, "no evidence, no movement");
         let half = mine.blend_from_prior(0.5);
         assert!((half.lyric - (PRIOR.lyric + (1.0 - PRIOR.lyric) * 0.5)).abs() < 1e-6);
+    }
+
+    // --- a candidate that can finally say what it sounds like ---------------
+
+    /// A candidate arriving with its sound and its year answers the energy,
+    /// texture and era terms; one arriving without them is not punished -
+    /// the weight goes to whatever it CAN answer, exactly as before.
+    #[test]
+    fn a_candidate_answers_energy_texture_and_era_when_it_has_them() {
+        let mut t = UserTaste::cold(1);
+        t.energy = Some((0.7, 0.05));
+        t.brightness = Some((0.6, 0.05));
+        t.era = Some((2019.0, 3.0));
+
+        let near = score_candidate(&t, None, None, &[], "", Some(2020), Some(0.7), Some(0.6));
+        let far = score_candidate(&t, None, None, &[], "", Some(1975), Some(0.1), Some(0.1));
+        assert!(near > 0.9, "on the band on every term: {near}");
+        assert!(far < 0.1, "off the band on every term: {far}");
+
+        // Nothing known: no term answered, and the score is the neutral 0.5,
+        // not a low mark for being unmeasured.
+        assert_eq!(score_candidate(&t, None, None, &[], "", None, None, None), 0.5);
+
+        // One term answered is the whole score - the others' weight is
+        // redistributed onto it, not counted against it.
+        let only_energy = score_candidate(&t, None, None, &[], "", None, Some(0.7), None);
+        assert!(only_energy > 0.99, "{only_energy}");
+        t.tempo = Some((120.0, 4.0));
+        let tempo_only = score_candidate(&t, None, Some(120.0), &[], "", None, None, None);
+        assert!(tempo_only > 0.99, "unmeasured sound must not drag a perfect tempo: {tempo_only}");
+        let tempo_and_wrong_energy = score_candidate(&t, None, Some(120.0), &[], "", None, Some(0.1), None);
+        assert!(tempo_and_wrong_energy < tempo_only, "but a measured miss counts");
+
+        // A year before recorded music is not a year.
+        let bogus = score_candidate(&t, None, None, &[], "", Some(0), None, None);
+        assert_eq!(bogus, 0.5);
+    }
+
+    #[test]
+    fn a_release_date_yields_its_year() {
+        assert_eq!(released_year("2019-04-12"), Some(2019));
+        assert_eq!(released_year("2019"), Some(2019));
+        assert_eq!(released_year(" 2019 "), Some(2019));
+        assert_eq!(released_year("garbage"), None);
+        assert_eq!(released_year(""), None);
+        assert_eq!(released_year("0000-00-00"), None);
+        assert_eq!(released_year("April 2019"), None);
+        assert_eq!(released_year("20190"), None);
+        assert_eq!(released_year("201"), None);
     }
 
     #[test]

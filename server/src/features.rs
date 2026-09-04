@@ -23,7 +23,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::json;
 use std::collections::HashMap;
-use std::path::Path;
+use std::ffi::OsStr;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
@@ -105,7 +105,7 @@ async fn analyze_one(
     let path = crate::stream::resolve_in_root(&state.music_root, rel)
         .ok_or_else(|| "file is missing from the music root".to_string())?;
 
-    let samples = decode(&path, duration_ms)
+    let samples = decode(path.as_os_str(), duration_ms)
         .await
         .ok_or_else(|| "ffmpeg produced no usable audio".to_string())?;
     // The DSP is CPU-bound and long enough to matter; keep it off the async
@@ -140,11 +140,27 @@ async fn analyze_one(
         .map_err(|e| e.to_string())
 }
 
-/// A mono f32 window from the middle of the file - a quarter of the way in
-/// when the duration is known, the top when it is not. None when ffmpeg
+/// The character of a track the server does NOT own, measured off the
+/// catalogue's thirty-second preview: `(energy, brightness, dynamic_range,
+/// rhythmic_activity)` on the same 0..1 scales the library gets, so a pool
+/// candidate can answer the same terms of the score. ffmpeg reads the URL
+/// straight into the decoder, as tempo.rs already relies on; nothing touches
+/// the disk. It is a second decode of the clip tempo.rs just read - the two
+/// analysers want different sample rates, and one more thirty-second decode
+/// beside a lyrics fetch and an embedding is not where the cycle's time goes.
+pub async fn measure_url(url: &str) -> Option<(f64, f64, f64, f64)> {
+    let samples = decode(OsStr::new(url), None).await?;
+    let (energy, brightness, _loudness, dynamic_range, rhythmic_activity) =
+        tokio::task::spawn_blocking(move || measure(&samples)).await.ok()?;
+    Some((energy, brightness, dynamic_range, rhythmic_activity))
+}
+
+/// A mono f32 window from the middle of the input - a quarter of the way in
+/// when the duration is known, the top when it is not. `input` is anything
+/// ffmpeg opens: a file in the music root, or a preview URL. None when ffmpeg
 /// fails or hands back less than five seconds, which is too little to call a
 /// character.
-async fn decode(path: &Path, duration_ms: Option<i64>) -> Option<Vec<f32>> {
+async fn decode(input: &OsStr, duration_ms: Option<i64>) -> Option<Vec<f32>> {
     let mut command = tokio::process::Command::new("ffmpeg");
     command.args(["-v", "error"]);
     // -ss before -i seeks by index rather than decoding its way there (see
@@ -156,7 +172,7 @@ async fn decode(path: &Path, duration_ms: Option<i64>) -> Option<Vec<f32>> {
     }
     let out = command
         .arg("-i")
-        .arg(path)
+        .arg(input)
         .args([
             "-t", TAKE_SECS, "-ac", "1", "-ar", "22050", "-f", "f32le", "-",
         ])

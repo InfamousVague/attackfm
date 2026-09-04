@@ -32,7 +32,7 @@ use crate::curator::{taste_for};
 use crate::AppState;
 use serde::Serialize;
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -81,8 +81,17 @@ const HARVEST_EVERY_MS: i64 = 6 * 60 * 60 * 1000;
  */
 const TRACK_REJECT_MS: i64 = 90 * 24 * 60 * 60 * 1000;
 const ARTIST_REJECT_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+/// "Less like this" on a card's REASON - a refused anchor (scope 'anchor',
+/// written by the dismiss path once it can name one) keeps pulling every
+/// candidate that hangs off it down for this long. Longer than an artist
+/// refusal: the listener did not say "not them", they said "not that thread".
+const ANCHOR_REJECT_MS: i64 = 90 * 24 * 60 * 60 * 1000;
+/// The most a refused anchor can cost a candidate. Enough to sink one whose
+/// only thread was refused below every honest match; never enough to hide
+/// one the listener has other reasons to meet.
+const ANCHOR_REJECT_PENALTY: f64 = 0.15;
 /// Artists of yours to expand from, and how far each expands.
-const SEED_ARTISTS: i64 = 8;
+const SEED_ARTISTS: usize = 8;
 const RELATED_PER_SEED: usize = 8;
 const TRACKS_PER_ARTIST: usize = 6;
 /// Politeness between catalogue calls.
@@ -322,29 +331,30 @@ mod key_tests {
     }
 }
 
-/// The library's own most-represented artists, as harvest seeds.
+/// The artists a harvest grows FROM: what this listener has said yes to,
+/// strongest first - hearts and Music Date keeps, then finished listens,
+/// each decayed - trimmed to `n`. See `Db::heart_weighted_artists`.
 ///
-/// The fallback for a listener with no recent plays: whoever you have the most
-/// OF is the best available guess at who you like, and it needs no history at
-/// all. Shaped like `top_artists` (name, count, most first) so the caller
-/// cannot tell which source it got.
-fn library_seed_artists(state: &Arc<AppState>, limit: i64) -> Vec<(String, i64)> {
-    let mut counts: std::collections::HashMap<String, (String, i64)> =
-        std::collections::HashMap::new();
-    for (artist, _title) in state.db.owned_names() {
-        let name = artist.trim();
-        if name.is_empty() {
-            continue;
-        }
-        let entry = counts
-            .entry(name.to_ascii_lowercase())
-            .or_insert_with(|| (name.to_string(), 0));
-        entry.1 += 1;
-    }
-    let mut out: Vec<(String, i64)> = counts.into_values().collect();
-    out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    out.truncate(limit.max(0) as usize);
-    out
+/// This replaces two things. Play-start counts (`top_artists`), which
+/// rewarded curiosity over conviction: the artist you tried four times and
+/// skipped four times out-seeded the one you hearted. And the fallback that
+/// seeded a quiet listener from the whole hub's library - everybody's
+/// shelves, not theirs - which is where a housemate's taste used to leak
+/// into a pool that is supposed to be strictly one person's. A listener
+/// with no hearts and no finished listens has said nothing yet, and the
+/// harvest waits for them to say something rather than guessing.
+///
+/// No window on the read: the sixty-day half-life inside it already ranks
+/// this week's heart above last winter's, and a listener whose only hearts
+/// ARE from last winter should be harvested from them, not from nothing.
+pub(crate) fn seed_artists(state: &Arc<AppState>, user: i64, n: usize) -> Vec<String> {
+    state
+        .db
+        .heart_weighted_artists(user, 0, now_ms())
+        .into_iter()
+        .take(n)
+        .map(|(name, _)| name)
+        .collect()
 }
 
 /// The whole library as comparison keys - what a candidate is tested against.
@@ -419,7 +429,7 @@ pub async fn harvest_seeded(state: &Arc<AppState>, user: i64, seeds: Vec<(String
     // The clock still gets stamped: an on-demand run counts as the sweep for
     // this window, so the two cannot both go out to Deezer at once.
     state.discovery.last_harvest.lock().await.insert(user, now_ms());
-    harvest_from(state, user, seeds).await;
+    harvest_from(state, user, seeds.into_iter().map(|(name, _)| name).collect()).await;
 }
 
 pub async fn harvest(state: &Arc<AppState>, user: i64) {
@@ -436,18 +446,12 @@ pub async fn harvest(state: &Arc<AppState>, user: i64) {
         return;
     }
 
-    let since = now_ms() - 30 * 24 * 60 * 60 * 1000;
-    let mut seeds = state.db.top_artists(user, since, SEED_ARTISTS);
+    // Hearts and keeps, then finished listens - never play starts, never the
+    // hub's library. Nothing to grow from means nothing grows: see
+    // `seed_artists` for why the old fallback went.
+    let seeds = seed_artists(state, user, SEED_ARTISTS);
     if seeds.is_empty() {
-        // No recent plays - but a library IS a statement of taste, and the most
-        // common artists in it are the honest stand-in for a heavy rotation
-        // nobody has built yet. Without this a full library with a quiet month
-        // harvested nothing at all, so Discover stayed empty for exactly the
-        // listener who had the most to go on.
-        seeds = library_seed_artists(state, SEED_ARTISTS);
-        if seeds.is_empty() {
-            return;
-        }
+        return;
     }
     harvest_from(state, user, seeds).await;
 }
@@ -455,24 +459,33 @@ pub async fn harvest(state: &Arc<AppState>, user: i64) {
 /// The walk itself: seeds -> their neighbours -> candidates you do not own.
 /// Shared by the background sweep and the on-demand run so the two can never
 /// drift into harvesting differently.
-async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<(String, i64)>) {
+async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<String>) {
     let owned = owned_keys(state);
     let c = client(15);
 
-    for (seed_name, _) in seeds {
+    for seed_name in seeds {
         // Your artist, in the catalogue's terms.
         let Some(seed_id) = deezer_artist_id(&c, &seed_name, true).await else { continue };
         tokio::time::sleep(GAP).await;
 
         // Their neighbours - and the seed itself, since their back catalogue is
-        // full of things you may not own either.
-        let mut artists: Vec<(u64, String)> = vec![(seed_id, seed_name.clone())];
+        // full of things you may not own either. Each carries the THREAD its
+        // candidates will be filed under: the seed's own songs are
+        // 'same_artist' at full strength; a neighbour is 'deezer_related' at
+        // 1/(1+rank), the rank counted from one so that even the nearest
+        // neighbour (0.5) never reads as close as the artist themselves.
+        let mut artists: Vec<(u64, &'static str, f64)> = vec![(seed_id, "same_artist", 1.0)];
         if let Some(rel) = deezer_related(&c, seed_id).await {
-            artists.extend(rel.into_iter().take(RELATED_PER_SEED));
+            artists.extend(
+                rel.into_iter()
+                    .take(RELATED_PER_SEED)
+                    .enumerate()
+                    .map(|(i, (id, _name))| (id, "deezer_related", 1.0 / (2.0 + i as f64))),
+            );
         }
         tokio::time::sleep(GAP).await;
 
-        for (artist_id, artist_name) in artists {
+        for (artist_id, kind, strength) in artists {
             let Some(tracks) = deezer_top(&c, artist_id).await else { continue };
             for t in tracks.into_iter().take(TRACKS_PER_ARTIST) {
                 if owned.contains(&key_of(&t.artist, &t.title))
@@ -480,57 +493,79 @@ async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<(String, i64)
                 {
                     continue;
                 }
-                let _ = state.db.add_discovery(
-                    user,
-                    &t.ext_id,
-                    &t.title,
-                    &t.artist,
-                    &t.cover,
-                    &t.url,
-                    &t.preview,
-                    &seed_name,
-                    t.popularity,
-                );
+                file_candidate(&state.db, user, &t, &seed_name, kind, strength);
             }
             tokio::time::sleep(GAP).await;
-            let _ = artist_name;
         }
     }
+}
+
+/// The one way a catalogue track enters the pool from this module.
+///
+/// Through `add_discovery`'s judged-song guard first - and ONLY if the row
+/// was taken does the candidate acquire its thread to `anchor` (the artist of
+/// the listener's it was reached from, `kind` and `strength` saying how) and
+/// its release date. A song the listener already passed on is refused at the
+/// door and must not collect threads on the way out. Returns whether it went
+/// in.
+fn file_candidate(
+    db: &crate::db::Db,
+    user: i64,
+    t: &CandidateTrack,
+    anchor: &str,
+    kind: &str,
+    strength: f64,
+) -> bool {
+    let taken = db
+        .add_discovery(
+            user, &t.ext_id, &t.title, &t.artist, &t.cover, &t.url, &t.preview, anchor,
+            t.popularity,
+        )
+        .unwrap_or(false);
+    if !taken {
+        return false;
+    }
+    db.add_discovery_anchor(user, &t.ext_id, anchor, kind, strength);
+    if let Some(released) = &t.released {
+        db.set_discovery_released(user, &t.ext_id, released);
+    }
+    true
 }
 
 /// Resolve one artist by NAME (strictly - a wrong match ingests a stranger's
 /// catalog) and add a few of their tracks to the pool. The door the
 /// ListenBrainz harvest and the scene walk share with nobody else: candidates
 /// from any source ride the same insertion, dedupe and scoring as Deezer's.
+///
+/// `kind` and `strength` are the thread each candidate is filed under - the
+/// ListenBrainz score, the MusicBrainz relation - which used to be thrown
+/// away at this door. Returns the ids that went in, so the caller can tag
+/// them with its lane.
+#[allow(clippy::too_many_arguments)]
 pub async fn ingest_artist_by_name(
     state: &Arc<AppState>,
     user: i64,
     c: &reqwest::Client,
     artist: &str,
     seed_name: &str,
+    kind: &str,
+    strength: f64,
     take: usize,
-) -> usize {
-    let Some(id) = deezer_artist_id(c, artist, true).await else { return 0 };
+) -> Vec<String> {
+    let Some(id) = deezer_artist_id(c, artist, true).await else { return Vec::new() };
     tokio::time::sleep(GAP).await;
-    let Some(tracks) = deezer_top(c, id).await else { return 0 };
+    let Some(tracks) = deezer_top(c, id).await else { return Vec::new() };
     tokio::time::sleep(GAP).await;
     let owned = owned_keys(state);
-    let mut added = 0usize;
+    let mut added = Vec::new();
     for t in tracks.into_iter().take(take) {
         if owned.contains(&key_of(&t.artist, &t.title))
             || is_rejected(&state.db, user, &t.artist, &t.title)
         {
             continue;
         }
-        if state
-            .db
-            .add_discovery(
-                user, &t.ext_id, &t.title, &t.artist, &t.cover, &t.url, &t.preview, seed_name,
-                t.popularity,
-            )
-            .is_ok()
-        {
-            added += 1;
+        if file_candidate(&state.db, user, &t, seed_name, kind, strength) {
+            added.push(t.ext_id);
         }
     }
     added
@@ -555,6 +590,9 @@ struct CandidateTrack {
     url: String,
     preview: String,
     popularity: f64,
+    /// When it came out, if the catalogue said. The top-tracks listing
+    /// usually does not; read opportunistically, never invented.
+    released: Option<String>,
 }
 
 /// The catalogue's id for an artist by name. Public so the album filler can
@@ -699,6 +737,11 @@ async fn deezer_top(c: &reqwest::Client, id: u64) -> Option<Vec<CandidateTrack>>
                     popularity: (t.get("rank").and_then(|x| x.as_f64()).unwrap_or(0.0)
                         / 1_000_000.0)
                         .clamp(0.0, 1.0),
+                    released: t
+                        .get("release_date")
+                        .or_else(|| t.pointer("/album/release_date"))
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string),
                 })
             })
             .collect(),
@@ -745,6 +788,7 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
         all.iter().map(|f| (f.track_id, f)).collect();
     let lanes = state.db.discovery_lanes(user);
     let mood = crate::mood::load(state, user);
+    let anchors = anchor_ledger(state, user);
     let c = client(20);
 
     for cand in waiting {
@@ -754,24 +798,74 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
             Some(words) => crate::curator::embed_text(&words).await,
             None => None,
         };
-        // The tempo, measured off the preview rather than guessed.
-        let bpm = if cand.preview.is_empty() {
-            None
+        // The tempo, measured off the preview rather than guessed - and, off
+        // the same thirty seconds, what it SOUNDS like: energy and brightness
+        // on the library's own scales, so the candidate can answer the two
+        // terms every candidate used to be neutral on.
+        let (bpm, sound) = if cand.preview.is_empty() {
+            (None, None)
         } else {
-            crate::tempo::analyze_url(&cand.preview).await
+            (
+                crate::tempo::analyze_url(&cand.preview).await,
+                crate::features::measure_url(&cand.preview).await,
+            )
         };
+        let (energy, brightness) = match sound {
+            Some((energy, brightness, _dynamic_range, rhythmic)) => {
+                state.db.set_discovery_measured(user, &cand.ext_id, energy, brightness, rhythmic);
+                (Some(energy), Some(brightness))
+            }
+            None => (cand.energy, cand.brightness),
+        };
+        let year = cand.released.as_deref().and_then(crate::taste::released_year);
 
         // The seed artist IS the genre signal, as the old comment said - so
         // now it is actually used instead of being noted and then passed as
         // None, which made a quarter of the score a constant.
         let tags = crate::taste::artist_tags(&by_id, &cand.seed);
-        let score = crate::taste::score_candidate(&taste, vec.as_deref(), bpm, &tags, &cand.seed, None) as f64
-            + score_extras(lanes.get(&cand.ext_id), cand.popularity, mood.as_ref(), vec.as_deref(), bpm);
+        let score = crate::taste::score_candidate(
+            &taste, vec.as_deref(), bpm, &tags, &cand.seed, year, energy, brightness,
+        ) as f64
+            + score_extras(lanes.get(&cand.ext_id), cand.popularity, mood.as_ref(), vec.as_deref(), bpm)
+            - anchor_penalty(anchors.get(&cand.ext_id));
 
         let _ = state.db.save_discovery_features(user, &cand.ext_id, bpm, vec.as_deref(), score);
         tokio::time::sleep(GAP).await;
     }
     true
+}
+
+/// Every candidate's threads, summed, beside the share of them the listener
+/// has cut: ext_id -> (total strength, refused strength). One read for a
+/// whole pass, where a lookup per candidate would be hundreds.
+///
+/// A refused anchor is "less like this" said about a card's REASON (scope
+/// 'anchor' in `discovery_rejections`). Nothing writes that scope yet - the
+/// dismiss path will, once cards carry the anchors to say no to - and until
+/// it does this reads an empty set and costs nothing.
+fn anchor_ledger(state: &Arc<AppState>, user: i64) -> HashMap<String, (f64, f64)> {
+    let refused = state.db.rejected_keys_since(user, "anchor", now_ms() - ANCHOR_REJECT_MS);
+    let mut ledger: HashMap<String, (f64, f64)> = HashMap::new();
+    for (ext_id, key, _kind, strength) in state.db.discovery_anchor_rows(user) {
+        let e = ledger.entry(ext_id).or_insert((0.0, 0.0));
+        e.0 += strength;
+        if refused.contains(&key) {
+            e.1 += strength;
+        }
+    }
+    ledger
+}
+
+/// What a candidate loses for hanging off a thread the listener cut, scaled
+/// by how much of its connection that thread was: the whole penalty when
+/// every anchor is refused, a share of it when one among several is.
+fn anchor_penalty(entry: Option<&(f64, f64)>) -> f64 {
+    match entry {
+        Some((total, refused)) if *total > 0.0 && *refused > 0.0 => {
+            ANCHOR_REJECT_PENALTY * (refused / total).clamp(0.0, 1.0)
+        }
+        _ => 0.0,
+    }
 }
 
 /// The popularity term, inverted.
@@ -841,21 +935,24 @@ pub fn rescore(state: &Arc<AppState>, user: i64) {
         all.iter().map(|f| (f.track_id, f)).collect();
     let lanes = state.db.discovery_lanes(user);
     let mood = crate::mood::load(state, user);
+    let anchors = anchor_ledger(state, user);
     // The seed artist's tags stand in for the candidate's own, which this
     // endpoint never supplies. A quarter of every score used to be the literal
     // constant 0.5 because `None` was passed for genre here; the seed is the
     // reason the candidate is in the pool at all, so its tags are the closest
     // honest answer available.
-    let mut seed_tags: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
+    let mut seed_tags: HashMap<String, Vec<String>> = HashMap::new();
     for d in pool {
         let tags = seed_tags
             .entry(d.seed.to_lowercase())
             .or_insert_with(|| crate::taste::artist_tags(&by_id, &d.seed))
             .clone();
-        let score = crate::taste::score_candidate(&taste, d.lyric_vec.as_deref(), d.bpm, &tags, &d.seed, None)
-            as f64
-            + score_extras(lanes.get(&d.ext_id), d.popularity, mood.as_ref(), d.lyric_vec.as_deref(), d.bpm);
+        let year = d.released.as_deref().and_then(crate::taste::released_year);
+        let score = crate::taste::score_candidate(
+            &taste, d.lyric_vec.as_deref(), d.bpm, &tags, &d.seed, year, d.energy, d.brightness,
+        ) as f64
+            + score_extras(lanes.get(&d.ext_id), d.popularity, mood.as_ref(), d.lyric_vec.as_deref(), d.bpm)
+            - anchor_penalty(anchors.get(&d.ext_id));
         state.db.set_discovery_score(user, &d.ext_id, score);
     }
 }
@@ -889,11 +986,35 @@ pub struct DiscoveryOut {
     pub preview: String,
     /// The artist of theirs this hangs off - the "because you play X" line.
     pub seed: String,
+    /// EVERY artist of theirs this hangs off, and how: the card's reason is
+    /// one of these, never a sentence a model wrote. Strongest first.
+    pub anchors: Vec<AnchorOut>,
     pub bpm: Option<f64>,
     /// Whether its words were actually read, so the client can say why it is
     /// here honestly rather than implying more than was measured.
     pub lyrics_read: bool,
     pub score: f64,
+}
+
+/// One thread between a candidate and an artist of the listener's.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnchorOut {
+    /// The artist, as the library spells it.
+    pub artist: String,
+    /// How they connect: deezer_related, lb_similar, mb_member, mb_side,
+    /// mb_collab, same_artist, keep.
+    pub kind: String,
+    /// How close, 0-1 in the kind's own terms.
+    pub strength: f64,
+}
+
+/// The threads of one candidate, for a payload.
+fn anchors_of(db: &crate::db::Db, user: i64, ext_id: &str) -> Vec<AnchorOut> {
+    db.discovery_anchors_for(user, ext_id)
+        .into_iter()
+        .map(|(artist, kind, strength)| AnchorOut { artist, kind, strength })
+        .collect()
 }
 
 /// `GET /api/new-music` - AI-grouped playlists of music this listener does NOT
@@ -1006,10 +1127,14 @@ async fn new_music_lists(state: &Arc<AppState>, user: i64) -> Vec<serde_json::Va
 /// The model groups the discovery pool into a few themed playlists of unowned
 /// music; every ext_id is validated back against the pool, and the full track is
 /// attached so the client can preview or import it.
-fn nm_item(d: &crate::db::DiscoveryRow) -> serde_json::Value {
+fn nm_item(db: &crate::db::Db, user: i64, d: &crate::db::DiscoveryRow) -> serde_json::Value {
+    let anchors: Vec<serde_json::Value> = anchors_of(db, user, &d.ext_id)
+        .into_iter()
+        .map(|a| json!({ "artist": a.artist, "kind": a.kind, "strength": a.strength }))
+        .collect();
     json!({
         "id": d.ext_id, "title": d.title, "artist": d.artist, "cover": d.cover,
-        "url": d.url, "preview": d.preview, "seed": d.seed, "bpm": d.bpm,
+        "url": d.url, "preview": d.preview, "seed": d.seed, "anchors": anchors, "bpm": d.bpm,
         "lyricsRead": d.lyric_vec.is_some(), "score": d.score,
     })
 }
@@ -1072,7 +1197,7 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
             .iter()
             .filter(|d| lanes.get(&d.ext_id).is_some_and(|(l, _)| l == lane))
             .take(12)
-            .map(nm_item)
+            .map(|d| nm_item(&state.db, user, d))
             .collect();
         if items.len() >= 4 {
             lead.push(json!({ "id": id, "title": title, "blurb": blurb, "items": items }));
@@ -1135,7 +1260,7 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
                     .filter_map(|k| usize::try_from(k).ok())
                     .filter(|k| *k >= 1 && *k <= n && used.insert(*k))
                     .filter_map(|k| pool.get(k - 1))
-                    .map(nm_item)
+                    .map(|d| nm_item(&state.db, user, d))
                     .collect()
             })
             .unwrap_or_default();
@@ -1164,6 +1289,7 @@ pub async fn feed(
         .top_discoveries(caller.id, 40)
         .into_iter()
         .map(|d| DiscoveryOut {
+            anchors: anchors_of(&state.db, caller.id, &d.ext_id),
             id: d.ext_id,
             title: d.title,
             artist: d.artist,
