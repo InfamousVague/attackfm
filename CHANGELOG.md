@@ -15,6 +15,18 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.90
+
+- Profile pictures and banners upload again. They never reached the directory
+  at all — it was turning the request away before it was sent, which the app
+  could only report as "failed to fetch". Editing your profile, sharing
+  grants, and syncing your settings and your place in a book were failing the
+  same way, quietly.
+- Choosing a picture now offers your whole photo library rather than hiding
+  anything your iPhone saved as HEIC, and a picture that will not open says
+  which kind it was — beside the button you pressed, instead of further down
+  the page.
+
 ## 0.5.89
 
 - Your profile share card is your banner now, with your picture centred on it -
