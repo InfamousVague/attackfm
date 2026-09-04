@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.102
+
+- Previews on Discover play again for songs you do not have yet. The
+  catalogue's thirty-second clips expire; the server now fetches each one
+  fresh when you tap, so a card never plays a dead link.
+
 ## 0.5.101
 
 - Say no, everywhere a song is dealt to you: thumbs on the DJ, in Now
