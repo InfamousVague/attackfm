@@ -120,7 +120,16 @@ const POLL_MS = 15_000;
 
 export function IncomingProvider({ children }: { children: ReactNode }) {
   const { session } = useServerSession();
-  const { tracks, isFavorite, toggleFavorite } = useLibrary();
+  // `allTracks`, not `tracks`: this is an IDENTITY question - has the song we
+  // promised arrived - and `tracks` is the narrow display set. It drops a
+  // curator find that has not been promoted yet (those live in `forYou`), and
+  // a collector download is exactly that. So a hearted song landed, sat in the
+  // library, and its ghost still read "waiting for its turn" for the whole
+  // thirty-day life of the promise - and, because the same set drives the
+  // reconciliation below, it never became a real favourite either, which is
+  // why it was missing from Liked Songs as well. Books are in `allTracks` too,
+  // so a kept audiobook settles for the same reason.
+  const { allTracks, isFavorite, toggleFavorite } = useLibrary();
   const refreshNonce = useRefreshNonce();
   const downloads = useDownloadsOptional();
 
@@ -182,23 +191,23 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
    */
   const landed = useMemo(() => {
     const s = new Set<string>();
-    for (const t of tracks) {
+    for (const t of allTracks) {
       s.add(identityKey(t.artist, t.title));
       s.add(leadKey(t.artist, t.title));
     }
     return s;
-  }, [tracks]);
+  }, [allTracks]);
 
   // A landed track by identity, for the favourite reconciliation below.
   const landedByKey = useMemo(() => {
     const m = new Map<string, Track>();
-    for (const t of tracks) {
+    for (const t of allTracks) {
       for (const k of [identityKey(t.artist, t.title), leadKey(t.artist, t.title)]) {
         if (!m.has(k)) m.set(k, t);
       }
     }
     return m;
-  }, [tracks]);
+  }, [allTracks]);
 
   // A kept song that has arrived must become a real favourite here and now:
   // the sweep on the hub does it too, but minutes late and invisibly, so the
