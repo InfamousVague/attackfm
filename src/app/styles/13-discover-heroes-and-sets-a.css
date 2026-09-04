@@ -1,70 +1,104 @@
-/* ---- Discover: heroes and sets ----------------------------------------- */
+/* ---- Discover: the hero, the trending cards, the people cards ---------- */
 
-/* The big card: a place to walk into, wearing its music as a backdrop with
-   the words resting on a scrim. One per page top (the AI's fresh finds) and
-   one leading each chart section. */
-.discoverHero {
-  position: relative;
-  display: block;
-  inline-size: 100%;
-  min-block-size: 10rem;
-  aspect-ratio: 5 / 2;
-  max-block-size: 15rem;
-  border-radius: var(--glacier-radius-xl, 1rem);
-  overflow: hidden;
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  background: var(--glacier-surface-sunken);
-  text-align: start;
-  cursor: pointer;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-  transition:
-    transform var(--glacier-duration-fast) var(--glacier-ease-out),
-    box-shadow var(--glacier-duration-fast) var(--glacier-ease-out);
+/*
+ * The hero is the collection band (`.songPageHead`, chunk 22) worn by the
+ * Discover tab: it runs up behind the title bar and down to the first shelf,
+ * and whatever the page leads with wears its music across the whole of it.
+ * Three faces, decided in DiscoverHero.tsx by how much they move - the wall
+ * of this listener's own Canvas clips, one Canvas clip for the lead's first
+ * song, or the lead's sleeves as a mosaic. The chunk-22 band rules key on the
+ * wall; the two full-bleed faces are keyed here through `.discoverHead__face`
+ * (see the extended selectors in chunk 22), so all three sit in one band.
+ */
+
+/* The face wrapper draws no box of its own: the wall and the two art faces
+   are absolutely positioned against the header, exactly as the wall is. */
+.discoverHead__face {
+  display: contents;
 }
 
-.discoverHero:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+/* The tab's own rhythm: the first shelf sits a step closer to the band than
+   shelves sit to each other, so the hero and "Made for you" read as one
+   opening rather than a banner and then a page. */
+.discoverTab .discoverHead {
+  margin-block-end: calc(-1 * var(--glacier-space-2));
 }
 
+/* A full-bleed face: the art fills the band edge to edge. Square corners -
+   it is a band, not a tile. */
 .discoverHero__art {
   position: absolute;
   inset: 0;
-  border-radius: inherit;
-  overflow: hidden;
-}
-
-.discoverHero__art img {
+  z-index: 0;
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
-  border-radius: inherit;
+  border-radius: 0;
+  background: var(--glacier-surface-sunken);
 }
 
-.discoverHero__art .suggestCardCover--glyph {
-  position: absolute;
-  inset: 0;
+/* The lead's sleeves as one picture: one fills the band, two split it, three
+   give the first the tall half, four make the square. Cells crop rather than
+   letterbox - a band is wider than any sleeve. */
+.discoverHero__mosaic {
+  display: grid;
+  /* minmax(0, 1fr), not 1fr: a bare 1fr is minmax(auto, 1fr), and "auto"
+     is the sleeve's own 640px - so the four cells grew to their pictures and
+     the face ran a whole band's height past the header, over the first
+     shelf's heading. Zero minimum lets the cells take the band's quarter. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1px;
 }
 
+.discoverHero__mosaic img {
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 0;
+  object-fit: cover;
+  border-radius: 0;
+}
+
+.discoverHero__mosaic[data-covers='1'] img {
+  grid-column: span 2;
+  grid-row: span 2;
+}
+
+.discoverHero__mosaic[data-covers='2'] img {
+  grid-row: span 2;
+}
+
+.discoverHero__mosaic[data-covers='3'] img:first-child {
+  grid-row: span 2;
+}
+
+/* The scrim under the words on a full-bleed face. Black to clear, in both
+   themes: the ground is album art, which belongs to neither theme, and the
+   words over it are white - the Date card's name block, the suggestion tags
+   and the feature card all make the same choice. The wall face has none:
+   its mask already holds the title legible, and the page's own text colour
+   is right over it. */
 .discoverHero__scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgb(0 0 0 / 0.78) 0%, rgb(0 0 0 / 0.35) 45%, transparent 75%);
+  z-index: 1;
   pointer-events: none;
+  background: linear-gradient(
+    to top,
+    rgb(0 0 0 / 0.82) 0%,
+    rgb(0 0 0 / 0.42) 45%,
+    rgb(0 0 0 / 0.1) 75%,
+    transparent 100%
+  );
 }
 
-.discoverHero__text {
-  position: absolute;
-  inset-inline-start: 0;
-  inset-block-end: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--glacier-space-4);
+/* Everything the hero SAYS rides above both. The body fills the band's width
+   (the header is a flex row built for a sleeve beside a title; here there is
+   no sleeve) so a long name has the whole line. */
+.discoverHead .playlistHead__body {
+  flex: 1;
+  z-index: 2;
   max-inline-size: 100%;
-  color: #fff;
 }
 
 .discoverHero__kicker {
@@ -75,238 +109,230 @@
   font-weight: var(--glacier-font-weight-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: color-mix(in srgb, #fff 78%, transparent);
+  color: var(--glacier-text-muted);
 }
 
 .discoverHero__title {
-  font-size: 1.35rem;
+  margin: 0;
+  font-size: var(--glacier-font-size-2xl);
   font-weight: 750;
   letter-spacing: -0.015em;
-  line-height: 1.15;
-}
-
-.discoverHero__blurb {
-  font-size: var(--glacier-font-size-sm);
-  color: color-mix(in srgb, #fff 72%, transparent);
-}
-
-/* A featured chart: the same hero, but the Add is its own control riding the
-   corner - a sibling of the open-preview body, never nested inside it. */
-.discoverHero--suggestion {
-  cursor: default;
-}
-
-.discoverHero--suggestion:hover {
-  transform: none;
-  box-shadow: none;
-}
-
-.discoverHero__body {
-  position: absolute;
-  inset: 0;
-  display: block;
-  inline-size: 100%;
-  text-align: start;
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
-}
-
-.discoverHero__action {
-  position: absolute;
-  inset-block-end: var(--glacier-space-3);
-  inset-inline-end: var(--glacier-space-3);
-}
-
-/* The featured card's words stop short of the Add riding its corner. */
-.discoverHero--suggestion .discoverHero__text {
-  padding-inline-end: 7.5rem;
-}
-
-/* A Discover set or hero whose face is ONE generated object rather than a
-   mosaic of album covers: same treatment as the mix cards - a bold ground
-   with the shot multiplied into it. Album art must never get this (it is
-   photography, not a white-ground product shot), so it hangs off the
-   glyph-bearing wrapper only. */
-.discoverSetCard__cover:has(.suggestCardCover--glyph),
-.discoverHero__art:has(.suggestCardCover--glyph) {
-  background: linear-gradient(
-    140deg,
-    hsl(var(--setHue, 300) 66% 52%),
-    hsl(calc(var(--setHue, 300) + 50) 60% 36%)
-  );
-}
-
-/* Four covers as one: the set's face. */
-.discoverMosaic {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 1px;
-  border-radius: inherit;
+  line-height: 1.1;
+  /* Two lines, then an honest cut - the actions must not leave the band. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-/* The four inside a mosaic stay SQUARE. They inherit the card's radius from
-   `.suggestCardCover img` (which needs it so the entrance wave cannot flash
-   a corner past the frame), and on a tile that is only a quarter of the face
-   that rounding lands in the middle of the grid - four little pill shapes
-   with gaps at every junction. The mosaic itself is rounded and clips them,
-   so the outer corners are already right; the inner ones want to be sharp. */
-.discoverMosaic img {
+.discoverHero__blurb {
+  margin: 0;
+  max-inline-size: 34rem;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* White type on the two full-bleed faces, at the strengths the old hero used. */
+.discoverHead[data-face='canvas'] .discoverHero__text,
+.discoverHead[data-face='mosaic'] .discoverHero__text {
+  color: #fff;
+}
+
+.discoverHead[data-face='canvas'] .discoverHero__kicker,
+.discoverHead[data-face='mosaic'] .discoverHero__kicker {
+  color: color-mix(in srgb, #fff 78%, transparent);
+}
+
+.discoverHead[data-face='canvas'] .discoverHero__blurb,
+.discoverHead[data-face='mosaic'] .discoverHero__blurb {
+  color: color-mix(in srgb, #fff 72%, transparent);
+}
+
+/* The action row: the lead's own verb, then the page's two doors. A step
+   below the blurb, and it scrolls sideways rather than wrapping (EdgeScrollRow)
+   so the band stays one height at every width. */
+.discoverHero__actions {
+  margin-block-start: var(--glacier-space-3);
+}
+
+/*
+ * A trending card: one song not on the box, moving on a chart.
+ *
+ * Feature-sized - two ordinary cards wide - because the sleeve is the whole
+ * argument for a song you have never heard, and a small square of it says
+ * nothing. The sleeve is cropped to a wide face with the name over a scrim;
+ * the rank sits in one corner and the play glyph in the other; Add is its own
+ * control at the foot, a SIBLING of the press that previews, never inside it.
+ */
+.trendCard {
+  position: relative;
+  flex: none;
+  inline-size: var(--card-feature);
+}
+
+.trendCard__body {
+  position: relative;
+  display: block;
+  inline-size: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  padding: 0;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-sunken);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: transform 0.18s var(--glacier-ease-out);
+}
+
+.trendCard__body:disabled {
+  cursor: default;
+}
+
+.trendCard__body:hover:not(:disabled),
+.trendCard__body:focus-visible {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.trendCard__art {
+  position: absolute;
+  inset: 0;
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
-  border-radius: 0;
 }
 
-/* A set card: shaped like the chart tiles so the page stays one family, with
-   a count worn where the chart tiles wear their source tag. */
-.discoverSetCard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-1);
-  text-align: start;
-  cursor: pointer;
-  /* A plain press target, not a chrome button. */
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-}
-
-.discoverSetCard__cover {
-  position: relative;
-}
-
-.discoverSetCard__count {
+.trendCard__scrim {
   position: absolute;
-  inset-block-end: var(--glacier-space-1);
-  inset-inline-end: var(--glacier-space-1);
-  padding: 0.1rem 0.45rem;
-  border-radius: var(--glacier-radius-full);
-  font-size: var(--glacier-font-size-2xs, 0.65rem);
-  font-weight: var(--glacier-font-weight-semibold);
+  inset: 0;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.8) 0%, rgb(0 0 0 / 0.32) 50%, transparent 80%);
+  pointer-events: none;
+}
+
+/* The two corner chips: frosted, like the source tag on a suggestion card. */
+.trendCard__rank,
+.trendCard__play,
+.trendCard__add,
+.peopleCard__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: #fff;
   background: color-mix(in srgb, #000 55%, transparent);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+}
+
+.trendCard__rank {
+  position: absolute;
+  inset-block-start: var(--glacier-space-2);
+  inset-inline-start: var(--glacier-space-2);
+  gap: 0.35rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--glacier-radius-full);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
 
-/* A set, read in full inside the modal: rows that play (owned) or add
-   (discoveries), each wearing its cover. */
-.discoverSetList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-1);
-}
-
-.discoverSetList > :first-child {
-  margin-block-end: var(--glacier-space-2);
-}
-
-.discoverSetRow {
-  display: flex;
+/* Climbing: the delta in the success colour, the one number worth colouring. */
+.trendCard__delta {
+  display: inline-flex;
   align-items: center;
-  gap: var(--glacier-space-3);
-  padding: var(--glacier-space-2);
-  border-radius: var(--glacier-radius-md);
-  text-align: start;
-  cursor: pointer;
-  background: none;
-  border: none;
-  font: inherit;
-  color: inherit;
+  gap: 1px;
+  color: var(--glacier-success-text);
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
 }
 
-.discoverSetRow:hover:not(:disabled) {
-  background: var(--glacier-surface);
+.trendCard__play {
+  position: absolute;
+  inset-block-start: var(--glacier-space-2);
+  inset-inline-end: var(--glacier-space-2);
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: 50%;
+  pointer-events: none;
 }
 
-.discoverSetRow:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.discoverSetRow__cover {
-  flex: none;
-  inline-size: 2.4rem;
-  block-size: 2.4rem;
-  border-radius: var(--glacier-radius-sm);
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--glacier-surface-sunken);
-  color: var(--glacier-accent-text);
-}
-
-.discoverSetRow__cover img {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
-}
-
-.discoverSetRow__text {
+.trendCard__text {
+  position: absolute;
+  inset-inline: var(--glacier-space-3);
+  inset-block-end: var(--glacier-space-3);
+  /* Clear of the Add riding the other corner. */
+  padding-inline-end: 2.5rem;
   display: flex;
   flex-direction: column;
   gap: 1px;
   min-inline-size: 0;
-  flex: 1;
+  color: #fff;
 }
 
-.discoverSetRow__title {
-  font-weight: 600;
+.trendCard__title {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.trendCard__artist {
+  font-size: var(--glacier-font-size-sm);
+  color: color-mix(in srgb, #fff 80%, transparent);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.discoverSetRow__sub {
-  color: var(--glacier-text-muted);
+.trendCard__why {
   font-size: var(--glacier-font-size-xs);
+  color: color-mix(in srgb, #fff 62%, transparent);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.discoverSetRow__go,
-.discoverSetRow__badge {
-  flex: none;
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-surface, rgba(0, 0, 0, 0.55));
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  color: var(--glacier-accent-text);
+.trendCard__add {
+  position: absolute;
+  inset-block-end: var(--glacier-space-3);
+  inset-inline-end: var(--glacier-space-3);
+  inline-size: 2rem;
+  block-size: 2rem;
+  padding: 0;
+  border: var(--glacier-hairline) solid color-mix(in srgb, #fff 30%, transparent);
+  border-radius: 50%;
+  font: inherit;
+  cursor: pointer;
 }
 
-.discoverSetRow:hover:not(:disabled) .discoverSetRow__go,
-.discoverSetRow:hover:not(:disabled) .discoverSetRow__badge[data-state='idle'] {
+.trendCard__add:hover:not(:disabled) {
   background: var(--glacier-accent-solid);
-  color: var(--glacier-on-accent, #fff);
+  color: var(--glacier-accent-contrast, #fff);
 }
 
-.discoverSetRow__badge[data-state='added'] {
+.trendCard__add[data-state='added'] {
   color: var(--glacier-success-text);
   border-color: var(--glacier-success-text);
+  cursor: default;
 }
 
-/* The cover-and-titles half of a card is one button into the preview: a plain
-   press target wearing the card's own layout, with the same hover lift the
-   track cards use so it reads as openable. */
-.suggestCardBody {
+/*
+ * A people card: a door with somebody behind it. Feature-sized, a wide face
+ * over a title and a line, the same silhouette as a feature mix - the rail
+ * reads as one family with the rails above it.
+ */
+.peopleCard {
+  flex: none;
+  inline-size: var(--card-feature);
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
@@ -317,175 +343,117 @@
   font: inherit;
   text-align: start;
   cursor: pointer;
-  min-width: 0;
 }
 
-.suggestCardBody .suggestCardCover {
+.peopleCard:disabled {
+  cursor: default;
+}
+
+.peopleCard__face {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-sunken);
   transition: transform 0.18s var(--glacier-ease-out);
 }
 
-.suggestCardBody:hover .suggestCardCover,
-.suggestCardBody:focus-visible .suggestCardCover {
+.peopleCard:hover:not(:disabled) .peopleCard__face,
+.peopleCard:focus-visible .peopleCard__face {
   transform: translateY(-2px) scale(1.02);
 }
 
-/* The preview a tapped card opens: the cover beside the blurb and the same
-   Add control the card wears, then the playlist's numbered tracks - what the
-   embed lists, before a single byte is committed to. */
-.discoverPreview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-4);
-  min-width: 0;
+/* Faces overlapping, each ringed in the ground colour so the overlap reads. */
+.peopleCard__face--friends .friendAvatar,
+.peopleCard__face--jam .friendAvatar {
+  box-shadow: 0 0 0 3px var(--glacier-surface-sunken);
 }
 
-.discoverPreview__head {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-4);
+.peopleCard__face--friends .friendAvatar + .friendAvatar {
+  margin-inline-start: -0.9rem;
 }
 
-.discoverPreview__cover {
-  inline-size: 7rem;
-  flex: none;
-}
-
-.discoverPreview__meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--glacier-space-2);
-  min-width: 0;
-}
-
-.discoverPreview__tracks {
-  margin: 0;
-  padding-inline-start: 2rem;
-  max-block-size: 45vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.875rem;
-}
-
-.discoverPreview__tracks li::marker {
-  color: var(--glacier-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-
-/* --- find a playlist ------------------------------------------------------ */
-/* The lookup box and its rows. Rows rather than cards: a playlist is chosen by
-   its name and its size, and a grid of covers would spend the width on art
-   while hiding the two facts that decide it. */
-.discoverPl {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-3);
-}
-
-.discoverPl__head {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-}
-
-.discoverPl__glyph {
-  inline-size: 1.6rem;
-  block-size: 1.6rem;
-  border-radius: var(--glacier-radius-sm, 0.4rem);
+/* The date deck's own sleeves, as the mix cards draw theirs. */
+.peopleCard__face--date {
   display: grid;
-  place-items: center;
-  background: color-mix(in srgb, var(--glacier-accent-solid) 14%, transparent);
-  color: var(--glacier-accent-text);
+  /* Zero minimums, as the hero's mosaic: the cells must take the face's
+     quarter, not the sleeve's own size. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
 }
 
-.discoverPl__title {
-  margin: 0;
-  font-size: var(--glacier-font-size-sm);
-  font-weight: 650;
-}
-
-.discoverPl__rows {
-  display: flex;
-  flex-direction: column;
-  /* A hair of negative inline margin so the rows' own padding below lines the
-     TEXT up with the heading above them rather than indenting the whole list.
-     The plate is meant to extend past the words, not to move them. */
-  margin-inline: calc(-1 * var(--glacier-space-2));
-}
-
-/* Seated like a row in the playlists view, because it is the same thing: a
-   list of playlists you are choosing between. It had `padding: space-1 0` -
-   vertical only - so the artwork sat hard against the content edge with no
-   gutter of its own, and there was no plate at all, which is the difference
-   you feel before you can name it next to the real list. Radius, hover and
-   inline padding all come from .playlistRows > li. */
-.discoverPlRow {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  padding: var(--glacier-space-1) var(--glacier-space-2);
-  border: var(--glacier-hairline) solid transparent;
-  border-radius: var(--glacier-radius-md);
-}
-
-.discoverPlRow:hover {
-  background: var(--glacier-hover);
-}
-
-.discoverPlRow__art {
-  flex: none;
-  inline-size: 2.6rem;
-  block-size: 2.6rem;
-  border-radius: var(--glacier-radius-md, 0.6rem);
+.peopleCard__face--date img {
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 0;
   object-fit: cover;
 }
 
-.discoverPlRow__art--blank {
-  display: grid;
-  place-items: center;
-  background: var(--glacier-surface-raised);
-  color: var(--glacier-text-muted);
+.peopleCard__face--date[data-covers='1'] img {
+  grid-column: span 2;
+  grid-row: span 2;
 }
 
-.discoverPlRow__text {
-  flex: 1;
-  min-inline-size: 0;
+.peopleCard__face--date[data-covers='2'] img {
+  grid-row: span 2;
+}
+
+.peopleCard__face--date[data-covers='3'] img:first-child {
+  grid-row: span 2;
+}
+
+/* Nothing waiting: the room's own art, the object the chip used to wear. */
+.peopleCard__face--date .peopleCard__art {
+  grid-column: span 2;
+  grid-row: span 2;
+  inline-size: 52%;
+  block-size: auto;
+  justify-self: center;
+  align-self: center;
+  object-fit: contain;
+}
+
+.peopleCard__glyph {
+  position: absolute;
+  inset-block-end: var(--glacier-space-2);
+  inset-inline-end: var(--glacier-space-2);
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* A room that is on right now wears the accent, the app's one live colour. */
+.peopleCard__glyph--live {
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-contrast, #fff);
+}
+
+.peopleCard__text {
   display: flex;
   flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
 }
 
-.discoverPlRow__name {
+.peopleCard__title {
+  margin-block-start: var(--glacier-space-1);
+  font-size: 0.95rem;
   font-weight: 600;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.discoverPlRow__sub {
-  font-size: var(--glacier-font-size-xs);
+.peopleCard__blurb {
+  font-size: 0.75rem;
   color: var(--glacier-text-muted);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.discoverPlRow__add {
-  flex: none;
-  inline-size: 2rem;
-  block-size: 2rem;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
-.discoverPlRow__add:disabled {
-  opacity: 0.6;
-  cursor: default;
 }

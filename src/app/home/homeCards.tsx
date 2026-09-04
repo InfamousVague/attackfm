@@ -24,7 +24,16 @@ export function greetingFor(hour: number): string {
 export const NBSP = ' ';
 
 /** One square track card on a shelf. */
-export function TrackCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
+export function TrackCard({
+  track,
+  onOpen,
+  note,
+}: {
+  track: Track;
+  onOpen: () => void;
+  /** A third line under the artist - who finished it, why it is here. */
+  note?: React.ReactNode;
+}) {
   const { src, loaded, onLoad, onError } = useCardArt(track.artwork);
   const idle = !loaded || undefined;
   return (
@@ -37,6 +46,11 @@ export function TrackCard({ track, onOpen }: { track: Track; onOpen: () => void 
         <span className="trackCardArtist" data-loading={idle}>
           {loaded ? <ArtistLink artist={track.artist} /> : NBSP}
         </span>
+        {note !== undefined && (
+          <span className="trackCardNote" data-loading={idle}>
+            {loaded ? note : NBSP}
+          </span>
+        )}
       </button>
     </TrackMenu>
   );

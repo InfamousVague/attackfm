@@ -138,21 +138,6 @@
   cursor: pointer;
 }
 
-/* A curated list wearing the track card's clothes: the face is a SPAN holding
-   the four-cover mosaic, so it sizes itself like the img it stands in for and
-   clips the squircle to the same corner. */
-.forYouListCard__face {
-  display: block;
-  overflow: hidden;
-}
-
-.forYouListCard__face .tileSquircle {
-  inline-size: 100%;
-  block-size: 100%;
-  border-radius: var(--glacier-radius-lg);
-  color: var(--glacier-text-muted);
-}
-
 .trackCardArt {
   inline-size: 100%;
   aspect-ratio: 1;
@@ -177,6 +162,16 @@
 
 .trackCardArtist {
   font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A third line, when a card has one thing more to say than its name and its
+   artist: who finished it, why it is here. Same voice as the artist line. */
+.trackCardNote {
+  font-size: 0.7rem;
   color: var(--glacier-text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -286,6 +281,16 @@
   border-radius: var(--glacier-radius-lg);
 }
 
+/* The same hover lift the track cards use, so the body reads as openable. */
+.suggestCardBody .suggestCardCover {
+  transition: transform 0.18s var(--glacier-ease-out);
+}
+
+.suggestCardBody:hover .suggestCardCover,
+.suggestCardBody:focus-visible .suggestCardCover {
+  transform: translateY(-2px) scale(1.02);
+}
+
 /* What the tap does, in the cover's corner: a plus, then a check once the
    list is on its way. Frosted like the source tag opposite it. */
 .suggestCardAdd {
@@ -305,49 +310,9 @@
   pointer-events: none;
 }
 
-/* The Add button: quiet accent by default, muted while adding, a settled
-   success once queued - the card's own confirmation the import is under way. */
-.suggestAddBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--glacier-space-1);
-  margin-block-start: var(--glacier-space-1);
-  padding: 0.4rem var(--glacier-space-2);
-  border-radius: var(--glacier-radius-full);
-  border: var(--glacier-hairline) solid var(--glacier-border-accent, var(--glacier-border));
-  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
-  color: var(--glacier-accent-text);
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 550;
-  cursor: pointer;
-  transition: background 0.15s var(--glacier-ease-out);
-}
-
-.suggestAddBtn:hover:not(:disabled) {
-  background: var(--glacier-accent-solid);
-  color: var(--glacier-on-accent, #fff);
-}
-
-.suggestAddBtn[data-state='adding'] {
-  color: var(--glacier-text-muted);
-  border-color: var(--glacier-border);
-  background: var(--glacier-surface-sunken);
-  cursor: default;
-}
-
-.suggestAddBtn[data-state='added'] {
-  color: var(--glacier-success-text);
-  border-color: var(--glacier-success-text);
-  background: transparent;
-  cursor: default;
-}
-
-/* The Discover page (the discover plugin's destination): the same scroll frame
-   as Home, a titled header, then a section per catalogue group laid out as a
-   browsable grid rather than a single scrolling rail - a place to go, not a
-   strip to glance past. It reuses the suggestCard the old home shelf wore. */
+/* The page frame the Books plugin wears (the discover plugin's old scroll
+   frame, kept alive by BooksPage): the same scroller as Home, a titled
+   section per group. Nothing on Discover itself uses these any more. */
 .discoverPage {
   flex: 1;
   min-height: 0;
@@ -358,13 +323,6 @@
   flex-direction: column;
   /* The same section rhythm the home and library pages keep. */
   gap: var(--glacier-space-8);
-}
-
-
-.discoverNote {
-  margin: 0;
-  color: var(--glacier-text-muted);
-  font-size: 0.9rem;
 }
 
 .discoverSection {
@@ -379,27 +337,6 @@
   font-size: 1.05rem;
   font-weight: 600;
 }
-
-.discoverGrid {
-  display: grid;
-  /* Covers ~33% smaller than the home shelves: a narrower column min packs more
-     per row, and the square cover fills the column, so it shrinks with it. */
-  grid-template-columns: repeat(auto-fill, minmax(7.65rem, 1fr));
-  gap: var(--glacier-space-4) var(--glacier-space-3);
-}
-
-/* In the page grid the cards fill the column instead of the shelf's fixed
-   width, so a whole section is visible at once rather than scrolling sideways. */
-.discoverGrid .suggestCard {
-  inline-size: auto;
-}
-
-/* Set cards get more room than chart tiles: a mosaic needs the width to read
-   as four covers, not four thumbnails. */
-.discoverGrid--sets {
-  grid-template-columns: repeat(auto-fill, minmax(10.2rem, 1fr));
-}
-
 
 /*
  * Take the list, as its own control.

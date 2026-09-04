@@ -258,6 +258,11 @@ img {
      smaller than a square of the same measure, so matching the release cards
      numerically made the faces look shrunken beside them. */
   --card-artist: 7.8rem;
+  /* A feature: the first card of a Discover rail, and every card on the
+     trending and People rails. Exactly two ordinary cards plus the gap
+     between them, so a feature lines up with the pair it stands in for and
+     the rail's rhythm survives it. */
+  --card-feature: calc(var(--card-track) * 2 + var(--glacier-space-3));
 }
 
 /*

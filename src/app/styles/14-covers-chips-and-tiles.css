@@ -285,6 +285,70 @@
   overflow: hidden;
 }
 
+/* The words, as one block under the cover - so the feature variant below can
+   lift them onto the art as one thing. Keeps the gap the two lines had as
+   separate flex children. */
+.mixCardText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+/*
+ * The feature: a rail's first card, two cards wide, its mosaic cropped to a
+ * wide 16:10 face and its name resting on a scrim over the art. The rest of
+ * the rail stays square; the feature is what makes the rail read as "one big
+ * thing and its neighbours" instead of a row of identical stamps.
+ *
+ * The type is white on a black-to-clear scrim in both themes - the ground is
+ * album art, which is neither theme's colour - the same treatment the
+ * suggestion tags and the Date card's name block already wear.
+ */
+.mixCard--feature {
+  position: relative;
+  inline-size: var(--card-feature);
+}
+
+.mixCard--feature .mixCardCover {
+  aspect-ratio: 16 / 10;
+}
+
+.mixCard--feature .mixCardText {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  gap: 2px;
+  padding: var(--glacier-space-6) var(--glacier-space-3) var(--glacier-space-3);
+  border-radius: 0 0 var(--glacier-radius-lg) var(--glacier-radius-lg);
+  background: linear-gradient(to top, rgb(0 0 0 / 0.8) 0%, rgb(0 0 0 / 0.4) 55%, transparent 100%);
+  color: #fff;
+  pointer-events: none;
+}
+
+.mixCard--feature .mixCardTitle {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.mixCard--feature .mixCardBlurb {
+  color: color-mix(in srgb, #fff 76%, transparent);
+  -webkit-line-clamp: 1;
+}
+
+/* The hover lift moves the cover; the words ride it, so they lift too. */
+.mixCard--feature:hover .mixCardText,
+.mixCard--feature:focus-visible .mixCardText {
+  transform: translateY(-2px);
+}
+
 .libraryBody {
   flex: 1;
   min-height: 0;

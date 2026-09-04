@@ -206,6 +206,15 @@ const GENERATED_FOLDERS = new Map<string, string>([
   ['New music', 'New music'],
 ]);
 
+/**
+ * Which of those Discover actually shows. Only the charts: the "New music"
+ * list is a third definition of "new" on a page that already has "New for
+ * you" (the pool's lists and the collector's auditions), and three shelves
+ * saying the same word were the complaint. It stays generated - and so stays
+ * OUT of the Library's own folders - it just has no rail of its own.
+ */
+const SHOWN_GENERATED = new Set(['Charts']);
+
 export function PlaylistShowcase({
   onPlay,
   onOpenPlaylist,
@@ -396,7 +405,7 @@ export function PlaylistShowcase({
       // pages. Charts first - it is the shelf people come to Discover for.
       foldered: folders.filter(([folder]) => !GENERATED_FOLDERS.has(folder)),
       generated: folders
-        .filter(([folder]) => GENERATED_FOLDERS.has(folder))
+        .filter(([folder]) => SHOWN_GENERATED.has(folder))
         .sort((a, b) => (a[0] === 'Charts' ? -1 : b[0] === 'Charts' ? 1 : 0)),
       elsewhere: [...hubs.entries()].map(([origin, lists]) => ({
         origin,

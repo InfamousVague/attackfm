@@ -253,10 +253,17 @@ export function useHomeFeed(
   return {
     feed,
     curator,
+    /** Library ids to rows, for shelves whose ids arrive from elsewhere (the
+     *  friends' trending shelf) - the same map every home shelf resolves
+     *  through, so a song is a card here exactly when it is one there. */
+    resolve,
     recent,
     heavy,
     fresh,
     mixes,
+    /** Every curated list at once, before the shelf split - the hero reads
+     *  this for its fallback lead. */
+    allCurated,
     curated,
     stations,
     madeForYou,
@@ -270,3 +277,6 @@ export function useHomeFeed(
     anySkeleton,
   };
 }
+
+/** What `useHomeFeed` hands back: the shelves, resolved. */
+export type HomeFeedValue = ReturnType<typeof useHomeFeed>;

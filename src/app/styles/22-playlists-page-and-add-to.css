@@ -281,7 +281,11 @@
 .playlistPage .playlistHead:not(:has(.coverWall)) {
   padding-inline: 0;
 }
+/* The Discover hero's two full-bleed faces (a Canvas clip, a mosaic - chunk
+   13) are a wall in every way that matters to this band and are keyed in
+   through `.discoverHead__face`, so all three of its faces sit in one band. */
 .songPageHead:has(.coverWall),
+.discoverHead:has(.discoverHead__face),
 .playlistPage .playlistHead:has(.coverWall) {
   /* The wall is `inset: 0` of this header, so the header's height IS the
      wall's height - and Matt wants roughly twice what it had, running behind
@@ -426,7 +430,7 @@
  * actual condition: the rule is about sliding under THAT element, so it should
  * not apply where that element is not.
  */
-.appWindow:has(.mobileHeader) .appContent:has(.coverWall) {
+.appWindow:has(.mobileHeader) .appContent:has(.coverWall, .discoverHead__face) {
   margin-block-start: calc(
     -1 * var(--app-header-height, calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem))
   );
@@ -456,7 +460,7 @@
  * wants a ground. The top-edge dim rides on top and simply disappears into the
  * black once the bar is solid.
  */
-.appWindow:has(.coverWall) .mobileHeader {
+.appWindow:has(.coverWall, .discoverHead__face) .mobileHeader {
   background:
     linear-gradient(
       to bottom,
@@ -480,7 +484,7 @@
 /* Gated with the pull above, and for the same reason: it pushes the scrim down
    by the bar's height to undo that pull. Where nothing was pulled, pushing the
    scrim down would hang it a bar's height below where it belongs. */
-.appWindow:has(.mobileHeader) .appContent:has(.coverWall) .appTopScrim {
+.appWindow:has(.mobileHeader) .appContent:has(.coverWall, .discoverHead__face) .appTopScrim {
   inset-block-start: var(
     --app-header-height,
     calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem)

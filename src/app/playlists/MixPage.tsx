@@ -12,6 +12,8 @@ import { RowArt } from './RowArt.tsx';
 import { RowMain } from './RowMain.tsx';
 import { CoverWall } from './CoverWall.tsx';
 import { usePlaylists } from './playlists.tsx';
+import { useServerSession } from '../servers/serverSession.tsx';
+import { useWallClips } from '../library/wallClips.ts';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -61,6 +63,8 @@ export function MixPage({
   // through, like a playlist. RowMain marks the current row (data-current).
   const pageRef = useRef<HTMLDivElement>(null);
   useFollowNowPlaying(pageRef, '.playlistRow__main[data-current]');
+  const { session } = useServerSession();
+  const clips = useWallClips(session);
 
   // Four covers make the quadrant mosaic and load as one artwork, exactly as
   // the playlist head does - see mosaicArts.
@@ -102,7 +106,10 @@ export function MixPage({
      */
     <div className="homePage libraryPage playlistPage" ref={pageRef}>
       <header className="playlistHead">
-        <CoverWall artworks={tracks.map((t) => t.artwork)} />
+        {/* Clips as well as sleeves, like the Music header: a mix opened from
+            a Discover card should not drop from a moving wall to a still one.
+            Cached per server, so this costs nothing after the first header. */}
+        <CoverWall artworks={tracks.map((t) => t.artwork)} clips={clips} />
         <div className="playlistHead__cover">
           {covers.length >= 4 ? (
             <div

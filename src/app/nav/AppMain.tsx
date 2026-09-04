@@ -281,6 +281,7 @@ export function AppMain({
           onOpenPlaylist={onOpenPlaylist}
           onOpenSongs={onOpenSongs}
           onOpenStats={onOpenStats}
+          onOpenFriends={onOpenFriends}
         />
       ) : tab === 'booth' && showBooth ? (
         // The Booth: the taste engine's one body - the DJ conversation, the

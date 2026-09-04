@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { fetchFriends as fetchRegistryFriends } from '../servers/registry.ts';
+import { clearFriendsGlance, publishFriendsGlance } from '../profile/friendsGlance.ts';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { dismissNotice, noteNotice } from './notices.ts';
 
@@ -52,6 +53,7 @@ export function FriendNotices() {
       // no longer the one looking at the screen.
       for (const id of raised) dismissNotice(id);
       raised.clear();
+      clearFriendsGlance();
       return;
     }
 
@@ -63,6 +65,9 @@ export function FriendNotices() {
       try {
         const feed = await fetchRegistryFriends(session.token);
         if (!alive) return;
+        // The same answer, published for the surfaces that want a glance at
+        // the friends themselves (Discover's People shelf) - one poll, not two.
+        publishFriendsGlance(feed.friends);
         const open = new Set<string>();
         for (const ask of feed.incoming) {
           const id = `friends:${ask.id}`;
