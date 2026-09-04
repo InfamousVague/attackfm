@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.97
+
+- The curator now learns more from how you listen: where in a song you moved
+  on, when you turned it up or rewound to hear a part again, what you came
+  back to within the week, and where you were listening. Nothing under ten
+  seconds counts either way — a mis-tap is not a verdict.
+
 ## 0.5.96
 
 - Links you share now read attack.fm instead of registry.attack.fm — an
