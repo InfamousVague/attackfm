@@ -266,8 +266,11 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
   }, [open, invite, qr]);
 
   // Nothing to invite anyone TO without a server: a local-only library has no
-  // door to hand out, so the button simply is not there.
-  if (!session) return null;
+  // door to hand out, so the button simply is not there. Unless a page has
+  // claimed the button for something of its own - your profile lives on the
+  // registry, not on any server, and would otherwise lose its share along with
+  // an invite card it was never showing.
+  if (!session && !door) return null;
 
   const link = invite ? inviteLink(invite.code) : null;
 

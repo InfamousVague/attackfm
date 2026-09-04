@@ -2,7 +2,7 @@ import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { HomeStatsCards } from '../library/HomeStatsCards.tsx';
 import { ShareProfileSheet } from './ShareProfile.tsx';
 import { Button, Heading, IconButton, Text } from '@glacier/react';
-import { Camera, Copy, ImagePlus, LogOut, Share2, Trash2, Users } from '@glacier/icons';
+import { Camera, Copy, ImagePlus, LogOut, Trash2, Users } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useJam } from '../player/jam.tsx';
 import { useLibrary } from '../library/library.tsx';
@@ -11,6 +11,7 @@ import { useRegistry } from '../servers/registrySession.tsx';
 import { AccountSetup, FriendAvatar, FriendsSection } from './RegistryFriends.tsx';
 import { FriendProfilePage } from './FriendProfilePage.tsx';
 import { useSharing, setSharing } from './listeningShare.tsx';
+import { useOfferShare } from '../nav/shareDoor.ts';
 import {
   removeProfileImage,
   uploadProfileImage,
@@ -269,6 +270,19 @@ export function ProfilePage({
   const [bannerBroken, setBannerBroken] = useState(false);
   // Mounted on first use: the sheet draws a card and re-encodes both pictures.
   const [sharingProfile, setSharingProfile] = useState(false);
+  /*
+   * Your profile IS what this page shares, so it takes over the header's share
+   * button rather than adding a second one under your handle. Two share
+   * affordances on one screen is a question the reader has to answer - which
+   * one shares me? - and the header button is the one every other page has
+   * already taught them. Left to the invite card until there is a registry
+   * account to point at: with no handle there is no profile to hand over.
+   */
+  useOfferShare(
+    registry && account
+      ? { label: 'Share your profile', open: () => setSharingProfile(true) }
+      : null,
+  );
 
   const pick = (kind: ImageKind) => {
     wanted.current = kind;
@@ -427,24 +441,6 @@ export function ProfilePage({
                 ? `Listening from ${hostOf(session.url)}${session.username ? ` as ${session.username}` : ''}`
                 : 'Your account, on every server'}
             </span>
-            {/* Under your own name, where the thing being shared is.
-
-                A handle is only useful to somebody who can find you by it, and
-                until now telling a friend your handle meant telling them the
-                word and hoping they typed it. The card carries the word, the
-                pictures and a QR, and the link behind it opens on a page that
-                offers the app - which is the difference between "I'm @matt on
-                AttackFM" and something a person can act on. It publishes
-                nothing: see ShareProfile, the listening stays for friends. */}
-            <Button
-              variant="soft"
-              size="sm"
-              className="profileHero__share"
-              onClick={() => setSharingProfile(true)}
-            >
-              <Share2 size={15} />
-              Share your profile
-            </Button>
           </span>
         </header>
       ) : (
