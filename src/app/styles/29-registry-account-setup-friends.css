@@ -484,6 +484,12 @@
   content: '';
   position: absolute;
   inset: 0;
+  /* Decoration only. It is the LAST generated child of the cover, so without
+     this it paints over the banner's own buttons and swallows every tap on
+     them - which is exactly what happened the moment uploads started working
+     and people actually had a banner for [data-bannered] to match. A wash is
+     never a target. */
+  pointer-events: none;
   background: linear-gradient(
     to bottom,
     transparent 45%,
@@ -495,6 +501,10 @@
   position: absolute;
   inset-block-start: var(--glacier-space-2);
   inset-inline-end: var(--glacier-space-2);
+  /* Above the decorative wash whatever the paint order says. The wash is
+     pointer-transparent now too, so this is the belt to that fix's braces:
+     the controls stay reachable even if another overlay lands on the band. */
+  z-index: 1;
   display: flex;
   gap: var(--glacier-space-1);
 }
