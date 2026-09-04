@@ -59,6 +59,9 @@
 
 .dateStack {
   position: relative;
+  /* The verdict band's height, declared once, so the wash that has to clear it
+     and the row that has to sit in it can never disagree. */
+  --date-verdict-band: 5.25rem;
   inline-size: min(100%, 24rem);
   margin-inline: auto;
   aspect-ratio: 3 / 4;
@@ -169,29 +172,66 @@
   position: absolute;
   inset-inline: 0;
   inset-block-end: 0;
-  padding: var(--glacier-space-5) var(--glacier-space-3) var(--glacier-space-2);
-  background: linear-gradient(to top, rgba(5, 5, 8, 0.75), transparent);
+  /* The bottom padding IS the verdict band: one wash reaches the card's foot
+     and runs behind the buttons too, so there is no seam between them. */
+  padding: var(--glacier-space-5) var(--glacier-space-3) var(--date-verdict-band);
+  background: linear-gradient(to top, rgba(5, 5, 8, 0.82) 45%, transparent);
+  /* Only the seek control itself may swallow a pointer. The rest of the strip
+     is card again, so a swipe starting on the wash is a swipe - strictly
+     better than the dead zone this used to be. The card's own pointerdown
+     still bails on `.dateCard__wave`, which closest() finds either way. */
+  pointer-events: none;
+}
+.dateCard__wave > * {
+  pointer-events: auto;
 }
 
-/* The verdicts as buttons, for anyone who would rather tap than fling. */
-.dateActions {
+/* The verdicts as buttons, for anyone who would rather tap than fling - now
+   on the card they are about, over the art or the canvas clip.
+
+   It sits in .dateStack as a sibling of the three cards, so it holds still
+   while the card it judges tilts and flies out from under it. See the note in
+   DatePage.tsx for why it is not a child of .dateCard. */
+.dateVerdicts {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  /* Over the outgoing card (2) and the preview pill (3), so the row stays put
+     and stays pressable through the 280ms a verdict takes to fly away. */
+  z-index: 4;
   display: flex;
   justify-content: center;
-  gap: var(--glacier-space-6);
+  gap: var(--glacier-space-5);
+  padding-block: var(--glacier-space-3) var(--glacier-space-4);
+  /* The GAPS stay swipe-live: a finger landing between two buttons is judging
+     the card underneath, not missing a button. Only the circles take pointers.
+     Drop this line and the card's bottom fifth stops swiping. */
+  pointer-events: none;
 }
 
-.dateActions .dateActions__btn {
-  inline-size: 3.75rem;
-  block-size: 3.75rem;
+.dateVerdicts .dateVerdicts__btn {
+  pointer-events: auto;
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
   border-radius: 999px;
+  /* The card sets touch-action:none for the swipe; a button inside that box
+     wants its taps back. */
+  touch-action: manipulation;
+  /* Hard-coded dark, like everything else on this card face (__id, __tapPlay,
+     the stamps): this sits over artwork, not over a themed surface, so a
+     token background would go white-on-white in light mode. No
+     backdrop-filter - __id already runs one blur over the same playing video,
+     and three more circles compositing every frame buy nothing the 0.82 wash
+     is not already buying. */
+  background: rgba(5, 5, 8, 0.55);
+  border-color: rgba(255, 255, 255, 0.22);
 }
-.dateActions__btn--pass {
+.dateVerdicts__btn--pass {
   color: #ff5f6d;
 }
-.dateActions__btn--like {
+.dateVerdicts__btn--like {
   color: #37d67a;
 }
-
 
 /* The way back.
    Between Pass and Keep because it undoes either, so it belongs to neither
@@ -201,14 +241,14 @@
    against those a small grey circle did not read as a control at all. It is a
    third verdict, so it is dressed as one: same circle, same outline, and the
    third colour those two leave free. */
-.dateActions__btn--undo {
+.dateVerdicts__btn--undo {
   color: #ffc93c;
 }
 
 /* Nothing to take back yet. Kept in the row rather than hidden, so the other
    two never move under a thumb that is already reaching for them. */
-.dateActions__btn--undo:disabled {
-  opacity: 0.3;
+.dateVerdicts__btn--undo:disabled {
+  opacity: 0.35;
 }
 
 /* ---- the AI decks: two chips over the stack -------------------------------
@@ -240,8 +280,14 @@
   flex-direction: column;
   gap: 4px;
   text-align: center;
-  max-block-size: 130px;
+  /* The verdict row left the column for the card, giving this back about five
+     and a half rem. Spent here rather than on a taller card: the row now
+     covers the card's lower band, so a taller card would show LESS art. */
+  max-block-size: min(30dvh, 210px);
   overflow-y: auto;
+  /* Block axis only. `contain` on both axes is what ate the drag in the
+     ScrollArea case, and this panel sits a thumb's width from a swipe deck. */
+  overscroll-behavior-block: contain;
 }
 
 .dateProfile__who {

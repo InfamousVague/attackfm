@@ -1105,6 +1105,57 @@ export function DatePage() {
                 </span>
               </div>
             )}
+
+            {/* The verdict, on the card it is about.
+                A SIBLING of the three cards rather than a child of any of
+                them, which looks the same and behaves completely differently.
+                Inside .dateCard the row would ride the drag, tilt with it and
+                fly off with the judged card; it would exist three times over,
+                twice inside an aria-hidden container; and - the one that
+                cannot be styled around - the live card is keyed on
+                current.path, so it UNMOUNTS inside the very press being made
+                on it, throwing focus to the document root on every verdict.
+                A keyboard or switch listener could not judge two cards in a
+                row. As a sibling at the stack's foot it lands on exactly the
+                card's footprint (the card is inset:0 in this same box) and
+                touches none of that. Do not tidy this into CardFace. */}
+            <div className="dateVerdicts" role="group" aria-label="Your verdict">
+              <IconButton
+                variant="outline"
+                className="dateVerdicts__btn dateVerdicts__btn--pass"
+                aria-label={current ? `Pass on ${current.title}` : 'Pass'}
+                disabled={!current}
+                onClick={() => current && verdict(current, 'left')}
+              >
+                <X size={26} />
+              </IconButton>
+              {/* Between the two verdicts, because it undoes either and belongs
+                  to neither. A peer of them rather than a smaller, quieter
+                  thing off to one side: it is the third thing you press in
+                  here, and it read as a footnote to the row it is part of. */}
+              <IconButton
+                variant="outline"
+                className="dateVerdicts__btn dateVerdicts__btn--undo"
+                aria-label={
+                  undos.length > 0
+                    ? `Undo ${undos[undos.length - 1]!.dir === 'right' ? 'keeping' : 'passing on'} ${undos[undos.length - 1]!.track.title}`
+                    : 'Nothing to undo'
+                }
+                disabled={undos.length === 0}
+                onClick={undo}
+              >
+                <Undo2 size={24} />
+              </IconButton>
+              <IconButton
+                variant="outline"
+                className="dateVerdicts__btn dateVerdicts__btn--like"
+                aria-label={current ? `Keep ${current.title}` : 'Keep'}
+                disabled={!current}
+                onClick={() => current && verdict(current, 'right')}
+              >
+                <Heart size={24} fill="currentColor" />
+              </IconButton>
+            </div>
           </div>
 
           {/* Who this is: the AI's short read on the artist, and the real
@@ -1135,43 +1186,6 @@ export function DatePage() {
             </section>
           )}
 
-          <div className="dateActions">
-            <IconButton
-              variant="outline"
-              className="dateActions__btn dateActions__btn--pass"
-              aria-label={current ? `Pass on ${current.title}` : 'Pass'}
-              disabled={!current}
-              onClick={() => current && verdict(current, 'left')}
-            >
-              <X size={26} />
-            </IconButton>
-            {/* Between the two verdicts, because it undoes either and belongs
-                to neither. A peer of them now rather than a smaller, quieter
-                thing off to one side: it is the third thing you press in here,
-                and it read as a footnote to the row it is actually part of. */}
-            <IconButton
-              variant="outline"
-              className="dateActions__btn dateActions__btn--undo"
-              aria-label={
-                undos.length > 0
-                  ? `Undo ${undos[undos.length - 1]!.dir === 'right' ? 'keeping' : 'passing on'} ${undos[undos.length - 1]!.track.title}`
-                  : 'Nothing to undo'
-              }
-              disabled={undos.length === 0}
-              onClick={undo}
-            >
-              <Undo2 size={24} />
-            </IconButton>
-            <IconButton
-              variant="outline"
-              className="dateActions__btn dateActions__btn--like"
-              aria-label={current ? `Keep ${current.title}` : 'Keep'}
-              disabled={!current}
-              onClick={() => current && verdict(current, 'right')}
-            >
-              <Heart size={24} fill="currentColor" />
-            </IconButton>
-          </div>
         </>
       ) : (
         <div className="emptyState emptyState--tall">
