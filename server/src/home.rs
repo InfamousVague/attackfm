@@ -179,11 +179,11 @@ pub async fn feed(
         .iter()
         .map(|(id, plays)| serde_json::json!({ "id": id, "plays": plays }))
         .collect();
-    let fresh = state.db.recently_added(SHELF);
+    let fresh = state.db.recently_added_for(user, SHELF);
     // Jump back in: the albums behind recent plays, each a full ordered
     // track list the client plays as given (no client-side album matching,
     // so same-named albums never merge and discs stay in order).
-    let jump_back_in = state.db.recent_album_track_lists(user, 12);
+    let jump_back_in = state.db.recent_album_track_lists_for(user, 12);
     // The names of the user's top artists this month; the client resolves a
     // cover from its own library and links each into that artist's page.
     let top_artists: Vec<String> =
@@ -306,7 +306,7 @@ fn heuristic_mixes(state: &Arc<AppState>, user: i64) -> Vec<Mix> {
     // "Because you played" mix below, so the two never name the same artist.
     let artists = state.db.top_artists(user, since, 3);
     if let Some((artist, _)) = artists.first() {
-        let ids = state.db.tracks_by_artist(artist, SHELF);
+        let ids = state.db.tracks_by_artist_for(user, artist, SHELF);
         if ids.len() >= 4 {
             out.push(Mix {
                 id: "artist-spotlight".into(),
@@ -321,7 +321,7 @@ fn heuristic_mixes(state: &Arc<AppState>, user: i64) -> Vec<Mix> {
     // Because you played: the runner-up artist, framed as a follow-on rather
     // than a spotlight - the shelf's small nod to what else you have been into.
     if let Some((artist, _)) = artists.get(1) {
-        let ids = state.db.tracks_by_artist(artist, SHELF);
+        let ids = state.db.tracks_by_artist_for(user, artist, SHELF);
         if ids.len() >= 4 {
             out.push(Mix {
                 id: "because-artist".into(),
@@ -336,7 +336,7 @@ fn heuristic_mixes(state: &Arc<AppState>, user: i64) -> Vec<Mix> {
     // Genre blend: the month's most-played genre, newest first - a wider net
     // than any one artist.
     if let Some((genre, _)) = state.db.top_genres(user, since, 1).into_iter().next() {
-        let ids = state.db.tracks_by_genre(&genre, SHELF);
+        let ids = state.db.tracks_by_genre_for(user, &genre, SHELF);
         if ids.len() >= 4 {
             // Genre tags are often comma-joined; name the mix after the first.
             let name = genre.split(',').next().unwrap_or(&genre).trim().to_string();
@@ -384,7 +384,7 @@ async fn ai_mixes(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<Mix
     let mut candidate_ids: Vec<i64> = Vec::new();
     candidate_ids.extend(state.db.top_plays(user, since, 60).into_iter().map(|(id, _)| id));
     for (artist, _) in &top_artists {
-        candidate_ids.extend(state.db.tracks_by_artist(artist, 24));
+        candidate_ids.extend(state.db.tracks_by_artist_for(user, artist, 24));
     }
     candidate_ids.extend(state.db.unplayed(user, 60));
     candidate_ids.dedup();

@@ -613,7 +613,7 @@ pub async fn add_pending_like(
             .db
             .set_favorite(caller.id, id, true)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        state.db.promote_curator_track(id);
+        state.db.promote_curator_track_for(id, caller.id);
         // A landed like is a met song: out of New Music now.
         let st = state.clone();
         let user = caller.id;
@@ -705,9 +705,12 @@ pub async fn set_favorite(
         .set_favorite(caller.id, track_id, body.favorite)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     // Adoption: a heart on a collector download is deliberate approval - it
-    // skips the audition entirely and joins the library at once.
+    // skips the audition entirely and joins the library at once. The OWNER'S
+    // heart, that is: another member hearting a pull that was bought for
+    // somebody else keeps their favourite row (harmless - it points at a
+    // track they are never shown) and promotes nothing.
     if body.favorite {
-        state.db.promote_curator_track(track_id);
+        state.db.promote_curator_track_for(track_id, caller.id);
         // Hearted = met: it leaves New Music now (a promoted audition used to
         // walk straight back in as an arrival).
         let st = state.clone();

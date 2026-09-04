@@ -4128,16 +4128,40 @@ impl Db {
         .unwrap_or_default()
     }
 
-    /// Live tracks in a genre, newest first - genre-mix material.
-    pub fn tracks_by_genre(&self, genre: &str, limit: i64) -> Vec<i64> {
+    /*
+     * THE HOME SHELVES' MATERIAL, SCOPED TO THE LISTENER THEY ARE FOR.
+     *
+     * The `_for` readers below - genre blend, jump-back-in, the fresh row,
+     * artist spotlight - are what Home and its mixes are built from. Each used
+     * to ask the tracks table with no idea whose shelf it was filling, so
+     * another member's unadopted collector audition was fair material for
+     * YOUR mix, and so was every chapter of every audiobook. Eleven people
+     * share this hub; what the collector bought on somebody else's taste must
+     * never turn up as a suggestion on yours.
+     *
+     * The rule is the one `tracks_since` states and `unplayed` already
+     * follows: a collector pull belongs to the listener who pulled it until a
+     * listen or a heart of THEIRS adopts it, and a book is not a song. The
+     * predicate is lifted from `unplayed` word for word rather than reworded,
+     * so every door Home reads through agrees about what "yours to be shown"
+     * means.
+     */
+
+    /// Live tracks in a genre, newest first - genre-mix material, as
+    /// `user_id` is entitled to see it.
+    pub fn tracks_by_genre_for(&self, user_id: i64, genre: &str, limit: i64) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT id FROM tracks WHERE deleted = 0 AND genre = ?1 COLLATE NOCASE
-             ORDER BY added_at DESC LIMIT ?2",
+            "SELECT t.id FROM tracks t WHERE t.deleted = 0 AND t.genre = ?2 COLLATE NOCASE
+               AND COALESCE(t.kind, 'music') <> 'book'
+               AND (t.curator_user_id IS NULL
+                    OR COALESCE(t.curator_promoted, 0) = 1
+                    OR t.curator_user_id = ?1)
+             ORDER BY t.added_at DESC LIMIT ?3",
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![genre, limit], |r| r.get(0))
+        stmt.query_map(params![user_id, genre, limit], |r| r.get(0))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
@@ -4147,7 +4171,12 @@ impl Db {
     /// identity and order here so the client never has to: it plays the list
     /// as given, which is what keeps two same-named albums by different artists
     /// from ever merging, and multi-disc albums in disc order.
-    pub fn recent_album_track_lists(&self, user_id: i64, album_limit: i64) -> Vec<Vec<i64>> {
+    ///
+    /// Both halves carry the owner predicate. The album list is where the leak
+    /// was: the collector lands one song from an album you already own, and
+    /// until you adopt it a housemate's jump-back-in of that album played your
+    /// audition as track seven.
+    pub fn recent_album_track_lists_for(&self, user_id: i64, album_limit: i64) -> Vec<Vec<i64>> {
         let conn = self.lock();
         // The recent (album_artist, album) pairs, newest touch first. Collected
         // into owned strings so the statement is done before the per-album
@@ -4155,8 +4184,12 @@ impl Db {
         let pairs: Vec<(String, String)> = {
             let Ok(mut stmt) = conn.prepare(
                 "SELECT t.album_artist, t.album, MAX(p.played_at) AS last
-                 FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0 AND COALESCE(t.kind, 'music') <> 'book'
-                 WHERE p.user_id = ?1 AND TRIM(t.album) <> ''
+                 FROM plays p JOIN tracks t ON t.id = p.track_id
+                 WHERE p.user_id = ?1 AND t.deleted = 0 AND TRIM(t.album) <> ''
+                   AND COALESCE(t.kind, 'music') <> 'book'
+                   AND (t.curator_user_id IS NULL
+                        OR COALESCE(t.curator_promoted, 0) = 1
+                        OR t.curator_user_id = ?1)
                  GROUP BY t.album_artist, t.album ORDER BY last DESC LIMIT ?2",
             ) else {
                 return Vec::new();
@@ -4171,13 +4204,17 @@ impl Db {
         let mut out = Vec::new();
         for (album_artist, album) in pairs {
             let Ok(mut stmt) = conn.prepare(
-                "SELECT id FROM tracks WHERE deleted = 0 AND album_artist = ?1 AND album = ?2
-                 ORDER BY disc_no, track_no",
+                "SELECT t.id FROM tracks t WHERE t.deleted = 0 AND t.album_artist = ?1 AND t.album = ?2
+                   AND COALESCE(t.kind, 'music') <> 'book'
+                   AND (t.curator_user_id IS NULL
+                        OR COALESCE(t.curator_promoted, 0) = 1
+                        OR t.curator_user_id = ?3)
+                 ORDER BY t.disc_no, t.track_no",
             ) else {
                 continue;
             };
             let ids: Vec<i64> = stmt
-                .query_map(params![album_artist, album], |r| r.get(0))
+                .query_map(params![album_artist, album, user_id], |r| r.get(0))
                 .map(|rows| rows.filter_map(Result::ok).collect())
                 .unwrap_or_default();
             if !ids.is_empty() {
@@ -4223,29 +4260,43 @@ impl Db {
             .unwrap_or_default()
     }
 
-    /// Newest live tracks by added_at, for the "recently added" shelf.
-    pub fn recently_added(&self, limit: i64) -> Vec<i64> {
+    /// Newest live tracks by added_at, for the "recently added" shelf - as
+    /// `user_id` is entitled to see them. Their own pending auditions count:
+    /// the collector fetched those FOR them, and "what arrived lately" that
+    /// hides them is not what it says it is (`recent_track_ids` argues the
+    /// same). Somebody else's do not.
+    pub fn recently_added_for(&self, user_id: i64, limit: i64) -> Vec<i64> {
         let conn = self.lock();
-        let Ok(mut stmt) =
-            conn.prepare("SELECT id FROM tracks WHERE deleted = 0 ORDER BY added_at DESC LIMIT ?1")
-        else {
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.id FROM tracks t WHERE t.deleted = 0
+               AND COALESCE(t.kind, 'music') <> 'book'
+               AND (t.curator_user_id IS NULL
+                    OR COALESCE(t.curator_promoted, 0) = 1
+                    OR t.curator_user_id = ?1)
+             ORDER BY t.added_at DESC LIMIT ?2",
+        ) else {
             return Vec::new();
         };
-        stmt.query_map(params![limit], |r| r.get(0))
+        stmt.query_map(params![user_id, limit], |r| r.get(0))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
 
-    /// Every live track by an artist, album order - mix material.
-    pub fn tracks_by_artist(&self, artist: &str, limit: i64) -> Vec<i64> {
+    /// Every live track by an artist, album order - mix material, as
+    /// `user_id` is entitled to see it.
+    pub fn tracks_by_artist_for(&self, user_id: i64, artist: &str, limit: i64) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT id FROM tracks WHERE deleted = 0 AND artist = ?1 COLLATE NOCASE
-             ORDER BY album, disc_no, track_no LIMIT ?2",
+            "SELECT t.id FROM tracks t WHERE t.deleted = 0 AND t.artist = ?2 COLLATE NOCASE
+               AND COALESCE(t.kind, 'music') <> 'book'
+               AND (t.curator_user_id IS NULL
+                    OR COALESCE(t.curator_promoted, 0) = 1
+                    OR t.curator_user_id = ?1)
+             ORDER BY t.album, t.disc_no, t.track_no LIMIT ?3",
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![artist, limit], |r| r.get(0))
+        stmt.query_map(params![user_id, artist, limit], |r| r.get(0))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
@@ -9586,14 +9637,33 @@ impl Db {
         Some(path)
     }
 
-    pub fn promote_curator_track(&self, track_id: i64) -> bool {
+    /// Adoption: `user_id`'s listen or heart moves a collector audition off
+    /// their For-you shelf and into the library proper. True when it did.
+    ///
+    /// ONLY THE OWNER'S GESTURE COUNTS, and that is the whole point of the
+    /// `user_id`. This used to take a track id alone and flip whichever
+    /// audition it named, whoever had touched it - which on a hub with one
+    /// person is the same thing, and on this one, with eleven, is not. A
+    /// collector pull is a bet placed against ONE listener's taste; until that
+    /// listener says yes it is theirs and invisible to everyone else
+    /// (`tracks_since`). But a housemate could still reach it - a shared
+    /// playlist, a direct id, a Subsonic client - and one completed play from
+    /// them promoted it library-wide: onto every other member's Home, into the
+    /// DJ and New Music pools, and off the owner's own shelf before they had
+    /// ever heard it. Somebody else's listening was deciding your suggestions.
+    ///
+    /// So the row has to be the actor's to promote. Any other member's action
+    /// is a no-op here, and whatever they did on their own account (a
+    /// favourite row, a play) stays theirs - harmless, since it points at a
+    /// track they are never shown.
+    pub fn promote_curator_track_for(&self, track_id: i64, user_id: i64) -> bool {
         let rev = self.current_rev() + 1;
         let conn = self.lock();
         let changed = conn
             .execute(
                 "UPDATE tracks SET curator_promoted = 1, rev = ?1
-                 WHERE id = ?2 AND curator_user_id IS NOT NULL AND COALESCE(curator_promoted, 0) = 0",
-                params![rev, track_id],
+                 WHERE id = ?2 AND curator_user_id = ?3 AND COALESCE(curator_promoted, 0) = 0",
+                params![rev, track_id, user_id],
             )
             .unwrap_or(0);
         if changed > 0 {
@@ -10890,7 +10960,7 @@ mod audition_visibility {
             .unwrap();
         assert!(db.tracks_since(bob, 0, 100).0.is_empty(), "hidden while pending");
 
-        db.promote_curator_track(id);
+        db.promote_curator_track_for(id, alice);
         let seen: Vec<String> =
             db.tracks_since(bob, 0, 100).0.into_iter().map(|t| t.title).collect();
         assert_eq!(seen, vec!["Audition".to_string()], "adopted tracks join the library");
@@ -11015,7 +11085,7 @@ mod discarding_auditions {
         let (db, _d) = db_with("afm-disc3");
         let me = db.create_user("me", "x", true).unwrap();
         let id = make_audition(&db, me, "kept.flac");
-        db.promote_curator_track(id);
+        db.promote_curator_track_for(id, me);
 
         assert_eq!(db.discard_audition(me, id), None, "adopted music is not an audition");
     }
@@ -11104,10 +11174,13 @@ mod judged_candidates {
 
 #[cfg(test)]
 mod pull_adoption_is_per_listener {
-    //! `promote_curator_track` takes a track id and no user, so it flips every
-    //! member's pull row containing that track. On a one-person hub that is
-    //! harmless. On a shared one it meant a housemate's listen tuned YOUR
-    //! collector's spending.
+    //! `pull_adoption` is derived from plays and favourites rather than read
+    //! off `curator_pulls.state`, because a pull row can be flipped by a
+    //! promotion and the state has no room to say WHOSE gesture did it. On a
+    //! one-person hub that is harmless. On a shared one it meant a housemate's
+    //! listen tuned YOUR collector's spending. (Promotion itself is now
+    //! owner-only - `promote_curator_track_for` - but the dial's measure stays
+    //! derived, so the two never have to agree by accident.)
 
     use super::*;
 
@@ -11163,9 +11236,10 @@ mod pull_adoption_is_per_listener {
 
         // YOU play it. That is your adoption, on any hub.
         db.record_play(you, id).unwrap();
-        // ...and the promotion path marks the track adopted hub-wide, which is
-        // correct for the LIBRARY and is exactly what used to leak into my dial.
-        db.promote_curator_track(id);
+        // ...and the promotion path runs as it does after any completed play.
+        // A plain library row has no owner to adopt it, so this is a no-op on
+        // the track; what matters is that my dial reads the PLAYS, not this.
+        db.promote_curator_track_for(id, you);
 
         let now = now_ms();
         assert_eq!(db.pull_adoption(you, now), (1, 1), "your own listen is your adoption");
@@ -11178,6 +11252,300 @@ mod pull_adoption_is_per_listener {
         // Now I heart it. That is mine, and it counts.
         db.set_favorite(me, id, true).unwrap();
         assert_eq!(db.pull_adoption(me, now), (1, 1), "a heart of my own is adoption");
+    }
+}
+
+#[cfg(test)]
+mod promotion_is_the_owners_gesture {
+    //! A collector audition is adopted by the listener it was pulled for, and
+    //! by nobody else. `promote_curator_track` used to take a track id alone,
+    //! so any member's completed play or heart promoted somebody else's
+    //! audition library-wide - onto every Home, into the DJ and New Music
+    //! pools, and off the owner's own For-you shelf unheard.
+
+    use super::*;
+
+    fn fresh(name: &str) -> Db {
+        let d = std::env::temp_dir().join(format!("afm-promote-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    /// An unadopted audition bought for `owner`. Stamped rev 1 so it is on
+    /// the sync page for whoever is allowed to see it - a rev-0 row would be
+    /// invisible to everyone and prove nothing.
+    fn audition(db: &Db, owner: i64, rel: &str) -> i64 {
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind,curator_user_id,curator_promoted)
+                 VALUES (?1,?1,'A','A','Al',0,1,'music',?2,0)",
+                params![rel, owner],
+            )
+            .unwrap();
+        db.track_id_by_path(rel).expect("indexed")
+    }
+
+    /// A landed pull of `user`'s carrying these tracks.
+    fn landed_pull(db: &Db, user: i64, ext: &str, track_ids: &[i64]) -> i64 {
+        let conn = db.lock();
+        conn.execute(
+            "INSERT INTO curator_pulls (user_id, ext_id, kind, title, artist, url, state, created_at)
+             VALUES (?1, ?2, 'track', 't', 'A', 'u', 'landed', 1)",
+            params![user, ext],
+        )
+        .unwrap();
+        let pull: i64 = conn.query_row("SELECT last_insert_rowid()", [], |r| r.get(0)).unwrap();
+        for id in track_ids {
+            conn.execute(
+                "INSERT INTO curator_pull_tracks (pull_id, track_id) VALUES (?1, ?2)",
+                params![pull, id],
+            )
+            .unwrap();
+        }
+        pull
+    }
+
+    fn promoted(db: &Db, id: i64) -> i64 {
+        db.lock()
+            .query_row(
+                "SELECT COALESCE(curator_promoted, 0) FROM tracks WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    fn pull_state(db: &Db, pull: i64) -> String {
+        db.lock()
+            .query_row("SELECT state FROM curator_pulls WHERE id = ?1", params![pull], |r| r.get(0))
+            .unwrap()
+    }
+
+    fn hearted(db: &Db, user: i64, id: i64) -> bool {
+        db.lock()
+            .query_row(
+                "SELECT COUNT(*) FROM favorites WHERE user_id = ?1 AND track_id = ?2",
+                params![user, id],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap()
+            > 0
+    }
+
+    fn visible_to(db: &Db, uid: i64) -> Vec<String> {
+        db.tracks_since(uid, 0, 100).0.into_iter().map(|t| t.title).collect()
+    }
+
+    /// The heart path - `api::set_favorite`, the Subsonic star, a settled
+    /// pending like - is `set_favorite` then `promote_curator_track_for`, in
+    /// that order. Bob hearts Alice's audition: his heart stands, hers stays
+    /// hers. Alice hearts it: adopted, and Bob can see it at last.
+    #[test]
+    fn a_housemates_heart_leaves_my_audition_where_it_was() {
+        let db = fresh("heart");
+        let alice = db.create_user("alice", "x", true).unwrap();
+        let bob = db.create_user("bob", "x", false).unwrap();
+        let id = audition(&db, alice, "hers.flac");
+        let pull = landed_pull(&db, alice, "dz-1", &[id]);
+        assert!(visible_to(&db, alice).contains(&"hers.flac".to_string()), "she can see her own card");
+        assert!(!visible_to(&db, bob).contains(&"hers.flac".to_string()), "he cannot");
+
+        // Bob's heart - reached through a shared playlist, a direct id, a
+        // Subsonic client; it does not matter how.
+        db.set_favorite(bob, id, true).unwrap();
+        assert!(!db.promote_curator_track_for(id, bob), "not bob's to adopt");
+        assert_eq!(promoted(&db, id), 0, "still alice's audition");
+        assert_eq!(pull_state(&db, pull), "landed", "her pull is still waiting on HER");
+        assert!(hearted(&db, bob, id), "his favourite row stays: harmless, he is never shown it");
+        assert!(
+            !visible_to(&db, bob).contains(&"hers.flac".to_string()),
+            "and it is still invisible to him"
+        );
+
+        // Alice's own heart is the adoption.
+        db.set_favorite(alice, id, true).unwrap();
+        assert!(db.promote_curator_track_for(id, alice), "the owner's heart adopts");
+        assert_eq!(promoted(&db, id), 1);
+        assert_eq!(pull_state(&db, pull), "promoted", "and her pull reads as landed well");
+        assert!(
+            visible_to(&db, bob).contains(&"hers.flac".to_string()),
+            "adopted, it joins the library for everyone"
+        );
+    }
+
+    /// The pull flips to 'promoted' only once EVERY track in it is adopted -
+    /// the side-effect pull completion counts on - and only the owner's
+    /// gestures move it there.
+    #[test]
+    fn the_pull_follows_the_owners_adoptions_and_nobody_elses() {
+        let db = fresh("pull");
+        let alice = db.create_user("alice", "x", true).unwrap();
+        let bob = db.create_user("bob", "x", false).unwrap();
+        let a = audition(&db, alice, "a.flac");
+        let b = audition(&db, alice, "b.flac");
+        let pull = landed_pull(&db, alice, "dz-album", &[a, b]);
+
+        // Bob plays both all the way through. Nothing moves.
+        assert!(!db.promote_curator_track_for(a, bob));
+        assert!(!db.promote_curator_track_for(b, bob));
+        assert_eq!((promoted(&db, a), promoted(&db, b)), (0, 0));
+        assert_eq!(pull_state(&db, pull), "landed");
+
+        // Alice adopts one: the pull is half-done, so still landed.
+        assert!(db.promote_curator_track_for(a, alice));
+        assert_eq!(pull_state(&db, pull), "landed", "one of two is not the whole pull");
+        // ...and the other: now it reads as promoted.
+        assert!(db.promote_curator_track_for(b, alice));
+        assert_eq!(pull_state(&db, pull), "promoted");
+
+        // A second adoption is not a second event.
+        assert!(!db.promote_curator_track_for(a, alice), "already adopted");
+    }
+
+    /// A plain library row was never anybody's audition, so nobody's gesture
+    /// "adopts" it - the admin's included.
+    #[test]
+    fn an_ordinary_track_has_no_owner_to_adopt_it() {
+        let db = fresh("plain");
+        let me = db.create_user("me", "x", true).unwrap();
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind)
+                 VALUES ('lib.flac','lib.flac','A','A','Al',0,1,'music')",
+                [],
+            )
+            .unwrap();
+        let id = db.track_id_by_path("lib.flac").unwrap();
+        assert!(!db.promote_curator_track_for(id, me));
+        assert_eq!(promoted(&db, id), 0);
+    }
+}
+
+#[cfg(test)]
+mod home_shelves_are_per_listener {
+    //! The four Home readers - artist spotlight, genre blend, the fresh row,
+    //! jump-back-in - deal only what the listener is entitled to see: the
+    //! shared library, adopted pulls, and their OWN pending auditions. Not a
+    //! housemate's audition, and never an audiobook chapter. Same rule as
+    //! `unplayed` and `tracks_since`; these were the doors that did not ask.
+
+    use super::*;
+
+    fn track(rel: &str, title: &str) -> ScannedTrack {
+        ScannedTrack {
+            rel_path: rel.into(),
+            title: title.into(),
+            artist: "A".into(),
+            album_artist: "A".into(),
+            album: "Al".into(),
+            genre: "Ambient".into(),
+            duration_ms: Some(200_000),
+            ..Default::default()
+        }
+    }
+
+    /// A library of four, all by one artist on one album in one genre, so any
+    /// reader keyed on those returns all four unless the rule stops it: an
+    /// ordinary song, a book chapter, alice's pending audition, and a pull of
+    /// hers she already adopted. Returns (db, alice, bob).
+    fn library(name: &str) -> (Db, i64, i64) {
+        let d = std::env::temp_dir().join(format!("afm-shelves-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let db = Db::open(&d.join("t.sqlite")).unwrap();
+        let alice = db.create_user("alice", "x", true).unwrap();
+        let bob = db.create_user("bob", "x", false).unwrap();
+
+        db.upsert_track(&track("song.flac", "Ordinary Song"), 1).unwrap();
+        db.upsert_track(&track("chapter.m4b", "Chapter One"), 2).unwrap();
+        db.upsert_track(&track("hers.flac", "Alices Audition"), 3).unwrap();
+        db.upsert_track(&track("adopted.flac", "Adopted Pull"), 4).unwrap();
+        let book = db.track_id_by_path("chapter.m4b").unwrap();
+        let hers = db.track_id_by_path("hers.flac").unwrap();
+        let adopted = db.track_id_by_path("adopted.flac").unwrap();
+        {
+            let c = db.lock();
+            c.execute("UPDATE tracks SET kind = 'book' WHERE id = ?1", params![book]).unwrap();
+            c.execute(
+                "UPDATE tracks SET curator_user_id = ?1, curator_promoted = 0 WHERE id = ?2",
+                params![alice, hers],
+            )
+            .unwrap();
+            // Bought for alice but already adopted: ordinary library now.
+            c.execute(
+                "UPDATE tracks SET curator_user_id = ?1, curator_promoted = 1 WHERE id = ?2",
+                params![alice, adopted],
+            )
+            .unwrap();
+        }
+        (db, alice, bob)
+    }
+
+    fn titles(db: &Db, ids: Vec<i64>) -> Vec<String> {
+        ids.into_iter().filter_map(|id| db.track(id).map(|t| t.title)).collect()
+    }
+
+    /// The assertion every reader shares: bob gets the library and the
+    /// adopted pull, never the book or alice's audition; alice gets hers, and
+    /// not the book either.
+    fn check(reader: &str, for_bob: Vec<String>, for_alice: Vec<String>) {
+        let has = |v: &Vec<String>, s: &str| v.iter().any(|t| t == s);
+        assert!(has(&for_bob, "Ordinary Song"), "{reader}: the plain library comes through: {for_bob:?}");
+        assert!(has(&for_bob, "Adopted Pull"), "{reader}: an adopted pull is ordinary library: {for_bob:?}");
+        assert!(!has(&for_bob, "Chapter One"), "{reader}: a book is not shelf material: {for_bob:?}");
+        assert!(
+            !has(&for_bob, "Alices Audition"),
+            "{reader}: another listener's audition must never be dealt: {for_bob:?}"
+        );
+        assert!(has(&for_alice, "Alices Audition"), "{reader}: the buyer keeps hers: {for_alice:?}");
+        assert!(has(&for_alice, "Ordinary Song"), "{reader}: and the library too: {for_alice:?}");
+        assert!(!has(&for_alice, "Chapter One"), "{reader}: a chapter is not a song for her either: {for_alice:?}");
+    }
+
+    #[test]
+    fn artist_spotlight_deals_only_what_is_yours() {
+        let (db, alice, bob) = library("artist");
+        check(
+            "tracks_by_artist_for",
+            titles(&db, db.tracks_by_artist_for(bob, "a", 100)),
+            titles(&db, db.tracks_by_artist_for(alice, "A", 100)),
+        );
+    }
+
+    #[test]
+    fn genre_blend_deals_only_what_is_yours() {
+        let (db, alice, bob) = library("genre");
+        check(
+            "tracks_by_genre_for",
+            titles(&db, db.tracks_by_genre_for(bob, "ambient", 100)),
+            titles(&db, db.tracks_by_genre_for(alice, "Ambient", 100)),
+        );
+    }
+
+    #[test]
+    fn the_fresh_row_deals_only_what_is_yours() {
+        let (db, alice, bob) = library("fresh");
+        check(
+            "recently_added_for",
+            titles(&db, db.recently_added_for(bob, 100)),
+            titles(&db, db.recently_added_for(alice, 100)),
+        );
+    }
+
+    /// Jump-back-in hands over whole albums. All four rows share one album,
+    /// so one play of the ordinary song surfaces it - and the list that comes
+    /// back must still be only what this listener may see, not "the album".
+    #[test]
+    fn jump_back_in_deals_only_what_is_yours() {
+        let (db, alice, bob) = library("albums");
+        let song = db.track_id_by_path("song.flac").unwrap();
+        db.record_play(bob, song).unwrap();
+        db.record_play(alice, song).unwrap();
+        let flat = |uid: i64| -> Vec<String> {
+            titles(&db, db.recent_album_track_lists_for(uid, 12).into_iter().flatten().collect())
+        };
+        check("recent_album_track_lists_for", flat(bob), flat(alice));
     }
 }
 

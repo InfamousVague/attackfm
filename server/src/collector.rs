@@ -400,7 +400,8 @@ async fn settle_pending_likes(state: &Arc<AppState>) {
         let hit = matching_identity(&identities, user, &k);
         if let Some((id, _, _, _)) = hit {
             let _ = state.db.set_favorite(user, *id, true);
-            state.db.promote_curator_track(*id);
+            // The heart is this user's, so only their own audition adopts.
+            state.db.promote_curator_track_for(*id, user);
             let _ = state.db.pending_like_remove(user, &k);
             // Hearted = met: it leaves New Music now.
             crate::chartlists::refresh_new_music_for(state, user);

@@ -607,8 +607,10 @@ async fn handle(state: &AppState, user: &crate::db::User, method: &str, p: &Para
             }
             for id in ids {
                 let _ = state.db.set_favorite(user.id, id, on);
+                // A star adopts an audition only when it is this user's own
+                // pull; somebody else's stays theirs.
                 if on {
-                    state.db.promote_curator_track(id);
+                    state.db.promote_curator_track_for(id, user.id);
                 }
             }
             Ok(wire::ok(None))
@@ -893,7 +895,10 @@ async fn handle(state: &AppState, user: &crate::db::User, method: &str, p: &Para
         "getTopSongs" => {
             let artist = p.get("artist").unwrap_or("");
             let count = p.i64("count").unwrap_or(50).clamp(1, 200);
-            let ids = state.db.tracks_by_artist(artist, count);
+            // Scoped like every other Subsonic read (`subsonic_tracks` hides
+            // unadopted auditions too): a housemate's pending pull is not
+            // this user's top song.
+            let ids = state.db.tracks_by_artist_for(user.id, artist, count);
             let person = me();
             let song: Vec<Value> = tracks_by_ids(state, &ids).iter().map(|(t, rp)| child_json(t, rp, Some(&person))).collect();
             Ok(wire::ok(Some(("topSongs", json!({ "song": song })))))

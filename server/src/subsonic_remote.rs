@@ -448,7 +448,10 @@ async fn run_import(state: Arc<AppState>, job_id: String, user_id: i64, remote: 
         match land_song(&state, &remote, &mut owned, &job_id, s).await {
             Ok(id) => {
                 let _ = state.db.set_favorite(user_id, id, true);
-                state.db.promote_curator_track(id);
+                // A remote star lands as this user's heart; `land_song` may
+                // have matched an audition the collector bought for somebody
+                // else, and that one is not theirs to adopt.
+                state.db.promote_curator_track_for(id, user_id);
                 update(&job_id, |j| j.starred += 1);
             }
             Err(e) => {

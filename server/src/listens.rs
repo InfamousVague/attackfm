@@ -153,11 +153,16 @@ pub(crate) fn ingest(db: &Db, user_id: i64, events: &[IncomingListen]) -> usize 
         {
             accepted += 1;
             // Adoption: playing a collector download all the way through moves
-            // it off the audition shelf and into the library proper - whoever
-            // did the listening, since wanted is wanted. The rev bump inside
-            // carries the change to every synced client.
+            // it off the audition shelf and into the library proper - when the
+            // listener is the one it was pulled for. This used to say "whoever
+            // did the listening, since wanted is wanted", and on a hub of
+            // eleven that meant a housemate's play adopted YOUR audition into
+            // everybody's suggestions before you had heard it. Their listen is
+            // still logged as theirs above; it just does not speak for you.
+            // The rev bump inside carries a real adoption to every synced
+            // client.
             if e.completed {
-                db.promote_curator_track(e.track_id);
+                db.promote_curator_track_for(e.track_id, user_id);
             }
         }
     }
@@ -375,6 +380,97 @@ pub fn summary_payload(
         "firstListens": state.db.first_listen_count(user, since),
         "sound": sound,
     }))
+}
+
+#[cfg(test)]
+mod adoption_is_the_listeners_own {
+    //! A completed play is the commonest way an audition is adopted, and
+    //! `ingest` is where it happens - so WHOSE play it was has to matter. On a
+    //! hub of eleven, a housemate finishing a song the collector bought for
+    //! you used to put it in everybody's suggestions before you had heard it.
+
+    use super::*;
+    use crate::db::ScannedTrack;
+
+    fn fresh(name: &str) -> Db {
+        let d = std::env::temp_dir().join(format!("afm-ingest-adopt-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    /// The collector's own landing path, end to end: the file is indexed, the
+    /// pull is on record, and `land_pull` stamps the row as `owner`'s audition.
+    fn audition(db: &Db, owner: i64, rel: &str) -> i64 {
+        db.upsert_track(
+            &ScannedTrack {
+                rel_path: rel.into(),
+                title: rel.into(),
+                artist: "A".into(),
+                album: "Al".into(),
+                duration_ms: Some(200_000),
+                ..Default::default()
+            },
+            1,
+        )
+        .unwrap();
+        let id = db.track_id_by_path(rel).unwrap();
+        let pull = db.record_pull(owner, "dz-1", "track", rel, "A", "u", "seed", 50.0, "job").unwrap();
+        assert_eq!(db.land_pull(pull, owner, &[id]).unwrap(), 1, "stamped as the owner's audition");
+        id
+    }
+
+    fn completed(track_id: i64) -> IncomingListen {
+        IncomingListen {
+            track_id,
+            started_at: 1_000,
+            ms_listened: 200_000,
+            duration_ms: Some(200_000),
+            completed: true,
+            skipped: false,
+            context: "album".into(),
+            ended_at_ms: None,
+            volume_ups: 0,
+            seek_backs: 0,
+            device: String::new(),
+        }
+    }
+
+    fn adopted(db: &Db, id: i64) -> bool {
+        db.track(id).expect("indexed").curator_promoted
+    }
+
+    #[test]
+    fn a_housemates_completed_listen_does_not_adopt_my_audition() {
+        let db = fresh("housemate");
+        let alice = db.create_user("alice", "x", true).unwrap();
+        let bob = db.create_user("bob", "x", false).unwrap();
+        let id = audition(&db, alice, "hers.flac");
+        assert!(!adopted(&db, id), "pending until she says so");
+
+        // Bob's listen is a real listen - it lands in his log - but it is not
+        // her adoption.
+        assert_eq!(ingest(&db, bob, &[completed(id)]), 1, "his play is filed as his");
+        assert!(!adopted(&db, id), "and her audition is still hers");
+
+        // Hers is.
+        assert_eq!(ingest(&db, alice, &[completed(id)]), 1);
+        assert!(adopted(&db, id), "the owner's completed play adopts");
+    }
+
+    /// A sitting that did not finish the song adopts nothing, whoever's it is
+    /// - the rule that was already there, kept.
+    #[test]
+    fn an_unfinished_listen_adopts_nothing_even_for_the_owner() {
+        let db = fresh("unfinished");
+        let alice = db.create_user("alice", "x", true).unwrap();
+        let id = audition(&db, alice, "hers.flac");
+        let mut half = completed(id);
+        half.completed = false;
+        half.ms_listened = 90_000;
+        assert_eq!(ingest(&db, alice, &[half]), 1);
+        assert!(!adopted(&db, id), "a half-listen is not a yes");
+    }
 }
 
 
