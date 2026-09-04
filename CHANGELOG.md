@@ -15,6 +15,16 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.83
+
+- Speakers on your network. An amp, a streamer or a TV that speaks UPnP now
+  shows up under "On your network" in the same panel as everything else you
+  can play on, and a tap sends the music there.
+- Your server does the looking, so this works from your phone as well as your
+  laptop — and the speaker pulls the audio straight from the server rather
+  than through whatever you pressed play on.
+- A speaker your network hides from the search can be added by its address.
+
 ## 0.5.82
 
 - AirPlay is in the same panel as everything else you can play on, so one
