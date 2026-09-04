@@ -15,6 +15,18 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.104
+
+- Albums, playlists, mixes and Discover's lists now look like Liked songs and
+  the rest of your library: the same rows, the same artwork, the same
+  long-press menu. Four pages had each drawn their own version of the same
+  list.
+- An album still reads in sleeve order with its own track numbers, and the
+  songs it has that you don't still sit in their place rather than being left
+  out.
+- A playlist still opens in the order you put it in. To drag songs around,
+  press Reorder.
+
 ## 0.5.103
 
 - Cards ripple into place where you can actually see them. They used to
