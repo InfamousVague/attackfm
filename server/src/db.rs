@@ -1934,6 +1934,29 @@ impl Db {
                 conn.execute(&format!("ALTER TABLE listen_events ADD COLUMN {decl}"), [])?;
             }
         }
+
+        /*
+         * `discoveries` - what a candidate SOUNDS like, measured off its
+         * preview clip, and when it came out. A candidate could answer two of
+         * the score's terms (its words and its tempo); the texture and era
+         * terms - two of the three things the listener said make a new song
+         * feel connected - fell back to neutral for every one of them.
+         */
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('discoveries')")?
+            .query_map([], |r| r.get(0))?
+            .filter_map(Result::ok)
+            .collect();
+        for (name, decl) in [
+            ("energy", "energy REAL"),
+            ("brightness", "brightness REAL"),
+            ("rhythmic", "rhythmic REAL"),
+            ("released", "released TEXT"),
+        ] {
+            if !have.iter().any(|c| c == name) {
+                conn.execute(&format!("ALTER TABLE discoveries ADD COLUMN {decl}"), [])?;
+            }
+        }
         Ok(())
     }
 
@@ -6306,6 +6329,97 @@ impl Db {
         stmt.query_map(params![user_id, scope, since], |r| r.get::<_, String>(0))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
+    }
+
+    /// The artists this listener has SAID yes to, weighted and strongest
+    /// first - the seed list for every harvester, so what the pool grows FROM
+    /// is hearts and keeps, never play counts.
+    ///
+    /// A heart and a Music Date keep weigh 1.0; a completed listen of ten
+    /// seconds or more weighs 0.4 - the listener ranked hearts and keeps as
+    /// their strongest signal, and a finished song is a quieter one. Each is
+    /// decayed with a sixty-day half-life on when it happened, so the seeds
+    /// follow where their taste is NOW rather than where it was in spring.
+    /// Artists dismissed in the last thirty days are left out entirely
+    /// (`rejected_keys_since`, scope "artist") - the read discovery.rs
+    /// promised at its top and never wired. Books never seed.
+    ///
+    /// Returns (display name as the library spells it, weight). Keys are
+    /// folded via `taste::artist_key`, so "Big Thief" and "big thief" are one.
+    pub fn heart_weighted_artists(&self, user_id: i64, since_ms: i64, now_ms: i64) -> Vec<(String, f32)> {
+        let rows: Vec<(String, f64, i64)> = {
+            let conn = self.lock();
+            let Ok(mut stmt) = conn.prepare(
+                "SELECT t.artist, 1.0, f.added_at FROM favorites f
+                   JOIN tracks t ON t.id = f.track_id AND t.deleted = 0 AND COALESCE(t.kind,'') != 'book'
+                  WHERE f.user_id = ?1 AND f.added_at >= ?2
+                 UNION ALL
+                 SELECT t.artist, 1.0, d.at FROM date_verdicts d
+                   JOIN tracks t ON t.id = d.track_id AND t.deleted = 0
+                  WHERE d.user_id = ?1 AND d.verdict = 'kept' AND d.at >= ?2
+                 UNION ALL
+                 SELECT t.artist, 0.4, le.started_at FROM listen_events le
+                   JOIN tracks t ON t.id = le.track_id AND t.deleted = 0 AND COALESCE(t.kind,'') != 'book'
+                  WHERE le.user_id = ?1 AND le.completed = 1 AND le.ms_listened >= 10000
+                    AND le.started_at >= ?2",
+            ) else {
+                return Vec::new();
+            };
+            stmt.query_map(params![user_id, since_ms], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+        };
+        let rejected = self.rejected_keys_since(user_id, "artist", now_ms - 30 * 86_400_000);
+        let mut weight: std::collections::HashMap<String, (String, f32)> = Default::default();
+        for (artist, w, at) in rows {
+            let key = crate::taste::artist_key(&artist);
+            if key.is_empty() || rejected.contains(&key) {
+                continue;
+            }
+            let age_days = ((now_ms - at).max(0) as f32) / 86_400_000.0;
+            let decayed = (w as f32) * 0.5f32.powf(age_days / 60.0);
+            let e = weight.entry(key).or_insert_with(|| (artist.trim().to_string(), 0.0));
+            e.1 += decayed;
+        }
+        let mut out: Vec<(String, f32)> = weight.into_values().collect();
+        out.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.0.cmp(&b.0))
+        });
+        out
+    }
+
+    /// What the preview sounded like, measured off the clip - the texture a
+    /// library track gets from its file, so a candidate can answer the same
+    /// terms. Values are on the analyser's 0..1 scales.
+    pub fn set_discovery_measured(
+        &self,
+        user_id: i64,
+        ext_id: &str,
+        energy: f64,
+        brightness: f64,
+        rhythmic: f64,
+    ) {
+        let _ = self.lock().execute(
+            "UPDATE discoveries SET energy = ?3, brightness = ?4, rhythmic = ?5
+              WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id, energy, brightness, rhythmic],
+        );
+    }
+
+    /// When it came out, as the catalogue spells it (an ISO date or a bare
+    /// year). First writer wins: a release date does not change.
+    pub fn set_discovery_released(&self, user_id: i64, ext_id: &str, released: &str) {
+        let released = released.trim();
+        if released.is_empty() {
+            return;
+        }
+        let _ = self.lock().execute(
+            "UPDATE discoveries SET released = ?3
+              WHERE user_id = ?1 AND ext_id = ?2 AND COALESCE(released, '') = ''",
+            params![user_id, ext_id, released],
+        );
     }
 
     pub fn discovery_get(&self, user_id: i64, ext_id: &str) -> Option<DiscoveryRow> {
