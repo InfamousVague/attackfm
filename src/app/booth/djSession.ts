@@ -1,4 +1,6 @@
+import { useSyncExternalStore } from 'react';
 import { fetchDj, trackIdFromPath } from '../server.ts';
+import { saidNoTo } from './saidNo.ts';
 import type { ServerSession } from '../api/http.ts';
 import type { Track } from '../core/tauri.ts';
 
@@ -24,6 +26,9 @@ export interface DjRun {
   voiceAt: Map<string, string[]>;
   /** A bit of lore for any track that has one: the line, and its clip. */
   loreAt: Map<string, { line: string; voice: string[] }>;
+  /** Why each song was dealt, keyed by path - the hub's own plain line from
+   *  the dossier's real fields. Only songs the hub explained appear. */
+  whyAt: Map<string, string>;
 }
 
 let current: DjRun | null = null;
@@ -43,6 +48,21 @@ export function subscribeDjRun(fn: () => void): () => void {
   return () => {
     subs.delete(fn);
   };
+}
+
+/** The live set, as a hook: re-renders when a set starts or ends. */
+export function useDjRun(): DjRun | null {
+  return useSyncExternalStore(subscribeDjRun, currentDjRun, currentDjRun);
+}
+
+/** Whether the DJ chose this song - the test every thumb is gated on. */
+export function inDjRun(path: string): boolean {
+  return current?.paths.has(path) ?? false;
+}
+
+/** The hub's reason for a song in the live set, if it gave one. */
+export function djWhy(path: string): string | undefined {
+  return current?.whyAt.get(path);
 }
 
 /**
@@ -67,20 +87,26 @@ export async function startDjRun(
   const lineAt = new Map<string, string>();
   const voiceAt = new Map<string, string[]>();
   const loreAt = new Map<string, { line: string; voice: string[] }>();
+  const whyAt = new Map<string, string>();
   for (const block of reply.blocks) {
     let first = true;
     for (const id of block.trackIds) {
       const t = byId.get(id);
       if (!t) continue;
+      // A song or an act refused this sitting never opens a set, even from
+      // a hub that has not caught up with the no yet.
+      if (saidNoTo(t)) continue;
       queue.push(t);
       paths.add(t.path);
       if (first && block.say.trim()) lineAt.set(t.path, block.say.trim());
       if (first && block.voice && block.voice.length > 0) voiceAt.set(t.path, block.voice);
       const lore = block.lore?.[String(id)];
       if (lore?.say.trim()) loreAt.set(t.path, { line: lore.say.trim(), voice: lore.voice ?? [] });
+      const why = reply.why?.[String(id)];
+      if (why) whyAt.set(t.path, why);
       first = false;
     }
   }
-  publishDjRun(queue.length > 0 ? { paths, lineAt, voiceAt, loreAt } : null);
+  publishDjRun(queue.length > 0 ? { paths, lineAt, voiceAt, loreAt, whyAt } : null);
   return { queue, ai: reply.ai };
 }

@@ -27,6 +27,9 @@ import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
 import { NpDjButton } from './NpDjButton.tsx';
 import { useDjTalking } from '../booth/djVoice.ts';
+import { useDjRun } from '../booth/djSession.ts';
+import { Thumbs } from '../booth/sayNo.tsx';
+import { useRadioOptional } from './radio.tsx';
 import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
@@ -819,6 +822,12 @@ export function NowPlayingSheet({
   const actionsRef = useEdgeFade<HTMLDivElement>();
   // The room, if any: the queue panel labels itself for it.
   const jamRoom = useJamOptional()?.current ?? null;
+  // Whether the song playing is the MACHINE's pick - a live DJ set, or the
+  // station feeding the line - which is the only time the thumbs appear:
+  // "less like this" about a song you chose yourself is nothing to record.
+  const djRun = useDjRun();
+  const radio = useRadioOptional();
+  const machinePick = Boolean(track && (radio?.on || djRun?.paths.has(track.path)));
   /*
    * The phone's own movement, on the one screen where it means anything.
    *
@@ -2033,6 +2042,18 @@ export function NowPlayingSheet({
             book's screen stands it down: a DJ set over an audiobook is not a
             thing anyone means to start. */}
         {track?.kind !== 'book' && <NpDjButton />}
+        {/* The listener's word on the machine's pick, while it plays: a down
+            skips it (the same Next the transport presses) and tells the hub
+            how far in they were; an up is recorded and is NOT a heart. Only
+            on a song the DJ or the station chose - see machinePick. */}
+        {track && track.kind !== 'book' && machinePick && (
+          <Thumbs
+            track={track}
+            positionMs={position * 1000}
+            onDown={skipForward}
+            className="npScreen__thumbs"
+          />
+        )}
         {/* Who else is hearing this. Renders nothing outside a jam, so the row
             is unchanged for anyone listening alone. */}
         <JamBadge />

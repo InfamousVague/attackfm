@@ -4,8 +4,13 @@ import { useState, useEffect } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { usePlaylists } from '../playlists/playlists.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
+import { useNowPlayingMotion } from '../player/nowPlayingMotion.tsx';
+import { deckNext } from '../player/mediaSession.ts';
 import { artSized } from '../server.ts';
 import { useDjChat, useDjPlay, DJ_AUTHOR, type DjEmbed, type DjMessage } from './djChat.tsx';
+import { useDjRun } from './djSession.ts';
+import { useSaidNo } from './saidNo.ts';
+import { SayNoItems, Thumbs, useSayNo } from './sayNo.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import type { Track } from '../core/tauri.ts';
 import djMascot from '../../assets/dj-mascot.webp';
@@ -25,19 +30,38 @@ function rowsOf(track: Track) {
   return artSized(track.artwork, 160);
 }
 
-/** One song in a card: art, name, and the same menu it wears everywhere. */
+/** One song in a card: art, name, and the same menu it wears everywhere -
+ *  with, above the song's own verbs, why the DJ dealt it and the two ways
+ *  of saying no. A hold is the gesture; the row itself stays a row. */
 function EmbedRow({
   track,
   onPlay,
   trailing,
+  why,
+  onNo,
 }: {
   track: Track;
   onPlay: () => void;
   trailing?: React.ReactNode;
+  /** The hub's reason for this pick, when it gave one. */
+  why?: string;
+  /** Refuse it - the song, or with 'artist', the whole act. */
+  onNo: (scope?: 'artist') => void;
 }) {
   const src = rowsOf(track);
   return (
-    <TrackMenu track={track} className="djRowMenu">
+    <TrackMenu
+      track={track}
+      className="djRowMenu"
+      lead={
+        <SayNoItems
+          why={why}
+          artist={track.artist}
+          onTrack={() => onNo()}
+          onArtist={() => onNo('artist')}
+        />
+      }
+    >
       <div className="djRow">
         <Button type="button" variant="ghost" className="djRow__main" onClick={onPlay}>
           {src ? (
@@ -65,6 +89,10 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
   const queue = useQueueControls();
   const { playlists } = usePlaylists();
   const [name, setName] = useState<string | null>(null);
+  // This sitting's refusals: a row the listener said no to leaves the card
+  // at once and cannot come back from the reply it was dealt in.
+  const isNo = useSaidNo();
+  const { down } = useSayNo();
   if (!chat) return null;
 
   if (embed.kind === 'notice') {
@@ -118,7 +146,7 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
     );
   }
 
-  const found = chat.resolve(embed.trackIds);
+  const found = chat.resolve(embed.trackIds).filter((t) => !isNo(t));
   const total = found.reduce((n, t) => n + (t.duration ?? 0), 0);
   const mins = Math.round(total / 60);
 
@@ -137,6 +165,8 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
               key={t.path}
               track={t}
               onPlay={() => play?.(t, found)}
+              why={embed.why?.[rowsOfId(t) ?? -1]}
+              onNo={(scope) => down(t, { scope })}
               trailing={
                 <IconButton
                   type="button"
@@ -204,6 +234,18 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
             key={t.path}
             track={t}
             onPlay={() => play?.(t, found)}
+            onNo={(scope) =>
+              down(t, {
+                scope,
+                // A no inside a draft also takes the song out of the
+                // playlist being built - the draft is the listener's own
+                // list, and "not this song" means it there too.
+                onLeave: () => {
+                  const id = rowsOfId(t);
+                  if (id != null && !saved) chat.removeFromDraft(embed.draftId, id);
+                },
+              })
+            }
             trailing={
               saved ? undefined : (
                 <IconButton
@@ -302,6 +344,47 @@ function DjStations({ onPick }: { onPick: (station: DjStation) => void }) {
   );
 }
 
+/**
+ * What the set is playing right now, at the top of the DJ's page: the song,
+ * the hub's reason for it when it gave one, and the thumbs. Only while a DJ
+ * set is live AND the deck is inside it - a song the listener put on
+ * themselves is not the DJ's to be judged on, and the strip is gone the
+ * moment the set is.
+ *
+ * A down moves the music on through the deck's own "next" (the one the lock
+ * screen presses), so the page never needs the deck in hand.
+ */
+function DjNowStrip() {
+  const run = useDjRun();
+  const { track, position } = useNowPlayingMotion();
+  if (!run || !track || !run.paths.has(track.path)) return null;
+  const src = rowsOf(track);
+  const why = run.whyAt.get(track.path);
+  return (
+    <div className="djNow" role="region" aria-label="Playing from the set">
+      {src ? (
+        <img className="djNow__art" src={src} alt="" />
+      ) : (
+        <span className="djNow__art djNow__art--blank" aria-hidden />
+      )}
+      <span className="djNow__text">
+        <span className="djNow__label">On now</span>
+        <span className="djNow__title">{track.title}</span>
+        <span className="djNow__artist">{track.artist}</span>
+        {why && <span className="djNow__why">{why}</span>}
+      </span>
+      <Thumbs
+        track={track}
+        positionMs={position * 1000}
+        onDown={() => {
+          deckNext();
+        }}
+        className="djNow__thumbs"
+      />
+    </div>
+  );
+}
+
 export function DjPage() {
   const chat = useDjChat();
   const { session } = useServerSession();
@@ -321,6 +404,7 @@ export function DjPage() {
     );
     return (
       <div className="djPage">
+        <DjNowStrip />
         <div className="djFresh">
           <img className="djFresh__mascot" src={djMascot} alt="" />
           {greeting && <p className="djFresh__line">{greeting}</p>}
@@ -360,6 +444,7 @@ export function DjPage() {
 
   return (
     <div className="djPage">
+      <DjNowStrip />
       <ConversationView<DjMessage>
         className="djTranscript"
         messages={chat.messages}

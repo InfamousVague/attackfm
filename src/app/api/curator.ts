@@ -102,6 +102,31 @@ export async function fetchDiscoveries(
   });
 }
 
+/** How wide a "no" on a discovery reaches: this song, this artist, or the
+ *  REASON it was dealt - the anchor artist it hung off. */
+export type DismissScope = 'track' | 'artist' | 'anchor';
+
+/**
+ * Say no to something the curator found. `anchor` names the artist a card
+ * was dealt because of, and is sent only with `scope: 'anchor'` - rejecting
+ * the reason rather than the song, so the harvester stops walking that
+ * neighbourhood. A hub from before the anchor scope answers 404, which the
+ * caller treats as "heard locally, not remembered" rather than a failure.
+ */
+export async function dismissDiscovery(
+  session: ServerSession,
+  extId: string,
+  scope: DismissScope,
+  anchor?: string,
+): Promise<void> {
+  const q = new URLSearchParams({ id: extId, scope });
+  if (scope === 'anchor' && anchor) q.set('anchor', anchor);
+  await request(session.url, `/api/discoveries/dismiss?${q.toString()}`, {
+    method: 'POST',
+    token: session.token,
+  });
+}
+
 /** A date dealt from the pool: not on the box yet, judged on its preview. */
 export interface PreviewDateCard {
   extId: string;

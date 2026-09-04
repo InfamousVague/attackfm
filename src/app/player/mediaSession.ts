@@ -36,8 +36,28 @@ function session(): MediaSession | null {
     : null;
 }
 
+/** The controls the deck bound last - kept so in-app surfaces can press the
+ *  same "next" the lock screen presses, without being handed the deck. */
+let bound: MediaSessionControls | null = null;
+
+/**
+ * Skip forward, from anywhere.
+ *
+ * A thumbs-down on the DJ page or in the queue has to move the music on, and
+ * neither of those surfaces holds the deck. The deck already registers its
+ * transport here for the OS; pressing that same handler is the one skip path
+ * that cannot drift from what the lock screen does. False when nothing is
+ * bound yet (nothing playing, no deck mounted), so the caller can say so.
+ */
+export function deckNext(): boolean {
+  if (!bound?.next) return false;
+  bound.next();
+  return true;
+}
+
 /** Points the system's transport buttons at the app's own controls. */
 export function bindMediaSessionHandlers(controls: MediaSessionControls): void {
+  bound = controls;
   const media = session();
   if (!media) return;
   try {

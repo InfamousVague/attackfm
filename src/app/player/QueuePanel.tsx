@@ -10,6 +10,10 @@
 import { fireNativeHaptic } from '../core/haptics.ts';
 import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { djReason } from '../booth/djReasons.ts';
+import { djWhy, useDjRun } from '../booth/djSession.ts';
+import { SayNoItems, Thumbs, useSayNo } from '../booth/sayNo.tsx';
+import { deckNext } from './mediaSession.ts';
+import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { trackIdFromPath } from '../server.ts';
 import { useMemo } from 'react';
 import { Button, IconButton, Slider, SortableList, Text, useToast } from '@glacier/react';
@@ -67,6 +71,17 @@ export function QueuePanel({
   // The station, when one is on: the queue is where "what's next" is read, so
   // it is where the dial belongs.
   const radio = useRadioOptional();
+  /*
+   * Whose pick a row is. The thumbs and the hold's refusals appear only on
+   * a song the MACHINE chose - one the live DJ set dealt, or anything while
+   * the station is feeding the line - because "less like this" said about
+   * a song you queued yourself would be a strange thing to record. The set
+   * is app-level state (djSession); the station is the provider above.
+   */
+  const run = useDjRun();
+  const chosen = (track: Track): boolean => Boolean(radio?.on) || Boolean(run?.paths.has(track.path));
+  const { position } = useNowPlayingMotion();
+  const { down } = useSayNo();
 
   // In a jam, the queue on screen is the ROOM's - the host's list, which
   // everyone's additions flow into. A guest's own device queue is not what
@@ -154,6 +169,32 @@ export function QueuePanel({
       action: { label: 'Undo', onPress: () => latest.current.onQueueChange(before) },
     });
   };
+  /*
+   * A no, in the queue. The song is refused (the ledger, the hub) by
+   * useSayNo; what this adds is the queue's half - a refused row leaves the
+   * line, a refused artist takes every upcoming row of theirs with it, and
+   * a no on the song PLAYING moves the deck on. No undo toast here: the no
+   * has its own, and the row was not the listener's to begin with.
+   */
+  const dropRow = (path: string) => {
+    const { queue: now, onQueueChange: apply } = latest.current;
+    if (now.some((t) => t.path === path)) apply(now.filter((t) => t.path !== path));
+  };
+  const dropArtist = (artist: string) => {
+    const key = artist.trim().toLowerCase();
+    const { queue: now, onQueueChange: apply } = latest.current;
+    const at = current ? now.findIndex((t) => t.path === current.path) : -1;
+    const keep = (t: Track, i: number) => i <= at || t.artist.trim().toLowerCase() !== key;
+    apply(now.filter(keep));
+    if (current && current.artist.trim().toLowerCase() === key) deckNext();
+  };
+  /** Move on from the song playing: the deck's own next, or - with no deck
+   *  bound (a probe, a remote seat) - the panel's own jump to the next row. */
+  const skipNow = () => {
+    if (deckNext()) return;
+    const next = upcoming[0];
+    if (next) onPlayTrack(next);
+  };
 
   return (
     <div className="queuePanel" role="dialog" aria-label="Queue">
@@ -235,7 +276,25 @@ export function QueuePanel({
                 says the queue is a list of songs like any other. Wrapped like
                 the rest, so the playing song can be filed or queued-next from
                 here too. */}
-            <TrackMenu track={current}>
+            <TrackMenu
+              track={current}
+              lead={
+                chosen(current) ? (
+                  <SayNoItems
+                    why={djReason(trackIdFromPath(current.path)) ?? djWhy(current.path)}
+                    artist={current.artist}
+                    onTrack={() => down(current, { positionMs: position * 1000, onLeave: skipNow })}
+                    onArtist={() =>
+                      down(current, {
+                        scope: 'artist',
+                        positionMs: position * 1000,
+                        onLeave: () => dropArtist(current.artist),
+                      })
+                    }
+                  />
+                ) : undefined
+              }
+            >
               <div className="queueRow queueRow--now">
                 <Cover track={current} />
                 <div className="queueRow__meta">
@@ -243,7 +302,21 @@ export function QueuePanel({
                   <span className="queueRow__artist">
                     <ArtistLink artist={current.artist} beforeOpen={onClose} />
                   </span>
+                  {(() => {
+                    const why = djReason(trackIdFromPath(current.path)) ?? djWhy(current.path);
+                    return why ? <span className="queueRow__why">{why}</span> : null;
+                  })()}
                 </div>
+                {/* The thumbs, on the song the machine is playing right now:
+                    a down skips it, an up is recorded and nothing more. */}
+                {chosen(current) && (
+                  <Thumbs
+                    track={current}
+                    positionMs={position * 1000}
+                    onDown={skipNow}
+                    className="queueRow__thumbs"
+                  />
+                )}
               </div>
             </TrackMenu>
           </div>
@@ -313,7 +386,22 @@ export function QueuePanel({
                 /* The queue is a list of songs like any other, so it carries
                    the same menu - file one you like into a playlist without
                    going to find it again somewhere that had a menu. */
-                <TrackMenu track={r.track} className="queueRowMenu">
+                <TrackMenu
+                  track={r.track}
+                  className="queueRowMenu"
+                  lead={
+                    chosen(r.track) ? (
+                      <SayNoItems
+                        why={djReason(trackIdFromPath(r.track.path)) ?? djWhy(r.track.path)}
+                        artist={r.track.artist}
+                        onTrack={() => down(r.track, { onLeave: () => dropRow(r.track.path) })}
+                        onArtist={() =>
+                          down(r.track, { scope: 'artist', onLeave: () => dropArtist(r.track.artist) })
+                        }
+                      />
+                    ) : undefined
+                  }
+                >
                 <div className="queueRow">
                   <button
                     type="button"
@@ -336,8 +424,9 @@ export function QueuePanel({
                         // The DJ's own reason for this pick, when this queue
                         // came from the DJ. Computed server-side either way;
                         // showing it is what makes a ranking change audible
-                        // AND visible.
-                        const why = djReason(trackIdFromPath(r.track.path));
+                        // AND visible. A trait mix's explanation first, else
+                        // the live set's line for the song.
+                        const why = djReason(trackIdFromPath(r.track.path)) ?? djWhy(r.track.path);
                         return why ? <span className="queueRow__why">{why}</span> : null;
                       })()}
                     </div>

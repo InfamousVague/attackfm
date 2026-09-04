@@ -35,8 +35,10 @@ type KitMessage = ConversationViewProps['messages'][number];
 
 /** What a message can carry besides words. Each is a thing you can act on. */
 export type DjEmbed =
-  /** A run of picks: play it, queue it, or take it into a playlist. */
-  | { kind: 'set'; trackIds: number[] }
+  /** A run of picks: play it, queue it, or take it into a playlist. `why`
+   *  is the hub's own line per id, for the hold on a row; absent from a
+   *  hub that gave none. */
+  | { kind: 'set'; trackIds: number[]; why?: Record<number, string> }
   /** Steering pills. Tapping one posts it as an ordinary user turn, so the
    *  transcript reads the same whether you tapped or typed. */
   | { kind: 'chips'; options: { label: string; send: string }[] }
@@ -196,10 +198,17 @@ export function DjChatProvider({
             const found = resolve(block.trackIds);
             if (found.length === 0) continue;
             spoke = true;
-            say(
-              block.say.trim(),
-              { kind: 'set', trackIds: found.map((t) => trackIdFromPath(t.path)!) },
-            );
+            const ids = found.map((t) => trackIdFromPath(t.path)!);
+            const why: Record<number, string> = {};
+            for (const id of ids) {
+              const line = reply.why?.[String(id)];
+              if (line) why[id] = line;
+            }
+            say(block.say.trim(), {
+              kind: 'set',
+              trackIds: ids,
+              ...(Object.keys(why).length > 0 ? { why } : {}),
+            });
           }
           if (!spoke) {
             say('', {

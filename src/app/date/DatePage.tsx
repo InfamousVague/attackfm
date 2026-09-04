@@ -7,6 +7,7 @@ import {
   createAnalyserMeter,
   useBeat,
   useLiveLevels,
+  useToast,
   type AnalyserMeter,
 } from '@glacier/react';
 import { Heart, Play, Undo2, X } from '@glacier/icons';
@@ -18,8 +19,11 @@ import {
   artSized,
   dateDone,
   dateVerdict,
+  reactDj,
   trackIdFromPath,
 } from '../server.ts';
+import { artistKey, extKey, noteNo, trackKey, useSaidNo } from '../booth/saidNo.ts';
+import { SayNoMenu } from '../booth/sayNo.tsx';
 import { DATE_CACHE_TARGET, setDateDeck, sweepIfIdle } from '../downloads/autoCache.ts';
 import { warmArt, warmDateCanvas } from './dateCanvas.ts';
 import {
@@ -131,6 +135,11 @@ interface Slot {
 export function DatePage() {
   const { isFavorite, toggleFavorite } = useLibrary();
   const { session } = useServerSession();
+  const { toast } = useToast();
+  // This sitting's refusals, beyond the pass ledger: a "less like this"
+  // takes the artist's other cards out of the deck at once, and a refused
+  // card cannot come back from the deal it arrived in.
+  const isNo = useSaidNo();
 
   // The deck, and the collector ledger behind it. Shared with the chip and the
   // For You shelf so all three count one thing - see library/myAuditions.ts.
@@ -276,8 +285,8 @@ export function DatePage() {
   // "tiny artists" deck that still leaked your old auditions would not be the
   // deck it says it is. The ordinary deck leads with them as before.
   const deck = useMemo(
-    () => [...(mode ? [] : mine), ...previewDeck].filter((t) => !gone.has(t.path)),
-    [mine, previewDeck, gone, mode],
+    () => [...(mode ? [] : mine), ...previewDeck].filter((t) => !gone.has(t.path) && !isNo(t)),
+    [mine, previewDeck, gone, mode, isNo],
   );
 
   // The next stretch of cards, kept on the phone. Handed to the device cache
@@ -761,10 +770,20 @@ export function DatePage() {
 
   // --- the verdict -----------------------------------------------------------
 
+  /*
+   * `lessLike` is the pass that names the ACT: the artist goes into the
+   * sitting's ledger (so their other cards leave the deck now) and to the
+   * hub - a preview date carries it on the verdict itself, a library
+   * audition says it through the same thumb-down the DJ uses, widened to
+   * the artist. A plain pass says nothing about the artist, which is the
+   * whole difference between "not this song" and "less like this".
+   */
   const verdict = useCallback(
-    (track: Track, dir: 'left' | 'right') => {
+    (track: Track, dir: 'left' | 'right', opts: { lessLike?: boolean } = {}) => {
       let favorited = false;
       const isPreview = track.path.startsWith(PREVIEW_SCHEME);
+      const lessLike = dir === 'left' && opts.lessLike === true;
+      if (lessLike && track.artist.trim()) noteNo(artistKey(track.artist));
       if (isPreview) {
         /*
          * A preview date's verdict goes through its own door: a keep buys
@@ -777,9 +796,10 @@ export function DatePage() {
         setTally((t) =>
           dir === 'right' ? { ...t, kept: t.kept + 1 } : { ...t, passed: t.passed + 1 },
         );
+        const extId = track.path.slice(PREVIEW_SCHEME.length);
+        if (dir === 'left') noteNo(extKey(extId));
         if (session) {
-          const extId = track.path.slice(PREVIEW_SCHEME.length);
-          void dateCandidateVerdict(session, extId, dir === 'right').catch(() => {});
+          void dateCandidateVerdict(session, extId, dir === 'right', lessLike).catch(() => {});
         }
       } else if (dir === 'right') {
         fireNativeHaptic('success');
@@ -804,6 +824,7 @@ export function DatePage() {
           passedRef.current.add(id);
           writePassed(passedRef.current);
           sessionPassed.current.push(id);
+          noteNo(trackKey(id));
           setTally((t) => ({ ...t, passed: t.passed + 1 }));
           /*
            * A pass now COSTS the server something and frees something: it
@@ -813,6 +834,9 @@ export function DatePage() {
            * every other device and the disk never came back at all.
            */
           if (session) void dateVerdict(session, [], [id]).catch(() => {});
+          // The act, through the DJ's own door - the one place the hub
+          // records an artist-wide no on a song it holds.
+          if (session && lessLike) void reactDj(session, id, 'down', 0, 'artist').catch(() => {});
         }
       }
       // Everything advances NOW, inside the gesture: the deck (so the next
@@ -927,6 +951,27 @@ export function DatePage() {
     if (dx > VERDICT_PX) verdict(current, 'right');
     else if (dx < -VERDICT_PX) verdict(current, 'left');
     else setDrag(null);
+  };
+
+  /*
+   * The hold on a card, and on the pass button: why this was dealt, then
+   * the two refusals. The "why" is only ever the line the card already
+   * wears - a preview date's lane ("Because you play X", "Charting right
+   * now"), which the hub wrote from what it measured; a library audition
+   * carries no such line, so its menu opens straight on the refusals.
+   * Both refusals are a pass; the second names the act (`lessLike`). Each
+   * is confirmed aloud, since a menu choice has no PASS stamp flying off
+   * under the thumb the way a swipe does.
+   */
+  const whyDealt = (track: Track): string | undefined =>
+    track.path.startsWith(PREVIEW_SCHEME) && track.album.trim() ? track.album : undefined;
+  const refuseSong = (track: Track) => {
+    verdict(track, 'left');
+    toast({ message: 'Less of that.' });
+  };
+  const refuseAct = (track: Track) => {
+    verdict(track, 'left', { lessLike: true });
+    toast({ message: track.artist.trim() ? `Less like ${track.artist}.` : 'Less like this.' });
   };
 
   const dx = drag?.dx ?? 0;
@@ -1054,8 +1099,21 @@ export function DatePage() {
               </div>
             )}
             {current && (
-              <div
+              /* The hold wraps the live card in a box-less shell (display:
+                 contents) so the card keeps its inset:0 against .dateStack
+                 and the swipe is untouched: a drag past the slop cancels the
+                 hold, a still press opens the menu, and the release that
+                 opened it is swallowed before the card can read it. */
+              <SayNoMenu
                 key={current.path}
+                className="dateCardMenu"
+                label={`Why ${current.title}, and less like it`}
+                why={whyDealt(current)}
+                artist={current.artist}
+                onTrack={() => refuseSong(current)}
+                onArtist={() => refuseAct(current)}
+              >
+              <div
                 className="dateCard"
                 style={dragStyle}
                 onPointerDown={onPointerDown}
@@ -1093,6 +1151,7 @@ export function DatePage() {
                   />
                 </div>
               </div>
+              </SayNoMenu>
             )}
             {/* The judged card, flying its verdict off over the live deck. */}
             {outgoing && (
@@ -1126,15 +1185,29 @@ export function DatePage() {
                 card's footprint (the card is inset:0 in this same box) and
                 touches none of that. Do not tidy this into CardFace. */}
             <div className="dateVerdicts" role="group" aria-label="Your verdict">
+              {/* Pass says why: a tap is the plain pass, a hold opens the
+                  same menu the card carries - the reason it was dealt, "not
+                  this song", and "less like {artist}", which passes with the
+                  act named. The shell is box-less so the row's own layout
+                  and pointer-events rules see the button exactly as before. */}
+              <SayNoMenu
+                className="dateVerdicts__hold"
+                label={current ? `Less like ${current.title}` : 'Less like this'}
+                why={current ? whyDealt(current) : undefined}
+                artist={current?.artist ?? ''}
+                onTrack={() => current && refuseSong(current)}
+                onArtist={() => current && refuseAct(current)}
+              >
               <IconButton
                 variant="outline"
                 className="dateVerdicts__btn dateVerdicts__btn--pass"
-                aria-label={current ? `Pass on ${current.title}` : 'Pass'}
+                aria-label={current ? `Pass on ${current.title}. Hold for less like this` : 'Pass'}
                 disabled={!current}
                 onClick={() => current && verdict(current, 'left')}
               >
                 <X size={26} />
               </IconButton>
+              </SayNoMenu>
               {/* Between the two verdicts, because it undoes either and belongs
                   to neither. A peer of them rather than a smaller, quieter
                   thing off to one side: it is the third thing you press in

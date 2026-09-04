@@ -20,6 +20,30 @@ export interface DjSet {
   /** The vibe it was steered toward, echoed back. */
   vibe: string;
   blocks: DjBlock[];
+  /** Why each song was dealt, keyed by track id - one plain line built from
+   *  the dossier's real fields, never model prose. Absent on a hub from
+   *  before it said so; a song with no line simply has no "why". */
+  why?: Record<string, string>;
+}
+
+/**
+ * The reply's `why` map, tolerated in both shapes it has worn: a bare string
+ * per id, or `{ kind, text, anchor? }`. Anything else is dropped rather than
+ * rendered as "[object Object]" under a song.
+ */
+function normaliseWhy(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: Record<string, string> = {};
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    const text =
+      typeof v === 'string'
+        ? v
+        : v && typeof v === 'object' && typeof (v as { text?: unknown }).text === 'string'
+          ? (v as { text: string }).text
+          : '';
+    if (text.trim()) out[id] = text.trim();
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /**
@@ -53,7 +77,52 @@ export async function fetchDj(
     // how "request timed out" ended up in the DJ's mouth.
     { token: session.token, timeoutMs: 120_000 },
   );
-  return { ai: out.ai ?? false, vibe: out.vibe ?? seed, blocks: out.blocks ?? [] };
+  return {
+    ai: out.ai ?? false,
+    vibe: out.vibe ?? seed,
+    blocks: out.blocks ?? [],
+    why: normaliseWhy(out.why),
+  };
+}
+
+export type DjReaction = 'up' | 'down';
+
+export interface DjReactReply {
+  ok: boolean;
+  reaction: DjReaction;
+  /** What a down wrote into the rejection memory: the song, the whole artist,
+   *  or nothing (an up). Absent from a hub that predates the field. */
+  rejected: 'track' | 'artist' | null;
+}
+
+/**
+ * A thumb on a song the machine chose, given while it plays.
+ *
+ * `positionMs` is how far in the listener was when they said it - a down at
+ * five seconds and a down at three minutes are different facts. `scope:
+ * 'artist'` widens a down to the whole act, which is what "less like this"
+ * means on a thing that has an artist. An up is recorded and nothing more:
+ * it is NOT a heart, and this call never touches favourites.
+ */
+export async function reactDj(
+  session: ServerSession,
+  trackId: number,
+  reaction: DjReaction,
+  positionMs = 0,
+  scope?: 'artist',
+): Promise<DjReactReply> {
+  const body: Record<string, unknown> = {
+    trackId,
+    reaction,
+    positionMs: Math.max(0, Math.round(positionMs)),
+  };
+  if (scope) body.scope = scope;
+  const out = await request<Partial<DjReactReply>>(session.url, '/api/dj/react', {
+    method: 'POST',
+    token: session.token,
+    body: JSON.stringify(body),
+  });
+  return { ok: out.ok ?? true, reaction: out.reaction ?? reaction, rejected: out.rejected ?? null };
 }
 
 /** What the DJ is pulling down because you asked for it out loud. */

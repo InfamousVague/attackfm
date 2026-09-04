@@ -1,4 +1,4 @@
-import { ContextMenu, MenuItem, useToast } from '@glacier/react';
+import { ContextMenu, MenuItem, MenuSeparator, useToast } from '@glacier/react';
 import { MenuStop } from '../ux/MenuStop.tsx';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import {
@@ -57,11 +57,16 @@ export function TrackMenu({
   track,
   children,
   className,
+  lead,
 }: {
   track: Track;
   /** What the menu wraps - the card, the row, the tile. */
   children: ReactNode;
   className?: string;
+  /** Rows the SURFACE adds above the song's own verbs - a dealt row's "why
+   *  this?" and its refusals (booth/sayNo.tsx). Separated from the rest so
+   *  the menu still reads as one song's menu with a preface. */
+  lead?: ReactNode;
 }) {
   const { playNext, addToQueue, inJam } = useQueueControls();
   const { isFavorite, toggleFavorite } = useLibrary();
@@ -188,6 +193,8 @@ export function TrackMenu({
         className={className}
         content={
           <MenuStop>
+            {lead}
+            {lead && <MenuSeparator />}
             {/* Both queue verbs answer now. They were the highest-frequency
                 "you did something and the app said nothing" in the app: the
                 menu closed and the song went into a list you cannot see from

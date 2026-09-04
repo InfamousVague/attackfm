@@ -16,6 +16,7 @@ import type { ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { fetchRadio, trackIdFromPath } from '../server.ts';
+import { saidNoTo } from '../booth/saidNo.ts';
 import type { Track } from '../core/tauri.ts';
 
 /** Refill when fewer than this many are still ahead. */
@@ -133,7 +134,13 @@ export function RadioProvider({
       exclude: [...served.current, ...ahead],
     })
       .then((ids) => {
-        const next = ids.map((id) => byId.get(id)).filter((t): t is Track => t !== undefined);
+        // A song or an artist refused this sitting never rides a refill
+        // back in, even one the hub answered before the thumb landed. The
+        // hub's own memory catches it on the next page; this catches the
+        // page already in the air.
+        const next = ids
+          .map((id) => byId.get(id))
+          .filter((t): t is Track => t !== undefined && !saidNoTo(t));
         if (next.length > 0) {
           served.current = [...served.current, ...ids].slice(-400);
           onExtend(next);
