@@ -15,6 +15,16 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.93
+
+- Choosing a profile picture or a banner now asks which part of it you meant:
+  drag to move, pinch or use the slider to zoom. Your face is cut round and
+  your banner to the strip it actually shows as.
+- You can reposition the picture you already have without going back to your
+  camera roll for it.
+- Removing your banner no longer removes your picture as well. Each has its
+  own remove, beside the thing it removes.
+
 ## 0.5.92
 
 - Adding a song to the queue no longer starts playing it. Right-clicking a row
