@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.91
+
+- Changing song no longer logs a handful of connection errors behind the
+  scenes. Warming the next track, looking up lyrics and fetching a Canvas are
+  all courtesies now, and a failed one stays quiet.
+- When something does fail to connect, the diagnostics say which address it
+  was trying to reach.
+
 ## 0.5.90
 
 - Profile pictures and banners upload again. They never reached the directory
