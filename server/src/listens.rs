@@ -64,6 +64,23 @@ pub struct IncomingListen {
     /// Where playback came from ("album", "playlist:4", ...), opaque here.
     #[serde(default)]
     pub context: String,
+    /*
+     * The shape of the sitting. Every one optional, because an app update
+     * travels ahead of the hub and behind it in equal measure: an older client
+     * sends none of these and the event lands as it always did.
+     */
+    /// Deck position when the sitting ended - where they bailed, ms.
+    #[serde(default)]
+    pub ended_at_ms: Option<i64>,
+    /// Times the volume went UP mid-song.
+    #[serde(default)]
+    pub volume_ups: i64,
+    /// Times they rewound to hear a part again.
+    #[serde(default)]
+    pub seek_backs: i64,
+    /// The client's own word for where it was heard.
+    #[serde(default)]
+    pub device: String,
 }
 
 /// `POST /api/listens` - a batch of listen events for the calling listener.
@@ -124,6 +141,13 @@ pub(crate) fn ingest(db: &Db, user_id: i64, events: &[IncomingListen]) -> usize 
                 e.completed,
                 e.skipped,
                 e.context.trim(),
+                &crate::db::ListenShape {
+                    // Clamped to the day like ms_listened, and never negative.
+                    ended_at_ms: e.ended_at_ms.map(|v| v.clamp(0, DAY_MS)),
+                    volume_ups: e.volume_ups.clamp(0, 1_000),
+                    seek_backs: e.seek_backs.clamp(0, 1_000),
+                    device: e.device.trim().chars().take(32).collect(),
+                },
             )
             .is_ok()
         {
@@ -352,3 +376,5 @@ pub fn summary_payload(
         "sound": sound,
     }))
 }
+
+

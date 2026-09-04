@@ -1204,7 +1204,12 @@ CREATE TABLE IF NOT EXISTS listen_events (
   duration_ms INTEGER,
   completed   INTEGER NOT NULL,
   skipped     INTEGER NOT NULL,
-  context     TEXT NOT NULL DEFAULT ''
+  context     TEXT NOT NULL DEFAULT '',
+  -- The shape of the sitting - see migrate() for what each one is for.
+  ended_at_ms INTEGER,
+  volume_ups  INTEGER NOT NULL DEFAULT 0,
+  seek_backs  INTEGER NOT NULL DEFAULT 0,
+  device      TEXT NOT NULL DEFAULT ''
 );
 
 -- What the DJ actually offered, so adoption can be judged per impression
@@ -1690,6 +1695,19 @@ pub struct HotRow {
     pub last_at: i64,
 }
 
+/// Everything about a sitting beyond how long it lasted and the two verdicts.
+/// All optional on the wire: an older client sends none of it and the row
+/// lands as it always did.
+#[derive(Default, Clone)]
+pub struct ListenShape {
+    /// Deck position when the sitting closed, ms. Where they bailed.
+    pub ended_at_ms: Option<i64>,
+    pub volume_ups: i64,
+    pub seek_backs: i64,
+    /// "iPhone", "macOS", "car", "speaker" - the client's own word.
+    pub device: String,
+}
+
 impl Db {
     pub fn open(path: &Path) -> rusqlite::Result<Self> {
         let conn = Connection::open(path)?;
@@ -1879,6 +1897,42 @@ impl Db {
             .collect();
         if !have.iter().any(|c| c == "device") {
             conn.execute("ALTER TABLE tokens ADD COLUMN device TEXT NOT NULL DEFAULT ''", [])?;
+        }
+
+        /*
+         * What a listen looked like, not just that it happened.
+         *
+         * The ledger recorded how long was heard and two verdicts - completed,
+         * skipped - and nothing about the shape of the sitting. Four things it
+         * could not say, each one a signal the curator wants:
+         *   ended_at_ms  WHERE the listener bailed. A skip in the intro and a
+         *                skip at the chorus are different verdicts on a song,
+         *                and ms_listened cannot tell them apart when a seek is
+         *                involved.
+         *   volume_ups   turned it up mid-song. Nobody turns up a song they
+         *                are about to skip.
+         *   seek_backs   rewound to hear a part again. The most deliberate
+         *                approval a listener gives without a heart.
+         *   device       where it was heard - a phone, a desktop, a car, a
+         *                speaker in the kitchen. The same taste plays
+         *                differently in each.
+         * Runtime ALTERs, same as the four above: the schema batch never
+         * re-runs on a deployed box.
+         */
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('listen_events')")?
+            .query_map([], |r| r.get(0))?
+            .filter_map(Result::ok)
+            .collect();
+        for (name, decl) in [
+            ("ended_at_ms", "ended_at_ms INTEGER"),
+            ("volume_ups", "volume_ups INTEGER NOT NULL DEFAULT 0"),
+            ("seek_backs", "seek_backs INTEGER NOT NULL DEFAULT 0"),
+            ("device", "device TEXT NOT NULL DEFAULT ''"),
+        ] {
+            if !have.iter().any(|c| c == name) {
+                conn.execute(&format!("ALTER TABLE listen_events ADD COLUMN {decl}"), [])?;
+            }
         }
         Ok(())
     }
@@ -7060,6 +7114,26 @@ impl Db {
     }
 
     /// Files one listen event, snapshot and all.
+    /// Songs this listener came BACK to inside a window, and how many times.
+    ///
+    /// Two sittings on the same song in a week, neither of them queued by a
+    /// playlist, is the truest "I like this" a listener gives short of a
+    /// heart - and nothing counted it. Sittings under the skip line do not
+    /// count as returns: bailing twice is not coming back.
+    pub fn recent_repeats(&self, user_id: i64, since: i64) -> std::collections::HashMap<i64, i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT track_id, COUNT(*) FROM listen_events
+              WHERE user_id = ?1 AND started_at >= ?2 AND skipped = 0
+              GROUP BY track_id HAVING COUNT(*) >= 2",
+        ) else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id, since], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     pub fn insert_listen(
         &self,
         user_id: i64,
@@ -7071,11 +7145,13 @@ impl Db {
         completed: bool,
         skipped: bool,
         context: &str,
+        shape: &ListenShape,
     ) -> rusqlite::Result<()> {
         self.lock().execute(
             "INSERT INTO listen_events (user_id, track_id, title, artist, album, genre,
-                                        started_at, ms_listened, duration_ms, completed, skipped, context)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                                        started_at, ms_listened, duration_ms, completed, skipped, context,
+                                        ended_at_ms, volume_ups, seek_backs, device)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 user_id,
                 track_id,
@@ -7088,7 +7164,11 @@ impl Db {
                 duration_ms,
                 completed as i64,
                 skipped as i64,
-                context
+                context,
+                shape.ended_at_ms,
+                shape.volume_ups,
+                shape.seek_backs,
+                shape.device
             ],
         )?;
         Ok(())
@@ -10171,9 +10251,9 @@ mod taste_verdict_units {
         let recent_ms = now_ms - 2 * 86_400_000; // two days ago
         let ancient_ms = now_ms - 400 * 86_400_000; // outside any window
         let tags = (String::from("T"), String::from("A"), String::from("Al"), String::new());
-        db.insert_listen(user, 7, &tags, recent_ms, 200_000, Some(210_000), true, false, "home")
+        db.insert_listen(user, 7, &tags, recent_ms, 200_000, Some(210_000), true, false, "home", &crate::db::ListenShape::default())
             .unwrap();
-        db.insert_listen(user, 7, &tags, ancient_ms, 200_000, Some(210_000), true, false, "home")
+        db.insert_listen(user, 7, &tags, ancient_ms, 200_000, Some(210_000), true, false, "home", &crate::db::ListenShape::default())
             .unwrap();
 
         // The window is in the column's own unit, so the ancient row is out.
@@ -11049,5 +11129,121 @@ mod pull_adoption_is_per_listener {
         // Now I heart it. That is mine, and it counts.
         db.set_favorite(me, id, true).unwrap();
         assert_eq!(db.pull_adoption(me, now), (1, 1), "a heart of my own is adoption");
+    }
+}
+
+#[cfg(test)]
+mod listen_shape {
+    //! The four things a sitting can now say beyond how long it lasted: where
+    //! it ended, whether the dial went up, whether they rewound, and where it
+    //! was heard. Plus the query that turns "came back to it" into a number.
+
+    use super::*;
+    use crate::listens::{ingest, IncomingListen, RecordBody};
+
+    fn fresh(name: &str) -> Db {
+        let d = std::env::temp_dir().join(format!("afm-shape-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    fn track(db: &Db, rel: &str) -> i64 {
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind)
+                 VALUES (?1,?1,'A','A','Al',0,0,'music')",
+                rusqlite::params![rel],
+            )
+            .unwrap();
+        db.track_id_by_path(rel).unwrap()
+    }
+
+    fn event(track_id: i64, started_at: i64, ms: i64, skipped: bool) -> IncomingListen {
+        IncomingListen {
+            track_id,
+            started_at,
+            ms_listened: ms,
+            duration_ms: Some(200_000),
+            completed: false,
+            skipped,
+            context: "test".into(),
+            ended_at_ms: Some(87_500),
+            volume_ups: 2,
+            seek_backs: 1,
+            device: "iPhone/car".into(),
+        }
+    }
+
+    #[test]
+    fn the_shape_lands_on_the_row() {
+        let db = fresh("lands");
+        let me = db.create_user("me", "x", true).unwrap();
+        let id = track(&db, "a.flac");
+        assert_eq!(ingest(&db, me, &[event(id, 1_000, 60_000, false)]), 1);
+        let row: (Option<i64>, i64, i64, String) = db
+            .lock()
+            .query_row(
+                "SELECT ended_at_ms, volume_ups, seek_backs, device FROM listen_events WHERE user_id = ?1",
+                [me],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (Some(87_500), 2, 1, "iPhone/car".to_string()));
+    }
+
+    /// An older client sends none of it; the row still lands, defaulted.
+    #[test]
+    fn an_old_client_still_lands() {
+        let db = fresh("old");
+        let me = db.create_user("me", "x", true).unwrap();
+        let id = track(&db, "a.flac");
+        let body: RecordBody = serde_json::from_str(&format!(
+            r#"{{"events":[{{"trackId":{id},"startedAt":1000,"msListened":60000,"completed":false,"skipped":false,"context":""}}]}}"#
+        ))
+        .unwrap();
+        assert_eq!(ingest(&db, me, &body.events), 1);
+        let row: (Option<i64>, i64, String) = db
+            .lock()
+            .query_row(
+                "SELECT ended_at_ms, volume_ups, device FROM listen_events WHERE user_id = ?1",
+                [me],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (None, 0, String::new()));
+    }
+
+    /// Coming back to a song inside the window counts; bailing on it twice
+    /// does not - and it is mine, not the hub's.
+    #[test]
+    fn repeats_count_returns_not_bails() {
+        let db = fresh("repeats");
+        let me = db.create_user("me", "x", true).unwrap();
+        let you = db.create_user("you", "x", false).unwrap();
+        let loved = track(&db, "loved.flac");
+        let bailed = track(&db, "bailed.flac");
+        let once = track(&db, "once.flac");
+        let now = 1_000_000_000i64;
+        let day = 86_400_000;
+        ingest(&db, me, &[
+            event(loved, now - 6 * day, 150_000, false),
+            event(loved, now - 2 * day, 150_000, false),
+            event(loved, now - 1 * day, 150_000, false),
+            event(bailed, now - 3 * day, 12_000, true),
+            event(bailed, now - 2 * day, 11_000, true),
+            event(once, now - 1 * day, 150_000, false),
+            // Outside the window: does not count.
+            event(once, now - 20 * day, 150_000, false),
+        ]);
+        // Somebody else returning to it is their taste, not mine.
+        ingest(&db, you, &[event(bailed, now - 2 * day, 150_000, false), event(bailed, now - 1 * day, 150_000, false)]);
+
+        let mine = db.recent_repeats(me, now - 7 * day);
+        assert_eq!(mine.get(&loved), Some(&3), "three returns in a week");
+        assert!(!mine.contains_key(&bailed), "two bails are not two returns: {mine:?}");
+        assert!(!mine.contains_key(&once), "one listen in the window is not a return");
+        let theirs = db.recent_repeats(you, now - 7 * day);
+        assert_eq!(theirs.get(&bailed), Some(&2), "and theirs is theirs");
     }
 }

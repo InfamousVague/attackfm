@@ -1,5 +1,6 @@
 import { originFromPath, trackIdFromPath, type ServerSession } from '../server.ts';
 import { normalise, sessionForOrigin } from '../servers/sessions.ts';
+import { deviceLabel } from '../api/http.ts';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -39,6 +40,17 @@ export interface ListenEvent {
   completed: boolean;
   skipped: boolean;
   context: string;
+  /** Deck position when the sitting closed - WHERE they bailed, not how long
+   *  they heard. A seek makes the two differ, and the difference is the point. */
+  endedAtMs?: number;
+  /** Times the volume went up mid-song. Nobody turns up a song they are about
+   *  to skip. */
+  volumeUps?: number;
+  /** Times they rewound to hear a part again - the most deliberate approval a
+   *  listener gives without a heart. */
+  seekBacks?: number;
+  /** Where it was heard: the device, and the route the sound took. */
+  device?: string;
 }
 
 /*
@@ -56,10 +68,29 @@ export function markPlaySurface(name: string): void {
   playSurface = name;
 }
 
+/*
+ * Where the sound is coming out. The Player sets it from the same state the
+ * device picker reads: this device's own output, another Connect seat, a
+ * Chromecast, or a speaker on the network. A car is a route too, when the
+ * shell can say so. Folded into `device` with the platform name, so a sitting
+ * reads "iPhone/car" or "macOS/speaker" - the same taste plays differently in
+ * each, and the curator can learn which.
+ */
+let playRoute = 'local';
+export function markPlayRoute(route: string): void {
+  playRoute = route;
+}
+
 const OUTBOX_KEY = 'attackfm-listen-outbox';
 const FLUSH_MS = 20_000;
-/** Under this, the sitting was a blip, not a listen. */
-const MIN_MS = 5_000;
+/** Under this, the sitting was a blip, not a listen - a mis-tap, the wrong
+ *  song in a queue, the moment before "not this one". Ten seconds, by the
+ *  listener's own rule: nothing said inside them counts either way. */
+const MIN_MS = 10_000;
+/** A jump back of at least this is a rewind, not jitter. */
+const SEEK_BACK_MS = 3_000;
+/** A volume rise of at least this is a hand on the dial, not a fade. */
+const VOLUME_STEP = 0.04;
 /** Bailing before this is a skip. */
 const SKIP_MS = 30_000;
 /** Hearing this share of the file is a completion. */
@@ -145,6 +176,10 @@ export interface ListenSnapshot {
    *  written - same rule as the play counter: flipping it mid-song never
    *  retroactively logs what began under "off". */
   record: boolean;
+  /** Deck position, seconds. Read each tick for the bail point and rewinds. */
+  position: number;
+  /** 0..1. Read each tick for hands on the dial. */
+  volume: number;
 }
 
 interface Sitting {
@@ -155,6 +190,11 @@ interface Sitting {
   ms: number;
   /** Best duration seen during the sitting, ms. */
   durationMs: number | null;
+  /** Last deck position seen, ms - where they were when the sitting closed. */
+  lastPosMs: number;
+  lastVolume: number;
+  volumeUps: number;
+  seekBacks: number;
 }
 
 export function createListenReporter(read: () => ListenSnapshot): { dispose: () => void } {
@@ -177,6 +217,10 @@ export function createListenReporter(read: () => ListenSnapshot): { dispose: () 
       completed: done,
       skipped: !done && s.ms < SKIP_MS,
       context: playSurface,
+      endedAtMs: Math.round(s.lastPosMs),
+      volumeUps: s.volumeUps,
+      seekBacks: s.seekBacks,
+      device: `${deviceLabel()}/${playRoute}`,
     });
   };
 
@@ -196,11 +240,35 @@ export function createListenReporter(read: () => ListenSnapshot): { dispose: () 
       // captured at the START of the sitting, so a switch mid-song still
       // credits the box the song came from.
       const origin = originFromPath(path) ?? snap.session?.url ?? null;
-      sitting = { path, origin, trackId: id, startedAt: Date.now(), ms: 0, durationMs: null };
+      sitting = {
+        path,
+        origin,
+        trackId: id,
+        startedAt: Date.now(),
+        ms: 0,
+        durationMs: null,
+        lastPosMs: snap.position * 1000,
+        lastVolume: snap.volume,
+        volumeUps: 0,
+        seekBacks: 0,
+      };
     }
     if (sitting) {
       if (snap.audible) sitting.ms += dt;
       if (snap.duration > 0) sitting.durationMs = Math.round(snap.duration * 1000);
+      /*
+       * Two things a listener does with their hands that say more than the
+       * clock does. A jump BACKWARD of a few seconds or more is a rewind -
+       * they wanted that part again. A rise in volume mid-song is a hand on
+       * the dial, and nobody turns up a song they are about to skip. Both
+       * counted only while the same song is in the deck, and both from the
+       * once-a-second snapshot - no new plumbing in the Player.
+       */
+      const posMs = snap.position * 1000;
+      if (snap.audible && sitting.lastPosMs - posMs >= SEEK_BACK_MS) sitting.seekBacks += 1;
+      sitting.lastPosMs = posMs;
+      if (snap.volume - sitting.lastVolume >= VOLUME_STEP) sitting.volumeUps += 1;
+      sitting.lastVolume = snap.volume;
     }
 
     if (snap.session && now - lastFlush > FLUSH_MS) {

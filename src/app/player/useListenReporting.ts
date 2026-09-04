@@ -41,12 +41,15 @@ export function useListenReporting({
   playbackRef,
   positionRef,
   commitSeek,
+  volume,
 }: {
   track: Track | null;
   playing: boolean;
   audible: boolean;
   duration: number;
   coarsePosition: number;
+  /** 0..1, for the reporter to notice a hand on the dial. */
+  volume: number;
   playSession: ServerSession | null;
   playSessionRef: MutableRefObject<ServerSession | null>;
   scrubbing: MutableRefObject<boolean>;
@@ -65,6 +68,8 @@ export function useListenReporting({
     duration: 0,
     session: null,
     record: false,
+    position: 0,
+    volume: 1,
   });
   listenSnapRef.current = {
     track,
@@ -72,6 +77,8 @@ export function useListenReporting({
     duration,
     session: playSession,
     record: playbackRef.current.saveHistory,
+    position: positionRef.current,
+    volume,
   };
   useEffect(() => {
     const reporter = createListenReporter(() => listenSnapRef.current);

@@ -749,6 +749,13 @@ async fn handle(state: &AppState, user: &crate::db::User, method: &str, p: &Para
                         completed: true,
                         skipped: false,
                         context: "subsonic".into(),
+                        // A scrobble is a fact about a finished play and nothing
+                        // else: a Subsonic client says where it got to (the end),
+                        // never how it got there.
+                        ended_at_ms: duration_ms,
+                        volume_ups: 0,
+                        seek_backs: 0,
+                        device: "subsonic".into(),
                     });
                     let _ = state.db.record_play(user.id, *id);
                 }

@@ -78,6 +78,7 @@ import {
 import { usePlugins } from '../../plugins/pluginsContext.ts';
 import { useSystemNowPlaying } from './useSystemNowPlaying.ts';
 import { useListenReporting } from './useListenReporting.ts';
+import { markPlayRoute } from './listens.ts';
 import { useNpChrome } from './useNpChrome.ts';
 import { usePlayerConnect, type PlayerLiveState } from './usePlayerConnect.ts';
 import { NowPlayingSheet, npArtMenuItems } from './NowPlayingSheet.tsx';
@@ -3510,7 +3511,18 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     playbackRef,
     positionRef,
     commitSeek,
+    volume,
   });
+
+  // Where the sound is going, for the listen ledger - the same facts the
+  // device picker shows. A sitting heard through a kitchen speaker and one
+  // heard on headphones are different sittings, and the curator can learn the
+  // difference only if it is written down.
+  useEffect(() => {
+    markPlayRoute(
+      onSpeaker ? 'speaker' : casting ? 'cast' : connect.activeElsewhere ? 'connect' : 'local',
+    );
+  }, [onSpeaker, casting, connect.activeElsewhere]);
 
   // The fader no longer touches the element: it rides the gain after the
   // analyser, so turning down what you hear never turns down what the bar reads.
