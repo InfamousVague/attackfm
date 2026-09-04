@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.82
+
+- AirPlay is in the same panel as everything else you can play on, so one
+  button answers where the music comes out. On an iPhone that button is now
+  there whether or not you own a second device - it used to hide.
+
 ## 0.5.81
 
 - Sharing your profile is what the share button at the top of the page does
