@@ -136,19 +136,20 @@
   overflow: hidden;
 }
 
-/* White type on the two full-bleed faces, at the strengths the old hero used. */
-.discoverHead[data-face='canvas'] .discoverHero__text,
-.discoverHead[data-face='mosaic'] .discoverHero__text {
+/* White type on EVERY face, at the strengths the old hero used. The scrim
+   under the type is black whatever the theme, so the type over it is light
+   whatever the theme - this used to name only the canvas and mosaic faces,
+   and on the clip wall in light mode the title took the theme's dark text
+   token and sat on a black gradient. */
+.discoverHead .discoverHero__text {
   color: #fff;
 }
 
-.discoverHead[data-face='canvas'] .discoverHero__kicker,
-.discoverHead[data-face='mosaic'] .discoverHero__kicker {
+.discoverHead .discoverHero__kicker {
   color: color-mix(in srgb, #fff 78%, transparent);
 }
 
-.discoverHead[data-face='canvas'] .discoverHero__blurb,
-.discoverHead[data-face='mosaic'] .discoverHero__blurb {
+.discoverHead .discoverHero__blurb {
   color: color-mix(in srgb, #fff 72%, transparent);
 }
 
