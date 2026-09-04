@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.105
+
+- Music Date is back at the top of Discover as the card with the big
+  number, right under the hero - it had been folded into a small pill and
+  was easy to miss.
+
 ## 0.5.104
 
 - Albums, playlists, mixes and Discover's lists now look like Liked songs and
