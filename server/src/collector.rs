@@ -109,7 +109,7 @@ pub(crate) fn cap_bytes(state: &Arc<AppState>) -> i64 {
 /// buys reach: an adventurous collector accepts weaker matches, a conservative
 /// one waits for near-certainties. The band keeps even 100% adventure above
 /// the "every term neutral" score of 0.5, so noise is never bought.
-fn threshold(exploration: f64) -> f64 {
+pub(crate) fn threshold(exploration: f64) -> f64 {
     0.72 - 0.16 * exploration.clamp(0.0, 1.0)
 }
 

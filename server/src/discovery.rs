@@ -81,9 +81,10 @@ const HARVEST_EVERY_MS: i64 = 6 * 60 * 60 * 1000;
 const TRACK_REJECT_MS: i64 = 90 * 24 * 60 * 60 * 1000;
 const ARTIST_REJECT_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// "Less like this" on a card's REASON - a refused anchor (scope 'anchor',
-/// written by the dismiss path once it can name one) keeps pulling every
-/// candidate that hangs off it down for this long. Longer than an artist
-/// refusal: the listener did not say "not them", they said "not that thread".
+/// written by `refuse_card` from the dismiss endpoint) keeps every candidate
+/// that hangs off it out of the harvest and pulls the ones already pooled
+/// down for this long. Longer than an artist refusal: the listener did not
+/// say "not them", they said "not that thread".
 const ANCHOR_REJECT_MS: i64 = 90 * 24 * 60 * 60 * 1000;
 /// The most a refused anchor can cost a candidate. Enough to sink one whose
 /// only thread was refused below every honest match; never enough to hide
@@ -460,6 +461,7 @@ pub async fn harvest(state: &Arc<AppState>, user: i64) {
 /// drift into harvesting differently.
 async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<String>) {
     let owned = owned_keys(state);
+    let refused = refused_anchors(&state.db, user);
     let c = client(15);
 
     for seed_name in seeds {
@@ -492,11 +494,18 @@ async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<String>) {
                 {
                     continue;
                 }
-                file_candidate(&state.db, user, &t, &seed_name, kind, strength);
+                file_candidate(&state.db, user, &t, &seed_name, kind, strength, &refused);
             }
             tokio::time::sleep(GAP).await;
         }
     }
+}
+
+/// The threads this listener has cut - "less like this" said about a card's
+/// REASON (scope 'anchor'), still inside its window. Read once per walk;
+/// `file_candidate` asks it about every candidate.
+pub(crate) fn refused_anchors(db: &crate::db::Db, user: i64) -> HashSet<String> {
+    db.rejected_keys_since(user, "anchor", now_ms() - ANCHOR_REJECT_MS)
 }
 
 /// The one way a catalogue track enters the pool from this module.
@@ -507,6 +516,15 @@ async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<String>) {
 /// its release date. A song the listener already passed on is refused at the
 /// door and must not collect threads on the way out. Returns whether it went
 /// in.
+///
+/// A REFUSED thread is not a reason. When the listener has said "less like
+/// this" about `anchor` (`refused`, scope 'anchor'), a candidate reached
+/// only through it is not filed at all - the pool would otherwise refill
+/// with the very thread they cut, and `rescore`'s penalty would spend its
+/// whole life sinking rows that should never have landed. A candidate that
+/// ALSO hangs off a thread they did not cut stays: they said no to the
+/// reason, not to the song, and it keeps its other reasons and gains no new
+/// thread from the refused one.
 fn file_candidate(
     db: &crate::db::Db,
     user: i64,
@@ -514,7 +532,14 @@ fn file_candidate(
     anchor: &str,
     kind: &str,
     strength: f64,
+    refused: &HashSet<String>,
 ) -> bool {
+    if refused.contains(&artist_key(anchor)) {
+        // Filed under a cut thread: nothing happens. If another walk filed
+        // this song under a thread they kept, it is in the pool on THAT
+        // reason and stays; if not, it never lands.
+        return false;
+    }
     let taken = db
         .add_discovery(
             user, &t.ext_id, &t.title, &t.artist, &t.cover, &t.url, &t.preview, anchor,
@@ -556,6 +581,7 @@ pub async fn ingest_artist_by_name(
     let Some(tracks) = deezer_top(c, id).await else { return Vec::new() };
     tokio::time::sleep(GAP).await;
     let owned = owned_keys(state);
+    let refused = refused_anchors(&state.db, user);
     let mut added = Vec::new();
     for t in tracks.into_iter().take(take) {
         if owned.contains(&key_of(&t.artist, &t.title))
@@ -563,12 +589,39 @@ pub async fn ingest_artist_by_name(
         {
             continue;
         }
-        if file_candidate(&state.db, user, &t, seed_name, kind, strength) {
+        if file_candidate(&state.db, user, &t, seed_name, kind, strength, &refused) {
             added.push(t.ext_id);
         }
     }
     added
 }
+
+/// The listener ASKED for this one, out loud (dj_voice.rs). It enters the
+/// pool through the same door as every other candidate - the judged-song
+/// guard, the rejection memory the caller already consulted - filed under
+/// its own artist as a `keep` thread at full strength, and its seed set to
+/// the sentence the card will show. Returns whether it is now in the pool,
+/// which is NOT yet a download: the collector buys only what the pool
+/// measures and scores above its floor, asked for or not.
+pub(crate) fn file_asked(db: &crate::db::Db, user: i64, t: &CandidateTrack) -> bool {
+    let taken = db
+        .add_discovery(
+            user, &t.ext_id, &t.title, &t.artist, &t.cover, &t.url, &t.preview, ASKED_SEED,
+            t.popularity,
+        )
+        .unwrap_or(false);
+    if !taken {
+        return false;
+    }
+    db.add_discovery_anchor(user, &t.ext_id, &t.artist, "keep", 1.0);
+    if let Some(released) = &t.released {
+        db.set_discovery_released(user, &t.ext_id, released);
+    }
+    true
+}
+
+/// The seed a spoken request's candidates carry - what the card says.
+pub(crate) const ASKED_SEED: &str = "you asked for this";
 
 /// Whether this listener has said no to this song, or to whoever made it,
 /// recently enough that offering it again would be ignoring them.
@@ -606,17 +659,17 @@ pub(crate) fn rejected_track_ids(db: &crate::db::Db, user: i64) -> std::collecti
         .collect()
 }
 
-struct CandidateTrack {
-    ext_id: String,
-    title: String,
-    artist: String,
-    cover: String,
-    url: String,
-    preview: String,
-    popularity: f64,
+pub(crate) struct CandidateTrack {
+    pub(crate) ext_id: String,
+    pub(crate) title: String,
+    pub(crate) artist: String,
+    pub(crate) cover: String,
+    pub(crate) url: String,
+    pub(crate) preview: String,
+    pub(crate) popularity: f64,
     /// When it came out, if the catalogue said. The top-tracks listing
     /// usually does not; read opportunistically, never invented.
-    released: Option<String>,
+    pub(crate) released: Option<String>,
 }
 
 /// The catalogue's id for an artist by name. Public so the album filler can
@@ -731,45 +784,78 @@ async fn deezer_top(c: &reqwest::Client, id: u64) -> Option<Vec<CandidateTrack>>
         .await
         .ok()?;
     let items = v.get("data")?.as_array()?;
+    Some(items.iter().filter_map(candidate_from).collect())
+}
+
+/// One Deezer track object as a pool candidate, or None when it has no id,
+/// title or artist. Shared by the top-tracks walk and the by-name resolver
+/// so the two cannot read the catalogue differently.
+fn candidate_from(t: &serde_json::Value) -> Option<CandidateTrack> {
+    let id = t.get("id")?.as_u64()?;
+    let title = t.get("title")?.as_str()?.to_string();
+    let artist = t.pointer("/artist/name")?.as_str()?.to_string();
+    if title.is_empty() || artist.is_empty() {
+        return None;
+    }
     // Deezer's rank runs to about a million; normalise so popularity is a
     // nudge in [0,1] rather than a number that swamps every other term.
-    Some(
-        items
-            .iter()
-            .filter_map(|t| {
-                let id = t.get("id")?.as_u64()?;
-                let title = t.get("title")?.as_str()?.to_string();
-                let artist = t.pointer("/artist/name")?.as_str()?.to_string();
-                if title.is_empty() || artist.is_empty() {
-                    return None;
-                }
-                Some(CandidateTrack {
-                    ext_id: format!("deezer:track:{id}"),
-                    title,
-                    artist,
-                    cover: t
-                        .pointer("/album/cover_medium")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    url: t.get("link").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
-                    preview: t
-                        .get("preview")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    popularity: (t.get("rank").and_then(|x| x.as_f64()).unwrap_or(0.0)
-                        / 1_000_000.0)
-                        .clamp(0.0, 1.0),
-                    released: t
-                        .get("release_date")
-                        .or_else(|| t.pointer("/album/release_date"))
-                        .and_then(|x| x.as_str())
-                        .map(str::to_string),
-                })
-            })
-            .collect(),
-    )
+    Some(CandidateTrack {
+        ext_id: format!("deezer:track:{id}"),
+        title,
+        artist,
+        cover: t
+            .pointer("/album/cover_medium")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        url: t.get("link").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+        preview: t
+            .get("preview")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        popularity: (t.get("rank").and_then(|x| x.as_f64()).unwrap_or(0.0) / 1_000_000.0)
+            .clamp(0.0, 1.0),
+        released: t
+            .get("release_date")
+            .or_else(|| t.pointer("/album/release_date"))
+            .and_then(|x| x.as_str())
+            .map(str::to_string),
+    })
+}
+
+/// A named recording in the catalogue's own terms, or None when the
+/// catalogue does not hold that exact song by that exact artist.
+///
+/// Strict on both names - the artist through `artist_key`, the title
+/// through `title_key` - because the caller is the DJ's voice shortlist: a
+/// chat model naming songs from memory, which is exactly where a near-miss
+/// becomes a stranger's record bought under a familiar title.
+pub(crate) async fn resolve_track(
+    c: &reqwest::Client,
+    artist: &str,
+    title: &str,
+) -> Option<CandidateTrack> {
+    let q = format!("artist:\"{}\" track:\"{}\"", artist.trim(), title.trim());
+    let v: serde_json::Value = c
+        .get("https://api.deezer.com/search")
+        .query(&[("q", q.as_str()), ("limit", "5")])
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    let want_artist = artist_key(artist);
+    let want_title = title_key(title);
+    if want_artist.is_empty() || want_title.is_empty() {
+        return None;
+    }
+    v.get("data")?
+        .as_array()?
+        .iter()
+        .filter_map(candidate_from)
+        .find(|t| artist_key(&t.artist) == want_artist && title_key(&t.title) == want_title)
 }
 
 // --- listening ---------------------------------------------------------------
@@ -804,21 +890,64 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
     // A cold shelf has no taste to read, but its chart candidates still
     // need their measurements - a date card needs its sound. The house
     // prior scores everything neutral, which for a chart pick is the truth.
-    let (taste, all) = match crate::curator::user_taste_for(state, user) {
-        Some(pair) => pair,
-        None => (crate::taste::UserTaste::cold(user), state.db.all_features()),
-    };
-    let by_id: std::collections::HashMap<i64, &crate::db::TrackFeatures> =
-        all.iter().map(|f| (f.track_id, f)).collect();
-    let lanes = state.db.discovery_lanes(user);
-    let mood = crate::mood::load(state, user);
-    let anchors = anchor_ledger(state, user);
+    let ear = Ear::open(state, user);
     let c = client(20);
 
     for cand in waiting {
+        ear.measure_and_score(state, user, &c, &cand).await;
+        tokio::time::sleep(GAP).await;
+    }
+    true
+}
+
+/// Everything one measuring pass needs that is the LISTENER's rather than
+/// the candidate's: their taste, the library's features, the lanes, the
+/// mood profile and the cut threads. Opened once per pass, because the
+/// taste build decodes every track's vectors and a dozen candidates must
+/// not pay for it a dozen times.
+pub(crate) struct Ear {
+    taste: crate::taste::UserTaste,
+    all: Vec<crate::db::TrackFeatures>,
+    lanes: HashMap<String, (String, f64)>,
+    mood: Option<crate::mood::MoodProfile>,
+    anchors: HashMap<String, (f64, f64)>,
+}
+
+impl Ear {
+    pub(crate) fn open(state: &Arc<AppState>, user: i64) -> Ear {
+        // A cold shelf has no taste to read, but its chart candidates still
+        // need their measurements - a date card needs its sound. The house
+        // prior scores everything neutral, which for a chart pick is the truth.
+        let (taste, all) = match crate::curator::user_taste_for(state, user) {
+            Some(pair) => pair,
+            None => (crate::taste::UserTaste::cold(user), state.db.all_features()),
+        };
+        Ear {
+            taste,
+            all,
+            lanes: state.db.discovery_lanes(user),
+            mood: crate::mood::load(state, user),
+            anchors: anchor_ledger(state, user),
+        }
+    }
+
+    /// Listen to one candidate - its words, its tempo, what it sounds like -
+    /// score it against this listener and write both down. Returns the
+    /// score. Shared by the background pass and the DJ's spoken shortlist,
+    /// so a song the listener asked for is judged by exactly the ear that
+    /// judges everything else.
+    pub(crate) async fn measure_and_score(
+        &self,
+        state: &Arc<AppState>,
+        user: i64,
+        c: &reqwest::Client,
+        cand: &crate::db::DiscoveryRow,
+    ) -> f64 {
+        let by_id: HashMap<i64, &crate::db::TrackFeatures> =
+            self.all.iter().map(|f| (f.track_id, f)).collect();
         // The words, embedded by the same model the library went through - so
         // the two vectors live in the same space and cosine means something.
-        let vec = match fetch_lyrics(&c, &cand.artist, &cand.title).await {
+        let vec = match fetch_lyrics(c, &cand.artist, &cand.title).await {
             Some(words) => crate::curator::embed_text(&words).await,
             None => None,
         };
@@ -845,18 +974,20 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
 
         // The seed artist IS the genre signal, as the old comment said - so
         // now it is actually used instead of being noted and then passed as
-        // None, which made a quarter of the score a constant.
-        let tags = crate::taste::artist_tags(&by_id, &cand.seed);
+        // None, which made a quarter of the score a constant. A candidate
+        // the listener asked for by name carries no seed artist - its own
+        // artist stands in, which is the honest "same scene" for it.
+        let scene = if cand.seed == ASKED_SEED { cand.artist.as_str() } else { cand.seed.as_str() };
+        let tags = crate::taste::artist_tags(&by_id, scene);
         let score = crate::taste::score_candidate(
-            &taste, vec.as_deref(), bpm, &tags, &cand.seed, year, energy, brightness,
+            &self.taste, vec.as_deref(), bpm, &tags, scene, year, energy, brightness,
         ) as f64
-            + score_extras(lanes.get(&cand.ext_id), cand.popularity, mood.as_ref(), vec.as_deref(), bpm)
-            - anchor_penalty(anchors.get(&cand.ext_id));
+            + score_extras(self.lanes.get(&cand.ext_id), cand.popularity, self.mood.as_ref(), vec.as_deref(), bpm)
+            - anchor_penalty(self.anchors.get(&cand.ext_id));
 
         let _ = state.db.save_discovery_features(user, &cand.ext_id, bpm, vec.as_deref(), score);
-        tokio::time::sleep(GAP).await;
+        score
     }
-    true
 }
 
 /// Every candidate's threads, summed, beside the share of them the listener
@@ -864,9 +995,8 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
 /// whole pass, where a lookup per candidate would be hundreds.
 ///
 /// A refused anchor is "less like this" said about a card's REASON (scope
-/// 'anchor' in `discovery_rejections`). Nothing writes that scope yet - the
-/// dismiss path will, once cards carry the anchors to say no to - and until
-/// it does this reads an empty set and costs nothing.
+/// 'anchor' in `discovery_rejections`, written by `refuse_card`). A listener
+/// who has cut no thread reads an empty set here and this costs nothing.
 fn anchor_ledger(state: &Arc<AppState>, user: i64) -> HashMap<String, (f64, f64)> {
     let refused = state.db.rejected_keys_since(user, "anchor", now_ms() - ANCHOR_REJECT_MS);
     let mut ledger: HashMap<String, (f64, f64)> = HashMap::new();
@@ -967,13 +1097,15 @@ pub fn rescore(state: &Arc<AppState>, user: i64) {
     // honest answer available.
     let mut seed_tags: HashMap<String, Vec<String>> = HashMap::new();
     for d in pool {
+        // An asked-for song has no seed artist; its own artist is its scene.
+        let scene = if d.seed == ASKED_SEED { d.artist.as_str() } else { d.seed.as_str() };
         let tags = seed_tags
-            .entry(d.seed.to_lowercase())
-            .or_insert_with(|| crate::taste::artist_tags(&by_id, &d.seed))
+            .entry(scene.to_lowercase())
+            .or_insert_with(|| crate::taste::artist_tags(&by_id, scene))
             .clone();
         let year = d.released.as_deref().and_then(crate::taste::released_year);
         let score = crate::taste::score_candidate(
-            &taste, d.lyric_vec.as_deref(), d.bpm, &tags, &d.seed, year, d.energy, d.brightness,
+            &taste, d.lyric_vec.as_deref(), d.bpm, &tags, scene, year, d.energy, d.brightness,
         ) as f64
             + score_extras(lanes.get(&d.ext_id), d.popularity, mood.as_ref(), d.lyric_vec.as_deref(), d.bpm)
             - anchor_penalty(anchors.get(&d.ext_id));
@@ -1031,6 +1163,55 @@ pub struct AnchorOut {
     pub kind: String,
     /// How close, 0-1 in the kind's own terms.
     pub strength: f64,
+}
+
+/// The facts one shelf-naming line may carry about a candidate's artist:
+/// what the profile sources said (MusicBrainz's town, start year and genres;
+/// ListenBrainz's listener count; Spotify's genres when MB had none) and the
+/// threads that reached it. Nothing here is written by a model - the prose
+/// blurb in the same profile row is deliberately not read.
+fn nm_facts(profile: Option<&serde_json::Value>, anchors: &[AnchorOut]) -> String {
+    let mut facts: Vec<String> = Vec::new();
+    if let Some(p) = profile {
+        if let Some(from) = p.pointer("/musicbrainz/from").and_then(|v| v.as_str()) {
+            if !from.trim().is_empty() {
+                facts.push(format!("from {}", from.trim()));
+            }
+        }
+        if let Some(began) = p.pointer("/musicbrainz/began").and_then(|v| v.as_str()) {
+            if !began.trim().is_empty() {
+                facts.push(format!("began {}", began.trim()));
+            }
+        }
+        let genres: Vec<&str> = ["/musicbrainz/genres", "/spotify/genres"]
+            .into_iter()
+            .filter_map(|path| p.pointer(path).and_then(|g| g.as_array()))
+            .find(|g| !g.is_empty())
+            .map(|g| g.iter().filter_map(|x| x.as_str()).take(3).collect())
+            .unwrap_or_default();
+        if !genres.is_empty() {
+            facts.push(format!("genres {}", genres.join(", ")));
+        }
+        if let Some(n) = p.pointer("/listenbrainz/listeners").and_then(|v| v.as_u64()) {
+            if n > 0 {
+                facts.push(format!("{n} ListenBrainz listeners"));
+            }
+        }
+    }
+    let threads: Vec<String> = anchors
+        .iter()
+        .take(2)
+        .map(|a| match a.kind.as_str() {
+            "same_artist" => format!("by {}", a.artist),
+            "deezer_related" => format!("Deezer files them next to {}", a.artist),
+            "lb_similar" => format!("ListenBrainz lists them beside {}", a.artist),
+            "mb_member" | "mb_side" | "mb_collab" => format!("related to {} on MusicBrainz", a.artist),
+            "keep" => format!("asked for, near {}", a.artist),
+            _ => format!("near {}", a.artist),
+        })
+        .collect();
+    facts.extend(threads);
+    facts.join("; ")
 }
 
 /// The threads of one candidate, for a payload.
@@ -1237,16 +1418,44 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
     if pool.len() < 6 {
         return (!lead.is_empty()).then_some(lead);
     }
+    /*
+     * Facts on every line, so the model can name a REAL scene.
+     *
+     * The line used to be artist, title and seed, and the model was asked to
+     * hear "a coherent scene" in sixty names it had mostly never seen - so
+     * it named what it remembered, or guessed: a 2011 Sheffield post-punk
+     * scene for a band from Lisbon. Every fact here is on file already -
+     * MusicBrainz's town and start year and genres, ListenBrainz's listener
+     * count, the threads the candidate hangs off - and the prompt is fenced
+     * to those facts. The id validation below is unchanged: the model still
+     * only ever groups, it never adds a track.
+     */
+    let artist_keys: Vec<String> = pool.iter().map(|d| artist_key_public(&d.artist)).collect();
+    let profiles: HashMap<String, serde_json::Value> = state
+        .db
+        .artist_profile_rows(&artist_keys)
+        .into_iter()
+        .filter_map(|(k, body, _, _)| serde_json::from_str(&body).ok().map(|v| (k, v)))
+        .collect();
     let mut lines = Vec::new();
     for (i, d) in pool.iter().enumerate() {
-        lines.push(format!("{}|{} — {} (near {})", i + 1, d.artist, d.title, d.seed));
+        let anchors = anchors_of(&state.db, user, &d.ext_id);
+        let facts = nm_facts(profiles.get(&artist_key_public(&d.artist)), &anchors);
+        let mut line = format!("{}|{} — {} (near {})", i + 1, d.artist, d.title, d.seed);
+        if !facts.is_empty() {
+            line.push_str(" | ");
+            line.push_str(&facts);
+        }
+        lines.push(line);
     }
     let prompt = format!(
-        "You build 'new music' playlists for one listener from tracks they do NOT own yet - fresh picks harvested from artists near their taste. Candidates, one per line as N|artist — title (near = the artist of theirs it came from):\n{}\n\n\
+        "You build 'new music' playlists for one listener from tracks they do NOT own yet - fresh picks harvested from artists near their taste. Candidates, one per line as N|artist — title (near = the artist of theirs it came from), some with known facts after a further |:\n{}\n\n\
          Group them into 3-5 themed playlists of new music, each a coherent scene or vibe - a genre lane, a 'because you play X' set, or a mood. Titles short and evocative (2-4 words); one-line blurbs, warm and plain, no exclamation marks. Each playlist 5-12 tracks.\n\
+         Name the through-line using ONLY the artists, titles and facts listed; no years, genres, places or claims not in the list.\n\
          Answer with STRICT JSON only: [{{\"title\":\"...\",\"blurb\":\"...\",\"ids\":[N,...]}}] using ONLY the numbers N above.",
         lines.join("\n"),
     );
+    let allowed = lines.join("\n");
     // Generous, because nothing waits on it: the list is built in the
     // background and served from cache. Two minutes was cutting it fine -
     // grouping sixty candidates into named sets is several hundred tokens of
@@ -1273,8 +1482,14 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
     let mut used: std::collections::HashSet<usize> = std::collections::HashSet::new();
     let mut out = Vec::new();
     for (i, m) in parsed.into_iter().take(5).enumerate() {
-        let title = m.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-        let blurb = m.get("blurb").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let title = m.get("title").and_then(|v| v.as_str()).unwrap_or("").trim();
+        let blurb = m.get("blurb").and_then(|v| v.as_str()).unwrap_or("").trim();
+        // The fence, enforced: a title past forty characters or a blurb
+        // past a hundred and forty is not a name, and a year the facts did
+        // not supply is a claim - the blurb goes, the grouping stays.
+        let Some((title, blurb)) = crate::ai::fence_naming(title, blurb, &allowed) else {
+            continue;
+        };
         let items: Vec<serde_json::Value> = m
             .get("ids")
             .and_then(|v| v.as_array())
@@ -1344,37 +1559,76 @@ pub async fn feed(
 #[derive(serde::Deserialize)]
 pub struct DismissQuery {
     pub id: String,
-    /// `artist` refuses everyone by that name; anything else (or absent)
-    /// refuses just this song.
+    /// `artist` refuses everyone by that name; `anchor` refuses the REASON
+    /// the card gave (its strongest thread, or the one named in `anchor`);
+    /// anything else (or absent) refuses just this song.
     pub scope: Option<String>,
+    /// With `scope=anchor`: which of the card's threads to cut, as the card
+    /// spelled it. Absent means the strongest.
+    pub anchor: Option<String>,
 }
 
-/// `POST /api/discoveries/dismiss?id=` - not for me. Forgotten rather than
-/// hidden, so the harvest is free to find something better in its place.
+/// `POST /api/discoveries/dismiss?id=&scope=&anchor=` - not for me.
+/// Forgotten rather than hidden, so the harvest is free to find something
+/// better in its place.
 pub async fn dismiss(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Query(q): Query<DismissQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    /*
-     * Remember the refusal before forgetting the row.
-     *
-     * The row still goes - the pool is free to find something better in its
-     * place, which is the point of forgetting rather than hiding. What is kept
-     * is the JUDGEMENT, so the next harvest does not spend the slot it just
-     * freed on the same song. Read by id first: one indexed lookup, because
-     * the pool is hundreds of rows and this runs on a tap.
-     */
-    if let Some(d) = state.db.discovery_get(caller.id, &q.id) {
-        if q.scope.as_deref() == Some("artist") {
-            state.db.reject_discovery(caller.id, "artist", &artist_key(&d.artist));
-        } else {
-            state.db.reject_discovery(caller.id, "track", &key_of(&d.artist, &d.title));
+    let refused = refuse_card(&state.db, caller.id, &q.id, q.scope.as_deref(), q.anchor.as_deref());
+    state.db.forget_discovery(caller.id, &q.id);
+    Ok(Json(json!({ "ok": true, "rejected": refused })))
+}
+
+/// Remember the refusal before forgetting the row.
+///
+/// The row still goes - the pool is free to find something better in its
+/// place, which is the point of forgetting rather than hiding. What is kept
+/// is the JUDGEMENT, so the next harvest does not spend the slot it just
+/// freed on the same song. Read by id first: one indexed lookup, because
+/// the pool is hundreds of rows and this runs on a tap.
+///
+/// Scope `anchor` is "less like this" said about the card's REASON: the
+/// thread (an artist of theirs the candidate was reached from) goes into the
+/// rejection memory under scope 'anchor', where `file_candidate` refuses to
+/// file anything under it and `rescore` sinks what already hangs off it.
+/// The song itself is refused too - they dismissed the card - so the next
+/// walk does not bring the same record back on some other thread within the
+/// hour. Returns what was written, for the reply.
+pub(crate) fn refuse_card(
+    db: &crate::db::Db,
+    user: i64,
+    ext_id: &str,
+    scope: Option<&str>,
+    anchor: Option<&str>,
+) -> Vec<&'static str> {
+    let Some(d) = db.discovery_get(user, ext_id) else { return Vec::new() };
+    let mut wrote = Vec::new();
+    match scope {
+        Some("artist") => {
+            db.reject_discovery(user, "artist", &artist_key(&d.artist));
+            wrote.push("artist");
+        }
+        Some("anchor") => {
+            let named = anchor.map(str::trim).filter(|a| !a.is_empty()).map(String::from);
+            let thread = named.or_else(|| {
+                db.discovery_anchors_for(user, ext_id).into_iter().next().map(|(a, _, _)| a)
+            });
+            if let Some(thread) = thread {
+                db.reject_discovery(user, "anchor", &artist_key(&thread));
+                wrote.push("anchor");
+            }
+            db.reject_discovery(user, "track", &key_of(&d.artist, &d.title));
+            wrote.push("track");
+        }
+        _ => {
+            db.reject_discovery(user, "track", &key_of(&d.artist, &d.title));
+            wrote.push("track");
         }
     }
-    state.db.forget_discovery(caller.id, &q.id);
-    Ok(Json(json!({ "ok": true })))
+    wrote
 }
 
 #[derive(serde::Deserialize)]
@@ -1501,5 +1755,85 @@ mod rejection_memory {
         // other artist-less candidate.
         db.reject_discovery(me, "artist", &artist_key("   "));
         assert!(db.rejected_keys_since(me, "artist", 0).is_empty());
+    }
+
+    fn candidate(n: u64, artist: &str, title: &str) -> CandidateTrack {
+        CandidateTrack {
+            ext_id: format!("deezer:track:{n}"),
+            title: title.into(),
+            artist: artist.into(),
+            cover: String::new(),
+            url: String::new(),
+            preview: String::new(),
+            popularity: 0.1,
+            released: None,
+        }
+    }
+
+    /// "Less like this" on the card's REASON: scope `anchor` writes the
+    /// thread into the rejection memory - the strongest thread when none is
+    /// named, the named one when it is - and the song goes with it.
+    #[test]
+    fn dismissing_the_reason_refuses_the_anchor() {
+        let db = fresh("anchor");
+        let me = db.create_user("me", "", true).unwrap();
+        let none: HashSet<String> = HashSet::new();
+        let t = candidate(1, "Someone New", "First Song");
+        assert!(file_candidate(&db, me, &t, "Big Thief", "deezer_related", 0.5, &none));
+        db.add_discovery_anchor(me, &t.ext_id, "Adrianne Lenker", "lb_similar", 0.9);
+
+        let wrote = refuse_card(&db, me, &t.ext_id, Some("anchor"), None);
+        assert_eq!(wrote, vec!["anchor", "track"]);
+        let cut = db.rejected_keys_since(me, "anchor", 0);
+        assert!(cut.contains(&artist_key("Adrianne Lenker")), "the strongest thread: {cut:?}");
+        assert!(!cut.contains(&artist_key("Big Thief")), "the weaker one is not touched");
+        assert!(is_rejected(&db, me, "Someone New", "First Song"), "and the song itself is refused");
+
+        // Named, the named thread is the one cut.
+        let u = candidate(2, "Another Act", "Other Song");
+        assert!(file_candidate(&db, me, &u, "Big Thief", "deezer_related", 0.5, &none));
+        refuse_card(&db, me, &u.ext_id, Some("anchor"), Some("Big Thief"));
+        assert!(db.rejected_keys_since(me, "anchor", 0).contains(&artist_key("Big Thief")));
+    }
+
+    /// The harvest hears the cut thread: a candidate reached ONLY through a
+    /// refused anchor is not filed; one reached through a thread they kept
+    /// lands, and gains no thread from the refused one.
+    #[test]
+    fn a_candidate_whose_only_thread_is_cut_is_skipped_at_ingest() {
+        let db = fresh("ingest");
+        let me = db.create_user("me", "", true).unwrap();
+        db.reject_discovery(me, "anchor", &artist_key("The National"));
+        let refused = refused_anchors(&db, me);
+        assert!(refused.contains(&artist_key("the national")), "the fold is the pool's");
+
+        let only = candidate(3, "Stranger", "Hanging Off Nothing");
+        assert!(!file_candidate(&db, me, &only, "The National", "deezer_related", 0.5, &refused));
+        assert!(db.discovery_get(me, &only.ext_id).is_none(), "never landed");
+
+        let kept = candidate(4, "Neighbour", "Two Threads");
+        assert!(file_candidate(&db, me, &kept, "Big Thief", "deezer_related", 0.5, &refused));
+        assert!(!file_candidate(&db, me, &kept, "The National", "deezer_related", 0.9, &refused));
+        let threads = db.discovery_anchors_for(me, &kept.ext_id);
+        assert_eq!(threads.len(), 1, "the refused thread is not a reason: {threads:?}");
+        assert_eq!(threads[0].0, "Big Thief");
+        assert!(db.discovery_get(me, &kept.ext_id).is_some(), "still in the pool on the kept thread");
+    }
+
+    /// A spoken request files into the POOL, not into a download: the row
+    /// carries the sentence the card will show and a `keep` thread to its
+    /// own artist, and the rejection memory still stands in the door.
+    #[test]
+    fn an_asked_for_song_enters_the_pool_under_its_own_name() {
+        let db = fresh("asked");
+        let me = db.create_user("me", "", true).unwrap();
+        let t = candidate(5, "Fugazi", "Waiting Room");
+        assert!(file_asked(&db, me, &t));
+        let row = db.discovery_get(me, &t.ext_id).expect("pooled");
+        assert_eq!(row.seed, ASKED_SEED);
+        let threads = db.discovery_anchors_for(me, &t.ext_id);
+        assert_eq!(threads.len(), 1);
+        assert_eq!((threads[0].0.as_str(), threads[0].1.as_str()), ("Fugazi", "keep"));
+        assert!(!is_rejected(&db, me, "Fugazi", "Waiting Room"), "asking is not a no");
     }
 }

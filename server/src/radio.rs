@@ -288,7 +288,16 @@ pub async fn radio(
         picks.iter().enumerate().map(|(i, id)| (*id, "radio", i as i64)).collect();
     state.db.record_dj_impressions(user, &offered);
 
-    Ok(Json(json!({ "tracks": picks })))
+    // Why each one, in facts, for the long-press - the same builder the DJ
+    // set uses (dj::Why), so the two surfaces cannot give different reasons
+    // for the same song. The station has no exploration seats.
+    let liked: HashSet<i64> = state.db.favorites(user).into_iter().collect();
+    let hearted = state.db.hearted_artist_keys(user);
+    let why = crate::dj::Why::build(&taste, &features, &liked, &hearted);
+    let by_id: HashMap<i64, &TrackFeatures> = features.iter().map(|f| (f.track_id, f)).collect();
+    let why_out = crate::dj::why_map(&why, &picks, &by_id, &HashSet::new());
+
+    Ok(Json(json!({ "tracks": picks, "why": why_out })))
 }
 
 #[cfg(test)]

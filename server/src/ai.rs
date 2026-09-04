@@ -649,9 +649,92 @@ fn parse_json(content: &str) -> Result<Value, String> {
         .map_err(|e| format!("invalid structured response: {e}"))
 }
 
+// --- what a model wrote, checked -------------------------------------------
+//
+// The house rule for every naming and patter prompt: the model phrases what
+// the maths found and NEVER adds a fact. The prompts say so; these are the
+// checks that hold when the prompt does not. They are deliberately dumb -
+// a four-digit number that reads as a year, a name that is in the library -
+// because a check that needs a model to run is a check the model can fail.
+
+/// The longest a model-written title may be; past this it is a sentence.
+pub const NAME_TITLE_MAX: usize = 40;
+/// The longest a model-written blurb may be.
+pub const NAME_BLURB_MAX: usize = 140;
+
+/// Every four-digit run in `text` that reads as a year (1900-2099), in
+/// order. "2019" in "their 2019 record" and "2019-04" both count; "20190"
+/// does not - five digits is not a year.
+pub fn years_in(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut run = String::new();
+    let mut flush = |run: &mut String| {
+        if run.len() == 4 {
+            if let Ok(y) = run.parse::<i64>() {
+                if (1900..=2099).contains(&y) {
+                    out.push(run.clone());
+                }
+            }
+        }
+        run.clear();
+    };
+    for c in text.chars() {
+        if c.is_ascii_digit() {
+            run.push(c);
+        } else {
+            flush(&mut run);
+        }
+    }
+    flush(&mut run);
+    out
+}
+
+/// Whether every year `text` names also appears in `allowed` - the facts the
+/// model was handed. A year it was not handed is a year it remembered, and
+/// what a model remembers about a small band is a guess wearing a number.
+pub fn years_grounded(text: &str, allowed: &str) -> bool {
+    years_in(text).iter().all(|y| allowed.contains(y.as_str()))
+}
+
+/// The fence on a model-written name: the title within `NAME_TITLE_MAX` or
+/// the whole naming is refused (None - the caller keeps its plain name); the
+/// blurb within `NAME_BLURB_MAX` and grounded in `allowed`, or the blurb
+/// alone is dropped to empty. A blurb is decoration; a title is the card.
+pub fn fence_naming(title: &str, blurb: &str, allowed: &str) -> Option<(String, String)> {
+    let title = title.trim();
+    if title.is_empty() || title.chars().count() > NAME_TITLE_MAX {
+        return None;
+    }
+    let blurb = blurb.trim();
+    let blurb = if blurb.chars().count() > NAME_BLURB_MAX || !years_grounded(blurb, allowed) {
+        String::new()
+    } else {
+        blurb.to_string()
+    };
+    Some((title.to_string(), blurb))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A year the facts did not supply is a claim; the fence drops the blurb
+    /// and keeps the name. A title past the cap is not a name at all.
+    #[test]
+    fn the_naming_fence_holds() {
+        assert_eq!(years_in("their 2019 record, reissued 2021-03"), vec!["2019", "2021"]);
+        assert!(years_in("track 20190 and 1850 and 300").is_empty());
+        let allowed = "1|Big Thief — Not | began 2015; genres indie folk";
+        let (t, b) = fence_naming("Woods at Dusk", "Formed in 2015, still quiet.", allowed).unwrap();
+        assert_eq!((t.as_str(), b.as_str()), ("Woods at Dusk", "Formed in 2015, still quiet."));
+        let (_, b) = fence_naming("Woods at Dusk", "Their 1998 debut.", allowed).unwrap();
+        assert_eq!(b, "", "a year not in the facts empties the blurb");
+        let long = "x".repeat(141);
+        let (_, b) = fence_naming("Woods", &long, allowed).unwrap();
+        assert_eq!(b, "", "a blurb past the cap is dropped");
+        assert!(fence_naming(&"t".repeat(41), "", allowed).is_none(), "a title past the cap is refused");
+        assert!(fence_naming("  ", "fine", allowed).is_none());
+    }
 
     #[test]
     fn parses_plain_and_fenced_object() {

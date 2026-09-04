@@ -51,6 +51,220 @@ const JITTER_SPREAD_FLOOR: f32 = 0.04;
 /// every stranger in the library.
 const EXPLORE_POOL: usize = 40;
 
+/// How close a dealt song's MEASURED sound must sit to a hearted song's
+/// before the card may say "sounds like {that artist}". The fingerprint is
+/// derived from the recording; the sonic vector embeds prose about it, and
+/// two songs DESCRIBED alike sit close in that space however differently
+/// they sound - so the prose floor is higher.
+const SOUNDS_LIKE_FINGERPRINT: f32 = 0.85;
+const SOUNDS_LIKE_SONIC: f32 = 0.92;
+
+/// The lightest artist affinity that reads as "you finish their songs".
+const FINISHES_FLOOR: f32 = 0.15;
+
+/// Why one song was dealt, in facts - the map `/api/dj` and `/api/radio`
+/// return as `why`, and the neighbour line the patter dossier carries.
+///
+/// Every reason here is a real anchor or a measured fact: the seat it took,
+/// a heart on file, the listener's own completions of that artist, a
+/// ListenBrainz edge to an artist they like, a measured closeness to a song
+/// they hearted. No model writes any of it, which is what lets the client
+/// put a "not this reason" button beside each one and post the answer back
+/// to a scope the harvesters actually read.
+pub(crate) struct Why<'a> {
+    taste: &'a UserTaste,
+    /// Track ids they hearted.
+    liked: &'a HashSet<i64>,
+    /// Artists they hearted a song by, lowercased as `hearted_artist_keys`
+    /// spells them.
+    hearted: &'a HashSet<String>,
+    /// MusicBrainz id -> display name, for the artists they like.
+    liked_mbids: HashMap<String, String>,
+    /// A liked artist's ListenBrainz neighbour's mbid -> that liked artist.
+    neighbours_of_liked: HashMap<String, String>,
+    /// (artist lowercased, artist as spelled, vector, is_fingerprint) for
+    /// every hearted song that carries a sound vector.
+    liked_sound: Vec<(String, String, Vec<f32>, bool)>,
+}
+
+impl<'a> Why<'a> {
+    pub(crate) fn build(
+        taste: &'a UserTaste,
+        feats: &[TrackFeatures],
+        liked: &'a HashSet<i64>,
+        hearted: &'a HashSet<String>,
+    ) -> Why<'a> {
+        let mut liked_mbids = HashMap::new();
+        let mut neighbours_of_liked = HashMap::new();
+        let mut liked_sound = Vec::new();
+        for f in feats {
+            let lower = f.artist.to_lowercase();
+            let likes_artist = hearted.contains(&lower)
+                || taste.artists.get(&taste::artist_key(&f.artist)).map_or(false, |a| *a > 0.0);
+            if likes_artist {
+                if !f.musicbrainz_id.is_empty() {
+                    liked_mbids.entry(f.musicbrainz_id.clone()).or_insert_with(|| f.artist.clone());
+                }
+                for m in &f.listenbrainz_similar {
+                    neighbours_of_liked.entry(m.clone()).or_insert_with(|| f.artist.clone());
+                }
+            }
+            if liked.contains(&f.track_id) {
+                if let Some(v) = f.audio_fingerprint.as_ref() {
+                    liked_sound.push((lower.clone(), f.artist.clone(), v.clone(), true));
+                } else if let Some(v) = f.sonic_vec.as_ref() {
+                    liked_sound.push((lower.clone(), f.artist.clone(), v.clone(), false));
+                }
+            }
+        }
+        Why { taste, liked, hearted, liked_mbids, neighbours_of_liked, liked_sound }
+    }
+
+    /// The liked artist this song is next door to on ListenBrainz, either
+    /// direction: its own neighbours include one of theirs, or it is on a
+    /// liked artist's neighbour list. None when it is nobody's neighbour.
+    pub(crate) fn scene_neighbour(&self, f: &TrackFeatures) -> Option<String> {
+        let own = taste::artist_key(&f.artist);
+        f.listenbrainz_similar
+            .iter()
+            .filter_map(|m| self.liked_mbids.get(m))
+            .chain(
+                (!f.musicbrainz_id.is_empty())
+                    .then(|| self.neighbours_of_liked.get(&f.musicbrainz_id))
+                    .flatten(),
+            )
+            .find(|name| taste::artist_key(name) != own)
+            .cloned()
+    }
+
+    /// The hearted song's artist this one measures closest to, when it is
+    /// close enough to say so and is somebody else.
+    fn sounds_like(&self, f: &TrackFeatures) -> Option<String> {
+        let own = f.artist.to_lowercase();
+        let mut best: Option<(f32, &str)> = None;
+        for (lower, name, v, is_fp) in &self.liked_sound {
+            if *lower == own {
+                continue;
+            }
+            let (mine, floor) = if *is_fp {
+                (f.audio_fingerprint.as_ref(), SOUNDS_LIKE_FINGERPRINT)
+            } else {
+                (f.sonic_vec.as_ref(), SOUNDS_LIKE_SONIC)
+            };
+            let Some(mine) = mine.filter(|m| m.len() == v.len()) else { continue };
+            let c = cosine(mine, v);
+            if c >= floor && best.map_or(true, |(b, _)| c > b) {
+                best = Some((c, name.as_str()));
+            }
+        }
+        best.map(|(_, name)| name.to_string())
+    }
+
+    /// The one reason this song is in front of them, or None when nothing
+    /// provable applies - in which case the card says nothing rather than
+    /// something a model made up.
+    pub(crate) fn of(&self, f: &TrackFeatures, explore: bool) -> Option<String> {
+        if explore {
+            return Some("explore".into());
+        }
+        let lower = f.artist.to_lowercase();
+        if self.liked.contains(&f.track_id) || self.hearted.contains(&lower) {
+            return Some("hearted before".into());
+        }
+        if self.taste.artists.get(&taste::artist_key(&f.artist)).map_or(false, |a| *a >= FINISHES_FLOOR) {
+            return Some(format!("you finish {}", f.artist.trim()));
+        }
+        if let Some(name) = self.scene_neighbour(f) {
+            return Some(format!("same scene as {name}"));
+        }
+        if let Some(name) = self.sounds_like(f) {
+            return Some(format!("sounds like {name}"));
+        }
+        None
+    }
+}
+
+/// The `why` map for a dealt list: track id -> reason, ids with no
+/// provable reason left out.
+pub(crate) fn why_map(
+    why: &Why<'_>,
+    picks: &[i64],
+    by_id: &HashMap<i64, &TrackFeatures>,
+    explore: &HashSet<i64>,
+) -> serde_json::Map<String, Value> {
+    picks
+        .iter()
+        .filter_map(|id| {
+            let f = by_id.get(id)?;
+            why.of(f, explore.contains(id)).map(|w| (id.to_string(), json!(w)))
+        })
+        .collect()
+}
+
+/// A tempo as a DJ would say it - the bucket, and the number.
+pub(crate) fn bpm_bucket(bpm: f64) -> String {
+    let n = bpm.round() as i64;
+    let word = if bpm < 90.0 {
+        "slow"
+    } else if bpm < 120.0 {
+        "mid-tempo"
+    } else if bpm < 140.0 {
+        "upbeat"
+    } else {
+        "fast"
+    };
+    format!("{word}, around {n} bpm")
+}
+
+/// Whether `needle` appears in `hay` as a whole word (both already
+/// lowercased): not inside another word, so "low" does not fire on "slow".
+fn contains_word(hay: &str, needle: &str) -> bool {
+    let mut from = 0;
+    while let Some(at) = hay[from..].find(needle) {
+        let start = from + at;
+        let end = start + needle.len();
+        let before_ok = start == 0 || !hay[..start].chars().next_back().map_or(false, char::is_alphanumeric);
+        let after_ok = end >= hay.len() || !hay[end..].chars().next().map_or(false, char::is_alphanumeric);
+        if before_ok && after_ok {
+            return true;
+        }
+        from = start + needle.len().max(1);
+        if from >= hay.len() {
+            break;
+        }
+    }
+    false
+}
+
+/// The post-check on a spoken line: every year it names must be in the
+/// facts it was handed, and every library artist or album it names must be
+/// one of THIS run's - a name from elsewhere on the shelf is the model
+/// reaching for what it remembers. `allowed` is the run's lines and facts;
+/// `names` the library's artist and album names, lowercased, the short ones
+/// already dropped. Dumb on purpose: see ai.rs.
+pub(crate) fn grounded_line(say: &str, allowed: &str, names: &[String]) -> bool {
+    if !crate::ai::years_grounded(say, allowed) {
+        return false;
+    }
+    let say = say.to_lowercase();
+    let allowed = allowed.to_lowercase();
+    !names.iter().any(|n| contains_word(&say, n) && !allowed.contains(n.as_str()))
+}
+
+/// The library's artist and album names the patter check reads: lowercased,
+/// deduped, and only the ones long enough that a hit means the name and
+/// not a word ("Low", "Air" and "Yes" are all bands).
+fn known_names(feats: &[TrackFeatures], albums: Vec<String>) -> Vec<String> {
+    let mut out: HashSet<String> = HashSet::new();
+    for name in feats.iter().map(|f| f.artist.as_str()).chain(albums.iter().map(String::as_str)) {
+        let n = name.trim().to_lowercase();
+        if n.chars().count() >= 5 {
+            out.insert(n);
+        }
+    }
+    out.into_iter().collect()
+}
+
 /// Whether one track may be dealt to this listener at all - the guard every
 /// dealing surface applies before it scores anything.
 ///
@@ -259,29 +473,39 @@ fn fallback_blocks(state: &Arc<AppState>, picks: &[i64]) -> Vec<Value> {
     chunks
         .iter()
         .enumerate()
-        .map(|(i, chunk)| {
-            let artist = state
-                .db
-                .titles_for(&[chunk[0]])
-                .first()
-                .map(|(artist, _)| artist.clone())
-                .unwrap_or_default();
-            let seat = if i == 0 {
-                crate::voice::Seat::Opener
-            } else if i == last && last > 0 {
-                crate::voice::Seat::Closer
-            } else {
-                crate::voice::Seat::Turn
-            };
-            let line = crate::voice::line_for(seat, &artist);
-            let say = if artist.trim().is_empty() {
-                line
-            } else {
-                format!("{line} {artist}.")
-            };
-            json!({ "say": say, "trackIds": chunk })
-        })
+        .map(|(i, chunk)| json!({ "say": plain_line(state, seat_at(i, last), chunk[0]), "trackIds": chunk }))
         .collect()
+}
+
+/// Which seat a run at index `i` of `last + 1` takes: the voice layer's own
+/// choice - an opener, a closer once there is more than one run, turns
+/// between.
+fn seat_at(i: usize, last: usize) -> crate::voice::Seat {
+    if i == 0 {
+        crate::voice::Seat::Opener
+    } else if i == last && last > 0 {
+        crate::voice::Seat::Closer
+    } else {
+        crate::voice::Seat::Turn
+    }
+}
+
+/// The plain line for a run: the voice's own library line plus the lead
+/// artist's name - the toast shows exactly the words the voice speaks. What
+/// a run says when the model is absent, over budget, or caught claiming.
+fn plain_line(state: &Arc<AppState>, seat: crate::voice::Seat, lead: i64) -> String {
+    let artist = state
+        .db
+        .titles_for(&[lead])
+        .first()
+        .map(|(artist, _)| artist.clone())
+        .unwrap_or_default();
+    let line = crate::voice::line_for(seat, &artist);
+    if artist.trim().is_empty() {
+        line
+    } else {
+        format!("{line} {artist}.")
+    }
 }
 
 const TRAIT_CACHE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
@@ -810,7 +1034,16 @@ pub(crate) async fn build_reply(
      * never to add to them: grounded dossiers are the difference between a
      * sommelier and a confident liar.
      */
+    /*
+     * Every fact below is already in `by_id` or the taste: the file's year
+     * and genre, the enricher's tags and one sonic trait, the measured
+     * tempo, and the ListenBrainz edge to an artist they like. The lore
+     * shelf (lore.rs) is model-recalled and is deliberately NOT here: it
+     * is attached to the finished blocks, marked and hedged, after the
+     * patter is written, so the patter can never repeat it as fact.
+     */
     let hearted = state.db.hearted_artist_keys(user);
+    let why = Why::build(&taste, &feats, &liked, &hearted);
     let dossiers: HashMap<i64, String> = picks
         .iter()
         .map(|id| {
@@ -827,10 +1060,38 @@ pub(crate) async fn build_reply(
                 if !f.genre.trim().is_empty() {
                     facts.push(format!("filed under {}", f.genre.trim()));
                 }
+                if let Some(y) = f.year.filter(|y| *y > 1900) {
+                    facts.push(format!("released {y}"));
+                }
+                let tags: Vec<&str> = f
+                    .ai_genres
+                    .iter()
+                    .chain(f.ai_specific_tags.iter())
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .take(2)
+                    .collect();
+                if !tags.is_empty() {
+                    facts.push(format!("tagged {}", tags.join(", ")));
+                }
+                if let Some(t) = f.ai_sonic_traits.iter().map(|s| s.trim()).find(|s| !s.is_empty()) {
+                    facts.push(format!("sounds {t}"));
+                }
+                if let Some(b) = f.bpm.filter(|b| *b > 0.0) {
+                    facts.push(bpm_bucket(b));
+                }
+                if let Some(name) = why.scene_neighbour(f) {
+                    facts.push(format!("shares a ListenBrainz neighbour with {name}"));
+                }
             }
             (*id, facts.join("; "))
         })
         .collect();
+    // The reason each song is here, for the card's long-press. Facts only.
+    let why_out = why_map(&why, &picks, &by_id, &explore_set);
+    // What the patter check knows the shelf holds, so a name from elsewhere
+    // on it is caught. Computed once per press; the model gets the run.
+    let names = known_names(&feats, state.db.album_names());
 
     // The model writes the patter over the already-chosen ids; a failure just
     // means a set with no words, never a set with no music.
@@ -845,11 +1106,11 @@ pub(crate) async fn build_reply(
      */
     let mut blocks = if curate {
         // Unhurried: the whole point of banking is that the model may think.
-        patter(state, &picks, &seed, &dossiers, true)
+        patter(state, &picks, &seed, &dossiers, true, &names)
             .await
             .unwrap_or_else(|| fallback_blocks(state, &picks[..picks.len().min(want)]))
     } else {
-        match tokio::time::timeout(PATTER_BUDGET, patter(state, &picks, &seed, &dossiers, false))
+        match tokio::time::timeout(PATTER_BUDGET, patter(state, &picks, &seed, &dossiers, false, &names))
             .await
         {
             Ok(Some(blocks)) => blocks,
@@ -889,8 +1150,11 @@ pub(crate) async fn build_reply(
         });
     }
     let lore = crate::lore::known(state, &picks);
+    // What the file itself says about each song - the year and the album -
+    // so a lore line can be checked against something before it is spoken.
+    let lore_facts = crate::lore::facts_for(state, &picks);
     let mut lore_jobs: Vec<crate::voice::Beat> = Vec::new();
-    crate::lore::attach(&mut blocks, &lore, &mut lore_jobs);
+    crate::lore::attach(&mut blocks, &lore, &mut lore_jobs, &lore_facts);
     // Minted on attach's own say-so, not a second enabled() read: the blocks
     // now carry these clip ids, so the sidecars MUST land - a toggle between
     // two reads once banked promises nothing could keep.
@@ -940,6 +1204,7 @@ pub(crate) async fn build_reply(
         "vibe": seed,
         "steered": seed_vec.is_some(),
         "blocks": blocks,
+        "why": why_out,
     }))
 }
 
@@ -952,16 +1217,22 @@ async fn patter(
     seed: &str,
     dossiers: &HashMap<i64, String>,
     curate: bool,
+    names: &[String],
 ) -> Option<Vec<Value>> {
     let url = ai_url()?;
     let mut lines = Vec::new();
+    // Each song's own line, kept by id: the post-check reads a run's lines
+    // back as the facts that run was allowed.
+    let mut line_of: HashMap<i64, String> = HashMap::new();
     for id in picks {
         if let Some(t) = state.db.track(*id) {
             let facts = dossiers.get(id).filter(|f| !f.is_empty());
-            match facts {
-                Some(f) => lines.push(format!("{}|{} — {}|{}", id, t.artist, t.title, f)),
-                None => lines.push(format!("{}|{} — {}", id, t.artist, t.title)),
-            }
+            let line = match facts {
+                Some(f) => format!("{}|{} — {}|{}", id, t.artist, t.title, f),
+                None => format!("{}|{} — {}", id, t.artist, t.title),
+            };
+            line_of.insert(*id, line.clone());
+            lines.push(line);
         }
     }
     if lines.is_empty() {
@@ -1036,7 +1307,9 @@ async fn patter(
 
     let valid: HashSet<i64> = picks.iter().copied().collect();
     let mut used: HashSet<i64> = HashSet::new();
-    let mut blocks: Vec<Value> = Vec::new();
+    // (line, ids, whether the line passed the check): seats are handed out
+    // once the run count is known, so a caught line can take the right one.
+    let mut runs: Vec<(String, Vec<i64>, bool)> = Vec::new();
     for m in parsed {
         let say = m
             .get("say")
@@ -1057,8 +1330,34 @@ async fn patter(
         if say.is_empty() || ids.is_empty() {
             continue;
         }
-        blocks.push(json!({ "say": say, "trackIds": ids }));
+        /*
+         * The post-check. The prompt says "use only that line's listed
+         * facts"; this is what holds when the prompt does not. A year the
+         * run's lines never gave, or a library artist or album that is not
+         * this run's, is the model reaching for what it remembers - and
+         * for the small artists these libraries are full of, what it
+         * remembers is somebody else. The line is dropped for the plain
+         * one, and logged so an operator can see how often the model
+         * strays; the run itself plays exactly as chosen.
+         */
+        let mut allowed: String = ids.iter().filter_map(|id| line_of.get(id)).cloned().collect::<Vec<_>>().join("\n");
+        allowed.push('\n');
+        allowed.push_str(seed);
+        let ok = grounded_line(&say, &allowed, names);
+        if !ok {
+            eprintln!("[attackfm] dj patter dropped an ungrounded line: {say:?}");
+        }
+        runs.push((say, ids, ok));
     }
+    let last = runs.len().saturating_sub(1);
+    let mut blocks: Vec<Value> = runs
+        .into_iter()
+        .enumerate()
+        .map(|(i, (say, ids, ok))| {
+            let say = if ok { say } else { plain_line(state, seat_at(i, last), ids[0]) };
+            json!({ "say": say, "trackIds": ids })
+        })
+        .collect();
 
     // Live, whatever the model left out still gets played - the selector
     // chose it and narration must not silently cut it. Banked, dropping IS
@@ -2217,5 +2516,85 @@ mod explore_seats {
         let mut cold = UserTaste::cold(1);
         nudge_for_hour(&mut cold, Some(23));
         assert!(cold.tempo.is_none() && cold.energy.is_none(), "no target, nothing to tilt");
+    }
+}
+
+#[cfg(test)]
+mod why_and_grounding {
+    //! The card's reason is a fact, and the patter may only phrase facts.
+
+    use super::*;
+
+    fn feature(id: i64, artist: &str) -> TrackFeatures {
+        TrackFeatures {
+            track_id: id,
+            kind: "music".into(),
+            artist: artist.into(),
+            title: format!("song {id}"),
+            ..Default::default()
+        }
+    }
+
+    /// One reason per song, each from a real field: the seat, a heart, the
+    /// listener's own completions, a ListenBrainz edge, a measured
+    /// closeness - and nothing when nothing applies.
+    #[test]
+    fn why_is_built_from_facts_only() {
+        let mut taste = UserTaste::cold(1);
+        taste.artists.insert(taste::artist_key("Big Thief"), 0.6);
+        taste.artists.insert(taste::artist_key("Finished Often"), 0.3);
+
+        let mut liked_song = feature(1, "Big Thief");
+        liked_song.musicbrainz_id = "mb-bigthief".into();
+        liked_song.audio_fingerprint = Some(vec![1.0, 0.0, 0.0]);
+        let mut finished = feature(2, "Finished Often");
+        finished.audio_fingerprint = Some(vec![0.0, 1.0, 0.0]);
+        let mut scene = feature(3, "Someone New");
+        scene.listenbrainz_similar = vec!["mb-bigthief".into()];
+        let mut close = feature(4, "Sounds Near");
+        close.audio_fingerprint = Some(vec![0.98, 0.15, 0.0]);
+        let explore = feature(5, "Stranger");
+        let nothing = feature(6, "Nobody");
+        let feats = vec![liked_song, finished, scene, close, explore, nothing];
+        let by_id: HashMap<i64, &TrackFeatures> = feats.iter().map(|f| (f.track_id, f)).collect();
+
+        let liked: HashSet<i64> = [1].into_iter().collect();
+        let hearted: HashSet<String> = ["big thief".to_string()].into_iter().collect();
+        let why = Why::build(&taste, &feats, &liked, &hearted);
+        let seats: HashSet<i64> = [5].into_iter().collect();
+        let out = why_map(&why, &[1, 2, 3, 4, 5, 6], &by_id, &seats);
+
+        assert_eq!(out["1"], "hearted before");
+        assert_eq!(out["2"], "you finish Finished Often");
+        assert_eq!(out["3"], "same scene as Big Thief");
+        assert_eq!(out["4"], "sounds like Big Thief", "measured off the fingerprint, against a hearted song");
+        assert_eq!(out["5"], "explore");
+        assert!(!out.contains_key("6"), "no provable reason, no line: {out:?}");
+        assert_eq!(why.scene_neighbour(&feats[2]).as_deref(), Some("Big Thief"), "the dossier's neighbour line");
+        assert_eq!(bpm_bucket(84.4), "slow, around 84 bpm");
+        assert_eq!(bpm_bucket(128.0), "upbeat, around 128 bpm");
+    }
+
+    /// A year the dossier never gave drops the line; a compliant line
+    /// stays; a library name from outside the run drops it too.
+    #[test]
+    fn the_patter_check_drops_a_year_not_in_the_dossier_and_keeps_a_compliant_line() {
+        let allowed = "12|Big Thief — Not|released 2019; upbeat, around 128 bpm\n13|Big Thief — Cattails\nsomething mellow";
+        let names: Vec<String> = ["big thief", "the national", "trouble will find me"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert!(grounded_line("Here is Big Thief, from 2019, keeping it at a run.", allowed, &names));
+        assert!(!grounded_line("Big Thief's 2016 record, next.", allowed, &names), "2016 was never listed");
+        assert!(
+            !grounded_line("This one always reminds me of The National.", allowed, &names),
+            "an artist from elsewhere on the shelf is a memory"
+        );
+        assert!(
+            !grounded_line("Off the album Trouble Will Find Me.", allowed, &names),
+            "and so is an album"
+        );
+        assert!(grounded_line("Something mellow, as asked - Big Thief.", allowed, &names), "the seed and the run's own artist are fine");
+        assert!(contains_word("slow burner", "slow") && !contains_word("slow burner", "low"));
     }
 }

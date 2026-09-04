@@ -292,7 +292,7 @@ pub async fn build_charts_reply(state: &Arc<AppState>, user: i64, curate: bool) 
         }
         blocks.push(block);
     }
-    crate::lore::attach(&mut blocks, &lore, &mut lore_jobs);
+    crate::lore::attach(&mut blocks, &lore, &mut lore_jobs, &crate::lore::facts_for(state, &ids));
     if !lore_jobs.is_empty() {
         crate::voice::mint_behind(state, lore_jobs);
     }
@@ -364,7 +364,7 @@ pub async fn build_new_music_reply(state: &Arc<AppState>, user: i64, curate: boo
         }
         blocks.push(block);
     }
-    crate::lore::attach(&mut blocks, &lore, &mut lore_jobs);
+    crate::lore::attach(&mut blocks, &lore, &mut lore_jobs, &crate::lore::facts_for(state, &ids));
     if !lore_jobs.is_empty() {
         crate::voice::mint_behind(state, lore_jobs);
     }

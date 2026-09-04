@@ -3887,7 +3887,15 @@ impl Db {
     ///   adopted   a listen AFTER the offer that finished, or reached six
     ///             tenths of the track's real length - a listener who stayed
     ///             for most of a song said yes even if the last chorus lost
-    ///             them - or a heart after the offer.
+    ///             them - or a heart after the offer, or a THUMB UP after
+    ///             the offer (reactions.rs): the listener's word, in the
+    ///             moment, that the machine was right.
+    ///   refused   a THUMB DOWN after the offer, with no thumb up beside it.
+    ///             Louder than a skip: a skip is a hand that left, a thumb
+    ///             down is a sentence. It counts as three failures - one for
+    ///             the offer itself and two on top - so the Beta's `b` moves
+    ///             by more than a plain skip would move it, and the artist
+    ///             fades from the seats faster without ever being banned.
     ///   dropped   the only listens after the offer were under ten seconds
     ///             and unfinished. A mis-tap is not a no; it is not counted
     ///             as an offer at all, so it can neither fail the artist nor
@@ -3900,33 +3908,50 @@ impl Db {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT artist,
-                    SUM(CASE WHEN adopted = 1 THEN 1
+                    SUM(CASE WHEN refused = 1 THEN 3
+                             WHEN adopted = 1 THEN 1
                              WHEN touched = 1 AND heard = 0 THEN 0
                              ELSE 1 END),
-                    SUM(adopted)
+                    SUM(CASE WHEN refused = 1 THEN 0 ELSE adopted END)
              FROM (
-               SELECT LOWER(t.artist) AS artist,
-                      (EXISTS(
-                          SELECT 1 FROM listen_events le
-                          WHERE le.user_id = i.user_id AND le.track_id = i.track_id
-                            AND le.started_at >= i.created_at
-                            AND (le.completed = 1
-                                 OR le.ms_listened >= 0.6 * le.duration_ms))
-                       OR EXISTS(
-                          SELECT 1 FROM favorites f
-                          WHERE f.user_id = i.user_id AND f.track_id = i.track_id
-                            AND f.added_at >= i.created_at)) AS adopted,
-                      EXISTS(
-                          SELECT 1 FROM listen_events le
-                          WHERE le.user_id = i.user_id AND le.track_id = i.track_id
-                            AND le.started_at >= i.created_at) AS touched,
-                      EXISTS(
-                          SELECT 1 FROM listen_events le
-                          WHERE le.user_id = i.user_id AND le.track_id = i.track_id
-                            AND le.started_at >= i.created_at
-                            AND (le.ms_listened >= 10000 OR le.completed = 1)) AS heard
-               FROM dj_impressions i JOIN tracks t ON t.id = i.track_id
-               WHERE i.user_id = ?1 AND i.slot IN ('rank', 'explore')
+               SELECT artist, adopted, touched, heard,
+                      (thumbed_down = 1 AND thumbed_up = 0) AS refused
+               FROM (
+                 SELECT LOWER(t.artist) AS artist,
+                        (EXISTS(
+                            SELECT 1 FROM listen_events le
+                            WHERE le.user_id = i.user_id AND le.track_id = i.track_id
+                              AND le.started_at >= i.created_at
+                              AND (le.completed = 1
+                                   OR le.ms_listened >= 0.6 * le.duration_ms))
+                         OR EXISTS(
+                            SELECT 1 FROM favorites f
+                            WHERE f.user_id = i.user_id AND f.track_id = i.track_id
+                              AND f.added_at >= i.created_at)
+                         OR EXISTS(
+                            SELECT 1 FROM dj_reactions r
+                            WHERE r.user_id = i.user_id AND r.track_id = i.track_id
+                              AND r.created_at >= i.created_at AND r.reaction = 'up')) AS adopted,
+                        EXISTS(
+                            SELECT 1 FROM dj_reactions r
+                            WHERE r.user_id = i.user_id AND r.track_id = i.track_id
+                              AND r.created_at >= i.created_at AND r.reaction = 'up') AS thumbed_up,
+                        EXISTS(
+                            SELECT 1 FROM dj_reactions r
+                            WHERE r.user_id = i.user_id AND r.track_id = i.track_id
+                              AND r.created_at >= i.created_at AND r.reaction = 'down') AS thumbed_down,
+                        EXISTS(
+                            SELECT 1 FROM listen_events le
+                            WHERE le.user_id = i.user_id AND le.track_id = i.track_id
+                              AND le.started_at >= i.created_at) AS touched,
+                        EXISTS(
+                            SELECT 1 FROM listen_events le
+                            WHERE le.user_id = i.user_id AND le.track_id = i.track_id
+                              AND le.started_at >= i.created_at
+                              AND (le.ms_listened >= 10000 OR le.completed = 1)) AS heard
+                 FROM dj_impressions i JOIN tracks t ON t.id = i.track_id
+                 WHERE i.user_id = ?1 AND i.slot IN ('rank', 'explore')
+               )
              )
              GROUP BY artist",
         ) else {
@@ -6982,6 +7007,21 @@ impl Db {
             return Vec::new();
         };
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Every album name in the live library, once each. The DJ's patter
+    /// check reads it: a record the model names that is on this shelf but
+    /// not in the line's own facts is a memory, not a fact.
+    pub fn album_names(&self) -> Vec<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT DISTINCT album FROM tracks WHERE deleted = 0 AND TRIM(album) <> ''",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| r.get::<_, String>(0))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
@@ -12854,6 +12894,42 @@ mod explore_ledger_skip_semantics {
 
         assert_eq!(stats_for(&db, me, "kept"), Some((1, 1)), "most of the song heard is a yes");
         assert_eq!(stats_for(&db, me, "dropped"), Some((1, 0)), "a real skip is still a no");
+    }
+
+    /// The thumbs (reactions.rs) reach the sampler: an up after the offer is
+    /// an adoption even with no listen behind it, and a down is a louder
+    /// failure than a plain skip - the Beta's `b` moves by three where a skip
+    /// moves it by one.
+    #[test]
+    fn a_thumb_up_adopts_and_a_thumb_down_is_louder_than_a_skip() {
+        let db = fresh("thumbs");
+        let me = db.create_user("me", "x", true).unwrap();
+        let liked = track(&db, "liked.flac", "thumbed up");
+        let refused = track(&db, "refused.flac", "thumbed down");
+        let skipped = track(&db, "skipped.flac", "merely skipped");
+        db.record_dj_impressions(me, &[(liked, "explore", 3), (refused, "explore", 10), (skipped, "rank", 4)]);
+        let offered_at = now_ms();
+        db.record_dj_reaction(me, liked, "up", 20_000, offered_at + 1_000);
+        db.record_dj_reaction(me, refused, "down", 20_000, offered_at + 1_000);
+        // The refused one was even heard past the mis-tap line first.
+        sat(&db, me, refused, "thumbed down", offered_at + 500, 25_000, false);
+        sat(&db, me, skipped, "merely skipped", offered_at + 500, 25_000, false);
+
+        assert_eq!(stats_for(&db, me, "thumbed up"), Some((1, 1)), "an up is an adoption");
+        let (down_offers, down_adopted) = stats_for(&db, me, "thumbed down").unwrap();
+        let (skip_offers, skip_adopted) = stats_for(&db, me, "merely skipped").unwrap();
+        assert_eq!((down_adopted, skip_adopted), (0, 0));
+        assert!(
+            down_offers - down_adopted > skip_offers - skip_adopted,
+            "a thumb down fails the artist harder than a skip: {down_offers} vs {skip_offers}"
+        );
+        assert_eq!(down_offers, 3, "one for the offer, two on top");
+
+        // A thumb given BEFORE the offer is about some other sitting.
+        let earlier = track(&db, "earlier.flac", "thumbed earlier");
+        db.record_dj_reaction(me, earlier, "up", 0, offered_at - 10_000);
+        db.record_dj_impressions(me, &[(earlier, "explore", 3)]);
+        assert_eq!(stats_for(&db, me, "thumbed earlier"), Some((1, 0)), "the offer stands unanswered");
     }
 
     #[test]

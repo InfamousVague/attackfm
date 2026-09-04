@@ -13,10 +13,17 @@
 //! The SLOW half is the part a chip cannot do: the brief usually names music
 //! the library does not hold ("some new French house", "that band like Fugazi
 //! but slower"), so the chat model turns it into a shortlist of real outside
-//! recordings and the collector starts pulling them the way it pulls its own
-//! finds - same delegated-download door, same audition quarantine, same
-//! adoption rules. They land in For-you and the Just-downloaded list over the
-//! next minutes, while the fast half is already playing.
+//! recordings. THE MODEL NEVER CAUSES A DOWNLOAD. Each name it gives is
+//! resolved in the catalogue (a real Deezer hit by that artist and title, or
+//! nothing), checked against the listener's own rejection memory, filed
+//! into the discovery POOL under "you asked for this", and measured there
+//! by the same ear that measures every other candidate - its words, its
+//! tempo, what it sounds like. Only what the pool scores above the
+//! collector's own floor is bought, three at most, through the collector's
+//! ordinary door - same delegated-download path, same audition quarantine,
+//! same adoption rules. The rest stays in the pool as candidates with a
+//! sentence on the card, which is what a model's recollection is worth
+//! until the maths has heard it.
 //!
 //! Speech-to-text is the whisper install the audiobook transcriber already
 //! uses - one clip, a few seconds of audio - so a hub set up for read-along
@@ -25,7 +32,6 @@
 
 use crate::ai::AiClient;
 use crate::auth;
-use crate::db::DiscoveryRow;
 use crate::AppState;
 use axum::body::Bytes;
 use axum::extract::State;
@@ -46,9 +52,16 @@ type ApiResult = Result<Json<Value>, (StatusCode, String)>;
 /// is minutes of voice-bitrate opus; the client stops recording long before.
 const MAX_CLIP_BYTES: usize = 2 * 1024 * 1024;
 
-/// How many outside recordings one brief may set the collector on. The brief
-/// is one sentence; eight downloads is a generous reading of one sentence.
+/// How many outside recordings one brief may name for the pool. The brief
+/// is one sentence; eight candidates is a generous reading of one sentence.
 const MAX_PULLS: usize = 8;
+
+/// How many of those the collector may actually buy on one brief, once the
+/// pool has measured them and they clear its floor.
+const MAX_BUYS: usize = 3;
+
+/// The reason on the pull, so the card can say who asked.
+const ASKED_REASON: &str = "You asked for this.";
 
 /// `POST /api/dj/hear` - the raw clip in, the transcript and the fetch list out.
 ///
@@ -100,45 +113,71 @@ pub async fn hear(
         .map(|(t, a)| json!({ "title": t, "artist": a }))
         .collect();
 
-    // The pulls themselves run behind the reply - each one is a catalogue
-    // resolve plus a download enqueue, and the listener is waiting to hear
-    // music, not to watch downloads queue.
+    // The pool work runs behind the reply - each name is a catalogue
+    // resolve, a preview listen and an embedding, and the listener is
+    // waiting to hear music, not to watch a pool fill.
     if !picks.is_empty() {
         let st = state.clone();
         let user = caller.id;
-        let brief = heard.clone();
         tokio::spawn(async move {
-            for (title, artist) in picks {
-                let d = DiscoveryRow {
-                    // The brief in the ext id keeps one request's pulls from
-                    // colliding with the discovery pool's ids, and the upsert
-                    // on (user, ext_id) makes repeating yourself harmless.
-                    ext_id: format!("voice:{}|{}", artist.to_lowercase(), title.to_lowercase()),
-                    title,
-                    artist,
-                    cover: String::new(),
-                    url: String::new(),
-                    preview: String::new(),
-                    // reason_for reads the seed when there is no model moment
-                    // to spare; the brief IS the reason here.
-                    seed: brief.clone(),
-                    popularity: 0.0,
-                    bpm: None,
-                    lyric_vec: None,
-                    // Above the collector's own candidates on the queue: the
-                    // listener literally asked for this one out loud.
-                    score: 10.0,
-                    energy: None,
-                    brightness: None,
-                    rhythmic: None,
-                    released: None,
-                };
-                let _ = crate::collector::buy(&st, user, &d, false, None).await;
-            }
+            pool_and_buy(&st, user, picks).await;
         });
     }
 
-    Ok(Json(json!({ "heard": heard, "fetching": fetching })))
+    // `fetching` keeps its name for the client; what it lists is what the
+    // DJ heard and will look for, not what will necessarily arrive.
+    Ok(Json(json!({ "heard": heard, "fetching": fetching, "pool": true })))
+}
+
+/// The model's names, through the pool: resolved, refused where the
+/// listener already said no, filed, measured, and only then - the ones
+/// that clear the collector's floor, `MAX_BUYS` at most - bought.
+async fn pool_and_buy(state: &Arc<AppState>, user: i64, picks: Vec<(String, String)>) {
+    let c = crate::discovery::client(15);
+    let ear = crate::discovery::Ear::open(state, user);
+    let mut judged: Vec<(String, Option<f64>)> = Vec::new();
+    for (title, artist) in picks {
+        // A no already on file outranks a request the model inferred.
+        if crate::discovery::is_rejected(&state.db, user, &artist, &title) {
+            judged.push((format!("{artist} — {title}"), None));
+            continue;
+        }
+        let resolved = crate::discovery::resolve_track(&c, &artist, &title).await;
+        tokio::time::sleep(crate::discovery::CATALOGUE_GAP).await;
+        let Some(cand) = resolved else {
+            judged.push((format!("{artist} — {title}"), None));
+            continue;
+        };
+        if !crate::discovery::file_asked(&state.db, user, &cand) {
+            judged.push((cand.ext_id, None));
+            continue;
+        }
+        let Some(row) = state.db.discovery_get(user, &cand.ext_id) else {
+            judged.push((cand.ext_id, None));
+            continue;
+        };
+        let score = ear.measure_and_score(state, user, &c, &row).await;
+        judged.push((cand.ext_id, Some(score)));
+    }
+    let (_, exploration) = state.db.collector_state(user);
+    let floor = crate::collector::threshold(exploration);
+    for ext_id in plan_buys(&judged, floor) {
+        let Some(row) = state.db.discovery_get(user, &ext_id) else { continue };
+        let _ = crate::collector::buy(state, user, &row, false, Some(ASKED_REASON)).await;
+    }
+}
+
+/// Which of the judged names are bought: those that landed in the pool AND
+/// scored at or above `floor`, in the order the brief named them, at most
+/// `MAX_BUYS`. A name that never resolved carries no score and is never
+/// bought - the model's word alone moves nothing.
+pub(crate) fn plan_buys(judged: &[(String, Option<f64>)], floor: f64) -> Vec<String> {
+    judged
+        .iter()
+        .filter(|(_, score)| score.is_some_and(|s| s >= floor))
+        .map(|(ext_id, _)| ext_id.clone())
+        .take(MAX_BUYS)
+        .collect()
 }
 
 /// One clip through ffmpeg and whisper, back as plain text.
@@ -285,4 +324,33 @@ async fn shortlist(state: &Arc<AppState>, brief: &str) -> Vec<(String, String)> 
         .filter(|(t, a)| !state.db.has_title_artist(t, a))
         .take(MAX_PULLS)
         .collect()
+}
+
+#[cfg(test)]
+mod pool_not_downloads {
+    //! The model names; the pool judges; the collector buys what clears.
+
+    use super::*;
+
+    /// A name that never resolved carries no score and is never bought;
+    /// under the floor is not bought; the cap is three, in the brief's order.
+    #[test]
+    fn only_pooled_scored_names_are_bought_and_at_most_three() {
+        let judged = vec![
+            ("Fugazi — Waiting Room".to_string(), None),
+            ("deezer:track:1".to_string(), Some(0.80)),
+            ("deezer:track:2".to_string(), Some(0.40)),
+            ("deezer:track:3".to_string(), Some(0.70)),
+            ("deezer:track:4".to_string(), Some(0.65)),
+            ("deezer:track:5".to_string(), Some(0.99)),
+        ];
+        let floor = crate::collector::threshold(0.5);
+        assert!((0.63..0.65).contains(&floor));
+        assert_eq!(
+            plan_buys(&judged, floor),
+            vec!["deezer:track:1", "deezer:track:3", "deezer:track:4"],
+            "unresolved and under-floor never; the cap holds before the best-scored fifth"
+        );
+        assert!(plan_buys(&[("x".to_string(), None)], floor).is_empty());
+    }
 }

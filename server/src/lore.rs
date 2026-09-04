@@ -329,13 +329,96 @@ async fn batch_artist_lore(url: &str, lines: &[String]) -> Option<HashMap<i64, S
     parse_lore_reply(content)
 }
 
+/// What the FILE says about a song, for checking a lore line against
+/// before it is spoken: the tag year and the album name.
+pub struct Facts {
+    pub year: Option<i64>,
+    pub album: String,
+}
+
+/// The file's facts for these ids, for `attach`: one indexed read each.
+pub fn facts_for(state: &AppState, ids: &[i64]) -> HashMap<i64, Facts> {
+    ids.iter()
+        .filter_map(|id| state.db.track(*id).map(|t| (*id, Facts { year: t.year, album: t.album })))
+        .collect()
+}
+
+/// Where a lore line stands against the file.
+#[derive(Debug, PartialEq)]
+pub(crate) enum Sourcing {
+    /// It names the file's own year, or the file's own album: the model
+    /// recalled something the shelf can vouch for.
+    Sourced,
+    /// It names nothing the file can check. Spoken, but hedged.
+    Unsourced,
+    /// It names a year the file contradicts. Not spoken at all.
+    Contradicted,
+}
+
+/// The source check. A four-digit year in the line must be the track's
+/// year - any other year is a claim the file denies; an album name in the
+/// line must be the track's album. A line with neither is not false, it is
+/// unverifiable, and is said as such.
+pub(crate) fn sourcing(line: &str, facts: Option<&Facts>) -> Sourcing {
+    let years = crate::ai::years_in(line);
+    let Some(f) = facts else { return Sourcing::Unsourced };
+    if !years.is_empty() {
+        return match f.year.filter(|y| *y > 1900) {
+            Some(y) => {
+                let own = y.to_string();
+                if years.iter().all(|x| *x == own) {
+                    Sourcing::Sourced
+                } else {
+                    Sourcing::Contradicted
+                }
+            }
+            None => Sourcing::Unsourced,
+        };
+    }
+    let album = f.album.trim().to_lowercase();
+    if album.chars().count() >= 4 && line.to_lowercase().contains(&album) {
+        return Sourcing::Sourced;
+    }
+    Sourcing::Unsourced
+}
+
+/// The hedge a DJ actually says: "if I remember right" in front, the line's
+/// first word lowered when it is a plain word rather than a name.
+pub(crate) fn hedged(line: &str) -> String {
+    const PLAIN: [&str; 22] = [
+        "a", "an", "the", "this", "it", "its", "their", "his", "her", "from", "off", "one", "first",
+        "released", "recorded", "written", "produced", "taken", "featured", "originally", "known",
+        "named",
+    ];
+    let mut chars = line.chars();
+    let Some(first) = chars.next() else { return String::new() };
+    let first_word = line.split_whitespace().next().unwrap_or("").trim_matches(|c: char| !c.is_alphanumeric());
+    let rest: String = chars.collect();
+    let body = if PLAIN.contains(&first_word.to_lowercase().as_str()) {
+        format!("{}{rest}", first.to_lowercase())
+    } else {
+        line.to_string()
+    };
+    format!("If I remember right, {body}")
+}
+
 /// Attach lore to finished blocks: each block gains `lore` - a map from track
 /// id to its line and (when the hub can speak) the clip that says it. The
 /// beats land in `jobs` for the caller's one mint_behind call.
+///
+/// MODEL-RECALLED LORE IS NOT SPOKEN AS FACT. Each line is checked against
+/// what the file says (`facts`: year and album): a line the file vouches for
+/// is said plainly and marked `sourced`; a line the file cannot check is
+/// said with "if I remember right" in front and marked not sourced; a line
+/// the file CONTRADICTS is dropped and logged. None of it ever reaches the
+/// patter prompt - dj.rs builds the dossiers before this runs and from
+/// other fields - so the DJ's own words can never repeat a recollection as
+/// a fact.
 pub fn attach(
     blocks: &mut [Value],
     lore: &HashMap<i64, String>,
     jobs: &mut Vec<crate::voice::Beat>,
+    facts: &HashMap<i64, Facts>,
 ) {
     let can_speak = crate::voice::enabled();
     for block in blocks.iter_mut() {
@@ -347,9 +430,17 @@ pub fn attach(
         let mut entry = serde_json::Map::new();
         for id in ids {
             let Some(line) = lore.get(&id).filter(|l| !l.is_empty()) else { continue };
-            let mut one = json!({ "say": line });
+            let (say, sourced) = match sourcing(line, facts.get(&id)) {
+                Sourcing::Sourced => (line.clone(), true),
+                Sourcing::Unsourced => (hedged(line), false),
+                Sourcing::Contradicted => {
+                    eprintln!("[attackfm] lore for track {id} contradicts the file; not spoken: {line:?}");
+                    continue;
+                }
+            };
+            let mut one = json!({ "say": say, "sourced": sourced });
             if can_speak {
-                let beat = crate::voice::beat(line);
+                let beat = crate::voice::beat(&say);
                 one["voice"] = json!([beat.id]);
                 jobs.push(beat);
             }
@@ -381,5 +472,40 @@ mod tests {
         assert_eq!(trim_lore("I don't recognise this song."), "");
         let rambling = "word ".repeat(30);
         assert_eq!(trim_lore(&rambling), "");
+    }
+
+    /// What the file vouches for is said plainly; what it cannot check is
+    /// hedged; what it denies is not said.
+    #[test]
+    fn unsourced_lore_is_hedged_and_contradicted_lore_is_dropped() {
+        let f = Facts { year: Some(2019), album: "Two Hands".into() };
+        assert_eq!(sourcing("From their 2019 record Two Hands.", Some(&f)), Sourcing::Sourced);
+        assert_eq!(sourcing("The closer on Two Hands.", Some(&f)), Sourcing::Sourced, "the album alone vouches");
+        assert_eq!(sourcing("Their 2016 debut single.", Some(&f)), Sourcing::Contradicted);
+        assert_eq!(sourcing("A live favourite for years.", Some(&f)), Sourcing::Unsourced);
+        assert_eq!(sourcing("Their 2019 record.", None), Sourcing::Unsourced, "no file, nothing to check");
+        let bare = Facts { year: None, album: String::new() };
+        assert_eq!(sourcing("From 2019.", Some(&bare)), Sourcing::Unsourced, "an untagged year cannot contradict");
+
+        assert_eq!(hedged("From their debut album."), "If I remember right, from their debut album.");
+        assert_eq!(hedged("Bon Iver wrote it in a cabin."), "If I remember right, Bon Iver wrote it in a cabin.");
+
+        let mut blocks = vec![json!({ "say": "x", "trackIds": [1, 2, 3] })];
+        let mut lore = HashMap::new();
+        lore.insert(1, "From their 2019 record Two Hands.".to_string());
+        lore.insert(2, "A live favourite for years.".to_string());
+        lore.insert(3, "Their 2016 debut single.".to_string());
+        let mut facts = HashMap::new();
+        for id in 1..=3 {
+            facts.insert(id, Facts { year: Some(2019), album: "Two Hands".into() });
+        }
+        let mut jobs = Vec::new();
+        attach(&mut blocks, &lore, &mut jobs, &facts);
+        let got = &blocks[0]["lore"];
+        assert_eq!(got["1"]["say"], "From their 2019 record Two Hands.");
+        assert_eq!(got["1"]["sourced"], true);
+        assert_eq!(got["2"]["say"], "If I remember right, a live favourite for years.");
+        assert_eq!(got["2"]["sourced"], false);
+        assert!(got.get("3").is_none(), "the contradicted line is not attached: {got}");
     }
 }

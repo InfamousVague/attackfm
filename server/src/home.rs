@@ -366,10 +366,176 @@ fn heuristic_mixes(state: &Arc<AppState>, user: i64) -> Vec<Mix> {
 }
 
 // --- AI mixes ----------------------------------------------------------------
+//
+// THE MATHS CLUSTERS, THE MODEL NAMES.
+//
+// The model used to be handed two hundred and forty lines and asked to find
+// six coherent lanes in them - grouping, ordering and naming in one call, on
+// a CPU model that had never heard of most of the artists. What came back was
+// a grab-bag with confident titles: the grouping was the model's guess about
+// music it could not hear, and the blurb's "through-line" was whatever it
+// remembered about the two names it recognised. So the grouping now happens
+// here, deterministically, in the space the recordings were MEASURED in
+// (`audio_fingerprint`, the lyric or sonic embedding when a track has no
+// fingerprint - the same choice the Daily Mixes make, mixes.rs); the model is
+// shown one lane at a time and asked only what it is for: a name and a line,
+// fenced to the artists and titles in front of it.
 
-/// Asks the local model for named, themed selections over a candidate list.
-/// Every returned id is validated against the candidates: the model curates,
-/// it never invents.
+/// How many lanes the candidates are cut into, at most. Six is what the
+/// shelf shows; fewer when the candidates cannot honestly fill them.
+const LANES: usize = 6;
+/// Fewest tracks a lane may ship with - under this it is a fragment.
+const LANE_MIN: usize = 4;
+/// Most tracks one lane shows the model - a name needs a sample, not a list.
+const LANE_SHOWN: usize = 30;
+/// At most this many of one artist's songs in the candidate list: the
+/// "new" quota (`unplayed`) comes first and a favourite's back catalogue
+/// must not crowd it out before the cap at 240.
+const PER_ARTIST: i64 = 12;
+
+/// The candidate list, in the order that reserves the "new" quota: what
+/// arrived and was never played first, then the month's top artists capped
+/// at twelve each, then heavy rotation - deduped, then cut at 240.
+fn candidate_ids(state: &Arc<AppState>, user: i64, since: i64, top_artists: &[(String, i64)]) -> Vec<i64> {
+    let mut ids: Vec<i64> = Vec::new();
+    ids.extend(state.db.unplayed(user, 60));
+    for (artist, _) in top_artists {
+        ids.extend(state.db.tracks_by_artist_for(user, artist, PER_ARTIST));
+    }
+    ids.extend(state.db.top_plays(user, since, 60).into_iter().map(|(id, _)| id));
+    let mut seen = std::collections::HashSet::new();
+    ids.retain(|id| seen.insert(*id));
+    ids.truncate(240);
+    ids
+}
+
+/// When the maths has already built this listener's Daily Mixes
+/// (`daily-*` in `curated`), those lanes ARE the prequalified pool: the
+/// model may name and shape within them and nothing outside. Returns the
+/// candidates unchanged when no daily lane exists yet.
+pub(crate) fn within_daily_pool(candidates: Vec<i64>, curated: &[crate::db::CuratedList]) -> Vec<i64> {
+    let pool: std::collections::HashSet<i64> = curated
+        .iter()
+        .filter(|l| l.slug.starts_with("daily-"))
+        .flat_map(|l| l.track_ids.iter().copied())
+        .collect();
+    if pool.is_empty() {
+        return candidates;
+    }
+    candidates.into_iter().filter(|id| pool.contains(id)).collect()
+}
+
+/// Cut the candidates into lanes by measured sound: k-means (mood.rs's
+/// deterministic one) over each track's fingerprint - or its lyric/sonic
+/// embedding when the body of candidates does not carry enough fingerprints
+/// to cluster by ear. Tracks with no vector in the chosen space find no
+/// lane. Lanes come back largest first, each in candidate order, fragments
+/// under `LANE_MIN` dropped.
+pub(crate) fn lanes_of(candidates: &[i64], by_id: &HashMap<i64, &crate::db::TrackFeatures>) -> Vec<Vec<i64>> {
+    let feats: Vec<&crate::db::TrackFeatures> =
+        candidates.iter().filter_map(|id| by_id.get(id).copied()).collect();
+    let sound = crate::mood::by_sound(feats.iter().copied());
+    // One space per run: the majority dimensionality among the vectors the
+    // candidates can offer, so a fingerprint and a prose embedding are never
+    // clustered together.
+    let mut dims: HashMap<usize, usize> = HashMap::new();
+    for f in &feats {
+        if let Some((v, _)) = crate::mood::point_vec(f, sound) {
+            *dims.entry(v.len()).or_insert(0) += 1;
+        }
+    }
+    let Some((&want_dims, _)) = dims.iter().max_by_key(|(d, n)| (**n, **d)) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<i64> = Vec::new();
+    let mut points: Vec<Vec<f32>> = Vec::new();
+    for f in &feats {
+        if let Some((v, _)) = crate::mood::point_vec(f, sound) {
+            if v.len() == want_dims {
+                let mut p = v.clone();
+                let n = p.iter().map(|x| x * x).sum::<f32>().sqrt();
+                if n > 1e-6 {
+                    for x in p.iter_mut() {
+                        *x /= n;
+                    }
+                }
+                ids.push(f.track_id);
+                points.push(p);
+            }
+        }
+    }
+    if ids.len() < LANE_MIN {
+        return Vec::new();
+    }
+    let k = LANES.min(ids.len() / LANE_MIN).max(1);
+    let weights = vec![1.0f32; points.len()];
+    let (assign, _) = crate::mood::kmeans(&points, &weights, k);
+    let mut lanes: Vec<Vec<i64>> = vec![Vec::new(); k];
+    for (i, id) in ids.iter().enumerate() {
+        lanes[assign[i]].push(*id);
+    }
+    lanes.retain(|l| l.len() >= LANE_MIN);
+    lanes.sort_by(|a, b| b.len().cmp(&a.len()));
+    lanes
+}
+
+/// The plain name a lane ships under when the model declines or misbehaves:
+/// its two most-present artists. Never empty for a lane that met the floor.
+fn plain_lane_title(lane: &[i64], by_id: &HashMap<i64, &crate::db::TrackFeatures>) -> String {
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for id in lane {
+        let Some(f) = by_id.get(id) else { continue };
+        let name = f.artist.trim();
+        if name.is_empty() {
+            continue;
+        }
+        match counts.iter_mut().find(|(a, _)| a.eq_ignore_ascii_case(name)) {
+            Some(e) => e.1 += 1,
+            None => counts.push((name.to_string(), 1)),
+        }
+    }
+    counts.sort_by(|a, b| b.1.cmp(&a.1));
+    match counts.as_slice() {
+        [] => "Daily mix".into(),
+        [(a, _)] => format!("{a} and more"),
+        [(a, _), (b, _), ..] => format!("{a}, {b} and more"),
+    }
+}
+
+/// One lane's naming, as the model returned it, validated: the title and
+/// blurb through the fence, and any `ids` it offered kept only where they
+/// are the LANE's own - an id from another lane, or from nowhere, is
+/// dropped. When it offers too few, the lane's own order stands. Returns
+/// (title, blurb, ids).
+pub(crate) fn validate_lane(
+    m: &serde_json::Value,
+    lane: &[i64],
+    lane_text: &str,
+    plain_title: &str,
+) -> (String, String, Vec<i64>) {
+    let title = m.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let blurb = m.get("blurb").and_then(|v| v.as_str()).unwrap_or("");
+    let (title, blurb) = crate::ai::fence_naming(title, blurb, lane_text)
+        .unwrap_or_else(|| (plain_title.to_string(), String::new()));
+    let own: std::collections::HashSet<i64> = lane.iter().copied().collect();
+    let mut seen = std::collections::HashSet::new();
+    let offered: Vec<i64> = m
+        .get("ids")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_i64())
+                .filter(|id| own.contains(id) && seen.insert(*id))
+                .collect()
+        })
+        .unwrap_or_default();
+    let ids = if offered.len() >= LANE_MIN { offered } else { lane.to_vec() };
+    (title, blurb, ids)
+}
+
+/// The lanes, cut by the maths; the model asked only to name each one.
+/// Every id a mix ships with is the lane's own: the model curates the
+/// words, it never chooses a track.
 async fn ai_mixes(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<Mix>> {
     let since = now_ms() - WINDOW_30D_MS;
     let top_artists = state.db.top_artists(user, since, 8);
@@ -379,43 +545,43 @@ async fn ai_mixes(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<Mix
         return None;
     }
 
-    // Candidates: heavy rotation + the top artists' catalogues + unplayed
-    // discoveries, deduped, described compactly.
-    let mut candidate_ids: Vec<i64> = Vec::new();
-    candidate_ids.extend(state.db.top_plays(user, since, 60).into_iter().map(|(id, _)| id));
-    for (artist, _) in &top_artists {
-        candidate_ids.extend(state.db.tracks_by_artist_for(user, artist, 24));
+    let candidates = candidate_ids(state, user, since, &top_artists);
+    let candidates = within_daily_pool(candidates, &state.db.curated_for(user));
+    let all = state.db.all_features();
+    let by_id: HashMap<i64, &crate::db::TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
+    let lanes = lanes_of(&candidates, &by_id);
+    if lanes.is_empty() {
+        return None;
     }
-    candidate_ids.extend(state.db.unplayed(user, 60));
-    candidate_ids.dedup();
-    let mut seen = std::collections::HashSet::new();
-    candidate_ids.retain(|id| seen.insert(*id));
-    candidate_ids.truncate(240);
 
-    let mut lines = Vec::new();
-    for id in &candidate_ids {
-        if let Some(t) = state.db.track(*id) {
-            lines.push(format!("{}|{} — {}", t.id, t.artist, t.title));
-        }
-    }
-    let recent_titles: Vec<String> = recent
+    // Each lane as the model sees it: id|artist — title, a sample at most.
+    let lane_texts: Vec<String> = lanes
         .iter()
-        .take(15)
-        .filter_map(|id| state.db.track(*id))
-        .map(|t| format!("{} — {}", t.artist, t.title))
+        .map(|lane| {
+            lane.iter()
+                .take(LANE_SHOWN)
+                .filter_map(|id| by_id.get(id))
+                .map(|f| format!("{}|{} — {}", f.track_id, f.artist, f.title))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .collect();
+    let blocks: Vec<String> = lane_texts
+        .iter()
+        .enumerate()
+        .map(|(i, text)| format!("LANE {}:\n{}", i + 1, text))
         .collect();
     let taste: Vec<String> = top_artists.iter().map(|(a, n)| format!("{a} ({n} plays)")).collect();
 
     let prompt = format!(
-        "You curate playlists for one listener from THEIR OWN library.\n\
+        "You NAME daily mixes for one listener, built from THEIR OWN library. The lanes below were grouped by measured sound; you do not regroup them.\n\
          Their most-played artists this month: {}.\n\
-         Recently played: {}.\n\
-         Candidate tracks, one per line as id|artist — title:\n{}\n\n\
-         Build 6 DAILY MIXES from ONLY these candidate ids, the way a music app's Daily Mixes work: each mix is a COHERENT lane of this listener's OWN taste - a cluster of artists and a sound they actually play together (one lane per genre/scene/mood they keep returning to), NOT a grab-bag, and each lane clearly distinct from the others. Order each lane so it flows. Titles evocative but short (2-4 words); one-line blurbs naming the through-line, warm and plain, no exclamation marks.\n\
-         Answer with STRICT JSON, nothing else: [{{\"title\":\"...\",\"blurb\":\"...\",\"ids\":[1,2,3]}}] with 10-20 ids each.",
+         The lanes, each as id|artist — title:\n\n{}\n\n\
+         For EACH lane, in order, write a title (2-4 words, evocative but short) and a one-line blurb. Name the through-line using only the artists and titles listed in that lane; no years, genres, places or claims not in the list. Warm and plain, no exclamation marks.\n\
+         You may also return the lane's own ids in the order they should play; never an id from another lane.\n\
+         Answer with STRICT JSON, nothing else: [{{\"lane\":1,\"title\":\"...\",\"blurb\":\"...\",\"ids\":[...]}}] with one entry per lane.",
         taste.join(", "),
-        recent_titles.join("; "),
-        lines.join("\n"),
+        blocks.join("\n\n"),
     );
 
     let client = reqwest::Client::builder().timeout(Duration::from_secs(120)).build().ok()?;
@@ -443,34 +609,120 @@ async fn ai_mixes(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<Mix
     }
     let parsed: Vec<serde_json::Value> = serde_json::from_str(content.get(start..=end)?).ok()?;
 
-    let valid: std::collections::HashSet<i64> = candidate_ids.iter().copied().collect();
-    let mut mixes = Vec::new();
-    for (i, m) in parsed.into_iter().take(8).enumerate() {
-        let title = m.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-        let blurb = m.get("blurb").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-        let mut seen_ids = std::collections::HashSet::new();
-        let ids: Vec<i64> = m
-            .get("ids")
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_i64())
-                    // Valid AND not already in this mix: a model that repeats an
-                    // id would otherwise give the client two rows keyed the same.
-                    .filter(|id| valid.contains(id) && seen_ids.insert(*id))
-                    .collect()
-            })
-            .unwrap_or_default();
-        if title.is_empty() || ids.len() < 4 {
-            continue;
+    // Each reply entry names the lane it is for (1-based), else the lanes
+    // are taken in order. A lane the model skipped ships under its plain
+    // name: the grouping is the maths', and the maths does not need a poet.
+    let mut named: Vec<Option<serde_json::Value>> = vec![None; lanes.len()];
+    for (i, m) in parsed.into_iter().enumerate() {
+        let at = m
+            .get("lane")
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize)
+            .filter(|n| (1..=lanes.len()).contains(n))
+            .map(|n| n - 1)
+            .unwrap_or(i);
+        if at < lanes.len() && named[at].is_none() {
+            named[at] = Some(m);
         }
-        mixes.push(Mix {
-            id: format!("ai-{i}"),
-            title,
-            blurb,
-            track_ids: ids,
-            flavor: "ai".into(),
-        });
+    }
+    let mut mixes = Vec::new();
+    for (i, lane) in lanes.iter().enumerate() {
+        let plain = plain_lane_title(lane, &by_id);
+        let (title, blurb, ids) = match &named[i] {
+            Some(m) => validate_lane(m, lane, &lane_texts[i], &plain),
+            None => (plain, String::new(), lane.clone()),
+        };
+        mixes.push(Mix { id: format!("ai-{i}"), title, blurb, track_ids: ids, flavor: "ai".into() });
     }
     (!mixes.is_empty()).then_some(mixes)
+}
+
+#[cfg(test)]
+mod lanes {
+    //! The maths clusters, the model names - and the checks that keep the
+    //! model to naming.
+
+    use super::*;
+    use crate::db::{CuratedList, TrackFeatures};
+
+    fn song(id: i64, artist: &str, fp: [f32; 2]) -> TrackFeatures {
+        TrackFeatures {
+            track_id: id,
+            kind: "music".into(),
+            artist: artist.into(),
+            title: format!("song {id}"),
+            audio_fingerprint: Some(fp.to_vec()),
+            ..Default::default()
+        }
+    }
+
+    /// Two sounds, plainly apart, make two lanes - each in candidate order,
+    /// the larger first; a track with no vector finds no lane.
+    #[test]
+    fn candidates_are_cut_by_measured_sound() {
+        let mut all: Vec<TrackFeatures> = Vec::new();
+        for i in 0..6 {
+            all.push(song(i, "Quiet", [1.0, 0.05 * i as f32]));
+        }
+        for i in 10..14 {
+            all.push(song(i, "Loud", [0.05 * (i - 10) as f32, 1.0]));
+        }
+        let mut silent = song(99, "Unmeasured", [0.0, 0.0]);
+        silent.audio_fingerprint = None;
+        all.push(silent);
+        let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
+        let candidates: Vec<i64> = all.iter().map(|f| f.track_id).collect();
+        let lanes = lanes_of(&candidates, &by_id);
+        assert_eq!(lanes.len(), 2, "{lanes:?}");
+        assert_eq!(lanes[0], vec![0, 1, 2, 3, 4, 5]);
+        assert_eq!(lanes[1], vec![10, 11, 12, 13]);
+        assert!(!lanes.iter().flatten().any(|id| *id == 99), "no vector, no lane");
+    }
+
+    /// The model's ids are kept only where they are the lane's own; an id
+    /// from another lane - or from nowhere - is dropped, and too few keeps
+    /// the lane's order. Title and blurb ride the fence.
+    #[test]
+    fn ids_outside_the_lane_are_rejected_and_the_caps_hold() {
+        let lane = vec![1, 2, 3, 4, 5];
+        let text = "1|A — s1\n2|A — s2\n3|B — s3\n4|B — s4\n5|C — s5";
+        let m = json!({ "title": "Late Rooms", "blurb": "A and B, unhurried.", "ids": [5, 4, 9, 3, 2, 42, 1] });
+        let (t, b, ids) = validate_lane(&m, &lane, text, "A, B and more");
+        assert_eq!(t, "Late Rooms");
+        assert_eq!(b, "A and B, unhurried.");
+        assert_eq!(ids, vec![5, 4, 3, 2, 1], "9 and 42 are not this lane's");
+
+        let m = json!({ "title": "Late Rooms", "blurb": "ok", "ids": [7, 8, 9, 1] });
+        let (_, _, ids) = validate_lane(&m, &lane, text, "A, B and more");
+        assert_eq!(ids, lane, "one own id is not an order; the lane's stands");
+
+        let m = json!({ "title": "t".repeat(41), "blurb": "fine" });
+        let (t, b, _) = validate_lane(&m, &lane, text, "A, B and more");
+        assert_eq!((t.as_str(), b.as_str()), ("A, B and more", ""), "over the cap: the plain name");
+
+        let m = json!({ "title": "Late Rooms", "blurb": "Their 1994 records." });
+        let (_, b, _) = validate_lane(&m, &lane, text, "A, B and more");
+        assert_eq!(b, "", "a year the lane never said is dropped");
+        let m = json!({ "title": "Late Rooms", "blurb": "b".repeat(141) });
+        let (_, b, _) = validate_lane(&m, &lane, text, "A, B and more");
+        assert_eq!(b, "");
+    }
+
+    /// With the maths' Daily Mixes on file, the candidates are confined to
+    /// them; with none, the list is untouched.
+    #[test]
+    fn candidates_stay_inside_the_daily_pool_when_one_exists() {
+        let list = |slug: &str, ids: Vec<i64>| CuratedList {
+            slug: slug.into(),
+            name: String::new(),
+            blurb: String::new(),
+            track_ids: ids,
+            built_at: 0,
+        };
+        let candidates = vec![1, 2, 3, 4, 5, 6];
+        let none = vec![list("blend", vec![1, 2])];
+        assert_eq!(within_daily_pool(candidates.clone(), &none), candidates, "no daily lane: untouched");
+        let daily = vec![list("daily-1", vec![2, 3]), list("daily-2", vec![5]), list("blend", vec![1])];
+        assert_eq!(within_daily_pool(candidates, &daily), vec![2, 3, 5]);
+    }
 }
