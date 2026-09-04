@@ -834,7 +834,11 @@ pub(crate) struct Taste {
     /// Genres by share of recent plays.
     pub(crate) genres: HashMap<String, f32>,
     /// Everything they have played lately - excluded from recommendations, so
-    /// a "discover" list is not a mirror.
+    /// a "discover" list is not a mirror. No live surface reads it any more:
+    /// the DJ and the radio hold `UserTaste::heard` and `rejected` instead.
+    /// Kept because `taste_from_weighted` is the old-model baseline the
+    /// offline evaluator (taste.rs `mod eval`) scores the new model against.
+    #[allow(dead_code)]
     pub(crate) heard: HashSet<i64>,
 }
 
@@ -1041,43 +1045,12 @@ impl Rejections {
 pub const TASTE_MIN_TRACKS: usize = 4;
 
 /// How many distinct tracks this listener has played inside the window - the
-/// numerator of that ask, and the thing taste_for gates on.
+/// numerator of that ask, and the thing user_taste_for gates on.
 pub(crate) fn taste_heard(state: &Arc<AppState>, user: i64) -> usize {
     let since = now_ms() - WINDOW_30D_MS;
     state.db.top_plays(user, since, 60).len()
 }
 
-/// This listener's taste, built from their heavy rotation. None until they
-/// have played enough for the question to have an answer.
-pub(crate) fn taste_for(state: &Arc<AppState>, user: i64) -> Option<Taste> {
-    // Verdicts first: the listen ledger knows what was finished, abandoned
-    // and hearted. Play starts are the fallback for a listener whose ledger
-    // is still shallow - old behaviour, not a new failure mode.
-    let weighted = state.db.weighted_recent_listens(user, 60);
-    if weighted.len() >= TASTE_MIN_TRACKS {
-        let all = state.db.all_features();
-        let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
-        return Some(taste_from_weighted(&weighted, &by_id));
-    }
-    let since = now_ms() - WINDOW_30D_MS;
-    let top: Vec<i64> = state
-        .db
-        .top_plays(user, since, 60)
-        .into_iter()
-        .map(|(id, _)| id)
-        .collect();
-    if top.len() < TASTE_MIN_TRACKS {
-        return None;
-    }
-    let all = state.db.all_features();
-    let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
-    Some(taste_from(&top, &by_id))
-}
-
-/// The same three-term scoring the library uses, for something that is not a
-/// library row - a candidate from the catalogue, which has no track id and may
-/// be missing any of the three. Each term falls back to a neutral 0.5, so a
-/// candidate is never punished for what could not be measured.
 /// Everything one listener has ever said about a song, as verdicts - the ONE
 /// place that builds them, so every surface hears the same evidence.
 ///
@@ -1156,8 +1129,10 @@ pub(crate) fn verdicts_for(state: &Arc<AppState>, user: i64, now: i64) -> Vec<cr
 /// the machine anything to go on yet.
 ///
 /// The verdict ledger first, play starts only as the fallback for an account
-/// whose client never reported listens. Same order as `taste_for` above, which
-/// this replaces everywhere the richer model can be used.
+/// whose client never reported listens. This is the one taste the DJ, the
+/// radio and discovery all read; the three-term `Taste` above survives only
+/// for the playlist and queue suggesters, which score against a LIST rather
+/// than a listener.
 pub(crate) fn user_taste_for(
     state: &Arc<AppState>,
     user: i64,
@@ -1174,6 +1149,10 @@ pub(crate) fn user_taste_for(
     Some((taste, all))
 }
 
+/// The same three-term scoring the library uses, for something that is not a
+/// library row - a candidate from the catalogue, which has no track id and may
+/// be missing any of the three. Each term falls back to a neutral 0.5, so a
+/// candidate is never punished for what could not be measured.
 pub(crate) fn score_parts(
     taste: &Taste,
     lyric_vec: Option<&[f32]>,

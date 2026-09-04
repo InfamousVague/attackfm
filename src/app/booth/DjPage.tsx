@@ -255,9 +255,13 @@ function rowsOfId(track: Track): number | null {
  * Tapping one asks for it in words, exactly as the chips below do - so the
  * transcript reads the same whether the listener tapped a station, tapped a
  * chip, or typed the vibe themselves, and there is only ever one way a set
- * gets started.
+ * gets started. The words are the station's own seed and nothing else: it
+ * used to be wrapped as "Put on {name} — {seed}" and prefixed with the last
+ * ask, and that whole sentence - a model-written mood name, a conversational
+ * verb, yesterday's request - was what the server embedded as the sound to
+ * steer toward.
  */
-function DjStations({ onPick }: { onPick: (text: string) => void }) {
+function DjStations({ onPick }: { onPick: (station: DjStation) => void }) {
   const { session } = useServerSession();
   const [stations, setStations] = useState<DjStation[]>([]);
   useEffect(() => {
@@ -287,7 +291,7 @@ function DjStations({ onPick }: { onPick: (text: string) => void }) {
             type="button"
             variant="glass"
             className="djStation"
-            onClick={() => onPick(`Put on ${st.name} — ${st.seed}`)}
+            onClick={() => onPick(st)}
           >
             <span className="djStation__name">{st.name}</span>
             {st.blurb && <span className="djStation__blurb">{st.blurb}</span>}
@@ -320,7 +324,7 @@ export function DjPage() {
         <div className="djFresh">
           <img className="djFresh__mascot" src={djMascot} alt="" />
           {greeting && <p className="djFresh__line">{greeting}</p>}
-          <DjStations onPick={(text) => chat.send(text)} />
+          <DjStations onPick={(st) => chat.send(st.seed, { station: true, filter: st.filter })} />
           <div className="djChips djFresh__chips">
             {chips.map((o) => (
               <Button

@@ -3802,12 +3802,21 @@ impl Db {
             .unwrap_or_default()
     }
 
-    /// Artists this listener has actually MET - any listen event at all. The
-    /// complement is the exploration pool.
+    /// Artists this listener has actually MET. The complement is the
+    /// exploration pool.
+    ///
+    /// A meeting is a sitting of ten seconds or a completion - the listener's
+    /// own line (taste.rs MISTAP_MS). It used to be any listen event at all,
+    /// which meant a thumb slipping onto a song for six seconds retired that
+    /// artist from exploration forever: the sampler never got to offer them
+    /// again, so it never learned anything about them. `plays` needs no gate
+    /// of its own - the client writes one only after thirty seconds, or half
+    /// of a very short track.
     pub fn played_artist_keys(&self, user_id: i64) -> std::collections::HashSet<String> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT DISTINCT LOWER(artist) FROM listen_events WHERE user_id = ?1
+            "SELECT DISTINCT LOWER(artist) FROM listen_events
+             WHERE user_id = ?1 AND (ms_listened >= 10000 OR completed = 1)
              UNION SELECT DISTINCT LOWER(t.artist) FROM plays p JOIN tracks t ON t.id = p.track_id
              WHERE p.user_id = ?1",
         ) else {
@@ -3870,24 +3879,56 @@ impl Db {
     }
 
     /// Per-artist exploration ledger: how often the DJ has offered this
-    /// artist, and how often an offer was adopted - a completed listen or a
-    /// heart AFTER the impression. The Thompson sampler's two counters.
+    /// artist, and how often an offer was adopted. The Thompson sampler's two
+    /// counters.
+    ///
+    /// What the ledger reads as a verdict, per impression:
+    ///
+    ///   adopted   a listen AFTER the offer that finished, or reached six
+    ///             tenths of the track's real length - a listener who stayed
+    ///             for most of a song said yes even if the last chorus lost
+    ///             them - or a heart after the offer.
+    ///   dropped   the only listens after the offer were under ten seconds
+    ///             and unfinished. A mis-tap is not a no; it is not counted
+    ///             as an offer at all, so it can neither fail the artist nor
+    ///             adopt them. The listener's own rule (taste.rs MISTAP_MS).
+    ///   failed    everything else: never played, or played and left.
+    ///
+    /// The slot vocabulary is exactly the two DJ-set seats. Radio writes its
+    /// own slot and is deliberately NOT read here - see radio.rs.
     pub fn explore_artist_stats(&self, user_id: i64) -> Vec<(String, i64, i64)> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT LOWER(t.artist), COUNT(*),
-                    SUM(CASE WHEN EXISTS(
+            "SELECT artist,
+                    SUM(CASE WHEN adopted = 1 THEN 1
+                             WHEN touched = 1 AND heard = 0 THEN 0
+                             ELSE 1 END),
+                    SUM(adopted)
+             FROM (
+               SELECT LOWER(t.artist) AS artist,
+                      (EXISTS(
                           SELECT 1 FROM listen_events le
                           WHERE le.user_id = i.user_id AND le.track_id = i.track_id
-                            AND le.completed = 1 AND le.started_at >= i.created_at)
-                        OR EXISTS(
+                            AND le.started_at >= i.created_at
+                            AND (le.completed = 1
+                                 OR le.ms_listened >= 0.6 * le.duration_ms))
+                       OR EXISTS(
                           SELECT 1 FROM favorites f
                           WHERE f.user_id = i.user_id AND f.track_id = i.track_id
-                            AND f.added_at >= i.created_at)
-                        THEN 1 ELSE 0 END)
-             FROM dj_impressions i JOIN tracks t ON t.id = i.track_id
-             WHERE i.user_id = ?1 AND i.slot IN ('rank', 'explore')
-             GROUP BY LOWER(t.artist)",
+                            AND f.added_at >= i.created_at)) AS adopted,
+                      EXISTS(
+                          SELECT 1 FROM listen_events le
+                          WHERE le.user_id = i.user_id AND le.track_id = i.track_id
+                            AND le.started_at >= i.created_at) AS touched,
+                      EXISTS(
+                          SELECT 1 FROM listen_events le
+                          WHERE le.user_id = i.user_id AND le.track_id = i.track_id
+                            AND le.started_at >= i.created_at
+                            AND (le.ms_listened >= 10000 OR le.completed = 1)) AS heard
+               FROM dj_impressions i JOIN tracks t ON t.id = i.track_id
+               WHERE i.user_id = ?1 AND i.slot IN ('rank', 'explore')
+             )
+             GROUP BY artist",
         ) else {
             return Vec::new();
         };
@@ -3896,46 +3937,16 @@ impl Db {
             .unwrap_or_default()
     }
 
-    /// Recent listening as VERDICTS, not starts: each track weighted by what
-    /// actually happened to it. A completion counts whole, an abandoned sit
-    /// counts a sliver, a heart adds on top - so a song someone bails out of
-    /// ten times finally stops shaping their taste like a loved one. Weights
-    /// per track cap at 3.0: taste is breadth, not one song on repeat.
-    pub fn weighted_recent_listens(&self, user_id: i64, limit: i64) -> Vec<(i64, f32)> {
-        let conn = self.lock();
-        let Ok(mut stmt) = conn.prepare(
-            "SELECT le.track_id,
-                    MIN(3.0, SUM(CASE WHEN le.completed = 1 THEN 1.0
-                                      WHEN le.skipped = 1 THEN 0.15
-                                      ELSE 0.5 END)
-                             + CASE WHEN EXISTS(SELECT 1 FROM favorites f
-                                                WHERE f.user_id = le.user_id
-                                                  AND f.track_id = le.track_id)
-                                    THEN 0.5 ELSE 0.0 END)
-             FROM listen_events le
-             JOIN tracks t ON t.id = le.track_id AND t.deleted = 0
-                          AND COALESCE(t.kind, 'music') <> 'book'
-             WHERE le.user_id = ?1
-             GROUP BY le.track_id
-             ORDER BY MAX(le.started_at) DESC
-             LIMIT ?2",
-        ) else {
-            return Vec::new();
-        };
-        stmt.query_map(params![user_id, limit], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)? as f32)))
-            .map(|rows| rows.filter_map(Result::ok).collect())
-            .unwrap_or_default()
-    }
-
     /// Every verdict one listener has passed in the window, richest form.
     ///
     /// This is the query the curation half should always have been running.
-    /// `weighted_recent_listens` above collapses a listener's history into one
-    /// number per track with a fixed rubric baked into SQL - completed 1.0,
-    /// skipped 0.15, capped at 3 - which cannot express WHEN it happened, HOW
-    /// MUCH was heard against the track's real length, or WHICH SURFACE
-    /// offered it. All three columns were already being written; none of them
-    /// could get out through that function.
+    /// The query it replaced (`weighted_recent_listens`, gone with its last
+    /// caller when the DJ and radio moved onto `taste::UserTaste`) collapsed a
+    /// listener's history into one number per track with a fixed rubric baked
+    /// into SQL - completed 1.0, skipped 0.15, capped at 3 - which could not
+    /// express WHEN it happened, HOW MUCH was heard against the track's real
+    /// length, or WHICH SURFACE offered it. All three columns were already
+    /// being written; none of them could get out through that function.
     ///
     /// So this one hands back the rows and lets `taste.rs` decide what they
     /// mean. Books are excluded: an audiobook's completion curve has nothing
@@ -12762,5 +12773,104 @@ mod listen_shape {
         assert!(!mine.contains_key(&once), "one listen in the window is not a return");
         let theirs = db.recent_repeats(you, now - 7 * day);
         assert_eq!(theirs.get(&bailed), Some(&2), "and theirs is theirs");
+    }
+}
+
+#[cfg(test)]
+mod explore_ledger_skip_semantics {
+    //! The listener's own rule for the exploration sampler: under ten seconds
+    //! says nothing, and staying for most of a song is a yes. A four-second
+    //! bail used to be an offer FAILURE for the artist and, worse, a meeting
+    //! that retired them from exploration for good.
+
+    use super::*;
+
+    fn fresh(name: &str) -> Db {
+        let d = std::env::temp_dir().join(format!("afm-explore-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    fn track(db: &Db, rel: &str, artist: &str) -> i64 {
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind)
+                 VALUES (?1,?1,?2,?2,'Al',0,0,'music')",
+                rusqlite::params![rel, artist],
+            )
+            .unwrap();
+        db.track_id_by_path(rel).unwrap()
+    }
+
+    fn sat(db: &Db, user: i64, track_id: i64, artist: &str, at: i64, ms: i64, completed: bool) {
+        db.insert_listen(
+            user,
+            track_id,
+            &("t".into(), artist.into(), "Al".into(), String::new()),
+            at,
+            ms,
+            Some(200_000),
+            completed,
+            !completed && ms < 30_000,
+            "booth",
+            &ListenShape::default(),
+        )
+        .unwrap();
+    }
+
+    fn stats_for(db: &Db, user: i64, artist: &str) -> Option<(i64, i64)> {
+        db.explore_artist_stats(user)
+            .into_iter()
+            .find(|(a, _, _)| a == artist)
+            .map(|(_, offers, adopted)| (offers, adopted))
+    }
+
+    #[test]
+    fn a_four_second_bail_is_neither_a_failure_nor_an_adoption() {
+        let db = fresh("bail");
+        let me = db.create_user("me", "x", true).unwrap();
+        let id = track(&db, "new.flac", "stranger");
+        db.record_dj_impressions(me, &[(id, "explore", 3)]);
+        let offered_at = now_ms();
+        sat(&db, me, id, "stranger", offered_at + 1_000, 4_000, false);
+
+        let (offers, adopted) = stats_for(&db, me, "stranger").unwrap_or((0, 0));
+        assert_eq!((offers, adopted), (0, 0), "a mis-tap is not an offer the artist failed");
+    }
+
+    #[test]
+    fn staying_for_six_tenths_is_an_adoption_and_leaving_early_is_not() {
+        let db = fresh("sixty");
+        let me = db.create_user("me", "x", true).unwrap();
+        let stayed = track(&db, "stayed.flac", "kept");
+        let left = track(&db, "left.flac", "dropped");
+        db.record_dj_impressions(me, &[(stayed, "explore", 3), (left, "rank", 4)]);
+        let offered_at = now_ms();
+        // 60% of a 200s track, never marked completed.
+        sat(&db, me, stayed, "kept", offered_at + 1_000, 120_000, false);
+        // A real skip: past the mis-tap line, nowhere near the end.
+        sat(&db, me, left, "dropped", offered_at + 1_000, 25_000, false);
+
+        assert_eq!(stats_for(&db, me, "kept"), Some((1, 1)), "most of the song heard is a yes");
+        assert_eq!(stats_for(&db, me, "dropped"), Some((1, 0)), "a real skip is still a no");
+    }
+
+    #[test]
+    fn a_mistap_does_not_retire_an_artist_from_exploration() {
+        let db = fresh("retire");
+        let me = db.create_user("me", "x", true).unwrap();
+        let slipped = track(&db, "slip.flac", "Slipped On");
+        let heard = track(&db, "heard.flac", "Actually Heard");
+        let done = track(&db, "done.flac", "Finished Fast");
+        sat(&db, me, slipped, "Slipped On", 1_000, 4_000, false);
+        sat(&db, me, heard, "Actually Heard", 2_000, 12_000, false);
+        // A completed sitting counts however short - a short track.
+        sat(&db, me, done, "Finished Fast", 3_000, 6_000, true);
+
+        let met = db.played_artist_keys(me);
+        assert!(!met.contains("slipped on"), "a thumb slipping is not a meeting: {met:?}");
+        assert!(met.contains("actually heard"), "twelve seconds is");
+        assert!(met.contains("finished fast"), "and so is finishing");
     }
 }

@@ -60,6 +60,34 @@ pub struct Station {
     pub seed: String,
     /// "ai" | "heuristic", so the client can say where it came from.
     pub flavor: String,
+    /// What the station literally MEANS, when it means something literal -
+    /// `unplayed`, `genre:{g}`, `artist:{a}` - handed back as
+    /// `/api/dj?filter=` so the set is constrained to it rather than merely
+    /// steered toward a sentence about it. See `dj::station_filter`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    /// The mood's listening weight by UTC quarter-day, for ordering the
+    /// shelf by the hour it is asked for. Server-side only.
+    #[serde(skip)]
+    pub hours: Option<[f64; 4]>,
+}
+
+/// Put the stations that belong to THIS hour first.
+///
+/// `MoodCluster.hours` has been computed since the profile existed and never
+/// read here: a listener's "late and low" mood led the shelf at nine in the
+/// morning. The buckets are UTC quarter-days, so the hour they are indexed by
+/// is the server's UTC hour - not the client's local one, which the DJ and
+/// radio take for their own tilt. Stable: stations with nothing to say about
+/// the hour (the heuristics) keep their order among themselves.
+fn order_for_hour(stations: &mut [Station], utc_hour: u32) {
+    let bucket = ((utc_hour % 24) / 6) as usize;
+    let weight = |s: &Station| s.hours.map(|h| h[bucket]).unwrap_or(0.0);
+    stations.sort_by(|a, b| weight(b).partial_cmp(&weight(a)).unwrap_or(std::cmp::Ordering::Equal));
+}
+
+fn utc_hour_now() -> u32 {
+    ((now_ms() / 1000 / 3600) % 24) as u32
 }
 
 struct Cached {
@@ -107,7 +135,7 @@ pub async fn stations(
         auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let user = caller.id;
 
-    let (ready, needs_refresh) = {
+    let (mut ready, needs_refresh) = {
         let mut cache = state.stations.per_user.lock().await;
         match cache.get_mut(&user) {
             Some(entry) => {
@@ -165,6 +193,7 @@ pub async fn stations(
         });
     }
 
+    order_for_hour(&mut ready, utc_hour_now());
     Ok(Json(json!({ "stations": ready })))
 }
 
@@ -195,6 +224,8 @@ fn heuristic_stations(state: &Arc<AppState>, user: i64) -> Vec<Station> {
             blurb: format!("Starts where {artist} lives and keeps walking."),
             seed: format!("{artist} and artists who sound like them"),
             flavor: "heuristic".into(),
+            filter: Some(format!("artist:{artist}")),
+            hours: None,
         });
     }
     if let Some((artist, _)) = top_artists.get(2) {
@@ -204,6 +235,8 @@ fn heuristic_stations(state: &Arc<AppState>, user: i64) -> Vec<Station> {
             blurb: "Your other lane, given its own hour.".into(),
             seed: format!("in the style of {artist}"),
             flavor: "heuristic".into(),
+            filter: Some(format!("artist:{artist}")),
+            hours: None,
         });
     }
 
@@ -217,6 +250,8 @@ fn heuristic_stations(state: &Arc<AppState>, user: i64) -> Vec<Station> {
             blurb: format!("{genre}, past the songs you already know."),
             seed: format!("{genre}, deeper cuts"),
             flavor: "heuristic".into(),
+            filter: Some(format!("genre:{genre}")),
+            hours: None,
         });
     }
 
@@ -226,6 +261,8 @@ fn heuristic_stations(state: &Arc<AppState>, user: i64) -> Vec<Station> {
         blurb: "Slower, darker, and in no hurry.".into(),
         seed: "late night, slow, atmospheric, quiet".into(),
         flavor: "heuristic".into(),
+        filter: None,
+        hours: None,
     });
     out.push(Station {
         id: "unplayed".into(),
@@ -233,6 +270,8 @@ fn heuristic_stations(state: &Arc<AppState>, user: i64) -> Vec<Station> {
         blurb: "Records you own and have never once put on.".into(),
         seed: "songs I have never played".into(),
         flavor: "heuristic".into(),
+        filter: Some("unplayed".into()),
+        hours: None,
     });
 
     out.truncate(WANT);
@@ -291,6 +330,8 @@ fn mood_stations(state: &Arc<AppState>, user: i64) -> Option<Vec<Station>> {
             blurb: c.blurb.clone(),
             seed,
             flavor: "ai".into(),
+            filter: None,
+            hours: Some(c.hours),
         });
     }
     if out.is_empty() {
@@ -365,5 +406,36 @@ mod tests {
         assert!(!reads_as_broadcast("Fuzz and Sunlight"));
         assert!(!reads_as_broadcast("The Slow Hours"));
         assert!(!reads_as_broadcast("Bedroom Static"));
+    }
+
+    fn station(id: &str, hours: Option<[f64; 4]>) -> Station {
+        Station {
+            id: id.into(),
+            name: id.into(),
+            blurb: String::new(),
+            seed: String::new(),
+            flavor: "ai".into(),
+            filter: None,
+            hours,
+        }
+    }
+
+    /// The mood the listener lives in at THIS hour leads the shelf, and the
+    /// stations with no hour of their own keep their order behind.
+    #[test]
+    fn the_hours_mood_leads_and_the_heuristics_keep_their_order() {
+        let mut list = vec![
+            station("morning", Some([0.1, 0.7, 0.2, 0.0])),
+            station("late", Some([0.6, 0.0, 0.1, 0.3])),
+            station("heavy-artist", None),
+            station("unplayed", None),
+        ];
+        order_for_hour(&mut list, 23);
+        let ids: Vec<&str> = list.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["late", "morning", "heavy-artist", "unplayed"]);
+
+        order_for_hour(&mut list, 8);
+        let ids: Vec<&str> = list.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["morning", "late", "heavy-artist", "unplayed"]);
     }
 }

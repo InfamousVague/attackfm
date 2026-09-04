@@ -75,6 +75,10 @@ const REPEAT_BONUS: f32 = 1.25;
 pub const N_TERMS: usize = 8;
 pub const TERM_NAMES: [&str; N_TERMS] =
     ["lyric", "sonic", "tempo", "tags", "energy", "texture", "scene", "era"];
+/// Indices into that array for the two centroid terms, which the DJ reads on
+/// their own as well as inside the score - a seed replaces the sonic one.
+pub const TERM_LYRIC: usize = 0;
+pub const TERM_SONIC: usize = 1;
 
 /// The house ranking, and the value every per-user weight is pulled toward.
 ///
@@ -705,7 +709,13 @@ pub fn terms_raw(f: &TrackFeatures, taste: &UserTaste) -> [Option<f32>; N_TERMS]
 
 /// How well a track answers a listener, in [0, 1].
 pub fn score(f: &TrackFeatures, taste: &UserTaste) -> f32 {
-    let t = terms(f, taste);
+    score_of(&terms(f, taste), taste)
+}
+
+/// The same score from terms already computed, for a caller that reads a
+/// term on its own as well - the DJ blends the two centroid terms into its
+/// own semantic family and should not pay for the cosines twice.
+pub fn score_of(t: &[f32; N_TERMS], taste: &UserTaste) -> f32 {
     let w = taste.weights.as_array();
     (0..N_TERMS).map(|i| t[i] * w[i]).sum::<f32>().clamp(0.0, 1.0)
 }

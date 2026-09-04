@@ -26,11 +26,24 @@ export interface DjSet {
  * A continuous DJ set drawn from the listener's OWN library: runs of tracks
  * with a spoken line opening each. `seed` steers the whole thing toward a vibe
  * ("something mellow for a rainy morning"); empty just mirrors recent listening.
+ *
+ * The LOCAL hour rides along: the server does not know the listener's
+ * timezone, and it leans the set a little lower late at night and a little
+ * brighter in the morning. `filter` is a station's literal meaning
+ * (`unplayed`, `genre:{g}`, `artist:{a}`) - a constraint on the pool, where
+ * the seed is only a steer.
  */
-export async function fetchDj(session: ServerSession, seed = '', count?: number): Promise<DjSet> {
+export async function fetchDj(
+  session: ServerSession,
+  seed = '',
+  count?: number,
+  opts: { filter?: string } = {},
+): Promise<DjSet> {
   const params = new URLSearchParams();
   if (seed.trim()) params.set('seed', seed.trim());
   if (count) params.set('count', String(count));
+  if (opts.filter) params.set('filter', opts.filter);
+  params.set('hour', String(new Date().getHours()));
   const qs = params.toString();
   const out = await request<Partial<DjSet>>(
     session.url,
@@ -178,6 +191,10 @@ export interface DjStation {
   seed: string;
   /** 'ai' when a model named it, 'heuristic' when it came from the play log. */
   flavor: string;
+  /** What the station literally means, when it means something literal -
+   *  `unplayed`, `genre:{g}`, `artist:{a}` - passed back as the set's
+   *  constraint. Absent for a mood. */
+  filter?: string;
 }
 
 /**

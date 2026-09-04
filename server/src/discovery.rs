@@ -28,7 +28,6 @@
 //! there. Acting on one is the app's existing import path; dismissing one
 //! forgets it.
 
-use crate::curator::{taste_for};
 use crate::AppState;
 use serde::Serialize;
 use serde_json::json;
@@ -580,6 +579,31 @@ pub(crate) fn is_rejected(db: &crate::db::Db, user: i64, artist: &str, title: &s
     let now = now_ms();
     db.rejection_active(user, "artist", &artist_key(artist), now, ARTIST_REJECT_MS)
         || db.rejection_active(user, "track", &key_of(artist, title), now, TRACK_REJECT_MS)
+}
+
+/// Every LIBRARY track this listener's active rejections cover - the same
+/// question as `is_rejected`, asked once for the whole library instead of
+/// twice per candidate, for the surfaces that score every row on a press.
+///
+/// A "no" to a discovery card is a no to the song and, at artist scope, to
+/// whoever made it; until now the DJ and the radio never read it, so a track
+/// dismissed on the Discover shelf could be dealt back the same evening. Same
+/// folds, same windows as the check above, so a re-offer under a different
+/// spelling is still the same refusal.
+pub(crate) fn rejected_track_ids(db: &crate::db::Db, user: i64) -> std::collections::HashSet<i64> {
+    let now = now_ms();
+    let artists = db.rejected_keys_since(user, "artist", now - ARTIST_REJECT_MS);
+    let tracks = db.rejected_keys_since(user, "track", now - TRACK_REJECT_MS);
+    if artists.is_empty() && tracks.is_empty() {
+        return Default::default();
+    }
+    db.track_identities()
+        .into_iter()
+        .filter(|(_, artist, title, _)| {
+            artists.contains(&artist_key(artist)) || tracks.contains(&key_of(artist, title))
+        })
+        .map(|(id, _, _, _)| id)
+        .collect()
 }
 
 struct CandidateTrack {

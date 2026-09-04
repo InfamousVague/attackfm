@@ -56,8 +56,10 @@ export const DJ_AUTHOR = 'dj';
 interface DjChat {
   messages: DjMessage[];
   busy: boolean;
-  /** Send a turn as the user. Empty text is ignored. */
-  send: (text: string) => void;
+  /** Send a turn as the user. Empty text is ignored. A station chip sends
+   *  its seed on its own - not prefixed with the last ask - and carries the
+   *  station's literal constraint when it has one. */
+  send: (text: string, opts?: { station?: boolean; filter?: string }) => void;
   /** Take a set's tracks into the working draft, creating one if needed. */
   toDraft: (trackIds: number[]) => void;
   renameDraft: (draftId: string, name: string) => void;
@@ -154,7 +156,7 @@ export function DjChatProvider({
   );
 
   const send = useCallback(
-    (raw: string) => {
+    (raw: string, opts?: { station?: boolean; filter?: string }) => {
       const text = raw.trim();
       if (!text || busy) return;
       append({
@@ -181,11 +183,13 @@ export function DjChatProvider({
         return;
       }
       // Two turns of context: "slower" means nothing on its own, but it means
-      // plenty next to what it is answering.
-      const seed = lastAsk.current ? `${lastAsk.current}. ${text}` : text;
+      // plenty next to what it is answering. A station is a fresh start - its
+      // seed is a measured description of a sound, and yesterday's ask glued
+      // in front of it only muddied what the server embeds.
+      const seed = lastAsk.current && !opts?.station ? `${lastAsk.current}. ${text}` : text;
       lastAsk.current = text;
       setBusy(true);
-      void fetchDj(session, seed, 24)
+      void fetchDj(session, seed, 24, { filter: opts?.filter })
         .then((reply) => {
           let spoke = false;
           for (const block of reply.blocks) {

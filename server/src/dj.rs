@@ -11,8 +11,9 @@
 
 use crate::ai::AiClient;
 use crate::auth;
-use crate::curator::{cosine, score, taste_from};
+use crate::curator::cosine;
 use crate::db::TrackFeatures;
+use crate::taste::{self, UserTaste};
 use crate::AppState;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -29,6 +30,166 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const PER_ARTIST_CAP: usize = 2;
 /// How many recent plays define "lately" and get held back from the set.
 const RECENT_WINDOW: i64 = 80;
+
+/// How wide the rank-weighted draw's head is, in multiples of the set. Six
+/// was a near-uniform shuffle of ninety songs over a ranking whose whole
+/// spread is a few hundredths; three keeps the press fresh without making
+/// seat 1 and seat 45 the same odds - the listener's word for six was "too
+/// random".
+const DRAW_HEAD: usize = 3;
+
+/// Jitter is only added when the ranking actually has a spread to jitter
+/// WITHIN. On a flat ranking - every term degraded to neutral, or a library
+/// with no vectors - the same ±0.02 IS the ranking, and the draw becomes a
+/// shuffle wearing the taste's name.
+const JITTER_SPREAD_FLOOR: f32 = 0.04;
+
+/// How many unmet artists the exploration seats sample among: the most
+/// relevant forty, by the same score the rest of the set is ranked on. The
+/// Beta draw still decides between them - it is exploration - but inside a
+/// pool that is connected to what the listener likes, never a coin flip over
+/// every stranger in the library.
+const EXPLORE_POOL: usize = 40;
+
+/// Whether one track may be dealt to this listener at all - the guard every
+/// dealing surface applies before it scores anything.
+///
+/// Two leaks this closes: an audiobook chapter is not a song, whatever its
+/// vectors say; and an audition the collector fetched for SOMEBODY ELSE is
+/// theirs to judge, not a stranger's to hear first. The listener's own
+/// unadopted auditions pass - those are the door into their sets that the
+/// exploration seats exist to open.
+pub(crate) fn dealable(f: &TrackFeatures, user: i64) -> bool {
+    f.kind != "book" && !(f.quarantined && f.curator_user_id != Some(user))
+}
+
+/// The time-of-day tilt, lightly: how far to move the energy target (0-1) and
+/// the tempo target (bpm) for a client-local hour. Late night leans down,
+/// the morning leans up a little, and the rest of the day is left alone.
+/// Windows are half-open: 22:00 up to 05:00, 07:00 up to 10:00.
+pub(crate) fn hour_nudge(hour: Option<u32>) -> (f64, f64) {
+    match hour {
+        Some(22..=23) | Some(0..=4) => (-0.10, -8.0),
+        Some(7..=9) => (0.05, 5.0),
+        _ => (0.0, 0.0),
+    }
+}
+
+/// The exploration seats' draw: Thompson sampling over per-artist adoption,
+/// weighed by relevance, inside the most relevant `EXPLORE_POOL` artists.
+///
+/// `candidates` is one row per unmet artist - (artist key, relevance of its
+/// best track, that track) - and `stats` the sampler's ledger of (offers,
+/// adopted) per artist. `sample(a, b)` draws from Beta(a, b); it is passed in
+/// so a test can hand the sampler a fixed hand and check the ORDER the seats
+/// come out in, which is the thing that was wrong.
+///
+/// The sort key is `draw × relevance`, not the draw alone: an artist the
+/// listener has never been offered still carries the uniform prior and its
+/// full share of hope, but a lucky draw for an artist nothing connects to
+/// no longer beats a fair draw for one that fits.
+pub(crate) fn explore_order(
+    mut candidates: Vec<(String, f32, i64)>,
+    stats: &HashMap<String, (i64, i64)>,
+    n: usize,
+    sample: &mut dyn FnMut(f64, f64) -> f64,
+) -> Vec<i64> {
+    candidates.sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.truncate(EXPLORE_POOL);
+    let mut sampled: Vec<(f64, i64)> = candidates
+        .into_iter()
+        .map(|(key, relevance, id)| {
+            let (offers, adopted) = stats.get(&key).copied().unwrap_or((0, 0));
+            let a = 1.0 + adopted as f64;
+            let b = 1.0 + (offers - adopted).max(0) as f64;
+            (sample(a, b) * f64::from(relevance.max(0.0)), id)
+        })
+        .collect();
+    sampled.sort_by(|x, y| y.0.partial_cmp(&x.0).unwrap_or(std::cmp::Ordering::Equal));
+    sampled.into_iter().take(n).map(|(_, id)| id).collect()
+}
+
+/// The tracks a literal station admits, or None when the filter is not one
+/// the DJ knows (the seed alone steers, as before).
+///
+/// A station used to be a phrase and nothing else: "songs I have never
+/// played" was EMBEDDED as a sonic target and the set was whatever sounded
+/// like that sentence, played or not. These three mean what they say:
+///
+///   unplayed     never played by this listener - the same rule the Home
+///                shelf's `unplayed` uses, so the two cannot disagree.
+///   genre:{g}    carries the tag, in the file genre or the enricher's.
+///   artist:{a}   the artist's own songs and their ListenBrainz neighbours,
+///                either direction - "and the road out". With no
+///                neighbourhood on file the filter is released rather than
+///                dealing two songs and calling it a station.
+fn station_filter(
+    db: &crate::db::Db,
+    user: i64,
+    filter: &str,
+    feats: &[TrackFeatures],
+) -> Option<HashSet<i64>> {
+    let filter = filter.trim();
+    if filter.eq_ignore_ascii_case("unplayed") {
+        return Some(db.unplayed(user, i64::MAX).into_iter().collect());
+    }
+    if let Some(genre) = filter.strip_prefix("genre:") {
+        let want = genre.trim().to_lowercase();
+        if want.is_empty() {
+            return None;
+        }
+        return Some(
+            feats
+                .iter()
+                .filter(|f| taste::tags_of(f).iter().any(|t| *t == want))
+                .map(|f| f.track_id)
+                .collect(),
+        );
+    }
+    if let Some(artist) = filter.strip_prefix("artist:") {
+        let want = taste::artist_key(artist);
+        if want.is_empty() {
+            return None;
+        }
+        let own: Vec<&TrackFeatures> =
+            feats.iter().filter(|f| taste::artist_key(&f.artist) == want).collect();
+        let mbids: HashSet<&str> = own
+            .iter()
+            .map(|f| f.musicbrainz_id.as_str())
+            .filter(|m| !m.is_empty())
+            .collect();
+        let neighbours: HashSet<&str> = own
+            .iter()
+            .flat_map(|f| f.listenbrainz_similar.iter().map(String::as_str))
+            .collect();
+        let pool: HashSet<i64> = feats
+            .iter()
+            .filter(|f| {
+                taste::artist_key(&f.artist) == want
+                    || (!f.musicbrainz_id.is_empty() && neighbours.contains(f.musicbrainz_id.as_str()))
+                    || f.listenbrainz_similar.iter().any(|m| mbids.contains(m.as_str()))
+            })
+            .map(|f| f.track_id)
+            .collect();
+        return (pool.len() > own.len()).then_some(pool);
+    }
+    None
+}
+
+/// Apply the tilt to a taste's own targets. Only the centres move; the
+/// spreads - how sure the model is - are not the hour's business.
+pub(crate) fn nudge_for_hour(taste: &mut UserTaste, hour: Option<u32>) {
+    let (d_energy, d_tempo) = hour_nudge(hour);
+    if d_energy == 0.0 && d_tempo == 0.0 {
+        return;
+    }
+    if let Some((mid, spread)) = taste.tempo {
+        taste.tempo = Some(((mid + d_tempo).clamp(40.0, 220.0), spread));
+    }
+    if let Some((mid, spread)) = taste.energy {
+        taste.energy = Some(((mid + d_energy).clamp(0.0, 1.0), spread));
+    }
+}
 
 /// How long the patter model may hold the reply. Past this the set ships
 /// with library lines; the voice never needed the model at all.
@@ -138,12 +299,20 @@ const QUEUE_SCORE_JITTER: f32 = 0.02;
 /// carry the set, personal signals season it. The two invariants the unit
 /// test pins: each family group sums to 1, and the semantic share outweighs
 /// the personal share - a station should sound like a TASTE, not a history.
-const STATION_SEM_SONIC: f32 = 0.45;
-const STATION_SEM_AUDIO: f32 = 0.20;
-const STATION_SEM_LYRIC: f32 = 0.20;
-const STATION_SEM_COMMUNITY: f32 = 0.15;
-const STATION_W_SEM: f32 = 0.72;
-const STATION_W_HISTORY: f32 = 0.14;
+///
+/// Where the audio and community families went. The semantic family used to
+/// be four cosines against four hand-built centroids - sonic, audio
+/// fingerprint, lyric, community - averaged over the last eighty plays with
+/// every skip weighing as much as every completion. The taste model now owns
+/// the centroids (verdict-weighted, decayed, surface-aware), and it carries
+/// the measured "sounds similar" (texture, energy, tempo) and the "same
+/// scene" (the artists they return to, and their ListenBrainz neighbours)
+/// as terms of its own score - so the history term is where those families
+/// live now, and its share grew to match. Semantic still outweighs personal.
+const STATION_SEM_SONIC: f32 = 0.60;
+const STATION_SEM_LYRIC: f32 = 0.40;
+const STATION_W_SEM: f32 = 0.56;
+const STATION_W_HISTORY: f32 = 0.30;
 const STATION_W_LIKE: f32 = 0.09;
 const STATION_W_COLLAB: f32 = 0.05;
 
@@ -274,11 +443,22 @@ pub struct DjQuery {
     /// How many tracks to hand back (clamped to a sane range).
     #[serde(default)]
     pub count: Option<usize>,
+    /// The listener's LOCAL hour, 0-23, for the light time-of-day tilt. The
+    /// server does not know their timezone, so the client says. Optional: an
+    /// older client sends nothing and gets no tilt.
+    #[serde(default)]
+    pub hour: Option<u32>,
+    /// A hard constraint on the pool, from a station that means something
+    /// literal: `unplayed`, `genre:{g}` or `artist:{a}`. The seed still
+    /// steers inside it. See `station_filter`.
+    #[serde(default)]
+    pub filter: Option<String>,
 }
 
-/// `GET /api/dj?seed=&count=` - a continuous DJ set: runs of the listener's own
-/// tracks with the DJ's spoken-style patter between them. The client plays each
-/// block's tracks after showing its line, and calls again to keep the set going.
+/// `GET /api/dj?seed=&count=&hour=&filter=` - a continuous DJ set: runs of the
+/// listener's own tracks with the DJ's spoken-style patter between them. The
+/// client plays each block's tracks after showing its line, and calls again to
+/// keep the set going.
 pub async fn station(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -323,34 +503,58 @@ pub async fn station(
         }
     }
 
-    let reply = build_reply(&state, caller.id, &seed, want, false).await?;
+    let ask = Ask { seed: &seed, want, curate: false, hour: q.hour, filter: q.filter.as_deref() };
+    let reply = build_reply(&state, caller.id, &ask).await?;
     Ok(Json(reply))
 }
 
+/// What one press asks for, so the builder's signature does not grow a
+/// positional argument per feature.
+pub(crate) struct Ask<'a> {
+    pub seed: &'a str,
+    pub want: usize,
+    /// The offline mode - twice the candidates, no jitter, the model
+    /// unhurried and allowed to DROP what does not fit; live keeps the tight
+    /// budget and ships whatever is ready.
+    pub curate: bool,
+    /// Client-local hour, when the client said.
+    pub hour: Option<u32>,
+    /// A literal constraint on the pool, when the station has one.
+    pub filter: Option<&'a str>,
+}
+
 /// The whole set, built: picks scored against taste, runs cut, lines written,
-/// voice promised. `curate` is the offline mode - twice the candidates, no
-/// jitter, and the model unhurried and allowed to DROP what does not fit;
-/// live keeps the tight budget and ships whatever is ready.
+/// voice promised. What was asked for - seed, size, the hour, a station's
+/// constraint, and whether this is the unhurried offline build - is `Ask`.
 pub(crate) async fn build_reply(
     state: &Arc<AppState>,
     user: i64,
-    seed: &str,
-    want: usize,
-    curate: bool,
+    ask: &Ask<'_>,
 ) -> Result<Value, (StatusCode, String)> {
-    let seed = seed.to_string();
+    let seed = ask.seed.to_string();
+    let want = ask.want;
+    let curate = ask.curate;
 
-    // Taste: the same profile the curator scores against, from recent plays.
-    let feats = state.db.all_features();
-    let by_id: HashMap<i64, &TrackFeatures> = feats.iter().map(|f| (f.track_id, f)).collect();
-    // Verdicts when the ledger has them, play starts when it does not.
-    let weighted = state.db.weighted_recent_listens(user, RECENT_WINDOW);
-    let taste = if weighted.len() >= 8 {
-        crate::curator::taste_from_weighted(&weighted, &by_id)
-    } else {
-        let recent = state.db.recent_plays(user, RECENT_WINDOW);
-        taste_from(&recent, &by_id)
+    /*
+     * The listener's model - the same one discovery and the mixes read.
+     *
+     * The station used to build its own: an unweighted average of the last
+     * eighty plays, in which a song skipped at eight seconds pulled the
+     * centre exactly as hard as one finished and hearted, and the last of
+     * the three old terms (lyric / median bpm / genre string) as the history.
+     * `UserTaste` is verdict-weighted with a three-week half-life, knows
+     * which surface each play came from, keeps a rejected set, and scores
+     * the measured "sounds similar", the "same scene" and the "same era" the
+     * listener named as what makes a new song feel connected. A listener the
+     * ledger has nothing on gets the cold model: every term neutral, the set
+     * an honest draw rather than an error.
+     */
+    let (mut taste, feats) = match crate::curator::user_taste_for(state, user) {
+        Some(built) => built,
+        None => (UserTaste::cold(user), state.db.all_features()),
     };
+    nudge_for_hour(&mut taste, ask.hour);
+    let by_id: HashMap<i64, &TrackFeatures> = feats.iter().map(|f| (f.track_id, f)).collect();
 
     // A seed steers the set. It used to stand in for the LYRIC centroid -
     // "something mellow" compared against what songs say rather than how they
@@ -361,113 +565,130 @@ pub(crate) async fn build_reply(
         seed_vec = embed(&seed).await;
     }
 
-    // Score the whole library, hold back the very-recently-played so the DJ
-    // does not replay the last hour, and cap per artist. The DEALT ledger
-    // joins the hold: anything a set offered in the last three days sits out,
-    // so consecutive presses cannot deal the same hand - unless the library
-    // is small enough that the exclusion would empty the table, in which
-    // case variety honestly costs repeats and the hold is released.
-    let mut held: HashSet<i64> = taste.heard.clone();
-    let library_size = feats.iter().filter(|f| !f.quarantined).count();
+    // A station with a literal meaning constrains the pool before anything
+    // is scored; the seed still steers inside it.
+    let constrained: Option<HashSet<i64>> =
+        ask.filter.and_then(|f| station_filter(&state.db, user, f, &feats));
+    let within = |f: &TrackFeatures| constrained.as_ref().map_or(true, |s| s.contains(&f.track_id));
+
+    /*
+     * Score the whole library, hold back the very-recently-played so the DJ
+     * does not replay the last hour, and cap per artist. The DEALT ledger
+     * joins the hold: anything a set offered in the last three days sits out,
+     * so consecutive presses cannot deal the same hand - unless the library
+     * is small enough that the exclusion would empty the table, in which
+     * case variety honestly costs repeats and the hold is released.
+     *
+     * So does the listener's NO. `taste.rejected` is what they pushed away
+     * hard enough to count (an instant skip on a machine pick, not a late
+     * bail); the discovery rejections are the dismiss button on a card, at
+     * song or artist scope. Neither reached this surface before, so a song
+     * refused on the Discover shelf could be dealt back the same evening.
+     */
+    let mut held: HashSet<i64> = state.db.recent_plays(user, RECENT_WINDOW).into_iter().collect();
+    held.extend(taste.rejected.iter().copied());
+    held.extend(crate::discovery::rejected_track_ids(&state.db, user));
+    let library_size = feats.iter().filter(|f| dealable(f, user) && within(f)).count();
     held.extend(dealt_hold(&state.db, user, TASTE_DEALT_WINDOW_MS, want, library_size));
 
     /*
-     * The taste profile, in every vector the library actually has.
+     * The blend: the two centroid terms as the semantic family, the whole
+     * taste score as the history, hearts and ListenBrainz edges as the
+     * seasoning. A term a track cannot answer scores as an AVERAGE track
+     * would (`taste.neutral`), not as 0.5 - real cosines sit far above 0.5,
+     * so 0.5 turned "has been enriched" into a ranking signal, and the
+     * enriched pool is exactly the pool the machine pushed at them.
      *
-     * The station used to rank on the thinnest signals in the module - lyric
-     * embedding, median BPM, genre tag - while the sonic vectors, the 48-dim
-     * audio fingerprint, the community vectors, the hearts and the
-     * ListenBrainz edges sat computed and unread twenty lines from here, in
-     * the trait queue's blend. This is that blend, aimed at a taste profile
-     * instead of a trait sheet: weighted centroids of what the listener
-     * verifiably kept listening to.
+     * The seed replaces the sonic centroid, so its neutral is computed the
+     * same way: the library's typical closeness to the seed.
      */
-    let listened: Vec<(i64, f32)> = if weighted.len() >= 8 {
-        weighted.clone()
-    } else {
-        state.db.recent_plays(user, RECENT_WINDOW).into_iter().map(|id| (id, 1.0)).collect()
-    };
-    let listened_feats: Vec<&TrackFeatures> = listened
+    let half = |c: f32| (c + 1.0) / 2.0;
+    let seed_neutral: f32 = seed_vec
+        .as_deref()
+        .map(|q| {
+            let close: Vec<f32> = feats
+                .iter()
+                .filter_map(|f| f.sonic_vec.as_deref())
+                .map(|v| half(cosine(q, v)))
+                .collect();
+            if close.is_empty() {
+                0.5
+            } else {
+                close.iter().sum::<f32>() / close.len() as f32
+            }
+        })
+        .unwrap_or(0.5);
+    // The ListenBrainz neighbours of the artists they LIKE - a positive
+    // affinity, so a hundred skips of one band no longer make its neighbours
+    // "collaborative" matches.
+    let collaborative_edges: HashSet<&str> = feats
         .iter()
-        .filter_map(|(id, _)| by_id.get(id).copied())
-        .collect();
-    let taste_sonic = average_vectors(listened_feats.iter().filter_map(|f| f.sonic_vec.as_deref()));
-    let taste_community =
-        average_vectors(listened_feats.iter().filter_map(|f| f.community_vec.as_deref()));
-    let taste_audio =
-        average_owned_vectors(listened_feats.iter().filter_map(|f| audio_vector(f)));
-    let collaborative_edges: HashSet<&str> = listened_feats
-        .iter()
+        .filter(|f| taste.artists.get(&taste::artist_key(&f.artist)).map_or(false, |a| *a > 0.0))
         .flat_map(|f| f.listenbrainz_similar.iter().map(String::as_str))
         .collect();
     let liked: HashSet<i64> = state.db.favorites(user).into_iter().collect();
-    let sonic_target: Option<&[f32]> = seed_vec.as_deref().or(taste_sonic.as_deref());
 
-    let half = |c: f32| (c + 1.0) / 2.0;
-    let mut ranked: Vec<(f32, i64)> = {
-        let mut rng = rand::thread_rng();
-        feats
-            .iter()
-            // `!quarantined` is the same clause the trait queue applies: an
-            // audition under quarantine is a judgement not yet made, and the
-            // DB's own invariant says it must never seed a mix.
-            .filter(|f| !held.contains(&f.track_id) && !f.quarantined)
-            .map(|f| {
-                let sonic = match (sonic_target, &f.sonic_vec) {
-                    (Some(q), Some(v)) => half(cosine(q, v)),
-                    _ => 0.5,
-                };
-                let audio = match (&taste_audio, audio_vector(f)) {
-                    (Some(q), Some(v)) => half(cosine(q, &v)),
-                    _ => 0.5,
-                };
-                let lyric = match (&taste.centroid, &f.lyric_vec) {
-                    (Some(q), Some(v)) => half(cosine(q, v)),
-                    _ => 0.5,
-                };
-                let community = match (&taste_community, &f.community_vec) {
-                    (Some(q), Some(v)) => half(cosine(q, v)),
-                    _ => 0.5,
-                };
-                let sem = STATION_SEM_SONIC * sonic
-                    + STATION_SEM_AUDIO * audio
-                    + STATION_SEM_LYRIC * lyric
-                    + STATION_SEM_COMMUNITY * community;
-                // The old score lives on as the history term: tempo and genre
-                // closeness against the same taste, so a library with no
-                // vectors at all still ranks the way it always did.
-                let history = score(f, &taste);
-                let like = if liked.contains(&f.track_id) { 1.0 } else { 0.0 };
-                let collab = if collaborative_edges.contains(f.musicbrainz_id.as_str()) {
-                    1.0
-                } else {
-                    0.0
-                };
-                let relevance = STATION_W_SEM * sem
-                    + STATION_W_HISTORY * history
-                    + STATION_W_LIKE * like
-                    + STATION_W_COLLAB * collab;
-                // Curation wants the honest ranking; the live path keeps a
-                // shake of jitter so back-to-back presses do not repeat.
-                let jitter = if curate {
-                    0.0
-                } else {
-                    rng.gen_range(-QUEUE_SCORE_JITTER..=QUEUE_SCORE_JITTER)
-                };
-                (relevance + jitter, f.track_id)
-            })
-            .collect()
+    // One track's honest relevance, jitter-free. Shared by the ranked pool
+    // and the exploration seats, so a gamble is judged by the same ear as a
+    // safe pick.
+    let relevance_of = |f: &TrackFeatures| -> f32 {
+        let t = taste::terms(f, &taste);
+        let sonic = match (seed_vec.as_deref(), &f.sonic_vec) {
+            (Some(q), Some(v)) => half(cosine(q, v)),
+            (Some(_), None) => seed_neutral,
+            (None, _) => t[taste::TERM_SONIC],
+        };
+        let sem = STATION_SEM_SONIC * sonic + STATION_SEM_LYRIC * t[taste::TERM_LYRIC];
+        let history = taste::score_of(&t, &taste);
+        let like = if liked.contains(&f.track_id) { 1.0 } else { 0.0 };
+        let collab = if !f.musicbrainz_id.is_empty()
+            && collaborative_edges.contains(f.musicbrainz_id.as_str())
+        {
+            1.0
+        } else {
+            0.0
+        };
+        STATION_W_SEM * sem
+            + STATION_W_HISTORY * history
+            + STATION_W_LIKE * like
+            + STATION_W_COLLAB * collab
     };
+
+    let mut ranked: Vec<(f32, i64)> = feats
+        .iter()
+        // `!quarantined` is the same clause the trait queue applies: an
+        // audition under quarantine is a judgement not yet made, and the
+        // DB's own invariant says it must never seed a mix. (The exploration
+        // seats below are the one door the listener's OWN auditions get.)
+        .filter(|f| {
+            !held.contains(&f.track_id) && !f.quarantined && f.kind != "book" && within(f)
+        })
+        .map(|f| (relevance_of(f), f.track_id))
+        .collect();
+    // Curation wants the honest ranking; the live path keeps a shake of
+    // jitter so back-to-back presses do not repeat - but only when there is a
+    // ranking underneath it to shake.
+    if !curate {
+        let (lo, hi) = ranked
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(lo, hi), (s, _)| (lo.min(*s), hi.max(*s)));
+        if ranked.len() > 1 && hi - lo > JITTER_SPREAD_FLOOR {
+            let mut rng = rand::thread_rng();
+            for row in ranked.iter_mut() {
+                row.0 += rng.gen_range(-QUEUE_SCORE_JITTER..=QUEUE_SCORE_JITTER);
+            }
+        }
+    }
     ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     /*
      * The draw, not the top: a deterministic head of this ranking is the
      * same set every press ("not randomizing", by report). The picks are a
-     * weighted sample over a WIDE head instead - closer to the top is still
+     * weighted sample over a head instead - closer to the top is still
      * likelier, but every press shuffles the deal - which, with the dealt
      * ledger above, is what "generate it fresh" actually means.
      */
-    let ranked: Vec<(f32, i64)> = weighted_draw(ranked, want * 6);
+    let ranked: Vec<(f32, i64)> = weighted_draw(ranked, want * DRAW_HEAD);
 
     let artist_of: HashMap<i64, String> = feats
         .iter()
@@ -500,13 +721,21 @@ pub(crate) async fn build_reply(
      * A recommender with one listener collapses onto what it already plays -
      * nothing new is ever offered, so nothing new is ever adopted, so nothing
      * new is ever scored. These slots are the structural fix: a couple of
-     * positions go to artists the listener has never met (quarantined
-     * auditions included - this is the deliberate door into sets that
-     * replaces the accident Phase 0 closed), chosen by Thompson sampling over
-     * per-artist adoption. An artist whose offers keep getting finished or
-     * hearted wins slots more often; one that keeps getting skipped fades
+     * positions go to artists the listener has never met (their OWN
+     * quarantined auditions included - this is the deliberate door into sets
+     * that replaces the accident Phase 0 closed), chosen by Thompson sampling
+     * over per-artist adoption. An artist whose offers keep getting finished
+     * or hearted wins slots more often; one that keeps getting skipped fades
      * without ever being banned; one never offered at all carries the uniform
      * prior and its full share of hope.
+     *
+     * Inside a CONNECTED pool. The sample used to run over every unmet
+     * artist in the library with the taste score thrown away, so for a
+     * never-offered artist - Beta(1,1), uniform - the seat went to a
+     * uniformly random stranger: the listener's "too random", twice per set,
+     * early. Now each artist's best track is judged by the same relevance as
+     * the rest of the set, only the most relevant forty are sampled, and the
+     * draw is weighed by relevance (see `explore_order`).
      *
      * Artist-level arms, never track-level: at one household's data size,
      * track arms would never converge on anything.
@@ -523,7 +752,7 @@ pub(crate) async fn build_reply(
             .into_iter()
             .map(|(a, offers, adopted)| (a, (offers, adopted)))
             .collect();
-        // Candidates: best track per unmet artist, judged by the same taste.
+        // Candidates: best track per unmet artist, judged by the same blend.
         let mut best: HashMap<String, (f32, i64)> = HashMap::new();
         // The dealt hold applies here too: these seats used to be the one
         // door the ledger never guarded, and "best track per artist" is a
@@ -532,33 +761,26 @@ pub(crate) async fn build_reply(
         for f in feats.iter() {
             let key = f.artist.to_lowercase();
             if key.is_empty()
+                || !dealable(f, user)
+                || !within(f)
                 || played.contains(&key)
                 || taken.contains(&key)
                 || held.contains(&f.track_id)
             {
                 continue;
             }
-            let sc = score(f, &taste);
+            let sc = relevance_of(f);
             let e = best.entry(key).or_insert((sc, f.track_id));
             if sc > e.0 {
                 *e = (sc, f.track_id);
             }
         }
         let mut rng = rand::thread_rng();
-        let mut sampled: Vec<(f64, i64)> = best
-            .into_iter()
-            .map(|(key, (_sc, id))| {
-                let (offers, adopted) = stats.get(&key).copied().unwrap_or((0, 0));
-                let a = 1.0 + adopted as f64;
-                let b = 1.0 + (offers - adopted).max(0) as f64;
-                let p = rand_distr::Beta::new(a, b)
-                    .map(|d| d.sample(&mut rng))
-                    .unwrap_or(0.5);
-                (p, id)
-            })
-            .collect();
-        sampled.sort_by(|x, y| y.0.partial_cmp(&x.0).unwrap_or(std::cmp::Ordering::Equal));
-        sampled.into_iter().take(explore_n).map(|(_, id)| id).collect()
+        let candidates: Vec<(String, f32, i64)> =
+            best.into_iter().map(|(key, (sc, id))| (key, sc, id)).collect();
+        explore_order(candidates, &stats, explore_n, &mut |a, b| {
+            rand_distr::Beta::new(a, b).map(|d| d.sample(&mut rng)).unwrap_or(0.5)
+        })
     };
     // Seated mid-set, not opening it: position 3 and position 10 - deep
     // enough that the set has established itself, early enough to be heard.
@@ -1081,7 +1303,13 @@ pub async fn trait_queue(
         return Err((StatusCode::BAD_REQUEST, "select at least one trait".into()));
     }
     let want = body.count.unwrap_or(24).clamp(6, 40);
-    let features = state.db.all_features();
+    // The listener's own model for the history term - the same one the
+    // station reads, so the two surfaces agree about what "your listening"
+    // means. Its library load doubles as this handler's.
+    let (taste, features) = match crate::curator::user_taste_for(&state, user) {
+        Some(built) => built,
+        None => (UserTaste::cold(user), state.db.all_features()),
+    };
     let by_id: HashMap<i64, &TrackFeatures> = features.iter().map(|f| (f.track_id, f)).collect();
     // A collection mix must retain the sound of the whole collection. Earlier
     // this endpoint used the seed ids only as an exclusion list, so after the
@@ -1123,7 +1351,6 @@ pub async fn trait_queue(
         .flat_map(|feature| feature.listenbrainz_similar.iter().map(String::as_str))
         .collect();
     let recent = state.db.recent_plays(user, RECENT_WINDOW);
-    let taste = taste_from(&recent, &by_id);
     let liked: HashSet<i64> = state.db.favorites(user).into_iter().collect();
     // The embedding is primarily a description of audible character. Context
     // can add colour, but letting a soundtrack/scene phrase occupy an equal
@@ -1141,12 +1368,19 @@ pub async fn trait_queue(
         Some(client) => client.embed(&target_text).await.ok(),
         None => None,
     };
-    let held: HashSet<i64> = recent.into_iter().collect();
+    // Lately, plus the listener's no - what they pushed away and what they
+    // dismissed - exactly as the station holds them.
+    let mut held: HashSet<i64> = recent.into_iter().collect();
+    held.extend(taste.rejected.iter().copied());
+    held.extend(crate::discovery::rejected_track_ids(&state.db, user));
     let mut rng = rand::thread_rng();
     let mut ranked: Vec<(f32, &TrackFeatures, serde_json::Value)> = features
         .iter()
         .filter(|f| {
-            !seed_ids.contains(&f.track_id) && !held.contains(&f.track_id) && !f.quarantined
+            !seed_ids.contains(&f.track_id)
+                && !held.contains(&f.track_id)
+                && !f.quarantined
+                && f.kind != "book"
         })
         .map(|f| {
             let trait_sem = match (&semantic, &f.lyric_vec) {
@@ -1193,7 +1427,7 @@ pub async fn trait_queue(
                 + 0.08 * lyrical_sem
                 + 0.07 * community_sem;
             let specialized = specialized_score(f, &selected);
-            let history = score(f, &taste);
+            let history = taste::score(f, &taste);
             // Likes are a gentle taste vote, not a shortcut to replaying the
             // favourites list. Eight percent is enough to break close sonic
             // matches while the selected sound still owns the ranking.
@@ -1816,7 +2050,7 @@ mod station_weights {
 
     #[test]
     fn the_budget_holds() {
-        let sem = STATION_SEM_SONIC + STATION_SEM_AUDIO + STATION_SEM_LYRIC + STATION_SEM_COMMUNITY;
+        let sem = STATION_SEM_SONIC + STATION_SEM_LYRIC;
         assert!((sem - 1.0).abs() < 1e-6, "semantic family must sum to 1");
         let outer = STATION_W_SEM + STATION_W_HISTORY + STATION_W_LIKE + STATION_W_COLLAB;
         assert!((outer - 1.0).abs() < 1e-6, "outer blend must sum to 1");
@@ -1824,5 +2058,163 @@ mod station_weights {
             STATION_W_SEM > STATION_W_HISTORY + STATION_W_LIKE + STATION_W_COLLAB,
             "a station sounds like a taste, not a history",
         );
+    }
+}
+
+#[cfg(test)]
+mod explore_seats {
+    //! The exploration seats: who may sit in them, and in what order.
+
+    use super::*;
+
+    fn feature(id: i64, artist: &str) -> TrackFeatures {
+        TrackFeatures {
+            kind: "music".into(),
+            track_id: id,
+            bpm: Some(120.0),
+            curator_user_id: None,
+            added_at: 0,
+            lyric_vec: None,
+            genre: "rock".into(),
+            ai_genres: Vec::new(),
+            ai_specific_tags: Vec::new(),
+            ai_sonic_traits: Vec::new(),
+            artist: artist.into(),
+            energy: Some(0.5),
+            brightness: None,
+            dynamic_range: None,
+            rhythmic_activity: None,
+            musicbrainz_id: String::new(),
+            listenbrainz_similar: Vec::new(),
+            sonic_vec: None,
+            lyrical_vec: None,
+            community_vec: None,
+            audio_fingerprint: None,
+            year: None,
+            quarantined: false,
+            ai_moods: Vec::new(),
+        }
+    }
+
+    /// Strictly per person: another member's unadopted audition and an
+    /// audiobook never reach the pool; the listener's own audition does.
+    #[test]
+    fn the_pool_excludes_another_members_audition_and_books() {
+        let me = 1;
+        assert!(dealable(&feature(1, "a"), me), "the library plays");
+
+        let mut theirs = feature(2, "b");
+        theirs.quarantined = true;
+        theirs.curator_user_id = Some(2);
+        assert!(!dealable(&theirs, me), "another member's audition is never dealt to me");
+
+        let mut mine = feature(3, "c");
+        mine.quarantined = true;
+        mine.curator_user_id = Some(me);
+        assert!(dealable(&mine, me), "my own audition is the door in");
+
+        let mut adopted = feature(4, "d");
+        adopted.curator_user_id = Some(2);
+        assert!(dealable(&adopted, me), "an adopted pull is ordinary library");
+
+        let mut chapter = feature(5, "e");
+        chapter.kind = "book".into();
+        assert!(!dealable(&chapter, me), "a chapter is not a song");
+    }
+
+    /// A highly relevant artist with a mediocre draw beats an irrelevant
+    /// artist with a lucky one - exploration, but inside a connected pool.
+    #[test]
+    fn the_order_respects_relevance() {
+        let stats: HashMap<String, (i64, i64)> = HashMap::new();
+        let candidates = vec![
+            ("connected".to_string(), 0.90f32, 1i64),
+            ("stranger".to_string(), 0.20f32, 2i64),
+        ];
+        // A fixed hand, dealt in relevance order (the sort happens before
+        // the draw): the connected artist gets a mediocre 0.5, the stranger
+        // a lucky 0.95. Both are never-offered, so both see the uniform prior.
+        let mut calls = 0;
+        let mut sampler = |a: f64, b: f64| {
+            assert_eq!((a, b), (1.0, 1.0), "never offered: the uniform prior");
+            calls += 1;
+            if calls == 1 { 0.5 } else { 0.95 }
+        };
+        let seats = explore_order(candidates, &stats, 1, &mut sampler);
+        assert_eq!(seats, vec![1], "0.5 × 0.9 beats 0.95 × 0.2");
+    }
+
+    /// The Beta draw only runs over the most relevant forty artists: the
+    /// forty-first never gets a seat, however lucky its hand would be.
+    #[test]
+    fn the_draw_is_confined_to_the_relevant_forty() {
+        let stats: HashMap<String, (i64, i64)> = HashMap::new();
+        let candidates: Vec<(String, f32, i64)> = (0..60)
+            .map(|i| (format!("artist{i}"), 1.0 - i as f32 * 0.01, i as i64))
+            .collect();
+        // Everyone draws the same: the order is pure relevance, the tail cut.
+        let mut flat = |_: f64, _: f64| 1.0;
+        let seats = explore_order(candidates, &stats, 60, &mut flat);
+        assert_eq!(seats.len(), EXPLORE_POOL);
+        assert_eq!(seats[0], 0);
+        assert!(!seats.contains(&45), "outside the top forty: not in the hat");
+    }
+
+    /// An artist whose offers keep getting adopted asks for more of the
+    /// posterior; the sampler is handed the adoption counts, not a flat prior.
+    #[test]
+    fn adoption_shapes_the_hand_the_sampler_is_dealt() {
+        let mut stats: HashMap<String, (i64, i64)> = HashMap::new();
+        stats.insert("loved".into(), (4, 3));
+        stats.insert("ignored".into(), (4, 0));
+        let mut seen: Vec<(f64, f64)> = Vec::new();
+        let mut record = |a: f64, b: f64| {
+            seen.push((a, b));
+            0.5
+        };
+        let _ = explore_order(
+            vec![("loved".into(), 0.5, 1), ("ignored".into(), 0.5, 2)],
+            &stats,
+            2,
+            &mut record,
+        );
+        seen.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        assert_eq!(seen, vec![(1.0, 5.0), (4.0, 2.0)]);
+    }
+
+    /// Late night leans down, the morning leans up a little, and the rest of
+    /// the day - and a client that never said - is left alone.
+    #[test]
+    fn the_hour_tilts_only_in_its_windows() {
+        assert_eq!(hour_nudge(Some(23)), (-0.10, -8.0));
+        assert_eq!(hour_nudge(Some(3)), (-0.10, -8.0));
+        assert_eq!(hour_nudge(Some(8)), (0.05, 5.0));
+        for h in [5, 6, 10, 14, 19, 21] {
+            assert_eq!(hour_nudge(Some(h)), (0.0, 0.0), "hour {h} is nobody's business");
+        }
+        assert_eq!(hour_nudge(None), (0.0, 0.0), "no hour, no tilt");
+
+        let mut night = UserTaste::cold(1);
+        night.tempo = Some((120.0, 6.0));
+        night.energy = Some((0.6, 0.1));
+        nudge_for_hour(&mut night, Some(23));
+        assert_eq!(night.tempo, Some((112.0, 6.0)), "eight bpm slower, spread untouched");
+        assert!((night.energy.unwrap().0 - 0.5).abs() < 1e-9, "a tenth calmer");
+
+        let mut morning = UserTaste::cold(1);
+        morning.tempo = Some((120.0, 6.0));
+        morning.energy = Some((0.6, 0.1));
+        nudge_for_hour(&mut morning, Some(8));
+        assert_eq!(morning.tempo, Some((125.0, 6.0)));
+        assert!((morning.energy.unwrap().0 - 0.65).abs() < 1e-9);
+
+        let mut noon = UserTaste::cold(1);
+        noon.tempo = Some((120.0, 6.0));
+        nudge_for_hour(&mut noon, Some(13));
+        assert_eq!(noon.tempo, Some((120.0, 6.0)), "midday leaves the target alone");
+
+        let mut cold = UserTaste::cold(1);
+        nudge_for_hour(&mut cold, Some(23));
+        assert!(cold.tempo.is_none() && cold.energy.is_none(), "no target, nothing to tilt");
     }
 }

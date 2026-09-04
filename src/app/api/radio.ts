@@ -30,6 +30,9 @@ export async function fetchRadio(
   if (opts.familiar !== undefined) q.set('familiar', String(opts.familiar));
   if (opts.n !== undefined) q.set('n', String(opts.n));
   if (opts.with != null) q.set('with', String(opts.with));
+  // The local hour: the server does not know the timezone, and it leans the
+  // station a little lower late at night, a little brighter in the morning.
+  q.set('hour', String(new Date().getHours()));
   if (opts.exclude && opts.exclude.length > 0) {
     // The tail is what matters - the server only needs to avoid what is still
     // ahead, and a URL is not the place for a whole listening history.
