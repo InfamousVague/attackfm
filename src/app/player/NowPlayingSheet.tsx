@@ -21,7 +21,7 @@ import type { ArtTint } from './artTint.ts';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { Airplay, AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Volume2 } from '@glacier/icons';
+import { AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
@@ -1309,17 +1309,6 @@ export function NowPlayingSheet({
     });
   }, [cycleShuffle, skipForward, skipBack, bookPlaying]);
 
-  // Whether this shell can put the AirPlay sheet up. Asked once, because the
-  // answer cannot change inside a session - and asked rather than platform-
-  // sniffed, so a shell from before the command simply answers no.
-  const [airplay, setAirplay] = useState(false);
-  useEffect(() => {
-    if (!isTauri()) return;
-    void tauriCall<boolean>('airplay_supported')
-      .then((ok) => setAirplay(ok === true))
-      .catch(() => setAirplay(false));
-  }, []);
-
   // How far the sound has been moved from the record, for the badge on the
   // console's button. Read here rather than inside the console because the
   // whole point is that it shows while the console is SHUT.
@@ -2050,21 +2039,14 @@ export function NowPlayingSheet({
         {/* Always here, unlike in the strip's overflow: on this screen "where is
             this playing" is part of the question the screen answers. */}
         <DevicePicker always />
-        {/* AirPlay sits beside Connect rather than inside it because they are
-            different kinds of elsewhere: Connect moves the DECK to another
+        {/* AirPlay used to sit here, beside Connect, on the reasoning that they
+            are different kinds of elsewhere - Connect moves the DECK to another
             AttackFM device, AirPlay moves this device's SOUND to a speaker.
-            Only when the shell can actually present the sheet - the probe
-            rejects on an old shell and on everything that is not an iPhone,
-            and a dead button is worse than none. */}
-        {airplay && (
-          <IconButton
-            variant="ghost"
-            aria-label="AirPlay"
-            onClick={() => void tauriCall('airplay_show').catch(() => {})}
-          >
-            <Airplay size={20} />
-          </IconButton>
-        )}
+            True of the machinery, but not of the question being asked: the
+            panel above already puts Connect seats and Chromecasts together
+            because "where should the music come out" is one question. AirPlay
+            is a row in it now, which also gets it to the strip, where it was
+            never reachable at all. */}
         <Popover
           placement="top"
           aria-label="Equalizer"

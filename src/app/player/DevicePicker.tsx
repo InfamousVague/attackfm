@@ -1,9 +1,10 @@
 import { IconButton, Popover, Text } from '@glacier/react';
-import { Cast, Check, Globe, Laptop, MonitorSpeaker, Smartphone } from '@glacier/icons';
-import { useEffect } from 'react';
+import { Airplay, Cast, Check, Globe, Laptop, MonitorSpeaker, Smartphone } from '@glacier/icons';
+import { useEffect, useState } from 'react';
 import { useConnect } from './playbackSync.tsx';
 import type { ConnectDevice } from './connect.ts';
 import { castConnect, castDisconnect, castDiscovery, useCastSnapshot } from './cast.ts';
+import { isTauri, tauriCall } from '../core/tauri.ts';
 
 /**
  * The Connect selector: which device is playing, and a tap to move it.
@@ -33,14 +34,37 @@ function KindIcon({ kind }: { kind: string }) {
   return <MonitorSpeaker size={16} />;
 }
 
+/**
+ * Whether this shell can put the system's AirPlay sheet up.
+ *
+ * Asked of the shell rather than sniffed from the platform, because the OTA
+ * bundle travels ahead of the native binary: on a shell from before the
+ * command the probe simply rejects, which reads as "no" and hides the row
+ * instead of leaving a dead one. Asked once - the answer cannot change inside
+ * a session.
+ */
+function useAirplay(): boolean {
+  const [ok, setOk] = useState(false);
+  useEffect(() => {
+    if (!isTauri()) return;
+    void tauriCall<boolean>('airplay_supported')
+      .then((yes) => setOk(yes === true))
+      .catch(() => setOk(false));
+  }, []);
+  return ok;
+}
+
 /** True when there is a hand-off worth offering: another Connect seat, a
- *  cast device on the network, or a cast already running (the way back out
- *  must stay reachable even if the device list momentarily empties). */
+ *  cast device on the network, a cast already running (the way back out must
+ *  stay reachable even if the device list momentarily empties), or a system
+ *  route sheet this shell can open. */
 export function useDevicesAvailable(): boolean {
   const { connected, devices, activeDeviceId } = useConnect();
   const cast = useCastSnapshot();
+  const airplay = useAirplay();
   const online = devices.filter((d) => d.online || d.id === activeDeviceId);
   if (connected && online.length >= 2) return true;
+  if (airplay) return true;
   return cast.available && (cast.devices.length > 0 || cast.session != null);
 }
 
@@ -50,6 +74,7 @@ export function useDevicesAvailable(): boolean {
 export function DeviceList() {
   const { connected, devices, activeDeviceId, thisDeviceId, transfer } = useConnect();
   const cast = useCastSnapshot();
+  const airplay = useAirplay();
 
   // Active scan only while these rows are on screen - it is the mode Google
   // says to reserve for an open chooser, because it wakes every cast device
@@ -64,7 +89,7 @@ export function DeviceList() {
   const hasConnect = connected && online.length >= 2;
   const hasCast = cast.available && (cast.devices.length > 0 || cast.session != null);
 
-  if (!hasConnect && !hasCast) {
+  if (!hasConnect && !hasCast && !airplay) {
     return (
       <Text tone="muted" size="sm">
         No other devices to play on right now.
@@ -183,6 +208,33 @@ export function DeviceList() {
           {castRows}
         </>
       )}
+      {/* The system's own speakers, behind the sheet iOS insists on drawing
+          itself. It cannot be a list - the OS will not say what it can see
+          without showing its own picker - so this row is a door rather than a
+          destination, and says so. It belongs in this panel all the same:
+          AirPlay moves this device's SOUND where Connect moves the DECK, but
+          the person holding the phone is asking the one question the panel
+          exists to answer. */}
+      {airplay && (
+        <>
+          <Text tone="muted" size="xs" className="deviceList__head">
+            AirPlay
+          </Text>
+          <button
+            type="button"
+            className="deviceRow"
+            onClick={() => void tauriCall('airplay_show').catch(() => {})}
+          >
+            <span className="deviceRow__icon">
+              <Airplay size={16} />
+            </span>
+            <span className="deviceRow__body">
+              <span className="deviceRow__name">Speakers &amp; TVs</span>
+              <span className="deviceRow__state">Tap to choose an AirPlay device</span>
+            </span>
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -193,8 +245,10 @@ export function DevicePicker({
 }: { always?: boolean; size?: 'sm' | 'md' } = {}) {
   const { connected, devices, activeDeviceId, thisDeviceId } = useConnect();
   const cast = useCastSnapshot();
+  const airplay = useAirplay();
 
-  // Nothing to pick between: no hub seat to move to, and no TV on the network.
+  // Nothing to pick between: no hub seat to move to, no TV on the network, and
+  // no system route sheet to open.
   const online = devices.filter((d) => d.online || d.id === activeDeviceId);
   const hasConnect = connected && online.length >= 2;
   const hasCast = cast.available && (cast.devices.length > 0 || cast.session != null);
@@ -213,7 +267,7 @@ export function DevicePicker({
    * opening an empty panel - and because the trigger still carries data-active,
    * so with one device it reads as "playing here" rather than as a dead button.
    */
-  if (!always && !hasConnect && !hasCast) return null;
+  if (!always && !hasConnect && !hasCast && !airplay) return null;
 
   const activeElsewhere =
     (activeDeviceId != null && activeDeviceId !== thisDeviceId) || cast.session != null;
@@ -223,7 +277,7 @@ export function DevicePicker({
   // are none.
   const label = activeElsewhere
     ? 'Playing on another device — change'
-    : hasConnect || hasCast
+    : hasConnect || hasCast || airplay
       ? 'Connect to a device'
       : 'Playing on this device';
 
