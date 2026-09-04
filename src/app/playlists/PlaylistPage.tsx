@@ -11,30 +11,12 @@ import {
   useToast,
 } from '@glacier/react';
 import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
-import {
-  AudioLines,
-  Check,
-  EllipsisVertical,
-  Image as ImageIcon,
-  FolderClosed,
-  FolderOpen,
-  FolderPlus,
-  ListMusic,
-  Pencil,
-  Play,
-  Shuffle,
-  Plus,
-  Trash2,
-  X,
-  Users,
-  LogOut,
-} from '@glacier/icons';
+import { ArrowDownUp, AudioLines, Check, EllipsisVertical, FolderClosed, FolderOpen, FolderPlus, Image as ImageIcon, ListMusic, LogOut, Pencil, Play, Plus, Shuffle, Trash2, Users, X } from '@glacier/icons';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { fold, titleKey } from '../library/owned.ts';
-import { PlaylistWantRows } from './PlaylistWantRows.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { SharePlaylistDrawer } from './SharePlaylist.tsx';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
@@ -46,6 +28,11 @@ import { cacheQualityKbps } from '../cache/cacheStore.ts';
 import { shuffled } from '../ux/shuffle.ts';
 import { RowArt } from './RowArt.tsx';
 import { RowMain } from './RowMain.tsx';
+import { SongTable, type GhostRow, type SongTableShape } from '../library/SongTable.tsx';
+
+/** A selector that cannot match, for the follow this page hands over to the
+ *  table. The hook wants a string; "follow nothing" is the honest argument. */
+const NO_ROWS = '.playlistRow__main--never';
 import { useFollowNowPlaying } from '../player/nowPlayingStore.ts';
 import { usePlaylists } from './playlists.tsx';
 import { CoverWall } from './CoverWall.tsx';
@@ -246,7 +233,18 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   const pageRef = useRef<HTMLDivElement>(null);
   // Follow the playing song into view when it changes while this list is open -
   // the rows mark the current one through RowMain (data-current). See the hook.
-  useFollowNowPlaying(pageRef, '.playlistRow__main[data-current]');
+  /*
+   * Rearranging, as a mode you enter rather than a handle always on show.
+   *
+   * Only the owner can write the running order, so only the owner is offered
+   * it. Turning it on swaps the table for the draggable rows; everything else
+   * about the page is unchanged.
+   */
+  const [reordering, setReordering] = useState(false);
+
+  // Only the reorder mode draws `.playlistRow__main`; the table follows its
+  // own rows, and two followers would fight over the scroller.
+  useFollowNowPlaying(pageRef, reordering ? '.playlistRow__main[data-current]' : NO_ROWS);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(false);
   useEffect(() => {
@@ -371,6 +369,85 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   const isOwner = !playlist.role || playlist.role === 'owner';
   const canEdit = isOwner || playlist.role === 'editor';
 
+  /*
+   * Songs filed to acquire that are not here yet - rows of this same table
+   * rather than a strip above it.
+   *
+   * They were their own component stacked over the list (PlaylistWantRows),
+   * which made a want and a song two different kinds of thing to look at. In
+   * the list they are one thing at two stages, and when a want lands its ghost
+   * simply drops while the real row is already there.
+   */
+  const wantGhosts = useMemo<GhostRow[]>(
+    () =>
+      arriving.map((w) => ({
+        key: w.k,
+        title: w.title,
+        note: w.artist ? `${w.artist} — on the way` : 'on the way',
+        action: removeWant ? (
+          <button
+            type="button"
+            className="incomingCell__act"
+            aria-label={`Stop waiting for ${w.title}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              removeWant(playlistId!, w.k);
+            }}
+          >
+            <X size={15} />
+          </button>
+        ) : undefined,
+      })),
+    [arriving, removeWant, playlistId],
+  );
+
+  const playlistShape = useMemo<SongTableShape>(
+    () => ({
+      // Not hidden for room - hidden because it would LIE. The column is the
+      // library's scan date, and no per-entry filing time exists on either
+      // side of the model, so under a "date added" header it would answer a
+      // question about the playlist with a fact about the file.
+      hide: ['addedAt'],
+      fixedOrder: true,
+      empty: 'Nothing in this playlist yet.',
+      action: canEdit
+        ? {
+            width: '3rem',
+            render: (track) => (
+              <IconButton
+                variant="ghost"
+                size="sm"
+                aria-label={`Remove ${track.title}`}
+                onClick={(e) => {
+                  // Or the row plays the song it is removing.
+                  e.stopPropagation();
+                  // The whole order, captured before the cut: undo restores
+                  // through reorder, so the song lands back in ITS seat rather
+                  // than at the end like a re-add would put it. The order is
+                  // the owner's to write, so a collaborator's undo re-adds
+                  // instead and the song returns at the tail.
+                  const before = [...playlist.paths];
+                  removeTrack(playlist.id, track.path);
+                  toast({
+                    message: `Removed \u201c${track.title}\u201d from ${playlist.name}`,
+                    action: {
+                      label: 'Undo',
+                      onPress: () =>
+                        isOwner ? reorder(playlist.id, before) : addTrack(playlist.id, track.path),
+                    },
+                  });
+                }}
+              >
+                <X size={15} />
+              </IconButton>
+            ),
+          }
+        : undefined,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the mutators are stable from the store
+    [canEdit, isOwner, playlist.id, playlist.name, playlist.paths],
+  );
+
   return (
     <div className="homePage libraryPage playlistPage" ref={pageRef}>
       {/* The cover chooser. A file input rather than anything cleverer: the
@@ -491,6 +568,23 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               <Shuffle size={15} />
               Shuffle
             </Button>
+            {/* Only the owner may rewrite the running order, so only the owner
+                is offered the mode. It is a toggle rather than a permanent set
+                of drag handles because the resting state of a playlist is
+                reading it, not rearranging it - and handles on every row of
+                every list is what made a playlist look unlike every other list
+                of songs in the app. */}
+            {isOwner && rows.length > 1 && (
+              <Button
+                variant={reordering ? 'solid' : 'ghost'}
+                size="sm"
+                aria-pressed={reordering}
+                onClick={() => setReordering((on) => !on)}
+              >
+                <ArrowDownUp size={15} />
+                {reordering ? 'Done' : 'Reorder'}
+              </Button>
+            )}
             <Menu
               aria-label="Playlist actions"
               trigger={
@@ -596,9 +690,6 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
         </div>
       ) : (
         <div className="playlistPageScroll">
-          {/* Songs on their way into this list - filed to acquire, not here
-              yet. They dissolve into real rows above as they land. */}
-          <PlaylistWantRows wants={arriving} onDismiss={(k) => removeWant?.(playlistId!, k)} />
           {/* Finding one song in four hundred. Only where it could ever be
               needed: a list short enough to see whole has nothing to find. */}
           {rows.length > 15 && (
@@ -610,87 +701,79 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               aria-label="Find in this playlist"
             />
           )}
-          {found !== null ? (
+          {reordering ? (
             /*
-             * A plain list while filtering, not the sortable one. Dragging row
-             * four of a FILTERED view would have to mean something about the
-             * full order, and every answer to what is a surprise - so the
-             * handles go away with the rows they would have moved.
+             * Reordering is a MODE, and this is the whole reason it is one.
+             *
+             * A playlist is two things that want different components: a list
+             * of songs, which should look like every other list of songs in
+             * the app, and a hand-written running order, which you rearrange
+             * by dragging. The kit's DataGrid owns its rows and gives no way
+             * to drag them; SortableList owns its rows and gives no columns.
+             * They do not compose.
+             *
+             * Rather than reimplement drag on the grid - and with it the
+             * keyboard lift, the aria-live commentary that names the song
+             * being moved, and the drop haptic - the list simply stops being
+             * a table while you are rearranging it. The rows here are the
+             * ones this page always had.
+             *
+             * It also disposes of two questions for free. A sorted list and a
+             * filtered list can never be dragged, because dragging is not
+             * available in either view - and "what does moving row four of a
+             * filtered view mean" has no good answer.
              */
-            <div className="playlistRows playlistRows--found">
-              {found.length === 0 ? (
-                <Text tone="muted" size="sm" className="playlistFind__none">
-                  Nothing here matches “{finding.trim()}”.
-                </Text>
-              ) : (
-                found.map((row) => (
-                  <TrackMenu key={row.id} track={row.track} className="playlistRowMenu">
-                    <div className="playlistRow">
-                      <RowMain track={row.track} onPlay={() => onPlay(row.track, listTracks)} onOpenArtist={onOpenArtist} />
-                    </div>
-                  </TrackMenu>
-                ))
+            <SortableList
+              className="playlistRows"
+              items={rows}
+              getLabel={(row) => row.track.title}
+              /* See QueuePanel: the drop is the moment worth answering. */
+              disabled={!isOwner}
+              onReorder={(next) => {
+                fireNativeHaptic('medium');
+                reorder(playlist.id, next.map((r) => r.id));
+              }}
+              renderItem={(row) => (
+                /* Every song wears the same menu wherever it is drawn: queue
+                   it, file it, keep it on this device. A song is the same song
+                   in a playlist as it is on a shelf. */
+                <TrackMenu track={row.track} className="playlistRowMenu">
+                  <div className="playlistRow">
+                    <RowMain track={row.track} onPlay={() => onPlay(row.track, listTracks)} onOpenArtist={onOpenArtist} />
+                    {/* Siblings of the row button, not nested inside it: a
+                        button within a button is not a thing the browser will
+                        honour. */}
+                    <button
+                      type="button"
+                      className="songArtist songArtistLink playlistRow__artist"
+                      onClick={() => onOpenArtist(row.track.artist)}
+                    >
+                      {row.track.artist}
+                    </button>
+                    <span className="songMuted playlistRow__time">
+                      {formatClock(row.track.duration, '--:--')}
+                    </span>
+                  </div>
+                </TrackMenu>
               )}
-            </div>
+            />
           ) : (
-          <SortableList
-            className="playlistRows"
-            items={rows}
-            getLabel={(row) => row.track.title}
-            /* See QueuePanel: the drop is the moment worth answering. */
-            disabled={!isOwner}
-            onReorder={(next) => {
-              fireNativeHaptic('medium');
-              reorder(playlist.id, next.map((r) => r.id));
-            }}
-            renderItem={(row) => (
-              /* Every song wears the same menu wherever it is drawn: queue it,
-                 file it, keep it on this device. A song is the same song in a
-                 playlist as it is on a shelf. */
-              <TrackMenu track={row.track} className="playlistRowMenu">
-              <div className="playlistRow">
-                <RowMain track={row.track} onPlay={() => onPlay(row.track, listTracks)} onOpenArtist={onOpenArtist} />
-                {/* Siblings of the row button, not nested inside it: a button
-                    within a button is not a thing the browser will honour. */}
-                <button
-                  type="button"
-                  className="songArtist songArtistLink playlistRow__artist"
-                  onClick={() => onOpenArtist(row.track.artist)}
-                >
-                  {row.track.artist}
-                </button>
-                <span className="songMuted playlistRow__time">
-                  {formatClock(row.track.duration, '--:--')}
-                </span>
-                {canEdit && (
-                <IconButton
-                  variant="ghost"
-                  size="sm"
-                  aria-label={`Remove ${row.track.title}`}
-                  onClick={() => {
-                    // The whole order, captured before the cut: undo restores
-                    // through reorder, so the song lands back in ITS seat
-                    // rather than at the end like a re-add would put it. The
-                    // order is the owner's to write, so a collaborator's undo
-                    // re-adds instead and the song returns at the tail.
-                    const before = [...playlist.paths];
-                    removeTrack(playlist.id, row.id);
-                    toast({
-                      message: `Removed “${row.track.title}” from ${playlist.name}`,
-                      action: {
-                        label: 'Undo',
-                        onPress: () => (isOwner ? reorder(playlist.id, before) : addTrack(playlist.id, row.id)),
-                      },
-                    });
-                  }}
-                >
-                  <X size={15} />
-                </IconButton>
-                )}
-              </div>
-              </TrackMenu>
-            )}
-          />
+            /* The resting state: the same table the library, Liked and every
+               album now use. */
+            <div className="pageSongs">
+              <SongTable
+                flow
+                // The order somebody put it in, and no offer to destroy it.
+                defaultSort={null}
+                tracks={found !== null ? found.map((r) => r.track) : listTracks}
+                ghosts={wantGhosts}
+                onPlay={(track) =>
+                  onPlay(track, found !== null ? found.map((r) => r.track) : listTracks)
+                }
+                onOpenArtist={onOpenArtist}
+                shape={playlistShape}
+              />
+            </div>
           )}
 
         {suggestions.length > 0 && (

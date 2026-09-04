@@ -1,4 +1,3 @@
-import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { Button, Text } from '@glacier/react';
 import { Check, Disc3, Play, Plus, Shuffle, Sparkles, X } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -11,13 +10,13 @@ import { PROBE_URL, importable, resolveImportable } from '../search/resolveImpor
 import { useArtLoad } from '../ux/artLoad.ts';
 import { shuffled } from '../ux/shuffle.ts';
 import { artSized, fetchAlbumTracks, type AlbumTrack } from '../server.ts';
-import { TrackMenu } from '../library/TrackMenu.tsx';
+import { SongTable, type GhostRow, type SongTableShape } from '../library/SongTable.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
 import { albumCredit, byRunningOrder, isBy, nameFold } from './albums.ts';
 import { titleKey } from '../library/owned.ts';
 import type { Track } from '../core/tauri.ts';
 import { DjCollectionTraitSheet } from '../booth/DjTraitSheet.tsx';
-import { formatClock, formatTotal } from '../ux/format.ts';
+import { formatTotal } from '../ux/format.ts';
 
 /**
  * One record, opened.
@@ -209,6 +208,56 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
   const shownDiscs = [...discs, ...gapOnlyDiscs];
   const labelDiscs = shownDiscs.length > 1;
 
+  /*
+   * The record in running order, holes and all - flattened.
+   *
+   * What you own and what you don't share one list, sorted by the sleeve's own
+   * numbers, so track 3 sits between 2 and 4 whether or not it is yours. Each
+   * disc takes only its own holes: positions restart per disc, so a bonus
+   * disc's track 1 belongs beside its neighbours and not on side one.
+   *
+   * That logic is unchanged from the hand-rolled list this replaces; what is
+   * new is that it produces ONE flat sequence rather than a section per disc.
+   * A table per disc would have been the easier port and the wrong one: each
+   * would get its own sort, its own selection, its own keyboard grid and its
+   * own now-playing follow, so a record would behave like several lists that
+   * happen to be stacked. The disc break is a row instead.
+   */
+  const { ordered, albumGhosts } = useMemo(() => {
+    const songs: Track[] = [];
+    const ghosts: GhostRow[] = [];
+    for (const disc of shownDiscs) {
+      // The break goes in before the disc's first row, at the seat the next
+      // song is about to take.
+      if (labelDiscs) {
+        ghosts.push({ key: `disc-${disc}`, kind: 'heading', title: `Disc ${disc}`, at: songs.length });
+      }
+      const owned = list
+        .filter((t) => (t.discNo ?? 1) === disc)
+        .map((track, index) => ({ pos: track.trackNo ?? index + 1, track }));
+      const holes = (gapsByDisc.get(disc) ?? []).map((row) => ({ pos: row.position, row }));
+      const merged: ({ pos: number; track?: Track; row?: AlbumTrack })[] = [...owned, ...holes];
+      merged.sort((a, b) => a.pos - b.pos || (a.track ? -1 : 1));
+      for (const entry of merged) {
+        if (entry.track) {
+          songs.push(entry.track);
+        } else if (entry.row) {
+          const row = entry.row;
+          ghosts.push({
+            key: `${row.disc ?? 1}:${row.position}:${row.title}`,
+            title: row.title,
+            // The sleeve's number, same column as an owned row's, so the
+            // record reads as one list down one column.
+            lead: row.position,
+            at: songs.length,
+          });
+        }
+      }
+    }
+    return { ordered: songs, albumGhosts: ghosts };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- gapsByDisc is rebuilt each render from `missing`
+  }, [list, shownDiscs.join(','), labelDiscs, missing]);
+
   /**
    * Pull one missing song. The catalogue's own link is a Deezer one, which
    * the importer will not take, so it is resolved to something importable
@@ -245,6 +294,78 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
     take(found.url);
     setAdding((prev) => ({ ...prev, [key]: 'added' }));
   };
+
+  /*
+   * The Add button on a hole, and the page's cut of the table.
+   *
+   * Attached out here rather than inside the memo above because `adding` is
+   * the one volatile thing on these rows - the memo holds the ORDER, which
+   * only moves when the record does, and this holds the button, which moves
+   * on every press.
+   */
+  const ghostsWithActions = useMemo<GhostRow[]>(
+    () =>
+      albumGhosts.map((g) => {
+        if (g.kind === 'heading') return g;
+        const state = adding[g.key];
+        return {
+          ...g,
+          action: (
+            <button
+              type="button"
+              className="incomingCell__act"
+              disabled={!session || state === 'finding' || state === 'added'}
+              aria-label={`Add ${g.title}`}
+              title={
+                state === 'missing'
+                  ? 'Not found to import'
+                  : state === 'added'
+                    ? 'Added'
+                    : `Add ${g.title}`
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                const row = missing.find(
+                  (m) => `${m.disc ?? 1}:${m.position}:${m.title}` === g.key,
+                );
+                if (row) void addMissing(row);
+              }}
+            >
+              {state === 'added' ? (
+                <Check size={14} />
+              ) : state === 'missing' ? (
+                <X size={14} />
+              ) : state === 'finding' ? (
+                <span className="artistAlbumSpin" aria-label="Finding it" />
+              ) : (
+                <Plus size={14} />
+              )}
+            </button>
+          ),
+        };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- addMissing is rebuilt each render
+    [albumGhosts, adding, session, missing],
+  );
+
+  const albumShape = useMemo<SongTableShape>(
+    () => ({
+      // Both would be the same string on every row: the album column would be
+      // this page's own title, and "date added" is when the file was scanned,
+      // which says nothing about a record.
+      hide: ['album', 'addedAt'],
+      fixedOrder: true,
+      // The tagged position where there is one, so the numbers match the
+      // sleeve rather than counting what survived: a rip missing track 3
+      // reads 1, 2, 4.
+      lead: (t, i) => t.trackNo ?? i + 1,
+      // Only where it differs from the record's own credit - which is exactly
+      // the guest that used to make this whole album vanish from the artist
+      // page.
+      hideArtistWhen: (t) => nameFold(t.artist) === nameFold(credit),
+    }),
+    [credit],
+  );
 
   const playAll = () => onPlay(list[0]!, list);
   const shuffleAll = () => {
@@ -306,120 +427,34 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
       </header>
       <div ref={sentinelRef} aria-hidden />
 
-      {shownDiscs.map((disc) => {
-        // The record in running order, holes and all: what you own and what
-        // you don't share one list, sorted by the sleeve's own numbers, so
-        // track 3 sits between 2 and 4 whether or not it is yours. Each disc
-        // takes only its own holes - positions restart per disc, so a bonus
-        // disc's track 1 belongs beside its neighbours, not on side one.
-        const rows: (
-          | { kind: 'owned'; pos: number; track: (typeof list)[number]; fallback: number }
-          | { kind: 'gap'; pos: number; row: (typeof missing)[number] }
-        )[] = list
-          .filter((t) => (t.discNo ?? 1) === disc)
-          .map((track, index) => ({
-            kind: 'owned' as const,
-            pos: track.trackNo ?? index + 1,
-            fallback: index + 1,
-            track,
-          }));
-        for (const row of gapsByDisc.get(disc) ?? []) {
-          rows.push({ kind: 'gap', pos: row.position, row });
-        }
-        rows.sort((a, b) => a.pos - b.pos || (a.kind === 'owned' ? -1 : 1));
-        return (
-          <section key={disc} className="albumDisc">
-            {labelDiscs && (
-              <Text tone="subtle" size="xs" className="albumDisc__label">
-                Disc {disc}
-              </Text>
-            )}
-            <ol className="albumTracks">
-              {rows.map((entry) => {
-                if (entry.kind === 'owned') {
-                  const { track } = entry;
-                  return (
-                    <TrackMenu track={track} key={track.path}>
-                      <li className="albumTrack">
-                        {/* The whole row plays, not the title's text box. It
-                            used to be a bare button around the words - twenty
-                            pixels tall, the height of one line - so a thumb
-                            aimed anywhere else in the row hit the li and
-                            nothing happened. The number and the credit ride
-                            INSIDE the button for the same reason. */}
-                        <button
-                          type="button"
-                          className="albumTrack__play"
-                          onClick={() => onPlay(track, list)}
-                        >
-                          {/* The tagged position where there is one, so the
-                              numbers match the sleeve rather than counting what
-                              survived; a rip missing track 3 reads 1, 2, 4. */}
-                          <span className="albumTrack__no">{track.trackNo ?? entry.fallback}</span>
-                          <span className="albumTrack__text">
-                            <span className="albumTrack__title">{track.title}</span>
-                            {/* Only where it differs from the record's own
-                                credit - which is exactly the guest that used to
-                                make this whole album vanish from the artist
-                                page. */}
-                            {nameFold(track.artist) !== nameFold(credit) && (
-                              <span className="albumTrack__artist">
-                                <ArtistLink artist={track.artist} />
-                              </span>
-                            )}
-                          </span>
-                          {/* Inside the button, not beside it: a duration is
-                              the last thing in the row and a thumb that lands
-                              on it meant the song. */}
-                          <span className="albumTrack__time">{formatClock(track.duration, '--:--')}</span>
-                        </button>
-                      </li>
-                    </TrackMenu>
-                  );
-                }
-                const { row } = entry;
-                const key = `${row.disc ?? 1}:${row.position}:${row.title}`;
-                const state = adding[key];
-                return (
-                  <li key={key} className="albumTrack albumTrack--gap" data-state={state}>
-                    {/* Same geometry as a song you own, so the numbers line up
-                        down one column and the record reads as one list. No
-                        play button: there is nothing here to play yet. */}
-                    <span className="albumTrack__no">{row.position}</span>
-                    <span className="albumTrack__text">
-                      <span className="albumTrack__title">{row.title}</span>
-                    </span>
-                    <button
-                      type="button"
-                      className="albumTrack__add"
-                      disabled={!session || state === 'finding' || state === 'added'}
-                      aria-label={`Add ${row.title}`}
-                      title={
-                        state === 'missing'
-                          ? 'Not found to import'
-                          : state === 'added'
-                            ? 'Added'
-                            : `Add ${row.title}`
-                      }
-                      onClick={() => void addMissing(row)}
-                    >
-                      {state === 'added' ? (
-                        <Check size={14} />
-                      ) : state === 'missing' ? (
-                        <X size={14} />
-                      ) : state === 'finding' ? (
-                        <span className="artistAlbumSpin" aria-label="Finding it" />
-                      ) : (
-                        <Plus size={14} />
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-          </section>
-        );
-      })}
+      {/*
+        * The record, on the same table as everything else.
+        *
+        * It was a hand-rolled <ol> of <li>s that had drifted into a private
+        * imitation of the library table - its own row geometry, its own
+        * hover, its own idea of where a duration sits - so an album looked
+        * like a cousin of every other list of songs rather than the same
+        * thing. Now it IS the same thing: one SongTable, its columns, its
+        * hairlines, its long-press menu, its now-playing wash and follow.
+        *
+        * Everything the album knows that the library does not is carried in
+        * the shape and the ghosts, not in markup of its own.
+        */}
+      <div className="pageSongs">
+        <SongTable
+          flow
+          // The sleeve's order, not the alphabet. Both halves are needed:
+          // `null` makes the handed order the displayed order AND the play
+          // queue, `fixedOrder` takes away the headers that would offer to
+          // destroy it.
+          defaultSort={null}
+          tracks={ordered}
+          ghosts={ghostsWithActions}
+          onPlay={(track) => onPlay(track, ordered)}
+          onOpenArtist={onOpenArtist}
+          shape={albumShape}
+        />
+      </div>
       <DjCollectionTraitSheet source="album" name={album} seedTracks={list}
         open={mixing} onClose={() => setMixing(false)} />
     </div>

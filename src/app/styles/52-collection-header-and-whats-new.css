@@ -24,6 +24,14 @@
      with visible overflow the rows paint outside their own container, which
      works only for as long as nothing is ever placed below them. */
   block-size: auto !important;
+  /* And it stops reserving the player clearance, because the PAGE around it
+     already does. `.songTable` pads its foot by the player plus the nav bar so
+     the last row is not parked under them - correct when the table is its own
+     scroller, and double when the page is: `.homePage` carries the identical
+     padding. Every flow table reserved it twice. (`.artistPage .songTable`
+     used to zero this one page at a time; that one-off is gone, this is the
+     rule.) */
+  padding-block-end: 0;
 }
 
 /* The section around it stops constraining, for the same reason. */
@@ -31,6 +39,43 @@
 .songPage .libraryBody {
   block-size: auto;
   min-block-size: 0;
+}
+
+/*
+ * The wrapper every page that IS a song list uses.
+ *
+ * Only the edge bleed - rows run to the window with no card frame, which is
+ * the single most visible thing about the liked-songs look. Deliberately NO
+ * height rules: `.librarySongs` caps at min(70dvh, 44rem), which is right for
+ * a shelf inside the library page and wrong for a page whose whole body is the
+ * table. Pages that reused that class inherited a table that stopped
+ * two-thirds down the screen.
+ */
+.pageSongs {
+  margin-inline: calc(-1 * var(--glacier-space-4));
+}
+
+/*
+ * A section break drawn as a row - a disc, a side.
+ *
+ * The grid has no spanning cell, so this rides in the title column, which is
+ * the widest and where the eye already is. It reads as a heading rather than a
+ * song because it is the only thing on its row.
+ */
+.songSection {
+  display: block;
+  padding-block: var(--glacier-space-3) var(--glacier-space-1);
+  font-size: var(--glacier-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--glacier-text-subtle);
+}
+
+/* A row for a song that is not here: present, legible, and visibly not yours
+   yet. Dimmed rather than greyed out - it is still a thing you can act on. */
+.songTitleCell[data-ghost] .songTitle__name {
+  opacity: 0.72;
 }
 
 /* ── What's new: the changelog as a timeline ────────────────────────────────

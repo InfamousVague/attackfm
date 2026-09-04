@@ -3,7 +3,7 @@ import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
 import { Check, ListMusic, Play, Plus } from '@glacier/icons';
 import { useMemo } from 'react';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
-import { formatClock } from '../ux/format.ts';
+import { SongTable, type GhostRow, type SongTableShape } from '../library/SongTable.tsx';
 import { fold } from '../core/fold.ts';
 import { useLibrary } from '../library/library.tsx';
 import { titleKey } from '../library/owned.ts';
@@ -91,6 +91,51 @@ export function CatalogListPage({
     ? `${suggestion.source[0]!.toUpperCase()}${suggestion.source.slice(1)} playlist`
     : 'Playlist';
 
+  /*
+   * The songs on this list that are not here, seated where they belong.
+   *
+   * `at` counts the OWNED songs before each one, because that is the index the
+   * table splices against - the same arithmetic the album page uses for its
+   * holes. Get it wrong and a chart reads in the right order with the wrong
+   * gaps.
+   */
+  const catalogueGhosts = useMemo<GhostRow[]>(() => {
+    const out: GhostRow[] = [];
+    let ownedSoFar = 0;
+    rows.forEach((row, i) => {
+      if (owned[i]) {
+        ownedSoFar += 1;
+        return;
+      }
+      out.push({
+        key: `${i}:${row.title}`,
+        title: row.title,
+        note: row.artist || undefined,
+        lead: i + 1,
+        at: ownedSoFar,
+      });
+    });
+    return out;
+  }, [rows, owned]);
+
+  const catalogueShape = useMemo<SongTableShape>(
+    () => ({
+      // A chart's rows come from a catalogue, not from this library: the album
+      // is often absent, the scan date is meaningless, and "on this device"
+      // would answer for the handful that are here and blank for the rest.
+      hide: ['album', 'addedAt', 'onDevice'],
+      fixedOrder: true,
+      // The published position, not a count of what survived - so row 7 is the
+      // list's seventh song whether or not you have the six above it.
+      lead: (t) => {
+        const at = rows.findIndex((_, i) => owned[i]?.path === t.path);
+        return at === -1 ? '' : at + 1;
+      },
+      empty: 'This server did not send the songs on this list.',
+    }),
+    [rows, owned],
+  );
+
   return (
     /* The mix page's own frame, for the reasons written there: `.homePage` is
        the scroller and carries the inset that holds the last row clear of the
@@ -151,77 +196,24 @@ export function CatalogListPage({
           </Text>
         </div>
       ) : (
-        <div className="playlistPageScroll">
-          <div className="playlistRows">
-            {rows.map((row, i) => {
-              const mine = owned[i] ?? null;
-              return (
-                <div
-                  key={`${row.title}-${i}`}
-                  className="playlistRow catalogRow"
-                  data-owned={mine ? '' : undefined}
-                >
-                  {/*
-                    The playlist row's own body, down to the class names, so
-                    the phone gets what it gets everywhere else: no room for
-                    an artist column, so the artist folds under the title -
-                    and on THIS page that fold is the difference between a
-                    list of songs and a list of titles you do not recognise.
-                    A div with the button role rather than a button, for
-                    RowMain's reason: the artist inside it must stay its own
-                    control, and a button inside a button is not honoured.
-                    Owned rows play; the rest are a reading of the list.
-                  */}
-                  <div
-                    role={mine ? 'button' : undefined}
-                    tabIndex={mine ? 0 : undefined}
-                    className="playlistRow__main catalogRow__main"
-                    onClick={() => mine && onPlay(mine, have)}
-                    onKeyDown={(e) => {
-                      if (e.target !== e.currentTarget || !mine) return;
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        onPlay(mine, have);
-                      }
-                    }}
-                  >
-                    <span className="catalogRow__n" aria-hidden>
-                      {mine ? <Play size={13} /> : i + 1}
-                    </span>
-                    <span className="playlistRow__text">
-                      <span className="songTitle">{row.title}</span>
-                      {row.artist && (
-                        <button
-                          type="button"
-                          className="songArtist songArtistLink"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenArtist(row.artist);
-                          }}
-                        >
-                          {row.artist}
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                  {row.artist ? (
-                    <button
-                      type="button"
-                      className="songArtist songArtistLink playlistRow__artist"
-                      onClick={() => onOpenArtist(row.artist)}
-                    >
-                      {row.artist}
-                    </button>
-                  ) : (
-                    <span />
-                  )}
-                  <span className="songMuted playlistRow__time">
-                    {row.seconds != null ? formatClock(row.seconds, '--:--') : ''}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+        <div className="pageSongs">
+          {/*
+            The list as one table, whether or not you own the songs in it.
+            Owned rows are real rows and play; the rest are ghosts sitting in
+            their own place in the running order, so the list reads as the list
+            somebody published rather than as the subset that happens to be
+            here. This page's own note said it should not become a third way of
+            drawing a list - now there is only one.
+          */}
+          <SongTable
+            flow
+            defaultSort={null}
+            tracks={have}
+            ghosts={catalogueGhosts}
+            onPlay={(track) => onPlay(track, have)}
+            onOpenArtist={onOpenArtist}
+            shape={catalogueShape}
+          />
         </div>
       )}
     </div>

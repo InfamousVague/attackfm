@@ -2,16 +2,17 @@ import { Button, Text, useToast } from '@glacier/react';
 import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
 import { ListMusic, Play, Plus, Shuffle } from '@glacier/icons';
 import { useMemo, useRef } from 'react';
-import { useFollowNowPlaying } from '../player/nowPlayingStore.ts';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { shuffled } from '../ux/shuffle.ts';
-import { formatClock, formatTotal } from '../ux/format.ts';
+import { formatTotal } from '../ux/format.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
-import { TrackMenu } from '../library/TrackMenu.tsx';
-import { RowArt } from './RowArt.tsx';
-import { RowMain } from './RowMain.tsx';
 import { CoverWall } from './CoverWall.tsx';
 import { usePlaylists } from './playlists.tsx';
+import { SongTable, type SongTableShape } from '../library/SongTable.tsx';
+
+/** A mix is somebody else's running order: hide the library's scan date, which
+ *  says nothing about the mix, and do not offer to re-sort what was curated. */
+const MIX_SHAPE: SongTableShape = { hide: ['addedAt'], fixedOrder: true };
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useWallClips } from '../library/wallClips.ts';
 import type { Track } from '../core/tauri.ts';
@@ -59,10 +60,10 @@ export function MixPage({
 }) {
   const { create } = usePlaylists();
   const { toast } = useToast();
-  // Follow the playing song into view on a skip - a mix is a list you play
-  // through, like a playlist. RowMain marks the current row (data-current).
+  // The follow-the-playing-song scroll used to live here, hunting
+  // `.playlistRow__main[data-current]`. Those rows are gone: SongTable follows
+  // its own rows, so a second follower would only fight it.
   const pageRef = useRef<HTMLDivElement>(null);
-  useFollowNowPlaying(pageRef, '.playlistRow__main[data-current]');
   const { session } = useServerSession();
   const clips = useWallClips(session);
 
@@ -90,6 +91,21 @@ export function MixPage({
       });
     });
   };
+
+  /*
+   * The grid keys a row by the track's path, so a mix that names the same song
+   * twice would collapse to one row rather than render two.
+   *
+   * The hand-rolled list this replaces keyed on `path-index`, which drew both.
+   * Neither is obviously right - a mix listing a song twice is a curator's
+   * artifact rather than an intention - but the collapse has to be a decision
+   * somebody made rather than something the reader discovers. Deduped here, in
+   * the open, keeping the first appearance and its position.
+   */
+  const rows = useMemo(() => {
+    const seen = new Set<string>();
+    return tracks.filter((t) => (seen.has(t.path) ? false : (seen.add(t.path), true)));
+  }, [tracks]);
 
   return (
     /*
@@ -185,32 +201,19 @@ export function MixPage({
           <Text tone="muted">{emptyLabel ?? 'This mix came up empty.'}</Text>
         </div>
       ) : (
-        <div className="playlistPageScroll">
-          {/* Not a SortableList: a mix has an order, but it is the curator's
-              and dragging it here would promise an edit that goes nowhere. */}
-          <div className="playlistRows">
-            {tracks.map((track, i) => (
-              /* The same menu a song wears everywhere else - queue it, file it,
-                 keep it on this device. A song is the same song in a mix as it
-                 is on a shelf. */
-              <TrackMenu key={`${track.path}-${i}`} track={track} className="playlistRowMenu">
-                <div className="playlistRow">
-                  <RowMain track={track} onPlay={() => onPlay(track, tracks)} onOpenArtist={onOpenArtist} />
-                  {/* A sibling of the row button, never nested inside it. */}
-                  <button
-                    type="button"
-                    className="songArtist songArtistLink playlistRow__artist"
-                    onClick={() => onOpenArtist(track.artist)}
-                  >
-                    {track.artist}
-                  </button>
-                  <span className="songMuted playlistRow__time">
-                    {formatClock(track.duration, '--:--')}
-                  </span>
-                </div>
-              </TrackMenu>
-            ))}
-          </div>
+        <div className="pageSongs">
+          {/* The same table the library and Liked use. Not a SortableList: a
+              mix has an order, but it is the curator's, and dragging it here
+              would promise an edit that goes nowhere - `fixedOrder` says the
+              same thing by not offering the handles or the sort headers. */}
+          <SongTable
+            flow
+            defaultSort={null}
+            tracks={rows}
+            onPlay={(track) => onPlay(track, rows)}
+            onOpenArtist={onOpenArtist}
+            shape={MIX_SHAPE}
+          />
         </div>
       )}
     </div>
