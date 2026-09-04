@@ -411,7 +411,22 @@
  * header says stays exactly where 0.3.270 put it. Only the wall moves - up,
  * into the band it was always meant to fill.
  */
-.appContent:has(.coverWall) {
+/*
+ * ONLY WHERE THERE IS A MOBILE HEADER TO SLIDE UNDER.
+ *
+ * This pull exists so the wall runs up behind a bar that is CLEAR - the phone's
+ * header, which is glass over the covers by the rules below. The desktop's bar
+ * is not that bar: `.appTitleBar` is an opaque strip in normal flow holding the
+ * window controls, and it is a SIBLING of `.appBody` at the same z-index. So on
+ * a wide window the pull dragged the content up over it and, being later in the
+ * document, the page simply painted on top - the title bar vanished under the
+ * library the moment a cover wall existed to trigger this.
+ *
+ * Gated on the header's own presence rather than a width, because that is the
+ * actual condition: the rule is about sliding under THAT element, so it should
+ * not apply where that element is not.
+ */
+.appWindow:has(.mobileHeader) .appContent:has(.coverWall) {
   margin-block-start: calc(
     -1 * var(--app-header-height, calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem))
   );
@@ -462,7 +477,10 @@
  * shadow goes - and it keeps the existing scroll behaviour rather than adding
  * a second listener for the same fact.
  */
-.appContent:has(.coverWall) .appTopScrim {
+/* Gated with the pull above, and for the same reason: it pushes the scrim down
+   by the bar's height to undo that pull. Where nothing was pulled, pushing the
+   scrim down would hang it a bar's height below where it belongs. */
+.appWindow:has(.mobileHeader) .appContent:has(.coverWall) .appTopScrim {
   inset-block-start: var(
     --app-header-height,
     calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem)

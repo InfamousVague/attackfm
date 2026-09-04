@@ -1,4 +1,5 @@
 import { ContextMenu, MenuItem } from '@glacier/react';
+import { MenuStop } from '../ux/MenuStop.tsx';
 import { Heart, ListMusic, Plus, UserRound } from '@glacier/icons';
 import { useRef, useState, type ReactNode } from 'react';
 import { AddToPlaylistDialog, type PlaylistWantTarget } from '../playlists/AddToPlaylist.tsx';
@@ -62,7 +63,7 @@ export function CatalogTrackMenu({
         aria-label={`${target.title} actions`}
         className={wrapClass}
         content={
-          <>
+          <MenuStop>
             <MenuItem icon={<ListMusic size={15} />} onSelect={() => setFiling(true)}>
               Add to playlist…
             </MenuItem>
@@ -81,7 +82,7 @@ export function CatalogTrackMenu({
                 Go to artist
               </MenuItem>
             )}
-          </>
+          </MenuStop>
         }
       >
         {children}

@@ -1,4 +1,5 @@
 import { ContextMenu, MenuItem, useToast } from '@glacier/react';
+import { MenuStop } from '../ux/MenuStop.tsx';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import {
   UserRound,
@@ -186,7 +187,7 @@ export function TrackMenu({
         aria-label={`${track.title} actions`}
         className={className}
         content={
-          <>
+          <MenuStop>
             {/* Both queue verbs answer now. They were the highest-frequency
                 "you did something and the app said nothing" in the app: the
                 menu closed and the song went into a list you cannot see from
@@ -297,7 +298,7 @@ export function TrackMenu({
                   {keeping ? 'Keeping…' : 'Keep on this device'}
                 </MenuItem>
               ))}
-          </>
+          </MenuStop>
         }
       >
         {children}

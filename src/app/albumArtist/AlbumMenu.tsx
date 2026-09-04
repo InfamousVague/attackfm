@@ -1,4 +1,5 @@
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
+import { MenuStop } from '../ux/MenuStop.tsx';
 import { ContextMenu, MenuItem } from '@glacier/react';
 import { ListEnd, ListStart, Play, Shuffle, User } from '@glacier/icons';
 import type { ReactNode } from 'react';
@@ -60,7 +61,7 @@ export function AlbumMenu({
       aria-label={`${first.album || first.title} actions`}
       className={className}
       content={
-        <>
+        <MenuStop>
           <MenuItem icon={<Play size={15} />} onSelect={() => onPlay(first, tracks)}>
             Play
           </MenuItem>
@@ -91,7 +92,7 @@ export function AlbumMenu({
               Go to artist
             </MenuItem>
           )}
-        </>
+        </MenuStop>
       }
     >
       {children}
