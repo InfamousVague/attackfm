@@ -511,6 +511,80 @@ pub async fn probe(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
     Ok(Json(health))
 }
 
+/// `GET /api/ai/voices` - the voices this hub's ElevenLabs account actually
+/// has, so the picker can offer them instead of a list typed out by hand.
+///
+/// The five in the pane were verified once, against this same endpoint, and
+/// then frozen into the client - which was fine until somebody CLONED a voice.
+/// A cloned voice is the whole reason to have a picker at all (it is the one
+/// voice on the account that is nobody else's), and a hard-coded list can
+/// never show it. So the hub asks, and the pane lists what came back.
+///
+/// The key never leaves the hub: this is the same account the clips are minted
+/// through, asked by the box that already holds the key, and only the id and
+/// the name come back.
+pub async fn voices(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Reply {
+    require_admin(&state.db, &headers)?;
+    // What is ACTUALLY speaking, whatever it came from - an owner override, the
+    // hub's own environment, or the built-in default. The pane guessed this
+    // before and guessed wrong: it showed Hope while the box's drop-in named
+    // somebody else, so the picker was describing a voice nobody could hear.
+    let current = crate::voice::current_voice_id();
+    let Some(key) = crate::ai::setting("elevenLabsKey", "AFM_ELEVENLABS_KEY") else {
+        // Not an error: a hub with no key has no voices to list, and the pane
+        // falls back to the names it knows. Said plainly rather than as a 400.
+        return Ok(Json(
+            json!({ "voices": [], "current": current, "why": "no ElevenLabs key on this server" }),
+        ));
+    };
+    let client = match reqwest::Client::builder().timeout(Duration::from_secs(15)).build() {
+        Ok(c) => c,
+        Err(e) => return Ok(Json(json!({ "voices": [], "why": e.to_string() }))),
+    };
+    let resp = client
+        // v1, not v2: v1 is the endpoint this account's voices were read
+        // from when the picker's five were first verified, and it answers
+        // with the whole list rather than a page.
+        .get("https://api.elevenlabs.io/v1/voices")
+        .header("xi-api-key", key)
+        .send()
+        .await;
+    let body: Value = match resp {
+        Ok(r) if r.status().is_success() => r.json().await.unwrap_or(Value::Null),
+        Ok(r) => {
+            let code = r.status().as_u16();
+            return Ok(Json(json!({ "voices": [], "current": current, "why": format!("ElevenLabs answered {code}") })));
+        }
+        Err(e) => return Ok(Json(json!({ "voices": [], "why": e.to_string() }))),
+    };
+    let list: Vec<Value> = body
+        .get("voices")
+        .and_then(Value::as_array)
+        .map(|vs| {
+            vs.iter()
+                .filter_map(|v| {
+                    let id = v.get("voice_id").and_then(Value::as_str)?;
+                    let name = v.get("name").and_then(Value::as_str).unwrap_or("");
+                    Some(json!({
+                        "id": id,
+                        "name": name,
+                        // `cloned` is what the pane sorts on: a voice made from
+                        // somebody's own recording belongs at the top of the
+                        // list, ahead of anybody's premade catalogue.
+                        "category": v.get("category").and_then(Value::as_str).unwrap_or(""),
+                        "description": v
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .or_else(|| v.get("labels").and_then(|l| l.get("description")).and_then(Value::as_str))
+                            .unwrap_or(""),
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(Json(json!({ "voices": list, "current": current })))
+}
+
 #[derive(Deserialize)]
 pub struct RunWhat {
     what: String,

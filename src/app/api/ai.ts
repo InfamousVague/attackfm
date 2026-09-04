@@ -182,6 +182,28 @@ export function setAiSettings(session: ServerSession, patch: AiSettingsPatch): P
   });
 }
 
+/** A voice on the hub's own ElevenLabs account. `category` is ElevenLabs' own
+ *  word - "cloned" is the one that matters, because a cloned voice is
+ *  somebody's own recording and belongs at the top of any list of voices. */
+export interface AiVoice {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+}
+
+/** The voices the hub's account actually has. A hub with no key answers with
+ *  an empty list and a reason rather than an error - the picker then offers
+ *  the names it already knows. `current` is what the hub is ACTUALLY speaking
+ *  in, from whichever of override/environment/default won - the pane used to
+ *  guess this and could show one voice while another one talked. */
+export function fetchAiVoices(
+  session: ServerSession,
+  signal?: AbortSignal,
+): Promise<{ voices: AiVoice[]; current?: string; why?: string }> {
+  return request(session.url, '/api/ai/voices', { token: session.token, signal, timeoutMs: 20_000 });
+}
+
 /** Asks the server to ping the model endpoint now. Longer deadline: a cold Ollama can take a while. */
 export function probeAi(session: ServerSession): Promise<AiHealth> {
   return request<AiHealth>(session.url, '/api/ai/probe', { method: 'POST', token: session.token, timeoutMs: 20_000 });

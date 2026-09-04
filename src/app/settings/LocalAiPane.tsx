@@ -32,8 +32,8 @@ import { djVoiceEnabled, setDjVoice } from '../booth/djVoice.ts';
 import { dateVoiceEnabled, setDateVoice } from '../date/dateVoice.ts';
 import { takePendingReveal } from './settingsShared.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { fetchAiActivity, fetchAiReport, probeAi, runAi, setAiSettings } from '../api/ai.ts';
-import type { AiHealth, AiReport, AiRunWhat, AiSettingsPatch } from '../api/ai.ts';
+import { fetchAiActivity, fetchAiReport, fetchAiVoices, probeAi, runAi, setAiSettings } from '../api/ai.ts';
+import type { AiHealth, AiReport, AiRunWhat, AiSettingsPatch, AiVoice } from '../api/ai.ts';
 import type { ActivityEvent } from '../api/activity.ts';
 import { ServerError } from '../api/http.ts';
 
@@ -200,8 +200,17 @@ function duration(seconds: number): string {
  * above the controls. It lives here now, where the next person to change this
  * file will find it, and the pane says the short half.
  */
-/** The five on offer - all verified against the account's own voice list.
- *  Ids are ElevenLabs premade/professional voices; the label is the pitch. */
+/**
+ * The fallback five, for a hub that cannot be asked.
+ *
+ * The picker lists what the server's own ElevenLabs account HAS now
+ * (`/api/ai/voices`), and these are what it falls back to: an older hub with
+ * no such endpoint, a hub with no key, a hub that cannot reach ElevenLabs.
+ * They were verified against that same account once and frozen here, which is
+ * exactly why the list had to stop being frozen - a CLONED voice is the one
+ * voice on an account that is nobody else's, and a hand-typed list can never
+ * show it.
+ */
 const DJ_VOICES = [
   { id: 'tnSpp4vdxKPjI9w0GnoV', label: 'Hope - upbeat and clear' },
   { id: 'oW8bn5YtBB89X2nJ0DT9', label: 'Verity - chatty British storyteller' },
@@ -209,6 +218,43 @@ const DJ_VOICES = [
   { id: 'onwK4e9ZLuTAKqWW03F9', label: 'Daniel - steady British broadcaster' },
   { id: 'cgSgspJ2msm6clMCkdW9', label: 'Jessica - playful and bright' },
 ];
+
+/**
+ * The last resort, for a hub that will not say what it is speaking in.
+ *
+ * The pane asks the server (`current`, from /api/ai/voices) rather than
+ * assuming, because these drifted apart: the pane showed Hope while the box's
+ * own drop-in named a different voice, so the picker was describing something
+ * nobody could hear. This is only what a hub too old to answer gets.
+ */
+const DEFAULT_DJ_VOICE = 'tnSpp4vdxKPjI9w0GnoV';
+
+/** How ElevenLabs' own word for where a voice came from reads on a row. */
+const VOICE_KIND: Record<string, string> = {
+  cloned: 'your own recording',
+  professional: 'professional',
+  premade: 'premade',
+  generated: 'generated',
+};
+
+/**
+ * The voices to offer, and the order to offer them in.
+ *
+ * Cloned first, always. A voice made from somebody's own recording is the
+ * point of having a picker - it is the one on the list nobody else's server
+ * can offer - and burying it under five stock names alphabetically would be
+ * filing it as one more option.
+ */
+function voiceOptions(live: AiVoice[]): { value: string; label: string }[] {
+  if (live.length === 0) return DJ_VOICES.map((v) => ({ value: v.id, label: v.label }));
+  const rank = (v: AiVoice) => (v.category === 'cloned' ? 0 : v.category === 'professional' ? 1 : 2);
+  return [...live]
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+    .map((v) => {
+      const kind = VOICE_KIND[v.category] ?? v.category;
+      return { value: v.id, label: kind ? `${v.name} - ${kind}` : v.name };
+    });
+}
 
 export function LocalAiPane() {
   const { session } = useServerSession();
@@ -220,6 +266,11 @@ export function LocalAiPane() {
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
+  /** The hub's own voices. Empty until asked, and empty forever on a hub that
+   *  has no key or no such endpoint - the picker falls back either way. */
+  const [voices, setVoices] = useState<AiVoice[]>([]);
+  /** What the hub says it is actually speaking in, whatever set it. */
+  const [voiceNow, setVoiceNow] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   // What is in the boxes, which is not what is saved until it is. Keyed by
   // field so a save in flight on one does not blank another being typed in.
@@ -250,6 +301,26 @@ export function LocalAiPane() {
   useEffect(() => {
     rootRef.current?.scrollIntoView({ block: 'start' });
   }, [chunk]);
+
+  /*
+   * The account's real voices, asked for once per visit.
+   *
+   * Silent on every failure, and deliberately: an older hub has no such route
+   * and answers 404, and the honest fallback is the list this pane has always
+   * shown rather than an error about a feature the reader did not ask for.
+   */
+  useEffect(() => {
+    if (!session) return;
+    const ctrl = new AbortController();
+    void fetchAiVoices(session, ctrl.signal)
+      .then((out) => {
+        if (ctrl.signal.aborted) return;
+        setVoices(out.voices ?? []);
+        setVoiceNow(out.current ?? null);
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [session]);
 
   /*
    * Settings search can land on a row that lives on a non-default page.
@@ -700,13 +771,17 @@ export function LocalAiPane() {
         <SettingRow
           id="dj-voice-character"
           label="DJ voice character"
-          hint="Who the DJ sounds like - five of ElevenLabs' most loved voices. Switching re-speaks its lines gradually in the new voice; everything already spoken in an old one stays cached, so switching back is free."
+          hint={
+            voices.some((v) => v.category === 'cloned')
+              ? 'Who the DJ sounds like - every voice on this server\u2019s account, your own recordings first. Switching re-speaks its lines gradually in the new voice; everything already spoken in an old one stays cached, so switching back is free.'
+              : 'Who the DJ sounds like. Switching re-speaks its lines gradually in the new voice; everything already spoken in an old one stays cached, so switching back is free.'
+          }
           control={
             <Select
               fullWidth
-              value={settings.djVoiceId ?? 'tnSpp4vdxKPjI9w0GnoV'}
+              value={settings.djVoiceId ?? voiceNow ?? DEFAULT_DJ_VOICE}
               aria-label="DJ voice character"
-              options={DJ_VOICES.map((v) => ({ value: v.id, label: v.label }))}
+              options={voiceOptions(voices)}
               onValueChange={(v) => void save({ djVoiceId: v }, 'djVoiceId')}
             />
           }

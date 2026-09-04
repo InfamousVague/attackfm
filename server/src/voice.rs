@@ -75,6 +75,13 @@ fn voice_id() -> String {
         .unwrap_or_else(|| "JBFqnCBsd6RMkjVDRZzb".to_string())
 }
 
+/// The voice this hub is actually speaking in, for the settings pane. Same
+/// answer the minting uses, so the picker cannot show one voice while another
+/// one talks.
+pub fn current_voice_id() -> String {
+    voice_id()
+}
+
 fn eleven_key() -> Option<String> {
     crate::ai::setting("elevenLabsKey", "AFM_ELEVENLABS_KEY")
 }
