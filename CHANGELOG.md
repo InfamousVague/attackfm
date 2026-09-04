@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.80
+
+- Moving playback back to the device you started on works. It could hand the
+  song over stopped on its last second, so pressing your laptop's name went
+  quiet instead of picking the music back up.
+- A song playing somewhere else no longer counts past its own end - the
+  readout used to walk on to 1:40 of a three-minute song sitting still.
+
 ## 0.5.79
 
 - A jam can be handed over as a link, on the same card a playlist gets. It
