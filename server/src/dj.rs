@@ -2069,6 +2069,7 @@ mod explore_seats {
 
     fn feature(id: i64, artist: &str) -> TrackFeatures {
         TrackFeatures {
+            title: String::new(),
             kind: "music".into(),
             track_id: id,
             bpm: Some(120.0),

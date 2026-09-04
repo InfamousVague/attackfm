@@ -297,6 +297,7 @@ mod guards {
 
     fn feature(id: i64) -> TrackFeatures {
         TrackFeatures {
+            title: String::new(),
             kind: "music".into(),
             track_id: id,
             bpm: None,
