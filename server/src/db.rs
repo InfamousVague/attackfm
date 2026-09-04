@@ -11666,6 +11666,94 @@ mod home_shelves_are_per_listener {
 }
 
 #[cfg(test)]
+mod seeds_from_hearts {
+    //! What the pool grows FROM. Hearts and keeps outrank play counts, a
+    //! dismissed artist never seeds, and a book never does either.
+
+    use super::*;
+    use crate::listens::{ingest, IncomingListen};
+
+    fn fresh(name: &str) -> Db {
+        let d = std::env::temp_dir().join(format!("afm-seeds-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    fn track(db: &Db, rel: &str, artist: &str, kind: &str) -> i64 {
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind)
+                 VALUES (?1,?1,?2,?2,'Al',0,0,?3)",
+                rusqlite::params![rel, artist, kind],
+            )
+            .unwrap();
+        db.track_id_by_path(rel).unwrap()
+    }
+
+    fn finished(track_id: i64, started_at: i64) -> IncomingListen {
+        IncomingListen {
+            track_id,
+            started_at,
+            ms_listened: 180_000,
+            duration_ms: Some(200_000),
+            completed: true,
+            skipped: false,
+            context: "test".into(),
+            ended_at_ms: None,
+            volume_ups: 0,
+            seek_backs: 0,
+            device: String::new(),
+        }
+    }
+
+    #[test]
+    fn hearts_outrank_play_counts_and_the_dismissed_never_seed() {
+        let db = fresh("rank");
+        let me = db.create_user("me", "x", true).unwrap();
+        let now = now_ms();
+        let hearted = track(&db, "h.flac", "Big Thief", "music");
+        let played = track(&db, "p.flac", "Someone Loud", "music");
+        let dismissed = track(&db, "d.flac", "Never Again", "music");
+        let book = track(&db, "b.m4b", "A Narrator", "book");
+
+        db.set_favorite(me, hearted, true).unwrap();
+        // Two finished plays of the loud one - 0.8 in total, under one heart.
+        assert_eq!(ingest(&db, me, &[finished(played, now - 1_000), finished(played, now - 2_000)]), 2);
+        // A heart on the dismissed one, then the dismissal: the heart is moot.
+        db.set_favorite(me, dismissed, true).unwrap();
+        db.reject_discovery(me, "artist", &crate::taste::artist_key("Never Again"));
+        // A finished audiobook chapter is not a music seed.
+        assert_eq!(ingest(&db, me, &[finished(book, now - 3_000)]), 1);
+
+        let seeds = db.heart_weighted_artists(me, 0, now);
+        let names: Vec<&str> = seeds.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, vec!["Big Thief", "Someone Loud"], "{seeds:?}");
+        assert!(seeds[0].1 > seeds[1].1, "one heart outweighs two finished plays: {seeds:?}");
+        assert!((seeds[1].1 - 0.8).abs() < 0.01, "two completed listens at 0.4 each: {seeds:?}");
+    }
+
+    #[test]
+    fn a_date_keep_is_a_heart_and_old_evidence_fades() {
+        let db = fresh("keep");
+        let me = db.create_user("me", "x", true).unwrap();
+        let now = now_ms();
+        let kept = track(&db, "k.flac", "Kept Artist", "music");
+        let passed = track(&db, "x.flac", "Passed Artist", "music");
+        db.record_date_verdict(me, kept, "kept");
+        db.record_date_verdict(me, passed, "passed");
+        let seeds = db.heart_weighted_artists(me, 0, now);
+        assert_eq!(seeds.len(), 1, "a pass is not a seed: {seeds:?}");
+        assert_eq!(seeds[0].0, "Kept Artist");
+        assert!((seeds[0].1 - 1.0).abs() < 0.01);
+
+        // The same keep seen from sixty days later weighs half.
+        let later = db.heart_weighted_artists(me, 0, now + 60 * 86_400_000);
+        assert!((later[0].1 - 0.5).abs() < 0.02, "{later:?}");
+    }
+}
+
+#[cfg(test)]
 mod listen_shape {
     //! The four things a sitting can now say beyond how long it lasted: where
     //! it ended, whether the dial went up, whether they rewound, and where it
