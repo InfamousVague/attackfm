@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.87
+
+- On Music Date, keep, pass and undo are now on the card itself — over the
+  artwork, or over the Canvas clip when the song has one. The card's bottom
+  band swipes again too; it used to be dead to the touch.
+- More room for who the artist is under the deck.
+
 ## 0.5.86
 
 - A song you kept that has already downloaded no longer sits in Liked Songs
