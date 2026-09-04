@@ -583,6 +583,20 @@ CREATE TABLE IF NOT EXISTS chart_snapshots (
 );
 CREATE INDEX IF NOT EXISTS chart_snapshots_artist ON chart_snapshots(artist_key, fetched_at);
 
+-- A thumb in the DJ or on the radio: the listener's word on a song the
+-- machine chose, at the moment they gave it. 'up' or 'down'. A down also
+-- writes the rejection memory (see reactions.rs); an up is recorded and
+-- nothing more - hearts stay explicit, a thumb is not a heart.
+CREATE TABLE IF NOT EXISTS dj_reactions (
+  id          INTEGER PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  track_id    INTEGER NOT NULL,
+  reaction    TEXT    NOT NULL,
+  position_ms INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS dj_reactions_user ON dj_reactions(user_id, created_at DESC);
+
 -- What a listener decided about a PREVIEW date - a pool candidate that was
 -- never a track. Keyed by the normalised artist+title (discovery::key_of),
 -- not the catalogue's ext_id, because a pass used to just DELETE the
@@ -6474,6 +6488,44 @@ impl Db {
         );
     }
 
+    /// A thumb, as given. Returns the row id.
+    pub fn record_dj_reaction(
+        &self,
+        user_id: i64,
+        track_id: i64,
+        reaction: &str,
+        position_ms: i64,
+        now: i64,
+    ) -> i64 {
+        let conn = self.lock();
+        let _ = conn.execute(
+            "INSERT INTO dj_reactions (user_id, track_id, reaction, position_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![user_id, track_id, reaction, position_ms.max(0), now],
+        );
+        conn.last_insert_rowid()
+    }
+
+    /// The listener's thumbs since a moment: track_id -> (ups, downs). What
+    /// the explore sampler reads so a thumb-up counts as adoption and a
+    /// thumb-down as a louder failure than a skip.
+    pub fn dj_reactions_since(&self, user_id: i64, since: i64) -> std::collections::HashMap<i64, (i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT track_id,
+                    SUM(CASE WHEN reaction = 'up' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN reaction = 'down' THEN 1 ELSE 0 END)
+               FROM dj_reactions WHERE user_id = ?1 AND created_at >= ?2 GROUP BY track_id",
+        ) else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id, since], |r| {
+            Ok((r.get::<_, i64>(0)?, (r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)))
+        })
+        .map(|rows| rows.flatten().collect())
+        .unwrap_or_default()
+    }
+
     /// Write down the chart as it stands: (ext_id, folded artist, 1-based
     /// position). Rows older than five weeks go with it.
     pub fn snapshot_chart(&self, fetched_at: i64, rows: &[(String, String, f64)]) {
@@ -11838,6 +11890,47 @@ mod home_shelves_are_per_listener {
             titles(&db, db.recent_album_track_lists_for(uid, 12).into_iter().flatten().collect())
         };
         check("recent_album_track_lists_for", flat(bob), flat(alice));
+    }
+}
+
+#[cfg(test)]
+mod dj_thumbs {
+    //! A thumb is counted, and a down is remembered wherever songs are dealt.
+    use super::*;
+
+    fn fresh(name: &str) -> Db {
+        let d = std::env::temp_dir().join(format!("afm-react-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    #[test]
+    fn a_thumb_is_counted_and_a_down_is_remembered_as_a_rejection() {
+        let db = fresh("thumb");
+        let me = db.create_user("me", "x", true).unwrap();
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind)
+                 VALUES ('s.flac','Song','Some Artist','Some Artist','Al',0,0,'music')",
+                [],
+            )
+            .unwrap();
+        let id = db.track_id_by_path("s.flac").unwrap();
+
+        db.record_dj_reaction(me, id, "up", 40_000, 1_000);
+        db.record_dj_reaction(me, id, "down", 50_000, 2_000);
+        db.record_dj_reaction(me, id, "down", 60_000, 3_000);
+        let tally = db.dj_reactions_since(me, 0);
+        assert_eq!(tally.get(&id), Some(&(1, 2)));
+        assert!(db.dj_reactions_since(me, 2_500).get(&id) == Some(&(0, 1)), "since is honoured");
+
+        // The route's own effect, without the route: a down writes the memory.
+        db.reject_discovery(me, "track", &crate::discovery::key_of("Some Artist", "Song"));
+        assert!(crate::discovery::is_rejected(&db, me, "Some Artist", "Song"));
+        assert!(!crate::discovery::is_rejected(&db, me, "Some Artist", "Other Song"), "the song, not the artist");
+        db.reject_discovery(me, "artist", &crate::taste::artist_key("Some Artist"));
+        assert!(crate::discovery::is_rejected(&db, me, "Some Artist", "Other Song"), "artist scope widens it");
     }
 }
 

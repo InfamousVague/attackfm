@@ -59,6 +59,7 @@ mod mood;
 mod programmer;
 mod trending;
 mod dj;
+mod reactions;
 mod dj_voice;
 mod enrichment;
 mod features;
@@ -841,6 +842,7 @@ async fn main() {
         .route("/api/discoveries", get(discovery::feed))
         .route("/api/new-music", get(discovery::new_music))
         .route("/api/discoveries/dismiss", post(discovery::dismiss))
+        .route("/api/dj/react", post(reactions::react))
         .route("/api/related", get(discovery::related))
         .route("/api/household", get(radio::household))
         .route("/api/radio", get(radio::radio))
