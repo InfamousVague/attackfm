@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.89
+
+- Your profile share card is your banner now, with your picture centred on it -
+  no more picture-in-a-box-in-a-card. Without a banner it takes a colour of its
+  own, chosen from your handle.
+
 ## 0.5.88
 
 - Every song on Music Date now comes with a full profile already written, so
