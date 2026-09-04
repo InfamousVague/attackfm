@@ -65,6 +65,22 @@ pub fn prune_pool(state: &Arc<AppState>, user: i64) {
 }
 /// How often to go looking for new candidates.
 const HARVEST_EVERY_MS: i64 = 6 * 60 * 60 * 1000;
+
+/*
+ * How long "not for me" is honoured.
+ *
+ * A dismissal is the one piece of taste a listener states outright, and until
+ * now it lasted until the next harvest - which promptly offered the same song
+ * back, because everything that made it a good candidate was still true.
+ *
+ * A song is refused for longer than an artist, because refusing a song is a
+ * narrow, confident statement and refusing an artist is a mood. Neither is
+ * forever: a refusal from last winter is history, not a life sentence, and the
+ * row outlives its block so seed selection can still take the hint (below)
+ * without the pool being permanently narrowed by one bad evening.
+ */
+const TRACK_REJECT_MS: i64 = 90 * 24 * 60 * 60 * 1000;
+const ARTIST_REJECT_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// Artists of yours to expand from, and how far each expands.
 const SEED_ARTISTS: i64 = 8;
 const RELATED_PER_SEED: usize = 8;
@@ -459,7 +475,9 @@ async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<(String, i64)
         for (artist_id, artist_name) in artists {
             let Some(tracks) = deezer_top(&c, artist_id).await else { continue };
             for t in tracks.into_iter().take(TRACKS_PER_ARTIST) {
-                if owned.contains(&key_of(&t.artist, &t.title)) {
+                if owned.contains(&key_of(&t.artist, &t.title))
+                    || is_rejected(&state.db, user, &t.artist, &t.title)
+                {
                     continue;
                 }
                 let _ = state.db.add_discovery(
@@ -499,7 +517,9 @@ pub async fn ingest_artist_by_name(
     let owned = owned_keys(state);
     let mut added = 0usize;
     for t in tracks.into_iter().take(take) {
-        if owned.contains(&key_of(&t.artist, &t.title)) {
+        if owned.contains(&key_of(&t.artist, &t.title))
+            || is_rejected(&state.db, user, &t.artist, &t.title)
+        {
             continue;
         }
         if state
@@ -514,6 +534,17 @@ pub async fn ingest_artist_by_name(
         }
     }
     added
+}
+
+/// Whether this listener has said no to this song, or to whoever made it,
+/// recently enough that offering it again would be ignoring them.
+///
+/// Keyed with `key_of` and `artist_key` - the same folds the rest of the pool
+/// uses - so a re-offer under a different spelling is still the same refusal.
+pub(crate) fn is_rejected(db: &crate::db::Db, user: i64, artist: &str, title: &str) -> bool {
+    let now = now_ms();
+    db.rejection_active(user, "artist", &artist_key(artist), now, ARTIST_REJECT_MS)
+        || db.rejection_active(user, "track", &key_of(artist, title), now, TRACK_REJECT_MS)
 }
 
 struct CandidateTrack {
@@ -1163,6 +1194,9 @@ pub async fn feed(
 #[derive(serde::Deserialize)]
 pub struct DismissQuery {
     pub id: String,
+    /// `artist` refuses everyone by that name; anything else (or absent)
+    /// refuses just this song.
+    pub scope: Option<String>,
 }
 
 /// `POST /api/discoveries/dismiss?id=` - not for me. Forgotten rather than
@@ -1173,6 +1207,22 @@ pub async fn dismiss(
     Query(q): Query<DismissQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    /*
+     * Remember the refusal before forgetting the row.
+     *
+     * The row still goes - the pool is free to find something better in its
+     * place, which is the point of forgetting rather than hiding. What is kept
+     * is the JUDGEMENT, so the next harvest does not spend the slot it just
+     * freed on the same song. Read by id first: one indexed lookup, because
+     * the pool is hundreds of rows and this runs on a tap.
+     */
+    if let Some(d) = state.db.discovery_get(caller.id, &q.id) {
+        if q.scope.as_deref() == Some("artist") {
+            state.db.reject_discovery(caller.id, "artist", &artist_key(&d.artist));
+        } else {
+            state.db.reject_discovery(caller.id, "track", &key_of(&d.artist, &d.title));
+        }
+    }
     state.db.forget_discovery(caller.id, &q.id);
     Ok(Json(json!({ "ok": true })))
 }
@@ -1224,4 +1274,82 @@ pub async fn related(
         })
         .unwrap_or_default();
     Ok(Json(json!({ "artists": artists })))
+}
+
+
+#[cfg(test)]
+mod rejection_memory {
+    //! "Not for me" used to last until the next harvest, which promptly
+    //! offered the same song back - everything that made it a good candidate
+    //! was still true, and nothing remembered that it had been refused.
+
+    use super::*;
+
+    /// Its own directory per test: the module's tests run in parallel threads
+    /// of one process, so a path keyed only on the pid is one database shared
+    /// by four tests, and the second to reach `create_user` fails on UNIQUE.
+    fn fresh(name: &str) -> crate::db::Db {
+        let d = std::env::temp_dir().join(format!("afm-reject-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        crate::db::Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    #[test]
+    fn a_dismissed_song_is_not_offered_again() {
+        let db = fresh("song");
+        let me = db.create_user("me", "", true).unwrap();
+
+        db.reject_discovery(me, "track", &key_of("Boards of Canada", "Dayvan Cowboy"));
+
+        // The same song, re-offered under a different spelling: key_of folds it.
+        assert!(is_rejected(&db, me, "BOARDS OF CANADA", "Dayvan Cowboy"));
+        // A different song by the same artist is still welcome - refusing a
+        // song is a narrow statement, not a ban on the artist.
+        assert!(!is_rejected(&db, me, "Boards of Canada", "Roygbiv"));
+    }
+
+    #[test]
+    fn dismissing_an_artist_refuses_all_of_them() {
+        let db = fresh("artist");
+        let me = db.create_user("me", "", true).unwrap();
+        db.reject_discovery(me, "artist", &artist_key("Boards of Canada"));
+        assert!(is_rejected(&db, me, "Boards of Canada", "Roygbiv"));
+        assert!(is_rejected(&db, me, "boards of canada", "Olson"));
+    }
+
+    #[test]
+    fn a_refusal_is_mine_and_it_lapses() {
+        let db = fresh("mine");
+        let me = db.create_user("me", "", true).unwrap();
+        let you = db.create_user("you", "", false).unwrap();
+        let key = key_of("Boards of Canada", "Dayvan Cowboy");
+        db.reject_discovery(me, "track", &key);
+
+        // Somebody else's taste is not mine.
+        assert!(!is_rejected(&db, you, "Boards of Canada", "Dayvan Cowboy"));
+
+        // And it is a window, not a life sentence: far enough past it, the
+        // block is over even though the memory is still on file.
+        let now = now_ms();
+        assert!(db.rejection_active(me, "track", &key, now, TRACK_REJECT_MS));
+        assert!(
+            !db.rejection_active(me, "track", &key, now + TRACK_REJECT_MS + 1, TRACK_REJECT_MS),
+            "a refusal from long enough ago stops blocking"
+        );
+        assert!(
+            db.rejected_keys_since(me, "track", 0).contains(&key),
+            "the memory outlives the block, for seed selection to take the hint"
+        );
+    }
+
+    #[test]
+    fn an_empty_key_is_never_stored() {
+        let db = fresh("empty");
+        let me = db.create_user("me", "", true).unwrap();
+        // A row with no artist must not become a rejection that matches every
+        // other artist-less candidate.
+        db.reject_discovery(me, "artist", &artist_key("   "));
+        assert!(db.rejected_keys_since(me, "artist", 0).is_empty());
+    }
 }

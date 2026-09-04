@@ -747,6 +747,27 @@ CREATE TABLE IF NOT EXISTS discoveries (
 );
 CREATE INDEX IF NOT EXISTS discoveries_score ON discoveries(user_id, score DESC);
 
+-- "Not for me", remembered.
+--
+-- Dismissing a discovery used to forget the row and nothing else, so the very
+-- next harvest was free to offer the same song back - and did, because the
+-- thing that made it a good candidate is still true. The refusal is the one
+-- piece of taste a listener states out loud, and it was the one we did not
+-- keep.
+--
+-- Two scopes: 'track' (the folded artist|title key, same vocabulary as
+-- date_candidate_verdicts) and 'artist' (the folded artist name). The row is
+-- kept past its hard block on purpose - the memory is still worth having for
+-- seed selection after the block lapses, and for saying why something has not
+-- come back.
+CREATE TABLE IF NOT EXISTS discovery_rejections (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scope       TEXT NOT NULL,
+  key         TEXT NOT NULL,
+  rejected_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, scope, key)
+);
+
 -- Which research lane a pool candidate came in through. A sidecar rather than
 -- a column on discoveries, because open() lands new TABLES on a deployed
 -- database and never new columns. Lanes: 'taste' (artists near your plays),
@@ -6092,6 +6113,64 @@ impl Db {
 
     /// The best of what this listener does not own, scored highest first.
     /// One pooled candidate by its catalogue id, for a verdict on a preview.
+    /// Remember a dismissal, so the next harvest does not bring the same music
+    /// straight back. `scope` is 'track' (the folded artist|title key) or
+    /// 'artist' (the folded artist name). Re-dismissing refreshes the clock.
+    pub fn reject_discovery(&self, user_id: i64, scope: &str, key: &str) {
+        if key.trim().is_empty() {
+            return;
+        }
+        let _ = self.lock().execute(
+            "INSERT INTO discovery_rejections (user_id, scope, key, rejected_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(user_id, scope, key) DO UPDATE SET rejected_at = excluded.rejected_at",
+            params![user_id, scope, key, now_ms()],
+        );
+    }
+
+    /// Whether a rejection still blocks. Inside its window it does; past it the
+    /// row remains - a refusal from a year ago is history, not a life sentence,
+    /// and tastes change.
+    pub fn rejection_active(
+        &self,
+        user_id: i64,
+        scope: &str,
+        key: &str,
+        now: i64,
+        window_ms: i64,
+    ) -> bool {
+        self.lock()
+            .query_row(
+                "SELECT rejected_at FROM discovery_rejections
+                 WHERE user_id = ?1 AND scope = ?2 AND key = ?3",
+                params![user_id, scope, key],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|at| now - at < window_ms)
+            .unwrap_or(false)
+    }
+
+    /// Every rejection key in one scope since a moment - what seed selection
+    /// reads to keep a recently dismissed artist out of the driver's seat even
+    /// after their hard block has lapsed.
+    pub fn rejected_keys_since(
+        &self,
+        user_id: i64,
+        scope: &str,
+        since: i64,
+    ) -> std::collections::HashSet<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT key FROM discovery_rejections
+             WHERE user_id = ?1 AND scope = ?2 AND rejected_at >= ?3",
+        ) else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id, scope, since], |r| r.get::<_, String>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     pub fn discovery_get(&self, user_id: i64, ext_id: &str) -> Option<DiscoveryRow> {
         let conn = self.lock();
         conn.query_row(
