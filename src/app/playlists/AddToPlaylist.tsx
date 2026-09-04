@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { fold, titleKey } from '../library/owned.ts';
 import { MosaicCover } from './PlaylistShowcase.tsx';
-import { usePlaylists } from './playlists.tsx';
+import { isGeneratedPlaylist, usePlaylists } from './playlists.tsx';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -48,8 +48,12 @@ function AddToPlaylistPanel({
   onDone: () => void;
 }) {
   const { toast } = useToast();
-  const { playlists, create, addTrack, removeTrack, addWant, removeWant } = usePlaylists();
+  const { playlists: every, create, addTrack, removeTrack, addWant, removeWant } = usePlaylists();
   const { tracks } = useLibrary();
+  // Only the lists a person keeps. The server's chart and new-music lists
+  // are playlists too, and they crowded this picker until the ones you made
+  // were under a scroll of "Top" this and that.
+  const playlists = useMemo(() => every.filter((p) => !isGeneratedPlaylist(p)), [every]);
   // One owned song is still the common case; the plural paths only change the
   // words and the row semantics ("in this list" means ALL of them are).
   const track = list[0] ?? null;

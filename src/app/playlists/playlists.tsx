@@ -698,3 +698,16 @@ export function usePlaylists(): PlaylistsContextValue {
   if (!value) throw new Error('usePlaylists must be used within a PlaylistsProvider');
   return value;
 }
+
+/**
+ * Folders the SERVER fills - the chart lists it keeps ("Top USA", "Top 50
+ * Global"...) and its new-music list. Generated on their own clock, never
+ * filed by a person: they belong on Discover, not among the lists you made,
+ * and never in the "Add to playlist" picker - which listed them, fifteen
+ * deep, above the lists a person actually keeps.
+ */
+export const GENERATED_PLAYLIST_FOLDERS: ReadonlySet<string> = new Set(['Charts', 'New music']);
+
+export function isGeneratedPlaylist(p: { folder?: string }): boolean {
+  return GENERATED_PLAYLIST_FOLDERS.has(p.folder ?? '');
+}

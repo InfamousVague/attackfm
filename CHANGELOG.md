@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.99
+
+- "Add to playlist" lists only the playlists you made again. The chart lists
+  the server keeps for Discover - Top USA, Top 50 Global and the rest - had
+  crowded in above them.
+
 ## 0.5.98
 
 - The curator has been rebuilt around what you actually tell it. Hearts and
