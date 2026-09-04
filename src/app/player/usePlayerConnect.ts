@@ -161,9 +161,19 @@ export function usePlayerConnect({
         const elapsedMs = state.playing
           ? Math.min(15000, Math.max(0, Date.now() - state.updatedAt))
           : 0;
-        const positionMs = state.positionMs + elapsedMs;
         const cur = liveRef.current.track;
         const sameTrack = cur != null && trackIdFromPath(cur.path) === state.trackId;
+
+        // The seat can arrive carrying a position past the end of the song.
+        // The hub counts the seconds between reports, and a device that went
+        // quiet while holding the seat - loading, backgrounded, a speaker that
+        // does not report - lets that count run past the last frame. Seeking
+        // there is silence: the deck parks on the end and pauses, which is
+        // exactly what "I can't pass it back" looked like. Past the end means
+        // the song is over, so play it rather than sit on its final frame.
+        const handed = state.positionMs + elapsedMs;
+        const lenMs = ((sameTrack ? cur : findByConnectId(state.trackId))?.duration ?? 0) * 1000;
+        const positionMs = lenMs > 0 && handed >= lenMs - 1000 ? 0 : Math.max(0, handed);
 
         // The seat carries the whole play context, not just the song. The hub
         // holds the queue for exactly this ("a transfer target can rebuild
@@ -336,6 +346,10 @@ export function usePlayerConnect({
     connect.reportState({
       trackId: id,
       positionMs: Math.round(positionRef.current * 1000),
+      // The deck's length, so the hub's between-reports clock has a ceiling.
+      // `duration` is this device's loaded deck; the library's number is the
+      // fallback for the report that goes out before metadata lands.
+      durationMs: Math.round((duration > 0 ? duration : (track.duration ?? 0)) * 1000),
       playing,
       shuffle,
       repeat,

@@ -360,7 +360,14 @@ export function Player({
     // (measured when the frame arrived) converts ours to theirs, so the
     // elapsed term no longer inherits whatever this phone's clock believes.
     const serverNow = Date.now() - (sess.clockSkewMs ?? 0);
-    return sess.playing ? base + Math.max(0, (serverNow - sess.updatedAt) / 1000) : base;
+    if (!sess.playing) return base;
+    const ticked = base + Math.max(0, (serverNow - sess.updatedAt) / 1000);
+    // A song cannot be 1:40 into a 0:30 track. The ticking is a guess at what
+    // the other device is doing, and while it is quiet the guess keeps
+    // counting - so stop it at the end of the song rather than showing a
+    // readout that walks past the duration beside it.
+    const len = remoteTrack?.duration ?? (sess.durationMs ?? 0) / 1000;
+    return len > 0 ? Math.min(ticked, len) : ticked;
   })();
 
   const dispTrack = activeElsewhere ? (remoteTrack ?? track) : track;

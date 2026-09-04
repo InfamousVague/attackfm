@@ -84,6 +84,11 @@ struct Session {
     /// When positionMs was true, in epoch ms - remotes extrapolate from here.
     #[serde(rename = "updatedAt")]
     updated_at: i64,
+    /// How long the playing song is, as the active device's own deck measures
+    /// it. Zero means unknown (an older client that does not report it), which
+    /// turns the clamp below off rather than guessing. See `clamp_to_track`.
+    #[serde(rename = "durationMs")]
+    duration_ms: i64,
     /// Bumped on every transfer. A state frame carrying an older epoch than the
     /// session is from a device that has since been deposed, and is dropped.
     epoch: i64,
@@ -156,6 +161,8 @@ enum ClientMsg {
         queue: Option<Vec<i64>>,
         #[serde(rename = "queueIndex", default)]
         queue_index: Option<i64>,
+        #[serde(rename = "durationMs", default)]
+        duration_ms: Option<i64>,
     },
     /// A transport command, routed to whoever is active.
     Command { command: Command },
@@ -266,6 +273,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, user_id: i64) {
                 volume,
                 queue,
                 queue_index,
+                duration_ms,
             } => {
                 if let Some(dev) = &my_device {
                     on_state(
@@ -280,6 +288,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, user_id: i64) {
                         volume,
                         queue,
                         queue_index,
+                        duration_ms,
                     )
                     .await;
                 }
@@ -330,6 +339,25 @@ fn devices_message(hub: &UserHub) -> String {
         "activeDeviceId": hub.session.active_device_id,
     })
     .to_string()
+}
+
+/// Keep an extrapolated position inside the song.
+///
+/// The active device reports only on discontinuities, so between them the hub
+/// counts the seconds itself. That arithmetic assumes someone is still playing.
+/// When the seat holder goes quiet instead - a remote that is loading, one that
+/// was backgrounded, a speaker that never reports at all - the count keeps
+/// running and the stored position walks off the end of the track. Handing THAT
+/// number to the next device is what broke passing playback back: it seeked
+/// past the last frame, so the deck parked on the end, paused, and the music
+/// did not come back. Clamping costs a hand-off at most the tail of one song;
+/// not clamping costs the song.
+fn clamp_to_track(position_ms: i64, duration_ms: i64) -> i64 {
+    if duration_ms > 0 {
+        position_ms.min(duration_ms)
+    } else {
+        position_ms
+    }
 }
 
 fn state_message(hub: &UserHub) -> String {
@@ -403,6 +431,7 @@ async fn on_state(
     volume: Option<f64>,
     queue: Option<Vec<i64>>,
     queue_index: Option<i64>,
+    duration_ms: Option<i64>,
 ) {
     let mut users = state.connect.users.lock().await;
     let Some(hub) = users.get_mut(&user_id) else {
@@ -425,6 +454,10 @@ async fn on_state(
     let s = &mut hub.session;
     s.track_id = track_id;
     s.position_ms = position_ms.max(0);
+    // Taken from this report or not at all: an old client sends none, and a
+    // duration left over from the PREVIOUS song would clamp the new one to the
+    // wrong length - worse than not clamping.
+    s.duration_ms = duration_ms.unwrap_or(0).max(0);
     s.playing = playing;
     s.shuffle = shuffle;
     if let Some(r) = repeat {
@@ -498,7 +531,15 @@ async fn on_transfer(state: &Arc<AppState>, user_id: i64, target: &str) {
         return;
     };
     if !hub.conns.contains_key(target) {
-        // Cannot hand playback to a device that is not connected.
+        // Cannot hand playback to a device that is not connected. Say so in the
+        // device list rather than dropping the tap on the floor: whoever tapped
+        // is looking at a row that still says "tap to play here", and without
+        // this correction the only feedback is nothing happening, forever.
+        if let Some(dev) = hub.devices.get_mut(target) {
+            dev.online = false;
+        }
+        let devices = devices_message(hub);
+        broadcast(hub, &devices);
         return;
     }
     let previous = hub.session.active_device_id.clone();
@@ -515,8 +556,8 @@ async fn on_transfer(state: &Arc<AppState>, user_id: i64, target: &str) {
     // instead of picking it up where it was.
     let now = now_ms();
     if hub.session.playing {
-        hub.session.position_ms =
-            (hub.session.position_ms + (now - hub.session.updated_at).max(0)).max(0);
+        let advanced = (hub.session.position_ms + (now - hub.session.updated_at).max(0)).max(0);
+        hub.session.position_ms = clamp_to_track(advanced, hub.session.duration_ms);
     }
     hub.session.updated_at = now;
 
@@ -604,4 +645,25 @@ async fn on_disconnect(state: &Arc<AppState>, user_id: i64, device: &str, conn_i
     let state_msg = state_message(hub);
     broadcast(hub, &devices);
     broadcast(hub, &state_msg);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The hand-back bug in one assertion: a seat holder that goes quiet lets
+    /// the hub's between-reports clock run past the end of the song, and the
+    /// next device seeked there parks on the last frame, paused. See
+    /// `clamp_to_track`.
+    #[test]
+    fn extrapolated_position_stops_at_the_end_of_the_song() {
+        assert_eq!(clamp_to_track(79_996, 30_000), 30_000);
+        // Inside the song, untouched.
+        assert_eq!(clamp_to_track(12_500, 30_000), 12_500);
+        // Exactly the end is still the end.
+        assert_eq!(clamp_to_track(30_000, 30_000), 30_000);
+        // An older client reports no duration: no ceiling to apply, and
+        // guessing one would be worse than the old behaviour.
+        assert_eq!(clamp_to_track(79_996, 0), 79_996);
+    }
 }

@@ -37,6 +37,10 @@ export interface ConnectSession {
   queueIndex: number;
   updatedAt: number;
   epoch: number;
+  /** How long the song is, per the active device's deck. 0 when unknown. The
+   *  ceiling for every extrapolated position - without it a seat holder that
+   *  stops reporting walks the clock off the end of the track. */
+  durationMs?: number;
   /** Client-only: this device's clock minus the server's, measured when the
    *  state frame arrived. Never on the wire; playbackSync stamps it. */
   clockSkewMs?: number;
@@ -61,6 +65,9 @@ export interface ReportedState {
   volume: number;
   queue: number[];
   queueIndex: number;
+  /** The deck's own measure of the song's length, so the hub can keep the
+   *  positions it extrapolates inside it. */
+  durationMs?: number;
 }
 
 /** Everything the server pushes down, as a discriminated union. */
