@@ -570,6 +570,19 @@ CREATE TABLE IF NOT EXISTS date_verdicts (
 );
 CREATE INDEX IF NOT EXISTS date_verdicts_user ON date_verdicts(user_id, at DESC);
 
+-- The global chart as it stood at one moment. "Rising" is a comparison,
+-- and until this table existed there was nothing to compare against: the
+-- chart was fetched, fanned into the pool, and forgotten. Twelve-hourly
+-- rows, pruned past five weeks. `rank` is the 1-based chart position.
+CREATE TABLE IF NOT EXISTS chart_snapshots (
+  fetched_at INTEGER NOT NULL,
+  ext_id     TEXT    NOT NULL,
+  artist_key TEXT    NOT NULL,
+  rank       REAL    NOT NULL,
+  PRIMARY KEY (fetched_at, ext_id)
+);
+CREATE INDEX IF NOT EXISTS chart_snapshots_artist ON chart_snapshots(artist_key, fetched_at);
+
 -- What a listener decided about a PREVIEW date - a pool candidate that was
 -- never a track. Keyed by the normalised artist+title (discovery::key_of),
 -- not the catalogue's ext_id, because a pass used to just DELETE the
@@ -6422,6 +6435,121 @@ impl Db {
         );
     }
 
+    /// Write down the chart as it stands: (ext_id, folded artist, 1-based
+    /// position). Rows older than five weeks go with it.
+    pub fn snapshot_chart(&self, fetched_at: i64, rows: &[(String, String, f64)]) {
+        let mut conn = self.lock();
+        let Ok(tx) = conn.transaction() else { return };
+        for (ext_id, artist_key, rank) in rows {
+            let _ = tx.execute(
+                "INSERT OR REPLACE INTO chart_snapshots (fetched_at, ext_id, artist_key, rank)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![fetched_at, ext_id, artist_key, rank],
+            );
+        }
+        let _ = tx.execute(
+            "DELETE FROM chart_snapshots WHERE fetched_at < ?1",
+            params![fetched_at - 35 * 86_400_000],
+        );
+        let _ = tx.commit();
+    }
+
+    /// Where each charted song stands now against roughly a week ago:
+    /// ext_id -> (artist_key, rank_now, delta). `delta > 0` is rising, in
+    /// places climbed. A song that was not on the chart a week ago and is
+    /// now has climbed from just below the bottom - being new to the chart
+    /// IS the rise. With only one snapshot on file nothing can be compared
+    /// and every delta is 0: a shelf built on it stays honest and empty.
+    pub fn chart_rank_deltas(&self) -> std::collections::HashMap<String, (String, f64, f64)> {
+        let conn = self.lock();
+        let latest: i64 = conn
+            .query_row("SELECT COALESCE(MAX(fetched_at), 0) FROM chart_snapshots", [], |r| r.get(0))
+            .unwrap_or(0);
+        if latest == 0 {
+            return Default::default();
+        }
+        // The newest snapshot that is at least a week older than the latest,
+        // else the oldest there is - "about a week ago", as best we can.
+        let reference: i64 = conn
+            .query_row(
+                "SELECT COALESCE(
+                    (SELECT MAX(fetched_at) FROM chart_snapshots WHERE fetched_at <= ?1),
+                    (SELECT MIN(fetched_at) FROM chart_snapshots))",
+                params![latest - 7 * 86_400_000],
+                |r| r.get(0),
+            )
+            .unwrap_or(latest);
+        let read = |at: i64| -> Vec<(String, String, f64)> {
+            let Ok(mut stmt) =
+                conn.prepare("SELECT ext_id, artist_key, rank FROM chart_snapshots WHERE fetched_at = ?1")
+            else {
+                return Vec::new();
+            };
+            stmt.query_map(params![at], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .map(|rows| rows.flatten().collect())
+                .unwrap_or_default()
+        };
+        let now_rows = read(latest);
+        let before: std::collections::HashMap<String, f64> = if reference < latest {
+            read(reference).into_iter().map(|(e, _, r)| (e, r)).collect()
+        } else {
+            Default::default()
+        };
+        let bottom = now_rows.len() as f64 + 1.0;
+        now_rows
+            .into_iter()
+            .map(|(ext_id, artist_key, rank)| {
+                let delta = if reference < latest {
+                    before.get(&ext_id).copied().unwrap_or(bottom) - rank
+                } else {
+                    0.0
+                };
+                (ext_id, (artist_key, rank, delta))
+            })
+            .collect()
+    }
+
+    /// What this listener's FRIENDS finished lately that they have not met -
+    /// friends through `friendships` only, never the hub's other members.
+    /// Excludes anything the caller has already heard past a mis-tap or
+    /// hearted, books, and another member's unadopted audition (which is
+    /// not theirs to hear yet). Most-listeners first, then most recent.
+    pub fn friends_completed_since(&self, user_id: i64, since: i64) -> Vec<FriendPlay> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT le.track_id, COUNT(*), GROUP_CONCAT(DISTINCT u.username), MAX(le.started_at)
+               FROM listen_events le
+               JOIN users u ON u.id = le.user_id
+               JOIN tracks t ON t.id = le.track_id AND t.deleted = 0
+                    AND COALESCE(t.kind, 'music') <> 'book'
+                    AND (t.curator_user_id IS NULL OR COALESCE(t.curator_promoted, 0) = 1)
+              WHERE le.user_id IN (SELECT CASE WHEN f.a_id = ?1 THEN f.b_id ELSE f.a_id END
+                                     FROM friendships f WHERE f.a_id = ?1 OR f.b_id = ?1)
+                AND le.completed = 1 AND le.started_at >= ?2
+                AND NOT EXISTS (SELECT 1 FROM listen_events m
+                                 WHERE m.user_id = ?1 AND m.track_id = le.track_id
+                                   AND (m.completed = 1 OR m.ms_listened >= 10000))
+                AND NOT EXISTS (SELECT 1 FROM favorites fv
+                                 WHERE fv.user_id = ?1 AND fv.track_id = le.track_id)
+              GROUP BY le.track_id
+              ORDER BY COUNT(DISTINCT le.user_id) DESC, MAX(le.started_at) DESC
+              LIMIT 24",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since], |r| {
+            let names: String = r.get(2)?;
+            Ok(FriendPlay {
+                track_id: r.get(0)?,
+                completions: r.get(1)?,
+                listeners: names.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect(),
+                last_at: r.get(3)?,
+            })
+        })
+        .map(|rows| rows.flatten().collect())
+        .unwrap_or_default()
+    }
+
     pub fn discovery_get(&self, user_id: i64, ext_id: &str) -> Option<DiscoveryRow> {
         let conn = self.lock();
         conn.query_row(
@@ -10305,6 +10433,15 @@ pub struct RecentRow {
 }
 
 /// One candidate from the wider catalogue.
+/// One song a listener's friends finished lately, and who.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FriendPlay {
+    pub track_id: i64,
+    pub completions: i64,
+    pub listeners: Vec<String>,
+    pub last_at: i64,
+}
+
 pub struct DiscoveryRow {
     pub ext_id: String,
     pub title: String,
@@ -11662,6 +11799,123 @@ mod home_shelves_are_per_listener {
             titles(&db, db.recent_album_track_lists_for(uid, 12).into_iter().flatten().collect())
         };
         check("recent_album_track_lists_for", flat(bob), flat(alice));
+    }
+}
+
+#[cfg(test)]
+mod trending_shelves {
+    //! "Rising" as a comparison between two snapshots, and "friends on this
+    //! hub" as friends only - never the other members, never what you met.
+
+    use super::*;
+    use crate::listens::{ingest, IncomingListen};
+
+    fn fresh(name: &str) -> Db {
+        let d = std::env::temp_dir().join(format!("afm-trend-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    fn row(e: &str, a: &str, rank: f64) -> (String, String, f64) {
+        (e.into(), a.into(), rank)
+    }
+
+    #[test]
+    fn a_rise_is_places_climbed_and_a_debut_climbs_from_the_bottom() {
+        let db = fresh("rise");
+        let day = 86_400_000;
+        db.snapshot_chart(1_000 * day, &[row("a", "x", 1.0), row("b", "y", 5.0)]);
+        // One snapshot: nothing to compare, nothing rises.
+        assert!(db.chart_rank_deltas().values().all(|(_, _, d)| *d == 0.0));
+
+        db.snapshot_chart(1_008 * day, &[row("a", "x", 3.0), row("b", "y", 2.0), row("c", "z", 1.0)]);
+        let d = db.chart_rank_deltas();
+        assert_eq!(d["a"].2, -2.0, "slipped two places");
+        assert_eq!(d["b"].2, 3.0, "climbed three");
+        assert_eq!(d["c"].2, 3.0, "a debut at #1 on a chart of three climbed from just below #3");
+        assert_eq!(d["c"].0, "z");
+        assert_eq!(d["a"].1, 3.0);
+    }
+
+    #[test]
+    fn old_snapshots_are_pruned() {
+        let db = fresh("prune");
+        let day = 86_400_000;
+        db.snapshot_chart(1_000 * day, &[row("a", "x", 1.0)]);
+        db.snapshot_chart(1_040 * day, &[row("a", "x", 1.0)]);
+        let n: i64 = db
+            .lock()
+            .query_row("SELECT COUNT(DISTINCT fetched_at) FROM chart_snapshots", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1, "five weeks is the memory");
+    }
+
+    fn track(db: &Db, rel: &str, kind: &str, owner: Option<i64>, promoted: bool) -> i64 {
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind,
+                                     curator_user_id,curator_promoted)
+                 VALUES (?1,?1,'A','A','Al',0,0,?2,?3,?4)",
+                rusqlite::params![rel, kind, owner, promoted as i64],
+            )
+            .unwrap();
+        db.track_id_by_path(rel).unwrap()
+    }
+
+    fn done(track_id: i64, at: i64) -> IncomingListen {
+        IncomingListen {
+            track_id,
+            started_at: at,
+            ms_listened: 180_000,
+            duration_ms: Some(200_000),
+            completed: true,
+            skipped: false,
+            context: "test".into(),
+            ended_at_ms: None,
+            volume_ups: 0,
+            seek_backs: 0,
+            device: String::new(),
+        }
+    }
+
+    #[test]
+    fn friends_only_and_never_what_you_met() {
+        let db = fresh("friends");
+        let me = db.create_user("me", "x", true).unwrap();
+        let friend = db.create_user("ana", "x", false).unwrap();
+        let stranger = db.create_user("stranger", "x", false).unwrap();
+        let other = db.create_user("other", "x", false).unwrap();
+        db.lock()
+            .execute("INSERT INTO friendships (a_id, b_id, since) VALUES (?1, ?2, 0)", [friend, me])
+            .unwrap();
+
+        let fresh_song = track(&db, "1.flac", "music", None, false);
+        let met = track(&db, "2.flac", "music", None, false);
+        let others_audition = track(&db, "3.flac", "music", Some(other), false);
+        let book = track(&db, "4.m4b", "book", None, false);
+        let promoted = track(&db, "5.flac", "music", Some(other), true);
+
+        let t = 1_000_000;
+        ingest(&db, me, &[done(met, t)]);
+        ingest(&db, friend, &[done(fresh_song, t + 1), done(met, t + 2), done(others_audition, t + 3), done(book, t + 4), done(promoted, t + 5)]);
+        ingest(&db, stranger, &[done(fresh_song, t + 6)]);
+
+        let got = db.friends_completed_since(me, 0);
+        let ids: Vec<i64> = got.iter().map(|p| p.track_id).collect();
+        assert_eq!(ids, vec![promoted, fresh_song], "{got:?}");
+        let f = got.iter().find(|p| p.track_id == fresh_song).unwrap();
+        assert_eq!(f.completions, 1, "the stranger's completion is not counted");
+        assert_eq!(f.listeners, vec!["ana".to_string()]);
+        assert_eq!(f.last_at, t + 1);
+
+        // A friendship is one row, read from either side: what I finish that
+        // Ana has not met shows up for her - and `met`, which we both
+        // finished, does not.
+        let mine_only = track(&db, "6.flac", "music", None, false);
+        ingest(&db, me, &[done(mine_only, t + 7)]);
+        let hers: Vec<i64> = db.friends_completed_since(friend, 0).iter().map(|p| p.track_id).collect();
+        assert_eq!(hers, vec![mine_only], "one row, either side; the shared song is hidden");
     }
 }
 
