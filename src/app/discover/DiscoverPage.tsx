@@ -18,6 +18,7 @@ import type { Track } from '../core/tauri.ts';
 import type { SongCollection } from '../library/SongPage.tsx';
 import { DiscoverFeedProvider, useDiscoverFeed } from '../home/DiscoverFeed.tsx';
 import { DiscoverHero, heroLead } from './DiscoverHero.tsx';
+import { MusicDateChip } from '../library/MusicDateChip.tsx';
 import { TrendingShelves } from './TrendingShelves.tsx';
 import { PeopleShelf } from './PeopleShelf.tsx';
 
@@ -121,9 +122,17 @@ function DiscoverBody({
 
   return (
     <>
-      {/* The hero: one thing, big, wearing its music - and the page's two
-          doors (All songs, Music Date) in its action row. */}
+      {/* The hero: one thing, big, wearing its music - and All songs in its
+          action row. */}
       <DiscoverHero lead={lead} onPlay={onPlay} onOpenSongs={onOpenSongs} />
+
+      {/* Music Date, the card with the big number, right under the hero:
+          folding it into the hero's pills hid it ("too hidden now"). Full
+          width - it is the page's one door onto something new. Renders
+          nothing when there is nothing to meet. */}
+      <div className="libChips libChips--one">
+        <MusicDateChip mine={feed.auditions.mine} />
+      </div>
 
       {/* What the curator MADE for you, the near half: the daylist (unless
           the hero took it) and the daily and mood mixes, feature first. The

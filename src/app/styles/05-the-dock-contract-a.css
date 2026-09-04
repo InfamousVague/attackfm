@@ -394,6 +394,11 @@ body:has(.appNavBar) .playerBarShell > * {
   gap: var(--glacier-space-2);
 }
 
+/* One door on its own - Music Date under the Discover hero - takes the row. */
+.libChips--one {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .libChip {
   position: relative;
   /*

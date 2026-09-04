@@ -1,5 +1,5 @@
 import { Button } from '@glacier/react';
-import { Flame, ListMusic, Play } from '@glacier/icons';
+import { ListMusic, Play } from '@glacier/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { CoverWall } from '../playlists/CoverWall.tsx';
 import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
@@ -7,7 +7,6 @@ import { mosaicArts } from '../ux/artLoad.ts';
 import { useLoopArt } from '../ux/loopArt.ts';
 import { useLibrary } from '../library/library.tsx';
 import { fetchCanvas } from '../server.ts';
-import { musicDateDoorOpen, openMusicDate } from '../nav/musicDateDoor.ts';
 import { useDiscoverFeed, type DiscoverFeedValue } from '../home/DiscoverFeed.tsx';
 import { newForYouLists, newMusicCovers } from '../library/NewMusicShelf.tsx';
 import type { NewMusicList } from '../api/newMusic.ts';
@@ -21,7 +20,8 @@ import type { SongCollection } from '../library/SongPage.tsx';
  * It opens on art now - the same band the Music header and every collection
  * page wear (`.songPageHead`), which runs up behind the title bar and down to
  * the first shelf, with one kicker, one title, one blurb and one row of
- * actions resting on it. The chips' two doors (All songs, Music Date) are
+ * actions resting on it. All songs is a door in the row; Music Date is the card
+ * under the hero (it was a pill here, and was too hidden). The chips' doors are
  * that row.
  *
  * What it LEADS with is the newest thing the machine has for you: the first
@@ -104,7 +104,7 @@ export function DiscoverHero({
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenSongs: (view: SongCollection) => void;
 }) {
-  const { session, clips, wallSettled, openList, auditions } = useDiscoverFeed();
+  const { session, clips, wallSettled, openList } = useDiscoverFeed();
   const { tracks } = useLibrary();
   // A hidden tab pauses the clip; this puts it back when the tab returns.
   useLoopArt();
@@ -134,8 +134,6 @@ export function DiscoverHero({
   }, [session, wall, wallSettled, first?.title, first?.artist]);
 
   const face: 'wall' | 'canvas' | 'mosaic' = wall ? 'wall' : canvas ? 'canvas' : 'mosaic';
-  const dateOpen = session !== null && musicDateDoorOpen();
-  const waiting = auditions.mine.length;
 
   return (
     <header className="playlistHead songPageHead discoverHead" data-face={face}>
@@ -189,12 +187,6 @@ export function DiscoverHero({
           <Button variant="glass" size="sm" onClick={() => onOpenSongs('all')}>
             <span>All songs</span>
           </Button>
-          {dateOpen && (
-            <Button variant="glass" size="sm" onClick={openMusicDate} aria-label="Open Music Date">
-              <Flame size={14} />
-              <span>Music Date{waiting > 0 ? ` · ${waiting}` : ''}</span>
-            </Button>
-          )}
         </EdgeScrollRow>
       </div>
     </header>
