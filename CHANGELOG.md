@@ -15,6 +15,19 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.100
+
+- Discover is art-first now: a hero under the title bar built from your own
+  covers and Canvas clips, then Made for you with one big card leading, then
+  trending three ways - Charts filtered for you, Rising in your scene, and
+  Friends on this hub - each its own shelf, never mixed. New for you, People,
+  and the rest follow. The page asks the server for less on the way in.
+- The DJ and the radio can say why: each pick carries its reason - an artist
+  you finish, a neighbour of one you love, the same scene, or "explore" - and
+  the patter only speaks facts the server can back. A song you turn down is
+  remembered, and "less like this" on a find can turn down the reason it was
+  found.
+
 ## 0.5.99
 
 - "Add to playlist" lists only the playlists you made again. The chart lists
