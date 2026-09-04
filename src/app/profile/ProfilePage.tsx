@@ -2,7 +2,7 @@ import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { HomeStatsCards } from '../library/HomeStatsCards.tsx';
 import { ShareProfileSheet } from './ShareProfile.tsx';
 import { Button, Heading, IconButton, Text } from '@glacier/react';
-import { Camera, Copy, ImagePlus, LogOut, Trash2, Users } from '@glacier/icons';
+import { Camera, Copy, Crop, ImagePlus, LogOut, Trash2, Users } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useJam } from '../player/jam.tsx';
 import { useLibrary } from '../library/library.tsx';
@@ -17,7 +17,8 @@ import {
   uploadProfileImage,
   type RegistryFriend,
 } from '../servers/registry.ts';
-import { prepareImage, type ImageKind } from './pickImage.ts';
+import { type ImageKind } from './pickImage.ts';
+import { CropPhoto } from './CropPhoto.tsx';
 import { enterServer, remotePath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 
@@ -300,32 +301,68 @@ export function ProfilePage({
     fileInput.current?.click();
   };
 
-  const chose = async (file: Blob) => {
-    if (!registry) return;
-    const kind = wanted.current;
-    setPicking(kind);
+  /*
+   * The chosen picture, on its way to being cropped.
+   *
+   * `owned` says whether the URL is an object URL this component made and must
+   * revoke, or a registry URL being repositioned, which must NOT be revoked -
+   * it is the picture the page is still displaying.
+   */
+  const [cropping, setCropping] = useState<{ src: string; kind: ImageKind; owned: boolean } | null>(
+    null,
+  );
+
+  const closeCrop = useCallback(() => {
+    setCropping((cur) => {
+      if (cur?.owned) URL.revokeObjectURL(cur.src);
+      return null;
+    });
+  }, []);
+
+  // A file off the camera roll: straight into the cropper, not straight up.
+  const chose = (file: Blob) => {
     setNote(null);
+    setCropping({ src: URL.createObjectURL(file), kind: wanted.current, owned: true });
+  };
+
+  /** Move or resize the picture already in use, without going back to the
+   *  camera roll for it. The registry serves these with an open CORS header,
+   *  so it can be re-cut in a canvas here. */
+  const reposition = (kind: ImageKind) => {
+    const src = kind === 'avatar' ? registry?.avatarUrl : registry?.bannerUrl;
+    if (!src) return;
+    setNote(null);
+    setCropping({ src, kind, owned: false });
+  };
+
+  const uploadCropped = async (blob: Blob) => {
+    if (!registry || !cropping) return;
+    const kind = cropping.kind;
+    setPicking(kind);
     try {
-      const small = await prepareImage(file, kind);
-      const { url } = await uploadProfileImage(registry.token, kind, small);
+      const { url } = await uploadProfileImage(registry.token, kind, blob);
       apply({ ...registry, [kind === 'avatar' ? 'avatarUrl' : 'bannerUrl']: url });
+      if (kind === 'banner') setBannerBroken(false);
+      closeCrop();
     } catch (err) {
       setNote({ tone: 'bad', text: messageOf(err), at: 'pictures' });
+      closeCrop();
     } finally {
       setPicking(null);
     }
   };
 
-  const clearImages = async () => {
+  /** Take ONE of them off. It used to be a single button that removed both at
+   *  once, which is not a thing anybody wants: a banner you have gone off does
+   *  not mean you have gone off your own face. */
+  const removeImage = async (kind: ImageKind) => {
     if (!registry) return;
-    setPicking('avatar');
+    setPicking(kind);
     setNote(null);
     try {
-      await Promise.all([
-        removeProfileImage(registry.token, 'avatar'),
-        removeProfileImage(registry.token, 'banner'),
-      ]);
-      apply({ ...registry, avatarUrl: null, bannerUrl: null });
+      await removeProfileImage(registry.token, kind);
+      apply({ ...registry, [kind === 'avatar' ? 'avatarUrl' : 'bannerUrl']: null });
+      if (kind === 'banner') setBannerBroken(false);
     } catch (err) {
       setNote({ tone: 'bad', text: messageOf(err), at: 'pictures' });
     } finally {
@@ -391,6 +428,15 @@ export function ProfilePage({
           if (file) void chose(file);
         }}
       />
+      {cropping && (
+        <CropPhoto
+          src={cropping.src}
+          kind={cropping.kind}
+          busy={picking !== null}
+          onCancel={closeCrop}
+          onDone={(blob) => void uploadCropped(blob)}
+        />
+      )}
       {registry && account ? (
         /*
          * The hero card: a band of your own picture, your face sitting ON it,
@@ -414,8 +460,24 @@ export function ProfilePage({
                 onError={() => setBannerBroken(true)}
               />
             )}
-            {/* On the band itself, where the thing it changes is. */}
+            {/* On the band itself, where the thing it changes is. Three verbs
+                rather than two, because "change" and "remove" were never the
+                whole set: most of the time what you want is the picture you
+                already chose, an inch to the left. */}
             <span className="profileHero__coverTools">
+              {registry.bannerUrl && !bannerBroken && (
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  className="profileHero__coverButton"
+                  aria-label="Reposition your banner"
+                  title="Reposition your banner"
+                  disabled={picking !== null}
+                  onClick={() => reposition('banner')}
+                >
+                  <Crop size={16} />
+                </IconButton>
+              )}
               <IconButton
                 variant="ghost"
                 size="sm"
@@ -427,15 +489,15 @@ export function ProfilePage({
               >
                 <ImagePlus size={16} />
               </IconButton>
-              {(registry.bannerUrl || registry.avatarUrl) && (
+              {registry.bannerUrl && (
                 <IconButton
                   variant="ghost"
                   size="sm"
                   className="profileHero__coverButton"
-                  aria-label="Remove your pictures"
-                  title="Remove your pictures"
+                  aria-label="Remove your banner"
+                  title="Remove your banner"
                   disabled={picking !== null}
-                  onClick={() => void clearImages()}
+                  onClick={() => void removeImage('banner')}
                 >
                   <Trash2 size={16} />
                 </IconButton>
@@ -460,6 +522,37 @@ export function ProfilePage({
               <Camera size={14} />
             </span>
           </button>
+
+          {/* The face's own two verbs, beside it rather than on it: the circle
+              is small and already means "choose a photo", so stacking a delete
+              onto it would be two targets a thumb cannot tell apart. Shown only
+              when there is a picture to act on. */}
+          {registry.avatarUrl && (
+            <span className="profileHero__faceTools">
+              <IconButton
+                variant="ghost"
+                size="sm"
+                className="profileHero__coverButton"
+                aria-label="Reposition your picture"
+                title="Reposition your picture"
+                disabled={picking !== null}
+                onClick={() => reposition('avatar')}
+              >
+                <Crop size={16} />
+              </IconButton>
+              <IconButton
+                variant="ghost"
+                size="sm"
+                className="profileHero__coverButton"
+                aria-label="Remove your picture"
+                title="Remove your picture"
+                disabled={picking !== null}
+                onClick={() => void removeImage('avatar')}
+              >
+                <Trash2 size={16} />
+              </IconButton>
+            </span>
+          )}
 
           <span className="profileHero__body">
             <h1 className="profileHero__handle">@{account.handle}</h1>

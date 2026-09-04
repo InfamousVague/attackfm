@@ -512,7 +512,12 @@
    colour so it reads as a layer above the picture rather than a hole in it. */
 .profileHero__faceButton {
   position: relative;
-  display: block;
+  /* Inline-block so its own two verbs can sit on the same line beside it
+     without either being positioned by hand against a face whose size comes
+     from the avatar component. `bottom` aligns them to the foot of the circle
+     rather than its middle. */
+  display: inline-block;
+  vertical-align: bottom;
   margin-block-start: -2.5rem;
   padding: 0;
   border: 0;
@@ -599,4 +604,75 @@
 .profileHero__note {
   margin-block-start: var(--glacier-space-2);
   text-wrap: balance;
+}
+
+
+/* The face's own verbs - reposition and remove - beside the circle rather than
+   stacked on it. The circle is small and already means "choose a photo"; a
+   second target inside it is one a thumb cannot pick between. */
+.profileHero__faceTools {
+  display: inline-flex;
+  vertical-align: bottom;
+  gap: var(--glacier-space-1);
+  margin-inline-start: var(--glacier-space-2);
+  margin-block-end: var(--glacier-space-1);
+}
+
+/* ---- Choosing which part of a picture is the picture ---------------------
+   The crop dialog's insides. Everything the cropper draws is styled here:
+   react-easy-crop ships a stylesheet that selects by tag, so it is told not to
+   inject it (disableAutomaticStylesInjection) and given these class names. */
+
+.cropPhoto {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+/* The stage is a fixed band rather than the image's own shape: a portrait
+   photograph and a panorama both have to be draggable in the same box, and a
+   box that resized to the picture would jump the dialog's height on every
+   choice. Dark, because a photograph is being judged against it. */
+.cropPhoto__stage {
+  position: relative;
+  inline-size: 100%;
+  block-size: min(46dvh, 20rem);
+  border-radius: var(--glacier-radius-lg);
+  overflow: hidden;
+  background: #0a0a0c;
+  /* Every drag in here is a crop, so the browser gets none of them - the same
+     reason the date card takes its own gestures. */
+  touch-action: none;
+}
+
+/* The part outside the crop, dimmed but not hidden: you are choosing where the
+   picture is, which needs the part you are leaving out to stay visible.
+
+   Scoped through .cropPhoto__stage on purpose. The library injects its own
+   stylesheet at RUNTIME, so its rules land after this file and would win a tie
+   on equal specificity - this pair of classes outranks its single one, and the
+   crop window keeps the darker scrim and the brighter edge. The round shape on
+   a face comes from its .reactEasyCrop_CropAreaRound and is left alone. */
+.cropPhoto__stage .cropPhoto__area {
+  color: rgb(0 0 0 / 0.55);
+  border: 2px solid rgb(255 255 255 / 0.9);
+  box-shadow: 0 0 0 9999em currentColor;
+}
+
+.cropPhoto__zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  color: var(--glacier-text-muted);
+}
+
+.cropPhoto__zoom > :nth-child(2) {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.cropPhoto__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--glacier-space-2);
 }
