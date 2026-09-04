@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.96
+
+- Links you share now read attack.fm instead of registry.attack.fm — an
+  invite, a playlist, a jam, your profile. Every link you have already sent
+  keeps working exactly as it did.
+
 ## 0.5.95
 
 - Your profile pictures have their buttons back off them. The banner and your
