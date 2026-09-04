@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.101
+
+- Say no, everywhere a song is dealt to you: thumbs on the DJ, in Now
+  Playing and on the queue while the DJ or the radio is on; hold a DJ row, a
+  queue row or a Music Date card for "why this?", "Not this song" and "Less
+  like {artist}". A no takes effect on the spot and is remembered.
+
 ## 0.5.100
 
 - Discover is art-first now: a hero under the title bar built from your own
