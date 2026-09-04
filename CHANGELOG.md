@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.103
+
+- Cards ripple into place where you can actually see them. They used to
+  arrive under the bottom bar, a beat before scrolling into view, so the
+  entrance was mostly over by the time it reached your eye.
+
 ## 0.5.102
 
 - Previews on Discover play again for songs you do not have yet. The
