@@ -9789,14 +9789,16 @@ impl Db {
         /*
          * Adopted BY THE LISTENER WHOSE PULL IT WAS - which `state` cannot say.
          *
-         * `promote_curator_track` takes a track id and no user: it flips every
-         * pull row containing that track to 'promoted', whoever did the
-         * listening. On a hub with one person that is the same thing. On a hub
-         * with eleven it is not: a housemate hearting a song your collector
-         * fetched marked YOUR pull adopted, your dial read "my picks are
-         * landing", and it spent more on the strength of somebody else's
-         * taste. The measure has to name who adopted, and `state` has nowhere
-         * to put that.
+         * `promote_curator_track` used to take a track id and no user: it
+         * flipped every pull row containing that track to 'promoted', whoever
+         * did the listening. (It is `promote_curator_track_for` now, and only
+         * the owner's own gesture flips their row - but the row's `state` is
+         * still the wrong place to read adoption FROM.) On a hub with one
+         * person that was the same thing. On a hub with eleven it was not: a
+         * housemate hearting a song your collector fetched marked YOUR pull
+         * adopted, your dial read "my picks are landing", and it spent more
+         * on the strength of somebody else's taste. The measure has to name
+         * who adopted, and `state` has nowhere to put that.
          *
          * So it is derived instead of stored. Adoption is a completed listen
          * or a heart (collector.rs), and both are already recorded per user -

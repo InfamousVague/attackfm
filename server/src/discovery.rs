@@ -765,7 +765,7 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
         // now it is actually used instead of being noted and then passed as
         // None, which made a quarter of the score a constant.
         let tags = crate::taste::artist_tags(&by_id, &cand.seed);
-        let score = crate::taste::score_candidate(&taste, vec.as_deref(), bpm, &tags) as f64
+        let score = crate::taste::score_candidate(&taste, vec.as_deref(), bpm, &tags, &cand.seed, None) as f64
             + score_extras(lanes.get(&cand.ext_id), cand.popularity, mood.as_ref(), vec.as_deref(), bpm);
 
         let _ = state.db.save_discovery_features(user, &cand.ext_id, bpm, vec.as_deref(), score);
@@ -853,7 +853,7 @@ pub fn rescore(state: &Arc<AppState>, user: i64) {
             .entry(d.seed.to_lowercase())
             .or_insert_with(|| crate::taste::artist_tags(&by_id, &d.seed))
             .clone();
-        let score = crate::taste::score_candidate(&taste, d.lyric_vec.as_deref(), d.bpm, &tags)
+        let score = crate::taste::score_candidate(&taste, d.lyric_vec.as_deref(), d.bpm, &tags, &d.seed, None)
             as f64
             + score_extras(lanes.get(&d.ext_id), d.popularity, mood.as_ref(), d.lyric_vec.as_deref(), d.bpm);
         state.db.set_discovery_score(user, &d.ext_id, score);

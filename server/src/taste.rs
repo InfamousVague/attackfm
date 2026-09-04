@@ -71,17 +71,30 @@ const INSTANT_SKIP_MS: i64 = 15_000;
 /// Coming back, unprompted, is the truest "I like this" after a heart.
 const REPEAT_BONUS: f32 = 1.25;
 
+/// The terms of the score, in the order every `[f32; N_TERMS]` uses.
+pub const N_TERMS: usize = 8;
+pub const TERM_NAMES: [&str; N_TERMS] =
+    ["lyric", "sonic", "tempo", "tags", "energy", "texture", "scene", "era"];
+
 /// The house ranking, and the value every per-user weight is pulled toward.
-/// These are the old hardcoded curator weights (0.45 lyric / 0.30 tempo /
-/// 0.25 genre) re-expressed over the wider set of terms now available, with
-/// the new terms given deliberately modest starting room: the prior should be
-/// close to known-acceptable behaviour, and let evidence earn the rest.
+///
+/// Where the room went. The old three-term curator (0.45 lyric / 0.30 tempo /
+/// 0.25 genre) is still recognisable in the top four; the listener asked for
+/// "sounds similar, same scene, same era" as what makes a new song feel
+/// connected, and those are the three terms that were missing from the model
+/// entirely. They start modest - the prior should stay close to behaviour
+/// people have already accepted, and let evidence earn the rest - but they
+/// start, which is the difference between a term the fitter can promote and
+/// a term it has never heard of.
 pub const PRIOR: Weights = Weights {
-    lyric: 0.34,
-    sonic: 0.14,
-    tempo: 0.20,
-    tags: 0.22,
+    lyric: 0.26,
+    sonic: 0.10,
+    tempo: 0.14,
+    tags: 0.16,
     energy: 0.10,
+    texture: 0.10,
+    scene: 0.08,
+    era: 0.06,
 };
 
 /// How much each term of the score is worth to one listener.
@@ -98,35 +111,57 @@ pub struct Weights {
     pub tempo: f32,
     pub tags: f32,
     pub energy: f32,
+    /// Brightness and dynamic range: the FEEL of the recording, as measured
+    /// off the audio, which is the "sounds similar" a genre label cannot say.
+    pub texture: f32,
+    /// The artists they return to, and the artists next door to those.
+    pub scene: f32,
+    /// When it was made.
+    pub era: f32,
 }
 
 impl Weights {
-    pub fn normalized(mut self) -> Self {
-        let sum = self.lyric + self.sonic + self.tempo + self.tags + self.energy;
-        if sum > 0.0 {
-            self.lyric /= sum;
-            self.sonic /= sum;
-            self.tempo /= sum;
-            self.tags /= sum;
-            self.energy /= sum;
-        } else {
-            self = PRIOR;
+    pub fn as_array(&self) -> [f32; N_TERMS] {
+        [self.lyric, self.sonic, self.tempo, self.tags, self.energy, self.texture, self.scene, self.era]
+    }
+
+    pub fn from_array(a: [f32; N_TERMS]) -> Self {
+        Weights {
+            lyric: a[0],
+            sonic: a[1],
+            tempo: a[2],
+            tags: a[3],
+            energy: a[4],
+            texture: a[5],
+            scene: a[6],
+            era: a[7],
         }
-        self
+    }
+
+    pub fn normalized(self) -> Self {
+        let mut a = self.as_array();
+        let sum: f32 = a.iter().sum();
+        if sum > 0.0 {
+            for x in a.iter_mut() {
+                *x /= sum;
+            }
+            Weights::from_array(a)
+        } else {
+            PRIOR
+        }
     }
 
     /// Move `frac` of the way from the prior to these. `frac` is the shrinkage
     /// factor, so 0 is "no evidence, use the house model".
     pub fn blend_from_prior(self, frac: f32) -> Self {
         let f = frac.clamp(0.0, 1.0);
-        let mix = |mine: f32, prior: f32| prior + (mine - prior) * f;
-        Weights {
-            lyric: mix(self.lyric, PRIOR.lyric),
-            sonic: mix(self.sonic, PRIOR.sonic),
-            tempo: mix(self.tempo, PRIOR.tempo),
-            tags: mix(self.tags, PRIOR.tags),
-            energy: mix(self.energy, PRIOR.energy),
+        let mine = self.as_array();
+        let prior = PRIOR.as_array();
+        let mut out = [0.0f32; N_TERMS];
+        for i in 0..N_TERMS {
+            out[i] = prior[i] + (mine[i] - prior[i]) * f;
         }
+        Weights::from_array(out)
     }
 }
 
@@ -353,8 +388,20 @@ pub struct UserTaste {
     pub tempo: Option<(f64, f64)>,
     /// Preferred energy, same shape.
     pub energy: Option<(f64, f64)>,
+    /// Preferred brightness and dynamic range, same shape: the texture of
+    /// the recordings they finish, measured off the audio.
+    pub brightness: Option<(f64, f64)>,
+    pub dynamics: Option<(f64, f64)>,
+    /// The years they live in, same shape, in years.
+    pub era: Option<(f64, f64)>,
     /// Signed affinity per tag, already shrunk. Negative means avoid.
     pub tags: HashMap<String, f32>,
+    /// Signed affinity per artist (folded name), already shrunk. This is the
+    /// heart of "same scene": the people they come back to.
+    pub artists: HashMap<String, f32>,
+    /// MusicBrainz ids of the artists they like, so a stranger whose
+    /// ListenBrainz neighbours include one of them reads as the same scene.
+    pub scene_mbids: HashSet<String>,
     /// This listener's own ranking weights, shrunk toward `PRIOR`.
     pub weights: Weights,
     /// Everything they have met, at any verdict. A discovery list must not
@@ -365,7 +412,7 @@ pub struct UserTaste {
     /// What an AVERAGE track in this library scores on each term, for this
     /// listener - the value a track gets when it cannot answer the term at
     /// all. See `neutral_of` for why this is not simply 0.5.
-    pub neutral: [f32; 5],
+    pub neutral: [f32; N_TERMS],
 }
 
 impl UserTaste {
@@ -379,11 +426,16 @@ impl UserTaste {
             sonic: None,
             tempo: None,
             energy: None,
+            brightness: None,
+            dynamics: None,
+            era: None,
             tags: HashMap::new(),
+            artists: HashMap::new(),
+            scene_mbids: HashSet::new(),
             weights: PRIOR,
             heard: HashSet::new(),
             rejected: HashSet::new(),
-            neutral: [0.5; 5],
+            neutral: [0.5; N_TERMS],
         }
     }
 
@@ -425,14 +477,7 @@ pub fn build(
         return taste;
     }
 
-    let mut lyric_sum: Vec<f32> = Vec::new();
-    let mut lyric_w = 0.0f32;
-    let mut sonic_sum: Vec<f32> = Vec::new();
-    let mut sonic_w = 0.0f32;
-    let mut tempos: Vec<(f64, f32)> = Vec::new();
-    let mut energies: Vec<(f64, f32)> = Vec::new();
-    let mut tag_score: HashMap<String, f32> = HashMap::new();
-    let mut tag_seen: HashMap<String, f32> = HashMap::new();
+    let mut acc = Accum::default();
 
     for v in verdicts {
         // A mis-tap is not a meeting. It is not in `heard` - the DJ would
@@ -454,55 +499,9 @@ pub fn build(
         taste.evidence += w.abs();
 
         let Some(f) = feats.get(&v.track_id) else { continue };
-
-        // Centroids take POSITIVE evidence only. A centroid is "the middle of
-        // what you like"; subtracting disliked tracks from it does not move it
-        // away from them, it moves it somewhere neither of you has been.
-        // Rejection is expressed through tags and the `rejected` set instead.
-        if w > 0.0 {
-            if let Some(vec) = &f.lyric_vec {
-                accumulate(&mut lyric_sum, &mut lyric_w, vec, w);
-            }
-            if let Some(vec) = &f.sonic_vec {
-                accumulate(&mut sonic_sum, &mut sonic_w, vec, w);
-            }
-            if let Some(b) = f.bpm {
-                tempos.push((b, w));
-            }
-            if let Some(e) = f.energy {
-                energies.push((e, w));
-            }
-        }
-
-        // Tags take BOTH signs: "never plays country" is as useful as "always
-        // plays shoegaze", and it is the half the old exact-string genre
-        // lookup could not represent at all.
-        for tag in tags_of(f) {
-            *tag_score.entry(tag.clone()).or_insert(0.0) += w;
-            *tag_seen.entry(tag).or_insert(0.0) += w.abs();
-        }
+        acc.add(f, w);
     }
-
-    taste.lyric = (lyric_w > 0.0).then(|| lyric_sum.iter().map(|x| x / lyric_w).collect());
-    taste.sonic = (sonic_w > 0.0).then(|| sonic_sum.iter().map(|x| x / sonic_w).collect());
-    taste.tempo = spread_of(&mut tempos, 4.0);
-    taste.energy = spread_of(&mut energies, 0.05);
-
-    // Each tag's affinity is its mean sentiment, shrunk by how often it was
-    // seen. One lucky completion of a polka track does not make you a polka
-    // listener; twenty of them do.
-    taste.tags = tag_score
-        .into_iter()
-        .filter_map(|(tag, total)| {
-            let seen = tag_seen.get(&tag).copied().unwrap_or(0.0);
-            if seen <= 0.0 {
-                return None;
-            }
-            let mean = (total / seen).clamp(-1.0, 1.0);
-            let affinity = mean * shrink(seen, TAG_CONFIDENCE);
-            (affinity.abs() > 0.02).then_some((tag, affinity))
-        })
-        .collect();
+    acc.finish(&mut taste);
 
     taste.neutral = neutral_of(&taste, feats);
     taste.weights = fit_weights(verdicts, feats, &taste, now);
@@ -526,20 +525,20 @@ pub fn build(
 ///
 /// With the fallback sitting at the typical value, an unknown track is an
 /// average track, and only actual similarity moves it.
-fn neutral_of(taste: &UserTaste, feats: &HashMap<i64, &TrackFeatures>) -> [f32; 5] {
-    let mut sum = [0.0f32; 5];
-    let mut n = [0u32; 5];
+fn neutral_of(taste: &UserTaste, feats: &HashMap<i64, &TrackFeatures>) -> [f32; N_TERMS] {
+    let mut sum = [0.0f32; N_TERMS];
+    let mut n = [0u32; N_TERMS];
     for f in feats.values() {
         let raw = terms_raw(f, taste);
-        for i in 0..5 {
+        for i in 0..N_TERMS {
             if let Some(x) = raw[i] {
                 sum[i] += x;
                 n[i] += 1;
             }
         }
     }
-    let mut out = [0.5f32; 5];
-    for i in 0..5 {
+    let mut out = [0.5f32; N_TERMS];
+    for i in 0..N_TERMS {
         if n[i] > 0 {
             out[i] = sum[i] / n[i] as f32;
         }
@@ -631,10 +630,10 @@ pub fn tags_of(f: &TrackFeatures) -> Vec<String> {
 /// Split out from `score` so the fitter can ask "what did this term say?" for
 /// a track whose outcome is already known, which is the whole basis of
 /// learning the weights.
-pub fn terms(f: &TrackFeatures, taste: &UserTaste) -> [f32; 5] {
+pub fn terms(f: &TrackFeatures, taste: &UserTaste) -> [f32; N_TERMS] {
     let raw = terms_raw(f, taste);
-    let mut out = [0.0f32; 5];
-    for i in 0..5 {
+    let mut out = [0.0f32; N_TERMS];
+    for i in 0..N_TERMS {
         // A term the track cannot answer scores as an average track would -
         // NOT as 0.5, which for a cosine term is far below any real value and
         // turned "has this feature at all" into a ranking signal.
@@ -643,8 +642,18 @@ pub fn terms(f: &TrackFeatures, taste: &UserTaste) -> [f32; 5] {
     out
 }
 
+/// One band term: how close `x` sits to the listener's band, in (0, 1].
+fn band(taste_band: Option<(f64, f64)>, x: Option<f64>, floor: f64) -> Option<f32> {
+    match (taste_band, x) {
+        (Some((med, spread)), Some(x)) => {
+            Some((-(((med - x).abs() / spread.max(floor)) as f32)).exp().clamp(0.0, 1.0))
+        }
+        _ => None,
+    }
+}
+
 /// Each term where the track can answer it, None where it cannot.
-pub fn terms_raw(f: &TrackFeatures, taste: &UserTaste) -> [Option<f32>; 5] {
+pub fn terms_raw(f: &TrackFeatures, taste: &UserTaste) -> [Option<f32>; N_TERMS] {
     let lyric = match (&taste.lyric, &f.lyric_vec) {
         (Some(c), Some(v)) => Some((crate::curator::cosine(c, v) + 1.0) / 2.0),
         _ => None,
@@ -653,17 +662,31 @@ pub fn terms_raw(f: &TrackFeatures, taste: &UserTaste) -> [Option<f32>; 5] {
         (Some(c), Some(v)) => Some((crate::curator::cosine(c, v) + 1.0) / 2.0),
         _ => None,
     };
-    let tempo = match (taste.tempo, f.bpm) {
-        (Some((med, spread)), Some(b)) => {
-            Some((-(((med - b).abs() / spread.max(1.0)) as f32)).exp().clamp(0.0, 1.0))
-        }
-        _ => None,
+    let tempo = band(taste.tempo, f.bpm, 1.0);
+    let energy = band(taste.energy, f.energy, 0.05);
+    // Texture is the mean of what can be answered: brightness and dynamic
+    // range are both measured for every analysed track, so in practice both.
+    let texture = {
+        let parts: Vec<f32> = [
+            band(taste.brightness, f.brightness, 0.05),
+            band(taste.dynamics, f.dynamic_range, 0.05),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        (!parts.is_empty()).then(|| parts.iter().sum::<f32>() / parts.len() as f32)
     };
-    let energy = match (taste.energy, f.energy) {
-        (Some((med, spread)), Some(e)) => {
-            Some((-(((med - e).abs() / spread.max(0.05)) as f32)).exp().clamp(0.0, 1.0))
+    let era = band(taste.era, f.year.filter(|y| *y > 1900).map(|y| y as f64), 3.0);
+    // Scene: the artist itself when they have met, else the artist's
+    // ListenBrainz neighbours against the artists they like - "next door to
+    // someone you love" reads as a warm yes, never as a full one.
+    let scene = match taste.artists.get(&artist_key(&f.artist)) {
+        Some(a) => Some((a + 1.0) / 2.0),
+        None => {
+            let neighbour = !taste.scene_mbids.is_empty()
+                && f.listenbrainz_similar.iter().any(|m| taste.scene_mbids.contains(m));
+            neighbour.then_some(0.75)
         }
-        _ => None,
     };
     let tags = if taste.tags.is_empty() {
         None
@@ -677,15 +700,14 @@ pub fn terms_raw(f: &TrackFeatures, taste: &UserTaste) -> [Option<f32>; 5] {
             Some(((hits.iter().sum::<f32>() / hits.len() as f32) + 1.0) / 2.0)
         }
     };
-    [lyric, sonic, tempo, tags, energy]
+    [lyric, sonic, tempo, tags, energy, texture, scene, era]
 }
 
 /// How well a track answers a listener, in [0, 1].
 pub fn score(f: &TrackFeatures, taste: &UserTaste) -> f32 {
     let t = terms(f, taste);
-    let w = taste.weights;
-    (t[0] * w.lyric + t[1] * w.sonic + t[2] * w.tempo + t[3] * w.tags + t[4] * w.energy)
-        .clamp(0.0, 1.0)
+    let w = taste.weights.as_array();
+    (0..N_TERMS).map(|i| t[i] * w[i]).sum::<f32>().clamp(0.0, 1.0)
 }
 
 /// Score something that is NOT in the library yet - a Deezer candidate for the
@@ -706,10 +728,24 @@ pub fn score_candidate(
     lyric_vec: Option<&[f32]>,
     bpm: Option<f64>,
     seed_tags: &[String],
+    seed_artist: &str,
+    year: Option<i64>,
 ) -> f32 {
     let w = taste.weights;
     let mut total = 0.0f32;
     let mut used = 0.0f32;
+
+    // The seed artist IS the scene. A candidate is in the pool because it
+    // was suggested from an artist the listener owns; how they feel about
+    // that artist is the most honest "same scene" answer there is.
+    if let Some(a) = taste.artists.get(&artist_key(seed_artist)) {
+        total += w.scene * ((a + 1.0) / 2.0);
+        used += w.scene;
+    }
+    if let Some(e) = band(taste.era, year.filter(|y| *y > 1900).map(|y| y as f64), 3.0) {
+        total += w.era * e;
+        used += w.era;
+    }
 
     if let (Some(c), Some(v)) = (&taste.lyric, lyric_vec) {
         total += w.lyric * ((crate::curator::cosine(c, v) + 1.0) / 2.0);
@@ -807,16 +843,21 @@ fn fit_weights(
         history.sonic = sub.sonic;
         history.tempo = sub.tempo;
         history.energy = sub.energy;
+        history.brightness = sub.brightness;
+        history.dynamics = sub.dynamics;
+        history.era = sub.era;
         history.tags = sub.tags;
+        history.artists = sub.artists;
+        history.scene_mbids = sub.scene_mbids;
         history.neutral = neutral_of(&history, feats);
     }
 
     // Weighted correlation between each term and the outcome on the held-out half.
-    let mut num = [0.0f32; 5];
-    let mut term_mean = [0.0f32; 5];
+    let mut num = [0.0f32; N_TERMS];
+    let mut term_mean = [0.0f32; N_TERMS];
     let mut out_mean = 0.0f32;
     let mut wsum = 0.0f32;
-    let rows: Vec<([f32; 5], f32, f32)> = newer
+    let rows: Vec<([f32; N_TERMS], f32, f32)> = newer
         .iter()
         .filter_map(|v| {
             let f = feats.get(&v.track_id)?;
@@ -830,7 +871,7 @@ fn fit_weights(
     for (t, out, w) in &rows {
         wsum += w;
         out_mean += out * w;
-        for i in 0..5 {
+        for i in 0..N_TERMS {
             term_mean[i] += t[i] * w;
         }
     }
@@ -841,12 +882,12 @@ fn fit_weights(
     for m in term_mean.iter_mut() {
         *m /= wsum;
     }
-    let mut var_t = [0.0f32; 5];
+    let mut var_t = [0.0f32; N_TERMS];
     let mut var_o = 0.0f32;
     for (t, out, w) in &rows {
         let dout = out - out_mean;
         var_o += w * dout * dout;
-        for i in 0..5 {
+        for i in 0..N_TERMS {
             let dt = t[i] - term_mean[i];
             num[i] += w * dt * dout;
             var_t[i] += w * dt * dt;
@@ -855,8 +896,8 @@ fn fit_weights(
     if var_o <= 0.0 {
         return PRIOR;
     }
-    let mut fitted = [0.0f32; 5];
-    for i in 0..5 {
+    let mut fitted = [0.0f32; N_TERMS];
+    for i in 0..N_TERMS {
         if var_t[i] > 0.0 {
             // Only positive predictive power earns weight.
             fitted[i] = (num[i] / (var_t[i] * var_o).sqrt()).max(0.0);
@@ -865,14 +906,7 @@ fn fit_weights(
     if fitted.iter().sum::<f32>() <= 0.0 {
         return PRIOR;
     }
-    let mine = Weights {
-        lyric: fitted[0],
-        sonic: fitted[1],
-        tempo: fitted[2],
-        tags: fitted[3],
-        energy: fitted[4],
-    }
-    .normalized();
+    let mine = Weights::from_array(fitted).normalized();
 
     let evidence: f32 = rows.iter().map(|(_, _, w)| *w).sum();
     mine.blend_from_prior(shrink(evidence, WEIGHT_CONFIDENCE)).normalized()
@@ -887,55 +921,137 @@ fn build_descriptive(
     now: i64,
 ) -> UserTaste {
     let mut t = UserTaste::cold(0);
-    let mut lyric_sum: Vec<f32> = Vec::new();
-    let mut lyric_w = 0.0f32;
-    let mut sonic_sum: Vec<f32> = Vec::new();
-    let mut sonic_w = 0.0f32;
-    let mut tempos: Vec<(f64, f32)> = Vec::new();
-    let mut energies: Vec<(f64, f32)> = Vec::new();
-    let mut tag_score: HashMap<String, f32> = HashMap::new();
-    let mut tag_seen: HashMap<String, f32> = HashMap::new();
-
+    let mut acc = Accum::default();
     for v in verdicts {
         let w = v.weight(now);
         if w == 0.0 {
             continue;
         }
         let Some(f) = feats.get(&v.track_id) else { continue };
+        acc.add(f, w);
+    }
+    acc.finish(&mut t);
+    t
+}
+
+/// How many weighted sittings before an artist affinity is trusted at half
+/// strength. Lower than tags: an artist is a much narrower thing than a
+/// genre, and three finished songs by one person IS a pattern.
+const ARTIST_CONFIDENCE: f32 = 3.0;
+
+/// An artist name folded for matching.
+pub fn artist_key(s: &str) -> String {
+    s.trim().to_lowercase()
+}
+
+/// The descriptive accumulators - centroids, bands, affinities - shared by
+/// `build` and `build_descriptive`, so the fitter's past-only model is built
+/// by exactly the code that builds the real one and the two cannot drift.
+#[derive(Default)]
+struct Accum {
+    lyric_sum: Vec<f32>,
+    lyric_w: f32,
+    sonic_sum: Vec<f32>,
+    sonic_w: f32,
+    tempos: Vec<(f64, f32)>,
+    energies: Vec<(f64, f32)>,
+    brightness: Vec<(f64, f32)>,
+    dynamics: Vec<(f64, f32)>,
+    years: Vec<(f64, f32)>,
+    tag_score: HashMap<String, f32>,
+    tag_seen: HashMap<String, f32>,
+    artist_score: HashMap<String, f32>,
+    artist_seen: HashMap<String, f32>,
+    artist_mbid: HashMap<String, String>,
+}
+
+impl Accum {
+    fn add(&mut self, f: &TrackFeatures, w: f32) {
+        // Centroids and bands take POSITIVE evidence only. A centroid is "the
+        // middle of what you like"; subtracting disliked tracks from it does
+        // not move it away from them, it moves it somewhere neither of you
+        // has been. Rejection is expressed through the signed affinities and
+        // the `rejected` set instead.
         if w > 0.0 {
             if let Some(vec) = &f.lyric_vec {
-                accumulate(&mut lyric_sum, &mut lyric_w, vec, w);
+                accumulate(&mut self.lyric_sum, &mut self.lyric_w, vec, w);
             }
             if let Some(vec) = &f.sonic_vec {
-                accumulate(&mut sonic_sum, &mut sonic_w, vec, w);
+                accumulate(&mut self.sonic_sum, &mut self.sonic_w, vec, w);
             }
             if let Some(b) = f.bpm {
-                tempos.push((b, w));
+                self.tempos.push((b, w));
             }
             if let Some(e) = f.energy {
-                energies.push((e, w));
+                self.energies.push((e, w));
+            }
+            if let Some(b) = f.brightness {
+                self.brightness.push((b, w));
+            }
+            if let Some(d) = f.dynamic_range {
+                self.dynamics.push((d, w));
+            }
+            if let Some(y) = f.year.filter(|y| *y > 1900) {
+                self.years.push((y as f64, w));
             }
         }
+
+        // Tags and artists take BOTH signs: "never plays country" is as
+        // useful as "always plays shoegaze", and it is the half the old
+        // exact-string genre lookup could not represent at all.
         for tag in tags_of(f) {
-            *tag_score.entry(tag.clone()).or_insert(0.0) += w;
-            *tag_seen.entry(tag).or_insert(0.0) += w.abs();
+            *self.tag_score.entry(tag.clone()).or_insert(0.0) += w;
+            *self.tag_seen.entry(tag).or_insert(0.0) += w.abs();
+        }
+        let key = artist_key(&f.artist);
+        if !key.is_empty() {
+            *self.artist_score.entry(key.clone()).or_insert(0.0) += w;
+            *self.artist_seen.entry(key.clone()).or_insert(0.0) += w.abs();
+            if !f.musicbrainz_id.is_empty() {
+                self.artist_mbid.entry(key).or_insert_with(|| f.musicbrainz_id.clone());
+            }
         }
     }
-    t.lyric = (lyric_w > 0.0).then(|| lyric_sum.iter().map(|x| x / lyric_w).collect());
-    t.sonic = (sonic_w > 0.0).then(|| sonic_sum.iter().map(|x| x / sonic_w).collect());
-    t.tempo = spread_of(&mut tempos, 4.0);
-    t.energy = spread_of(&mut energies, 0.05);
-    t.tags = tag_score
+
+    fn finish(mut self, t: &mut UserTaste) {
+        let lw = self.lyric_w;
+        t.lyric = (lw > 0.0).then(|| self.lyric_sum.iter().map(|x| x / lw).collect());
+        let sw = self.sonic_w;
+        t.sonic = (sw > 0.0).then(|| self.sonic_sum.iter().map(|x| x / sw).collect());
+        // Floors are in the units of each value: 4 bpm, 0.05 on a 0..1
+        // scale, three years. See `spread_of` for why they are not one number.
+        t.tempo = spread_of(&mut self.tempos, 4.0);
+        t.energy = spread_of(&mut self.energies, 0.05);
+        t.brightness = spread_of(&mut self.brightness, 0.05);
+        t.dynamics = spread_of(&mut self.dynamics, 0.05);
+        t.era = spread_of(&mut self.years, 3.0);
+        // Each affinity is its mean sentiment, shrunk by how often it was
+        // seen. One lucky completion of a polka track does not make you a
+        // polka listener; twenty of them do.
+        t.tags = affinities(self.tag_score, &self.tag_seen, TAG_CONFIDENCE);
+        t.artists = affinities(self.artist_score, &self.artist_seen, ARTIST_CONFIDENCE);
+        t.scene_mbids = t
+            .artists
+            .iter()
+            .filter(|(_, a)| **a > 0.1)
+            .filter_map(|(k, _)| self.artist_mbid.get(k).cloned())
+            .collect();
+    }
+}
+
+fn affinities(score: HashMap<String, f32>, seen: &HashMap<String, f32>, k: f32) -> HashMap<String, f32> {
+    score
         .into_iter()
-        .filter_map(|(tag, total)| {
-            let seen = tag_seen.get(&tag).copied().unwrap_or(0.0);
-            (seen > 0.0).then(|| {
-                let mean = (total / seen).clamp(-1.0, 1.0);
-                (tag, mean * shrink(seen, TAG_CONFIDENCE))
-            })
+        .filter_map(|(key, total)| {
+            let n = seen.get(&key).copied().unwrap_or(0.0);
+            if n <= 0.0 {
+                return None;
+            }
+            let mean = (total / n).clamp(-1.0, 1.0);
+            let affinity = mean * shrink(n, k);
+            (affinity.abs() > 0.02).then_some((key, affinity))
         })
-        .collect();
-    t
+        .collect()
 }
 
 #[cfg(test)]
@@ -1021,6 +1137,46 @@ mod tests {
         assert!(known > 0.9, "a track near the centroid scores high: {known}");
         assert!(unknown > 0.9, "an unknown sits at the library's typical value, not 0.5: {unknown}");
         assert!(t.neutral[1] > 0.9);
+    }
+
+    /// "Sounds similar, same scene, same era" - the listener's own three
+    /// reasons a new song feels connected, each now a term.
+    #[test]
+    fn texture_scene_and_era_answer_when_known() {
+        let mut liked = feat(1, 120.0, "rock", None);
+        liked.brightness = Some(0.6);
+        liked.dynamic_range = Some(0.7);
+        liked.year = Some(2019);
+        liked.artist = "Big Thief".into();
+        liked.musicbrainz_id = "mb-bigthief".into();
+        let mut near = feat(2, 120.0, "rock", None);
+        near.brightness = Some(0.62);
+        near.dynamic_range = Some(0.68);
+        near.year = Some(2020);
+        near.artist = "Someone New".into();
+        near.listenbrainz_similar = vec!["mb-bigthief".into()];
+        let mut far = feat(3, 120.0, "rock", None);
+        far.brightness = Some(0.1);
+        far.dynamic_range = Some(0.2);
+        far.year = Some(1975);
+        far.artist = "Nobody Known".into();
+        let mut feats = HashMap::new();
+        feats.insert(1i64, &liked);
+        feats.insert(2i64, &near);
+        feats.insert(3i64, &far);
+        let vs: Vec<Verdict> = (0..4).map(|i| verdict(1, i * 3600, "discover")).collect();
+        let t = build(7, &vs, &feats, 4 * 3600);
+
+        let l = terms_raw(&liked, &t);
+        let n = terms_raw(&near, &t);
+        let fr = terms_raw(&far, &t);
+        // texture (5), scene (6), era (7)
+        assert!(l[5].unwrap() > 0.9 && n[5].unwrap() > 0.6 && fr[5].unwrap() < 0.1, "texture: {l:?} {n:?} {fr:?}");
+        assert!(l[7].unwrap() > 0.9 && n[7].unwrap() > 0.6 && fr[7].unwrap() < 0.01, "era");
+        assert!(l[6].unwrap() > 0.7, "the artist they return to: {:?}", l[6]);
+        assert_eq!(n[6], Some(0.75), "a ListenBrainz neighbour of an artist they like is the scene");
+        assert_eq!(fr[6], None, "a stranger with no neighbours cannot answer, and sits at neutral");
+        assert!(t.scene_mbids.contains("mb-bigthief"));
     }
 
     /// The listener's own rule: under ten seconds says nothing. A four-second
@@ -1220,16 +1376,16 @@ mod tests {
 
     #[test]
     fn weights_always_sum_to_one() {
-        let w = Weights { lyric: 3.0, sonic: 1.0, tempo: 2.0, tags: 2.0, energy: 2.0 }.normalized();
-        let sum = w.lyric + w.sonic + w.tempo + w.tags + w.energy;
+        let w = Weights::from_array([3.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0]).normalized();
+        let sum: f32 = w.as_array().iter().sum();
         assert!((sum - 1.0).abs() < 1e-5, "got {sum}");
-        let zero = Weights { lyric: 0.0, sonic: 0.0, tempo: 0.0, tags: 0.0, energy: 0.0 }.normalized();
+        let zero = Weights::from_array([0.0; N_TERMS]).normalized();
         assert_eq!(zero, PRIOR, "a degenerate fit falls back to the house model");
     }
 
     #[test]
     fn blending_from_the_prior_moves_the_right_distance() {
-        let mine = Weights { lyric: 1.0, sonic: 0.0, tempo: 0.0, tags: 0.0, energy: 0.0 };
+        let mine = Weights::from_array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         assert_eq!(mine.blend_from_prior(0.0), PRIOR, "no evidence, no movement");
         let half = mine.blend_from_prior(0.5);
         assert!((half.lyric - (PRIOR.lyric + (1.0 - PRIOR.lyric) * 0.5)).abs() < 1e-6);
@@ -1321,7 +1477,7 @@ mod eval {
             let mut new_rows = Vec::new();
             // Each term on its own, so a term that ranks BACKWARDS shows
             // itself instead of hiding inside a blended number.
-            let mut term_rows: Vec<Vec<(f32, bool)>> = vec![Vec::new(); 5];
+            let mut term_rows: Vec<Vec<(f32, bool)>> = vec![Vec::new(); N_TERMS];
             for v in test {
                 let Some(f) = by_id.get(&v.track_id) else { continue };
                 let liked = v.sentiment() > 0.25;
@@ -1332,27 +1488,28 @@ mod eval {
                 old_rows.push((crate::curator::score(f, &old), liked));
                 new_rows.push((score(f, &taste), liked));
                 let t = terms(f, &taste);
-                for i in 0..5 {
+                for i in 0..N_TERMS {
                     term_rows[i].push((t[i], liked));
                 }
             }
             if new_rows.len() < 20 {
                 continue;
             }
-            let w = taste.weights;
+            let w = taste.weights.as_array();
+            let ws: Vec<String> =
+                (0..N_TERMS).map(|i| format!("{}{:.2}", &TERM_NAMES[i][..2], w[i])).collect();
             println!(
-                "{:<18} {:>7} {:>9.3} {:>9.3}  ly{:.2} so{:.2} te{:.2} ta{:.2} en{:.2}",
+                "{:<18} {:>7} {:>9.3} {:>9.3}  {}",
                 name,
                 new_rows.len(),
                 auc(old_rows),
                 auc(new_rows),
-                w.lyric, w.sonic, w.tempo, w.tags, w.energy
+                ws.join(" ")
             );
-            let names = ["lyric", "sonic", "tempo", "tags", "energy"];
             let per: Vec<String> = term_rows
                 .into_iter()
                 .enumerate()
-                .map(|(i, rows)| format!("{}={:.3}", names[i], auc(rows)))
+                .map(|(i, rows)| format!("{}={:.3}", TERM_NAMES[i], auc(rows)))
                 .collect();
             println!("{:<18} per-term auc: {}", "", per.join("  "));
         }
