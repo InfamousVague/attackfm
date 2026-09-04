@@ -459,6 +459,12 @@
    should not change shape the moment one is, and the gradient underneath is a
    perfectly good banner for somebody who never picks one. */
 .profileHero__cover {
+  /* The band wears the kit's ContextMenu (press-and-hold for reposition and
+     remove), and that target is `display: contents` until told otherwise - so
+     without this the box below vanishes, taking the 8rem height, the gradient
+     and the positioning context for the banner with it. Same trap, same fix,
+     as .npScreen__canvasWrap. */
+  display: block;
   position: relative;
   margin-inline: calc(-1 * var(--glacier-space-4));
   block-size: 8rem;
@@ -519,16 +525,15 @@
 }
 
 /* The face, ON the band: pulled up over its edge, ringed in the card's own
-   colour so it reads as a layer above the picture rather than a hole in it. */
+   colour so it reads as a layer above the picture rather than a hole in it.
+
+   The climb over the band moved to .profileHero__faceHold, the box the
+   press-and-hold menu needs to hang off. The geometry has to live on the
+   OUTERMOST of the two or the negative margin pulls the button up inside a
+   wrapper that is still sitting below the band. */
 .profileHero__faceButton {
   position: relative;
-  /* Inline-block so its own two verbs can sit on the same line beside it
-     without either being positioned by hand against a face whose size comes
-     from the avatar component. `bottom` aligns them to the foot of the circle
-     rather than its middle. */
-  display: inline-block;
-  vertical-align: bottom;
-  margin-block-start: -2.5rem;
+  display: block;
   padding: 0;
   border: 0;
   background: none;
@@ -617,15 +622,20 @@
 }
 
 
-/* The face's own verbs - reposition and remove - beside the circle rather than
-   stacked on it. The circle is small and already means "choose a photo"; a
-   second target inside it is one a thumb cannot pick between. */
-.profileHero__faceTools {
-  display: inline-flex;
+/* The box the face's press-and-hold hangs off, and the thing that actually
+   sits on the band.
+
+   There were two small buttons beside the circle here - reposition and remove.
+   They are on the hold now, so the row they needed is gone and this carries
+   only the geometry they used to share: inline-block and `vertical-align:
+   bottom` because the circle's size comes from the avatar component rather
+   than from here, and the negative margin to climb over the band's edge. */
+.profileHero__faceHold {
+  /* `display` is not optional here either - see the note on
+     .profileHero__cover. inline-block is also what the circle needs. */
+  display: inline-block;
   vertical-align: bottom;
-  gap: var(--glacier-space-1);
-  margin-inline-start: var(--glacier-space-2);
-  margin-block-end: var(--glacier-space-1);
+  margin-block-start: -2.5rem;
 }
 
 /* ---- Choosing which part of a picture is the picture ---------------------

@@ -1,9 +1,11 @@
 import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { HomeStatsCards } from '../library/HomeStatsCards.tsx';
 import { ShareProfileSheet } from './ShareProfile.tsx';
-import { Button, Heading, IconButton, Text } from '@glacier/react';
+import { Button, ContextMenu, Heading, IconButton, MenuItem, Text } from '@glacier/react';
 import { Camera, Copy, Crop, ImagePlus, LogOut, Trash2, Users } from '@glacier/icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useHoldToMenu } from '../ux/holdToMenu.ts';
+import { MenuStop } from '../ux/MenuStop.tsx';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useJam } from '../player/jam.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -21,6 +23,52 @@ import { type ImageKind } from './pickImage.ts';
 import { CropPhoto } from './CropPhoto.tsx';
 import { enterServer, remotePath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
+
+/**
+ * A press-and-hold menu, but only when the menu would have something in it.
+ *
+ * Both pictures on the hero answer a hold with the same two verbs, and both
+ * have a state - no banner yet, no face yet - where neither verb applies.
+ * Wrapping them unconditionally would give that state a gesture that opens an
+ * empty panel, which reads as broken rather than as "nothing here". So when
+ * there is nothing to offer this is a plain box, the hold handlers are not
+ * attached, and the press does what a press on a picture should do: nothing.
+ *
+ * `content` is a thunk so the menu's rows are not built on the renders where
+ * they would never be shown.
+ */
+function HoldMenu({
+  when,
+  hold,
+  label,
+  className,
+  content,
+  children,
+  ...data
+}: {
+  when: boolean;
+  hold: ReturnType<typeof useHoldToMenu>;
+  /** Names the panel for a screen reader - the pictures have no text of their own. */
+  label: string;
+  className?: string;
+  content: () => ReactNode;
+  children?: ReactNode;
+  /** Styling hooks the wrapper carries either way; nothing else passes through. */
+  [key: `data-${string}`]: string | undefined;
+}) {
+  if (!when) {
+    return (
+      <div className={className} {...data}>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <ContextMenu {...hold} aria-label={label} className={className} content={content()} {...data}>
+      {children}
+    </ContextMenu>
+  );
+}
 
 /**
  * The Profile page: you, and everything social that hangs off you.
@@ -335,6 +383,41 @@ export function ProfilePage({
     setCropping({ src, kind, owned: false });
   };
 
+  /*
+   * The second thoughts about a picture, on the press-and-hold.
+   *
+   * Reposition and remove were buttons sitting on top of the photograph they
+   * act on, which is the wrong place for both: one is rare and the other is
+   * destructive, and neither is why anybody opens this page. A hold is the
+   * app's established way of asking a thing "what else?" - the same gesture,
+   * and the same panel, that a song or a playlist tile answers.
+   *
+   * `useHoldToMenu` rather than leaning on the kit's own long-press, because
+   * the face IS a button: without swallowing the release, the hold that
+   * summoned the menu would also fire "choose a picture" and put the camera
+   * roll up over it. It brings the mouse hold along too.
+   */
+  const holdFace = useHoldToMenu((_from, root) => root);
+  const holdBanner = useHoldToMenu((_from, root) => root);
+  const pictureMenu = (kind: ImageKind) => (
+    <MenuStop>
+      {/* Still reachable, just not a button any more: the cropper's usual
+          door is choosing the picture, and this is for the times the framing
+          is what you want to change rather than the photograph. */}
+      <MenuItem icon={<Crop size={15} />} disabled={picking !== null} onSelect={() => reposition(kind)}>
+        Reposition
+      </MenuItem>
+      <MenuItem
+        icon={<Trash2 size={15} />}
+        danger
+        disabled={picking !== null}
+        onSelect={() => void removeImage(kind)}
+      >
+        {kind === 'avatar' ? 'Remove picture' : 'Remove banner'}
+      </MenuItem>
+    </MenuStop>
+  );
+
   const uploadCropped = async (blob: Blob) => {
     if (!registry || !cropping) return;
     const kind = cropping.kind;
@@ -447,10 +530,25 @@ export function ProfilePage({
          * profile. The banner is the card's top now and the face overlaps its
          * edge, which is the shape a person recognises as "this page is about
          * me" before reading a word of it. Both pictures are chosen from here:
-         * the camera on the face, the corner button for the band.
+         * the camera on the face, the corner button for the band - and that is
+         * the whole of the chrome. Reposition and remove are on the press-and
+         * -hold, because a photograph with a row of small buttons parked on it
+         * is mostly buttons.
          */
         <header className="profileHero">
-          <div className="profileHero__cover" data-bannered={registry.bannerUrl && !bannerBroken ? '' : undefined}>
+          {/* The band and the face each answer a press-and-hold, and neither
+              wears the menu when there is nothing in it: a hold on an empty
+              banner has no reposition and no remove to offer, so it stays a
+              plain div and the gesture does nothing rather than opening an
+              empty panel. */}
+          <HoldMenu
+            when={!!registry.bannerUrl}
+            hold={holdBanner}
+            label="Banner actions"
+            className="profileHero__cover"
+            data-bannered={registry.bannerUrl && !bannerBroken ? '' : undefined}
+            content={() => pictureMenu('banner')}
+          >
             {registry.bannerUrl && !bannerBroken && (
               <img
                 className="profileHero__banner"
@@ -460,24 +558,19 @@ export function ProfilePage({
                 onError={() => setBannerBroken(true)}
               />
             )}
-            {/* On the band itself, where the thing it changes is. Three verbs
-                rather than two, because "change" and "remove" were never the
-                whole set: most of the time what you want is the picture you
-                already chose, an inch to the left. */}
+            {/* ONE verb on the band, not three.
+
+                It had reposition, change and remove sitting on the picture,
+                and a row of three small glyphs over a photograph is most of
+                what you see of the photograph. Only one of them is a thing
+                you come to this page to do - put a picture here - so only
+                that one is on the chrome. The other two moved to the press-
+                and-hold, which is where this app already keeps the second
+                thoughts about a thing (see TrackMenu, PlaylistShowcase).
+                Cropping is not a button anywhere any more: choosing a picture
+                opens the cropper on the way in, which is the moment it is
+                actually wanted. */}
             <span className="profileHero__coverTools">
-              {registry.bannerUrl && !bannerBroken && (
-                <IconButton
-                  variant="ghost"
-                  size="sm"
-                  className="profileHero__coverButton"
-                  aria-label="Reposition your banner"
-                  title="Reposition your banner"
-                  disabled={picking !== null}
-                  onClick={() => reposition('banner')}
-                >
-                  <Crop size={16} />
-                </IconButton>
-              )}
               <IconButton
                 variant="ghost"
                 size="sm"
@@ -489,70 +582,34 @@ export function ProfilePage({
               >
                 <ImagePlus size={16} />
               </IconButton>
-              {registry.bannerUrl && (
-                <IconButton
-                  variant="ghost"
-                  size="sm"
-                  className="profileHero__coverButton"
-                  aria-label="Remove your banner"
-                  title="Remove your banner"
-                  disabled={picking !== null}
-                  onClick={() => void removeImage('banner')}
-                >
-                  <Trash2 size={16} />
-                </IconButton>
-              )}
             </span>
-          </div>
+          </HoldMenu>
 
-          <button
-            type="button"
-            className="profileHero__faceButton"
-            aria-label={registry.avatarUrl ? 'Change your picture' : 'Choose a picture'}
-            disabled={picking !== null}
-            onClick={() => pick('avatar')}
+          <HoldMenu
+            when={!!registry.avatarUrl}
+            hold={holdFace}
+            label="Picture actions"
+            className="profileHero__faceHold"
+            content={() => pictureMenu('avatar')}
           >
-            <FriendAvatar
-              handle={account.handle}
-              size="lg"
-              className="profileHero__face"
-              src={registry.avatarUrl}
-            />
-            <span className="profileHero__faceEdit" aria-hidden>
-              <Camera size={14} />
-            </span>
-          </button>
-
-          {/* The face's own two verbs, beside it rather than on it: the circle
-              is small and already means "choose a photo", so stacking a delete
-              onto it would be two targets a thumb cannot tell apart. Shown only
-              when there is a picture to act on. */}
-          {registry.avatarUrl && (
-            <span className="profileHero__faceTools">
-              <IconButton
-                variant="ghost"
-                size="sm"
-                className="profileHero__coverButton"
-                aria-label="Reposition your picture"
-                title="Reposition your picture"
-                disabled={picking !== null}
-                onClick={() => reposition('avatar')}
-              >
-                <Crop size={16} />
-              </IconButton>
-              <IconButton
-                variant="ghost"
-                size="sm"
-                className="profileHero__coverButton"
-                aria-label="Remove your picture"
-                title="Remove your picture"
-                disabled={picking !== null}
-                onClick={() => void removeImage('avatar')}
-              >
-                <Trash2 size={16} />
-              </IconButton>
-            </span>
-          )}
+            <button
+              type="button"
+              className="profileHero__faceButton"
+              aria-label={registry.avatarUrl ? 'Change your picture' : 'Choose a picture'}
+              disabled={picking !== null}
+              onClick={() => pick('avatar')}
+            >
+              <FriendAvatar
+                handle={account.handle}
+                size="lg"
+                className="profileHero__face"
+                src={registry.avatarUrl}
+              />
+              <span className="profileHero__faceEdit" aria-hidden>
+                <Camera size={14} />
+              </span>
+            </button>
+          </HoldMenu>
 
           <span className="profileHero__body">
             <h1 className="profileHero__handle">@{account.handle}</h1>
