@@ -118,6 +118,15 @@ export interface PreviewDateCard {
   bpm?: number | null;
   /** How well the catalogue thinks the SONG does, 0-1 within its harvest. */
   popularity?: number | null;
+  /** The fit to this listener, 0-1 - what the deal ranked on. Absent on a
+   *  hub from before cards said so. */
+  score?: number | null;
+  /** Which terms of that score were actually MEASURED off the clip, so
+   *  "why this?" can be honest: a card scored on tempo alone says so. */
+  measured?: { tempo: boolean; lyrics: boolean; texture: boolean } | null;
+  /** When it came out, as the catalogue spells it (an ISO date or a bare
+   *  year); null until the pool has learned it. */
+  released?: string | null;
   /** Who this is, built before the card was dealt. `null` when the hub has
    *  not got to them yet; absent entirely on a hub from before profiles. */
   profile?: DateArtistProfile | null;
@@ -126,10 +135,13 @@ export interface PreviewDateCard {
 /** The best measured candidates, ready to date on their thirty seconds -
  *  and how deep the pool runs past the dealt hand, so every surface can
  *  promise the same number. */
-/** Which deck to deal. 'new' = only just-released music, 'tiny' = only the
- *  small, obscure acts (most-unknown first). Absent/anything else = the usual
- *  seated mix. An older server ignores the param and deals its ordinary mix. */
-export type DateMode = 'new' | 'tiny';
+/** Which deck to deal. 'charts' = the global chart filtered through your
+ *  taste, 'fresh' = the new-release shelf filtered the same way, 'new' = the
+ *  fresh shelf in editorial order, 'tiny' = only the small, obscure acts
+ *  (most-unknown first). Absent/anything else = the default deck, which is
+ *  your taste and nothing blended into it. An older server ignores a mode it
+ *  does not know and deals its default. */
+export type DateMode = 'new' | 'tiny' | 'charts' | 'fresh';
 
 export async function fetchDateCandidates(
   session: ServerSession,
@@ -275,16 +287,19 @@ export async function fetchDatePreview(
   }
 }
 
-/** The swipe on a preview date: a keep buys the song, a pass forgets it. */
+/** The swipe on a preview date: a keep buys the song, a pass forgets it and
+ *  tells the harvester. `lessLike` on a pass names the ACT - the artist is
+ *  kept out of the pool and the seeds at once, not after a second pass. */
 export async function dateCandidateVerdict(
   session: ServerSession,
   extId: string,
   kept: boolean,
+  lessLike = false,
 ): Promise<void> {
   await request(session.url, '/api/date/candidate-verdict', {
     token: session.token,
     method: 'POST',
-    body: JSON.stringify({ extId, kept }),
+    body: JSON.stringify(lessLike && !kept ? { extId, kept, lessLike } : { extId, kept }),
   });
 }
 

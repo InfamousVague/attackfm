@@ -55,11 +55,13 @@ const PER_LISTENER_PER_CYCLE: usize = 3;
 /// How long a pull may sit queued before its job is presumed dead.
 const STALE_PULL_MS: i64 = 24 * 60 * 60 * 1000;
 
-/// Every Nth seat at the date belongs to today's chart: the trending lane
-/// already lands the global chart in the pool, but taste-ranked buying meant
-/// a hit far from your taste never survived the threshold - so the deck was
-/// all echo and no radio. One seat in three was the radio's, by request;
-/// one in TWO since "add in more top hits" (2026-08-30).
+/// Every Nth buy is offered to today's chart first: the trending lane lands
+/// the global chart in the pool, and this seat is how a hit gets bought
+/// ahead of a taste find. One seat in three was the radio's, by request; one
+/// in TWO since "add in more top hits" (2026-08-30). The seat used to be
+/// EXEMPT from the taste bar, and that bought a stranger every other pull -
+/// the chart pick is now the best-fitting hit that clears the bar, or
+/// nothing (see the seat itself in `pull_cycle`).
 const CHART_EVERY: usize = 2;
 /// The cadence counts buys inside this window, so a listener who takes a
 /// month off starts a fresh rotation instead of inheriting a stale remainder.
@@ -111,16 +113,287 @@ fn threshold(exploration: f64) -> f64 {
     0.72 - 0.16 * exploration.clamp(0.0, 1.0)
 }
 
-/// Whether anything about this candidate was actually MEASURED.
+/// Whether enough about this candidate was actually MEASURED to call a score
+/// a fit.
 ///
-/// A score is three terms, each falling back to a neutral 0.5 when its input is
-/// missing - which means a candidate nobody has measured scores on popularity
-/// alone and can drift over the bar on fame rather than fit. The collector
-/// spends real disk, so it waits until at least one term is real: a tempo taken
-/// off the preview, or a lyric vector read for it. Suggesting such a candidate
-/// is still fine (that costs nothing); BUYING it is not.
-fn measured(d: &DiscoveryRow) -> bool {
-    d.bpm.is_some() || d.lyric_vec.is_some()
+/// Every term of the score falls back to a neutral 0.5 when its input is
+/// missing, and `score_candidate` renormalises over the terms it can answer -
+/// so a candidate with ONE real term is scored on that term alone. A bpm-only
+/// row is judged on tempo proximity and nothing else, which is how "sounds
+/// similar" quietly reduced to "same speed" and the deck felt random. Two
+/// terms is the floor now, and one of them has to be the tempo: a tempo taken
+/// off the preview, plus either the words (a lyric vector) or the texture
+/// (the energy read the pool takes from the clip - `texture`, absent until
+/// somebody has listened). Suggesting a thinner candidate is still fine on
+/// the `tiny` deck (see `measured_lightly`); buying it, or dealing it as a
+/// taste pick, is not.
+fn measured(d: &DiscoveryRow, texture: Option<f64>) -> bool {
+    d.bpm.is_some() && (d.lyric_vec.is_some() || texture.is_some())
+}
+
+/// The one-term rule, kept for the `tiny` deck only: a small act rarely has
+/// lyrics on file, and a deck that demanded two reads of it would starve.
+fn measured_lightly(d: &DiscoveryRow, texture: Option<f64>) -> bool {
+    d.bpm.is_some() || d.lyric_vec.is_some() || texture.is_some()
+}
+
+/// How long one Music Date sitting is taken to last, for the rules that count
+/// "this sitting": passes on one artist, keeps before a reseed. The client
+/// knows when a sitting ends (the tally resets when the deck runs dry); the
+/// server sees only swipes with timestamps, and an evening is the honest
+/// width of one.
+const SITTING_MS: i64 = 6 * 60 * 60 * 1000;
+/// Passes on one artist in a sitting before the harvester is told to stop
+/// bringing them. One pass is a song; two is the act.
+const PASSES_PER_ARTIST: usize = 2;
+/// Every Nth keep in a sitting reseeds the pool from the artist just kept -
+/// the deck refills from where the yeses are while the listener is still
+/// sitting, not from a six-hourly sweep of play counts.
+const KEEPS_PER_SEED: i64 = 3;
+/// How many artists a reseed walks. Same as the old date_done cap.
+const SEEDS: usize = 8;
+
+/// The seed list every harvester grows from: hearts and keeps, strongest
+/// first, decayed over sixty days - never play counts (see
+/// `heart_weighted_artists`). `avoid` is the artists just passed on, keyed
+/// with `taste::artist_key`: excluded rather than down-weighted, because a
+/// pass is a small "not this" and the honest reading is "look elsewhere"
+/// rather than a mark against an artist the listener may love.
+///
+/// A listener with no hearts, keeps or completed listens on file falls back to
+/// their play counts: something to grow from beats nothing, and the moment
+/// they heart one song the hearts take over.
+fn seed_artists(
+    db: &crate::db::Db,
+    user: i64,
+    avoid: &std::collections::HashSet<String>,
+    now: i64,
+) -> Vec<(String, i64)> {
+    let since = now - crate::taste::WINDOW_DAYS * 86_400_000;
+    let hearted: Vec<(String, i64)> = db
+        .heart_weighted_artists(user, since, now)
+        .into_iter()
+        .filter(|(name, _)| !avoid.contains(&crate::taste::artist_key(name)))
+        // harvest_seeded's weight is informational; keep the order, in
+        // hundredths so a tie-break survives the cast.
+        .map(|(name, w)| (name, (w * 100.0).round() as i64))
+        .take(SEEDS)
+        .collect();
+    if !hearted.is_empty() {
+        return hearted;
+    }
+    db.top_artists(user, now - WINDOW_30D_MS, SEEDS as i64)
+        .into_iter()
+        .filter(|(name, _)| !avoid.contains(&crate::taste::artist_key(name)))
+        .collect()
+}
+
+/// A pass, told to the harvester.
+///
+/// Every pass - on a preview card or a landed audition - writes the SONG into
+/// `discovery_rejections`, which is what `discovery::is_rejected` reads before
+/// the next harvest inserts anything: the same song under a new catalogue id
+/// stays out. A second pass on the same artist in one sitting (counted off
+/// the same ledger, so the two halves of the deck add up) writes the ARTIST
+/// row too, and `heart_weighted_artists` leaves them out of the seeds for a
+/// month. `less_like` is the listener saying so outright: the artist row goes
+/// on the first pass. Returns whether the artist row was written.
+fn note_pass(
+    db: &crate::db::Db,
+    user: i64,
+    artist: &str,
+    title: &str,
+    less_like: bool,
+    now: i64,
+) -> bool {
+    db.reject_discovery(user, "track", &crate::discovery::key_of(artist, title));
+    let key = crate::discovery::artist_key_public(artist);
+    if key.is_empty() {
+        return false;
+    }
+    // key_of is "{fold(artist)}|{title}", so the artist's passes this sitting
+    // are the track keys under that prefix.
+    let prefix = format!("{}|", crate::discovery::fold(artist));
+    let passes = db
+        .rejected_keys_since(user, "track", now - SITTING_MS)
+        .into_iter()
+        .filter(|k| k.starts_with(&prefix))
+        .count();
+    if less_like || passes >= PASSES_PER_ARTIST {
+        db.reject_discovery(user, "artist", &key);
+        return true;
+    }
+    false
+}
+
+/// Which quarter of the day it is, in UTC - the same bucket the daylist keys
+/// on (`getUTCHours() / 6`): 0 the small hours, 1 the morning, 2 midday, 3
+/// the evening.
+fn day_bucket(now_ms: i64) -> u8 {
+    ((now_ms / 3_600_000).rem_euclid(24) / 6) as u8
+}
+
+/// The most a time-of-day tilt can add to a taste score. Tiny by design: a
+/// score is a fit to the listener and the hour is a mood, and two candidates
+/// a few hundredths apart on fit may swap places for the hour while anything
+/// further apart never does.
+const TILT_WEIGHT: f64 = 0.015;
+
+/// The hour's small say over the taste bench: slower late, faster midday.
+/// A stable nudge on the tempo term only, added to the score so the sort
+/// stays one number. Nothing for a row with no tempo read.
+fn tempo_tilt(bucket: u8, bpm: Option<f64>) -> f64 {
+    let Some(bpm) = bpm else { return 0.0 };
+    // Where the day's tempo sits: down in the small hours, climbing through
+    // the morning, peaking at midday, easing off in the evening.
+    let target = match bucket {
+        0 => 90.0,
+        1 => 110.0,
+        2 => 125.0,
+        _ => 100.0,
+    };
+    let fit = 1.0 - ((bpm - target).abs() / 60.0).clamp(0.0, 1.0);
+    TILT_WEIGHT * fit
+}
+
+/// The lane a pool row came in through; an untagged row is a taste find.
+fn lane_in<'a>(lanes: &'a std::collections::HashMap<String, (String, f64)>, d: &DiscoveryRow) -> &'a str {
+    lanes.get(&d.ext_id).map(|(lane, _)| lane.as_str()).unwrap_or("taste")
+}
+
+/// One hand of Music Date, dealt. Pure over the pool so a deal can be checked
+/// without a hub: `pool` is the caller's already-filtered candidates (a
+/// preview to play, not pulled, not judged) in the pool's own score order,
+/// `extras` the texture/era sidecar, `bar` the exploration threshold and
+/// `bucket` the quarter of the day. Returns the cards and how deep the chosen
+/// deck runs - "N left to meet" counts THIS deck, not the whole pool.
+///
+/// The decks:
+/// - the default: the taste bench, every seat. It used to seat the global
+///   chart and the fresh shelf into two seats in five BY CHART POSITION,
+///   never by score - forty percent of the hand that hung off nothing of the
+///   listener's, which is what "too random" was. The chart and fresh benches
+///   are still here, taste-gated, but only as the fallback for when the
+///   taste bench runs dry.
+/// - `charts` / `fresh`: those benches as their own labelled decks - the
+///   global chart and the new-release shelf FILTERED THROUGH TASTE: score
+///   first, floor applied, chart position the tie-break. Trending is a deck
+///   you choose, never a blend.
+/// - `new`: the fresh shelf in editorial order, `tiny`: the obscure end of
+///   the taste pool, most-unknown first, on the one-term rule.
+fn deal<'a>(
+    pool: &'a [DiscoveryRow],
+    lanes: &std::collections::HashMap<String, (String, f64)>,
+    extras: &std::collections::HashMap<String, (Option<f64>, Option<String>)>,
+    mode: &str,
+    want: usize,
+    bar: f64,
+    bucket: u8,
+) -> (Vec<&'a DiscoveryRow>, usize) {
+    use std::cmp::Ordering;
+    let texture_of = |d: &DiscoveryRow| extras.get(&d.ext_id).and_then(|(t, _)| *t);
+    let rank_of = |d: &DiscoveryRow| lanes.get(&d.ext_id).map(|(_, r)| *r).unwrap_or(0.0);
+    let lane_of = |d: &DiscoveryRow| lane_in(lanes, d);
+    let tiny = mode == "tiny";
+    let rows: Vec<&DiscoveryRow> = pool
+        .iter()
+        .filter(|d| {
+            if tiny {
+                measured_lightly(d, texture_of(d))
+            } else {
+                measured(d, texture_of(d))
+            }
+        })
+        .collect();
+    let by_f64 = |a: f64, b: f64| a.partial_cmp(&b).unwrap_or(Ordering::Equal);
+    // A bench of one lane, filtered through taste: score first, nothing
+    // under the bar, chart position breaking ties.
+    let gated = |name: &str| -> std::collections::VecDeque<&'a DiscoveryRow> {
+        let mut v: Vec<&DiscoveryRow> =
+            rows.iter().copied().filter(|d| lane_of(d) == name && d.score >= bar).collect();
+        v.sort_by(|a, b| by_f64(b.score, a.score).then_with(|| by_f64(rank_of(b), rank_of(a))));
+        v.into_iter().collect()
+    };
+    match mode {
+        "new" | "tiny" => {
+            // A single ordered bench, no seating. New = the fresh shelf,
+            // most-charting first. Tiny = the taste pool (charts/fresh
+            // excluded, they are popular by construction), most-obscure
+            // first; no popularity floor, so it always yields the smallest
+            // acts on hand rather than an empty deck.
+            let mut bench: Vec<&DiscoveryRow> = rows
+                .iter()
+                .copied()
+                .filter(|d| {
+                    let lane = lane_of(d);
+                    if tiny {
+                        lane != "trending" && lane != "fresh"
+                    } else {
+                        lane == "fresh"
+                    }
+                })
+                .collect();
+            bench.sort_by(|a, b| {
+                if tiny {
+                    by_f64(a.popularity, b.popularity)
+                } else {
+                    by_f64(b.popularity, a.popularity)
+                }
+            });
+            let total = bench.len();
+            bench.truncate(want);
+            (bench, total)
+        }
+        "charts" | "fresh" => {
+            let bench = gated(if mode == "charts" { "trending" } else { "fresh" });
+            let total = bench.len();
+            (bench.into_iter().take(want).collect(), total)
+        }
+        _ => {
+            let mut chart = gated("trending");
+            let mut fresh = gated("fresh");
+            // The taste bench: the pool's score order, with the hour's small
+            // say. Stable, so equal scores keep the pool's order.
+            let mut taste_rows: Vec<&DiscoveryRow> = rows
+                .iter()
+                .copied()
+                .filter(|d| !matches!(lane_of(d), "trending" | "fresh"))
+                .collect();
+            taste_rows.sort_by(|a, b| {
+                by_f64(b.score + tempo_tilt(bucket, b.bpm), a.score + tempo_tilt(bucket, a.bpm))
+            });
+            let mut taste: std::collections::VecDeque<&DiscoveryRow> = taste_rows.into_iter().collect();
+            let total = taste.len() + chart.len() + fresh.len();
+            let mut used: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            let mut cards: Vec<&DiscoveryRow> = Vec::new();
+            while cards.len() < want {
+                /*
+                 * Every seat is taste's. The five-card pattern that gave
+                 * seats 2 and 4 to the chart and the fresh shelf is gone;
+                 * those benches are the fallback, in that order, for when the
+                 * taste bench is empty - the same fallback order every seat
+                 * always had.
+                 */
+                let benches: [&mut std::collections::VecDeque<&DiscoveryRow>; 3] =
+                    [&mut taste, &mut chart, &mut fresh];
+                let mut pick: Option<&DiscoveryRow> = None;
+                for bench in benches {
+                    while let Some(d) = bench.pop_front() {
+                        if used.insert(&d.ext_id) {
+                            pick = Some(d);
+                            break;
+                        }
+                    }
+                    if pick.is_some() {
+                        break;
+                    }
+                }
+                let Some(d) = pick else { break };
+                cards.push(d);
+            }
+            (cards, total)
+        }
+    }
 }
 
 /// Starts the collector. Runs until the process ends.
@@ -718,27 +991,34 @@ async fn pull_cycle(state: &Arc<AppState>) {
         let pulled = state.db.pulled_ext_ids(user, now_ms() - FAILED_RETRY_AFTER_MS);
         let bar = threshold(exploration);
         let lanes = state.db.discovery_lanes(user);
+        let extras = state.db.discovery_extras(user);
+        let texture_of = |d: &DiscoveryRow| extras.get(&d.ext_id).and_then(|(t, _)| *t);
         /*
          * The chart's seat. Every CHART_EVERY-th buy is offered to the
-         * trending lane first, ranked by chart position rather than taste
-         * score, and EXEMPT from the exploration threshold - the chart earns
-         * its seat by being the chart, which is precisely the music a taste
-         * model cannot vouch for. Measurement is still required (a date card
-         * needs its sound), and when the lane has nothing measured and
-         * unpulled the seat falls back to the ordinary taste pick rather
-         * than going empty.
+         * trending lane first - the global chart FILTERED THROUGH TASTE:
+         * score first, nothing under the exploration bar, chart position the
+         * tie-break. The seat used to rank by chart position alone and stand
+         * exempt from the bar, on the argument that the chart earns its seat
+         * by being the chart; what that bought, one pull in two, was a hit
+         * that hung off nothing of the listener's, with "Topping the charts
+         * right now" for a reason. The listener called it random, and it
+         * was. Measurement is still required (a date card needs its sound),
+         * and when the lane has nothing that clears the bar the seat falls
+         * back to the ordinary taste pick rather than going empty.
          */
         // Buys already made this pass, so the alternating chart seat keeps
-        // counting straight while the pass raises several.
+        // counting straight while the pass raises several. Only the
+        // collector's OWN buys count toward the cadence - a Date keep or an
+        // artist-page listen is a person's pull and does not move the seat.
         let mut mine = 0usize;
-        let mut recent = state.db.pulled_ext_ids(user, now_ms() - CHART_WINDOW_MS).len();
+        let mut recent = state.db.collector_buys_since(user, now_ms() - CHART_WINDOW_MS);
         let mut taken: std::collections::HashSet<String> = std::collections::HashSet::new();
-        // No listening history means no taste to score against - the chart is
-        // the only honest signal, so a cold shelf is stocked chart-first
-        // (the chart seat is already exempt from the taste bar). Cold
-        // shelves share HALF of each pass, never all of it: five empty
-        // accounts out-hunger every real listener by definition, and the
-        // person who asked for faster dates must not fund the promise alone.
+        // No listening history means no taste of their own to score against -
+        // the house model scores for them, and the chart is the honest place
+        // to start, so a cold shelf is stocked chart-first. Cold shelves
+        // share HALF of each pass, never all of it: five empty accounts
+        // out-hunger every real listener by definition, and the person who
+        // asked for faster dates must not fund the promise alone.
         let cold = state.db.recent_plays(user, 5).is_empty();
         if cold && cold_raised >= OFFERS_PER_CYCLE / 2 {
             continue;
@@ -755,11 +1035,17 @@ async fn pull_cycle(state: &Arc<AppState>) {
                         !pulled.contains(&d.ext_id)
                             && !taken.contains(&d.ext_id)
                             && !d.url.trim().is_empty()
-                            && measured(d)
+                            && d.score >= bar
+                            && measured(d, texture_of(d))
                     })
                     .collect();
                 charted.sort_by(|a, b| {
-                    b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal)
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| {
+                            b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal)
+                        })
                 });
                 charted.into_iter().next()
             } else {
@@ -775,15 +1061,21 @@ async fn pull_cycle(state: &Arc<AppState>) {
                             && !taken.contains(&d.ext_id)
                             && !d.url.trim().is_empty()
                     })
-                    .find(|d| d.score as f64 >= bar && measured(d))
+                    .find(|d| d.score >= bar && measured(d, texture_of(d)))
             });
             let Some(candidate) = pick else { break };
             let charted = lanes
                 .get(&candidate.ext_id)
                 .is_some_and(|(lane, _)| lane == "trending");
 
-            if !buy(state, user, &candidate, charted, None).await {
-                break;
+            match buy_outcome(state, user, &candidate, charted, None).await {
+                // Stamped as the collector's own, so the chart cadence
+                // counts this and not the person's pulls.
+                BuyOutcome::Queued => {
+                    let _ = state.db.set_pull_origin(user, &candidate.ext_id, "collector");
+                }
+                BuyOutcome::Busy => {}
+                _ => break,
             }
             /*
              * One at a time across all listeners - unless this box is only
@@ -816,21 +1108,16 @@ async fn pull_cycle(state: &Arc<AppState>) {
 }
 
 /// One listener asking for more to choose from: look for candidates around what
-/// they have been playing, then let the buying pass consider them.
+/// they have said yes to, then let the buying pass consider them.
 ///
 /// The same two steps `date_done` runs when somebody reaches the end of the
-/// deck, reached from Settings instead of from the deck. Returns how many
+/// deck, reached from Settings instead of from the deck - and the same seed
+/// list (`seed_artists`: hearts and keeps, not play counts). Returns how many
 /// candidates the pool holds afterwards, because the honest report is about the
 /// POOL - a buying pass raises at most one download and the card it becomes
 /// does not exist until that download lands, minutes later, on another machine.
 pub(crate) async fn top_up(state: &Arc<AppState>, user: i64) -> i64 {
-    let since = now_ms() - WINDOW_30D_MS;
-    let seeds: Vec<(String, i64)> = state
-        .db
-        .top_artists(user, since, 8)
-        .into_iter()
-        .map(|(name, weight)| (name, weight))
-        .collect();
+    let seeds = seed_artists(&state.db, user, &Default::default(), now_ms());
     if !seeds.is_empty() {
         crate::discovery::harvest_seeded(state, user, seeds).await;
     }
@@ -1300,6 +1587,11 @@ pub struct DateDone {
 /// audition exists for exactly one listener and for exactly this purpose.
 /// `discard_audition` refuses anything else - see its ownership test - so the
 /// unlink here cannot reach a track that is genuinely part of a library.
+///
+/// A pass also tells the harvester (`note_pass`): the song stays out of the
+/// pool under any id, and a second pass on the same act this sitting keeps
+/// the act out of the seeds. A landed pass used to say nothing past its own
+/// row, so the next harvest was free to bring the same music straight back.
 fn apply_verdicts(state: &Arc<AppState>, user: i64, body: &DateDone) -> (usize, u64) {
     for id in &body.kept {
         state.db.record_date_verdict(user, *id, "kept");
@@ -1308,6 +1600,10 @@ fn apply_verdicts(state: &Arc<AppState>, user: i64, body: &DateDone) -> (usize, 
     let mut discarded = 0usize;
     for id in &body.passed {
         state.db.record_date_verdict(user, *id, "passed");
+        // Read before the tombstone, so the song's name is still on file.
+        if let Some(t) = state.db.track(*id) {
+            note_pass(&state.db, user, &t.artist, &t.title, false, now_ms());
+        }
         let Some(rel) = state.db.discard_audition(user, *id) else { continue };
         discarded += 1;
         // resolve_in_root, not a bare join: the path comes out of the database
@@ -1376,12 +1672,12 @@ pub async fn date_candidates(
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(25)
         .clamp(1, 40);
-    // Two optional decks, chosen from the app: "new" deals only the fresh shelf
-    // (editorial just-released), "tiny" deals only the obscure - the small acts,
-    // most-unknown first. Anything else is the ordinary seated mix.
+    // The optional decks, chosen from the app: "charts" and "fresh" deal the
+    // global chart and the new-release shelf filtered through taste, "new"
+    // deals the fresh shelf in editorial order, "tiny" deals only the obscure
+    // - the small acts, most-unknown first. Anything else is the default deck,
+    // which is the taste bench and nothing blended into it. See `deal`.
     let mode = q.get("mode").map(String::as_str).unwrap_or("");
-    let fresh_only = mode == "new";
-    let tiny = mode == "tiny";
     let pulled = state.db.pulled_ext_ids(caller.id, now_ms() - FAILED_RETRY_AFTER_MS);
     // Judged by song, not by id: a candidate the catalogue re-offered under a
     // new id, or one that slipped into the pool before its verdict was kept
@@ -1394,110 +1690,40 @@ pub async fn date_candidates(
         .filter(|d| {
             !d.preview.trim().is_empty()
                 && !pulled.contains(&d.ext_id)
-                // A tiny act rarely has lyrics or a tempo read, and the deck
-                // would starve if it demanded one: the thirty-second preview is
-                // all a date needs, so the analysis gate is dropped for that
-                // deck only.
-                && (tiny || measured(d))
                 && !judged.contains(&crate::discovery::key_of(&d.artist, &d.title))
         })
         .collect();
-    let mut total = all.len();
     let lanes = state.db.discovery_lanes(caller.id);
-    let lane_of = |d: &crate::db::DiscoveryRow| {
-        lanes.get(&d.ext_id).map(|(lane, _)| lane.as_str()).unwrap_or("taste").to_string()
-    };
+    let extras = state.db.discovery_extras(caller.id);
+    let (_, exploration) = state.db.collector_state(caller.id);
+    let (hand, total) =
+        deal(&all, &lanes, &extras, mode, want, threshold(exploration), day_bucket(now_ms()));
     let card_of = |d: &crate::db::DiscoveryRow| {
+        let (texture, released) = extras.get(&d.ext_id).cloned().unwrap_or((None, None));
         json!({
             "extId": d.ext_id, "title": d.title, "artist": d.artist,
             "cover": d.cover, "preview": d.preview, "seed": d.seed,
-            "lane": lane_of(d),
+            "lane": lane_in(&lanes, d),
             // Facts the pool already measured and this deal was discarding.
             // `bpm` is absent for a `tiny` card - that deck bypasses the
             // analysis gate on purpose - so the client must draw nothing
             // rather than "- BPM".
             "bpm": d.bpm,
             "popularity": d.popularity,
+            // The card says what it was scored on, so "why this?" can be
+            // honest and a listener can reject the reason rather than the
+            // song: the fit, which of its terms were actually measured, and
+            // when it came out.
+            "score": d.score,
+            "measured": {
+                "tempo": d.bpm.is_some(),
+                "lyrics": d.lyric_vec.is_some(),
+                "texture": texture.is_some(),
+            },
+            "released": released,
         })
     };
-    let mut cards: Vec<serde_json::Value> = Vec::new();
-    if fresh_only || tiny {
-        // A single ordered bench, no five-card seating. New = the fresh shelf,
-        // most-charting first. Tiny = the taste pool (charts/fresh excluded,
-        // they are popular by construction), most-obscure first; no popularity
-        // floor, so it always yields the smallest acts on hand rather than an
-        // empty deck.
-        let mut bench: Vec<&crate::db::DiscoveryRow> = all
-            .iter()
-            .filter(|d| {
-                let lane = lane_of(d);
-                if fresh_only {
-                    lane == "fresh"
-                } else {
-                    lane != "trending" && lane != "fresh"
-                }
-            })
-            .collect();
-        bench.sort_by(|a, b| {
-            if tiny {
-                a.popularity.partial_cmp(&b.popularity).unwrap_or(std::cmp::Ordering::Equal)
-            } else {
-                b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal)
-            }
-        });
-        // "N left to meet" should count this deck, not the whole pool.
-        total = bench.len();
-        for d in bench.into_iter().take(want) {
-            cards.push(card_of(d));
-        }
-    } else {
-        /*
-         * SEATED, not just ranked: a pure taste ordering sinks exactly the music
-         * a date deck exists to introduce - the chart hit far from your taste,
-         * the release that came out on Friday. The deal runs a five-card
-         * pattern: three from taste, one from the chart (by chart position),
-         * one from the fresh shelf (editorial order), each seat falling back to
-         * the next bench when its own is empty - the same reasoning as the
-         * collector's own chart seat.
-         */
-        let mut by_pop = |name: &str| -> std::collections::VecDeque<&crate::db::DiscoveryRow> {
-            let mut rows: Vec<&crate::db::DiscoveryRow> =
-                all.iter().filter(|d| lane_of(d) == name).collect();
-            rows.sort_by(|a, b| {
-                b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            rows.into_iter().collect()
-        };
-        let mut chart = by_pop("trending");
-        let mut fresh = by_pop("fresh");
-        let mut taste: std::collections::VecDeque<&crate::db::DiscoveryRow> =
-            all.iter().filter(|d| lane_of(d) == "taste").collect();
-        let mut used: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        let mut seat = 0usize;
-        while cards.len() < want {
-            let benches: [&mut std::collections::VecDeque<&crate::db::DiscoveryRow>; 3] =
-                match seat % 5 {
-                    2 => [&mut chart, &mut fresh, &mut taste],
-                    4 => [&mut fresh, &mut chart, &mut taste],
-                    _ => [&mut taste, &mut chart, &mut fresh],
-                };
-            let mut pick: Option<&crate::db::DiscoveryRow> = None;
-            for bench in benches {
-                while let Some(d) = bench.pop_front() {
-                    if used.insert(&d.ext_id) {
-                        pick = Some(d);
-                        break;
-                    }
-                }
-                if pick.is_some() {
-                    break;
-                }
-            }
-            let Some(d) = pick else { break };
-            cards.push(card_of(d));
-            seat += 1;
-        }
-    }
+    let mut cards: Vec<serde_json::Value> = hand.into_iter().map(card_of).collect();
     // The dealt hand's bands get their shelf entries written behind this
     // reply, so the briefing that follows has something true to say.
     {
@@ -1734,13 +1960,22 @@ pub async fn date_preview(
 pub struct CandidateVerdictBody {
     pub ext_id: String,
     pub kept: bool,
+    /// "Less like this": a pass that names the ACT, not just the song. The
+    /// artist is kept out of the pool and the seeds at once, rather than
+    /// after a second pass on them. Ignored on a keep.
+    #[serde(default)]
+    pub less_like: bool,
 }
 
 /// `POST /api/date/candidate-verdict` - the swipe on a preview date. A pass
-/// forgets the candidate (the pool's own dismiss semantics - the harvest may
-/// one day argue its case again). A keep buys it through the same door the
+/// forgets the candidate AND tells the harvester (`note_pass`): the song
+/// stays out under any id, and a second pass on the act this sitting keeps
+/// the act out of the seeds too. A keep buys it through the same door the
 /// collector uses AND writes a pending like, so the landing sweep both
-/// favourites and adopts it - a kept date has always meant a heart.
+/// favourites and adopts it - a kept date has always meant a heart; and
+/// every third keep in a sitting reseeds the pool from the act just kept, so
+/// the deck refills from where the yeses are while the listener is still
+/// here.
 pub async fn date_candidate_verdict(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1769,10 +2004,25 @@ pub async fn date_candidate_verdict(
         let bought = buy(&state, caller.id, &d, charted, None).await;
         let k = crate::discovery::key_of(&d.artist, &d.title);
         let _ = state.db.pending_like_put(caller.id, &k, &d.title, &d.artist);
-        return Ok(Json(json!({ "ok": true, "queued": bought })));
+        // A keep is the strongest yes there is, and it used to reach the
+        // seeds only once the download had landed and been dealt again as
+        // a library card. Every third keep this sitting walks the catalogue
+        // around the act just kept, behind the reply.
+        let keeps = state.db.candidate_verdicts_since(caller.id, "kept", now_ms() - SITTING_MS);
+        let reseeded = keeps > 0 && keeps % KEEPS_PER_SEED == 0;
+        if reseeded {
+            let bg = Arc::clone(&state);
+            let user = caller.id;
+            let seed = d.artist.clone();
+            tokio::spawn(async move {
+                crate::discovery::harvest_seeded(&bg, user, vec![(seed, 100)]).await;
+            });
+        }
+        return Ok(Json(json!({ "ok": true, "queued": bought, "reseeded": reseeded })));
     }
+    let artist_out = note_pass(&state.db, caller.id, &d.artist, &d.title, body.less_like, now_ms());
     state.db.forget_discovery(caller.id, &body.ext_id);
-    Ok(Json(json!({ "ok": true })))
+    Ok(Json(json!({ "ok": true, "artistRejected": artist_out })))
 }
 
 #[derive(serde::Deserialize)]
@@ -2091,22 +2341,13 @@ pub async fn date_done(
         .db
         .artists_for(&body.passed)
         .into_iter()
-        .map(|(name, _)| crate::discovery::fold(&name))
+        .map(|(name, _)| crate::taste::artist_key(&name))
         .collect();
 
-    let mut seeds: Vec<(String, i64)> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let liked = state.db.favorites(caller.id);
-    for (name, n) in state.db.artists_for(&body.kept).into_iter().chain(state.db.artists_for(&liked)) {
-        let key = crate::discovery::fold(&name);
-        if key.is_empty() || avoid.contains(&key) || !seen.insert(key) {
-            continue;
-        }
-        seeds.push((name, n));
-        if seeds.len() >= 8 {
-            break;
-        }
-    }
+    // Hearts and keeps, strongest and freshest first - the keeps just
+    // written above are in there at full weight, so what was just said yes
+    // to leads the walk. The same list Settings' top-up grows from.
+    let seeds = seed_artists(&state.db, caller.id, &avoid, now_ms());
 
     let seeded = seeds.len();
     if seeded > 0 {
@@ -2445,5 +2686,304 @@ mod delegation_tests {
             !db.pulled_ext_ids(db.first_admin_id().unwrap(), 0).contains("a"),
             "and nothing is left blocking the candidate",
         );
+    }
+}
+
+#[cfg(test)]
+mod date_deal_tests {
+    //! How a Music Date hand is dealt and what a swipe teaches, checked
+    //! without a hub: `deal`, `measured`, `note_pass` and `seed_artists` are
+    //! pure over the database, and the rows come in through the same doors
+    //! the harvester and the measurement pass use.
+
+    use super::*;
+
+    fn db(name: &str) -> crate::db::Db {
+        let dir = std::env::temp_dir().join(format!("afm-date-deal-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::db::Db::open(&dir.join("t.sqlite")).unwrap()
+    }
+
+    /// A pooled, listened-to candidate: `bpm`/`lyrics`/`texture` say which
+    /// terms the measurement pass managed to read, `lane` where it came in
+    /// (None = a taste find, untagged), `rank` its chart position.
+    #[allow(clippy::too_many_arguments)]
+    fn candidate(
+        db: &crate::db::Db,
+        user: i64,
+        ext: &str,
+        artist: &str,
+        score: f64,
+        bpm: Option<f64>,
+        lyrics: bool,
+        texture: Option<f64>,
+        lane: Option<(&str, f64)>,
+    ) {
+        db.add_discovery(user, ext, ext, artist, "", "https://dz/x", "https://p/x.mp3", "", 0.5).unwrap();
+        let vec = [0.5f32, 0.5];
+        db.save_discovery_features(user, ext, bpm, if lyrics { Some(&vec) } else { None }, score).unwrap();
+        if let Some(t) = texture {
+            db.set_discovery_measured(user, ext, t, 0.5, 0.5);
+        }
+        if let Some((lane, rank)) = lane {
+            db.tag_discovery_lane(user, ext, lane, rank).unwrap();
+        }
+    }
+
+    fn hand<'a>(
+        db: &crate::db::Db,
+        user: i64,
+        pool: &'a [DiscoveryRow],
+        mode: &str,
+        want: usize,
+        bucket: u8,
+    ) -> (Vec<&'a DiscoveryRow>, usize) {
+        deal(pool, &db.discovery_lanes(user), &db.discovery_extras(user), mode, want, threshold(0.5), bucket)
+    }
+
+    fn ids(cards: &[&DiscoveryRow]) -> Vec<String> {
+        cards.iter().map(|d| d.ext_id.clone()).collect()
+    }
+
+    /// The default deck is the taste bench, every seat. The chart and fresh
+    /// benches are still there - taste-gated - but only as the fallback once
+    /// the taste bench is empty, never seated into the hand.
+    #[test]
+    fn the_default_hand_is_all_taste() {
+        let db = db("default");
+        let me = db.create_user("me", "x", true).unwrap();
+        for i in 0..6 {
+            candidate(&db, me, &format!("taste-{i}"), "Act", 0.9 - i as f64 * 0.01, Some(110.0), true, None, None);
+        }
+        // Chart rows that would OUTSCORE most of the taste bench.
+        for i in 0..3 {
+            candidate(&db, me, &format!("chart-{i}"), "Hit", 0.95, Some(120.0), true, None, Some(("trending", 1.0 - i as f64 * 0.1)));
+        }
+        for i in 0..3 {
+            candidate(&db, me, &format!("fresh-{i}"), "New", 0.95, Some(120.0), true, None, Some(("fresh", 1.0 - i as f64 * 0.1)));
+        }
+        let pool = db.top_discoveries(me, 400);
+        let lanes = db.discovery_lanes(me);
+
+        let (cards, total) = hand(&db, me, &pool, "", 6, 1);
+        assert_eq!(cards.len(), 6);
+        assert!(
+            cards.iter().all(|d| lane_in(&lanes, d) == "taste"),
+            "a full taste bench fills every seat: {:?}",
+            ids(&cards)
+        );
+        assert_eq!(total, 12, "the tally counts the gated benches too");
+
+        // Only once taste runs dry do the other benches deal, chart first.
+        let (cards, _) = hand(&db, me, &pool, "", 8, 1);
+        assert_eq!(cards.len(), 8);
+        assert_eq!(lane_in(&lanes, cards[6]), "trending", "the fallback is the chart bench");
+        assert_eq!(cards[6].ext_id, "chart-0", "and it is rank-ordered within equal scores");
+    }
+
+    /// `charts` is the global chart filtered through taste: score first, the
+    /// exploration floor applied, chart position breaking ties.
+    #[test]
+    fn the_chart_deck_is_score_ordered_with_the_floor_and_rank_the_tiebreak() {
+        let db = db("charts");
+        let me = db.create_user("me", "x", true).unwrap();
+        candidate(&db, me, "a", "A", 0.90, Some(120.0), true, None, Some(("trending", 0.2)));
+        candidate(&db, me, "b", "B", 0.90, Some(120.0), true, None, Some(("trending", 0.8)));
+        candidate(&db, me, "c", "C", 0.70, Some(120.0), true, None, Some(("trending", 1.0)));
+        // Number one on the chart, nowhere near the listener's taste.
+        candidate(&db, me, "d", "D", 0.30, Some(120.0), true, None, Some(("trending", 1.0)));
+        // Not the chart's at all.
+        candidate(&db, me, "t", "T", 0.99, Some(120.0), true, None, None);
+        let pool = db.top_discoveries(me, 400);
+        let bar = threshold(0.5);
+        assert!(0.30 < bar && bar < 0.70, "the floor sits between c and d: {bar}");
+
+        let (cards, total) = hand(&db, me, &pool, "charts", 25, 1);
+        assert_eq!(ids(&cards), vec!["b", "a", "c"], "score, then chart position; d is under the floor");
+        assert_eq!(total, 3, "the tally is this deck's, floor applied");
+
+        // The fresh shelf goes through the same gate.
+        db.tag_discovery_lane(me, "t", "fresh", 0.5).unwrap();
+        let (cards, _) = hand(&db, me, &pool, "fresh", 25, 1);
+        assert_eq!(ids(&cards), vec!["t"]);
+    }
+
+    /// Two real terms for a taste pick - the tempo plus the words or the
+    /// texture - and one for the `tiny` deck.
+    #[test]
+    fn measured_needs_two_terms_for_taste_and_one_for_tiny() {
+        let db = db("measured");
+        let me = db.create_user("me", "x", true).unwrap();
+        candidate(&db, me, "bpm-only", "A", 0.9, Some(100.0), false, None, None);
+        candidate(&db, me, "lyrics-only", "B", 0.9, None, true, None, None);
+        candidate(&db, me, "texture-only", "C", 0.9, None, false, Some(0.4), None);
+        candidate(&db, me, "bpm-lyrics", "D", 0.9, Some(100.0), true, None, None);
+        candidate(&db, me, "bpm-texture", "E", 0.9, Some(100.0), false, Some(0.4), None);
+        candidate(&db, me, "nothing", "F", 0.9, None, false, None, None);
+        let pool = db.top_discoveries(me, 400);
+        let extras = db.discovery_extras(me);
+        let row = |ext: &str| pool.iter().find(|d| d.ext_id == ext).unwrap();
+        let texture = |ext: &str| extras.get(ext).and_then(|(t, _)| *t);
+
+        for ext in ["bpm-lyrics", "bpm-texture"] {
+            assert!(measured(row(ext), texture(ext)), "{ext} has two real terms");
+        }
+        for ext in ["bpm-only", "lyrics-only", "texture-only", "nothing"] {
+            assert!(!measured(row(ext), texture(ext)), "{ext} is not enough for a taste pick");
+        }
+        for ext in ["bpm-only", "lyrics-only", "texture-only", "bpm-lyrics", "bpm-texture"] {
+            assert!(measured_lightly(row(ext), texture(ext)), "{ext} is enough for tiny");
+        }
+        assert!(!measured_lightly(row("nothing"), texture("nothing")));
+
+        // And the decks honour it: the default deck deals the two-term rows,
+        // tiny deals everything with one read.
+        let (cards, _) = hand(&db, me, &pool, "", 25, 1);
+        let mut got = ids(&cards);
+        got.sort();
+        assert_eq!(got, vec!["bpm-lyrics", "bpm-texture"]);
+        let (cards, _) = hand(&db, me, &pool, "tiny", 25, 1);
+        assert_eq!(cards.len(), 5, "{:?}", ids(&cards));
+    }
+
+    /// A pass writes the song into the rejection ledger the harvester reads;
+    /// the second pass on the same act this sitting writes the act; "less
+    /// like this" writes the act at once.
+    #[test]
+    fn a_pass_tells_the_harvester() {
+        let db = db("pass");
+        let me = db.create_user("me", "x", true).unwrap();
+        let now = crate::db::now_ms();
+
+        assert!(!note_pass(&db, me, "The National", "Fake Empire", false, now), "one song is not the act");
+        let key = crate::discovery::key_of("The National", "Fake Empire");
+        assert!(db.rejected_keys_since(me, "track", 0).contains(&key), "the song is on the ledger");
+        assert!(db.rejected_keys_since(me, "artist", 0).is_empty());
+        assert!(crate::discovery::is_rejected(&db, me, "the national", "FAKE EMPIRE"), "re-spelled, same song");
+        assert!(!crate::discovery::is_rejected(&db, me, "The National", "Bloodbuzz Ohio"), "one song, not the act");
+
+        // The second pass on the act, in the same sitting.
+        assert!(note_pass(&db, me, "The National", "Bloodbuzz Ohio", false, now), "two passes name the act");
+        assert!(crate::discovery::is_rejected(&db, me, "National", "Anything Else"), "the harvester hears it");
+        // ...and the seeds leave them out.
+        assert!(!db.rejected_keys_since(me, "artist", 0).is_empty());
+
+        // "Less like this" on the first pass.
+        assert!(note_pass(&db, me, "Big Thief", "Not", true, now));
+        assert!(crate::discovery::is_rejected(&db, me, "Big Thief", "Paul"));
+
+        // Somebody else's passes are theirs.
+        let you = db.create_user("you", "x", false).unwrap();
+        assert!(!crate::discovery::is_rejected(&db, you, "The National", "Fake Empire"));
+    }
+
+    fn track(db: &crate::db::Db, rel: &str, artist: &str) -> i64 {
+        let t = crate::db::ScannedTrack {
+            rel_path: rel.into(),
+            title: rel.into(),
+            artist: artist.into(),
+            album_artist: artist.into(),
+            album: "Al".into(),
+            duration_ms: Some(200_000),
+            ..Default::default()
+        };
+        db.upsert_track(&t, 1).unwrap();
+        db.track_id_by_path(rel).unwrap()
+    }
+
+    /// The seed list is hearts and keeps. A heavy rotation with no heart in
+    /// it does not lead the walk; one heart does.
+    #[test]
+    fn seeds_come_from_hearts_before_play_counts() {
+        let db = db("seeds");
+        let me = db.create_user("me", "x", true).unwrap();
+        let played = track(&db, "played.flac", "Played Often");
+        let hearted = track(&db, "hearted.flac", "Hearted Once");
+        let kept = track(&db, "kept.flac", "Kept On A Date");
+        let now = crate::db::now_ms();
+        for _ in 0..20 {
+            db.record_play(me, played).unwrap();
+        }
+        // No yes on file yet: the play counts are all there is to grow from.
+        assert_eq!(
+            seed_artists(&db, me, &Default::default(), now),
+            vec![("Played Often".to_string(), 20)],
+            "with nothing said yes to, the plays stand in"
+        );
+
+        db.set_favorite(me, hearted, true).unwrap();
+        db.record_date_verdict(me, kept, "kept");
+        let seeds: Vec<String> = seed_artists(&db, me, &Default::default(), now).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(seeds.len(), 2, "{seeds:?}");
+        assert!(seeds.contains(&"Hearted Once".to_string()));
+        assert!(seeds.contains(&"Kept On A Date".to_string()));
+        assert!(!seeds.contains(&"Played Often".to_string()), "twenty starts are not one heart: {seeds:?}");
+
+        // Just-passed acts are left out, and a rejected act too.
+        let avoid: std::collections::HashSet<String> = [crate::taste::artist_key("Hearted Once")].into();
+        let seeds: Vec<String> = seed_artists(&db, me, &avoid, now).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(seeds, vec!["Kept On A Date".to_string()]);
+        db.reject_discovery(me, "artist", &crate::discovery::artist_key_public("Kept On A Date"));
+        let seeds: Vec<String> = seed_artists(&db, me, &Default::default(), now).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(seeds, vec!["Hearted Once".to_string()], "a rejected act never seeds");
+        // Every yes ruled out: the plays stand in again, and the rejected act
+        // is still not among them.
+        let seeds: Vec<String> = seed_artists(&db, me, &avoid, now).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(seeds, vec!["Played Often".to_string()]);
+    }
+
+    /// The hour has a say over the taste bench, and only a small one: it can
+    /// swap two near-equal fits, never outrank a real difference.
+    #[test]
+    fn the_hour_tilts_the_taste_bench_lightly() {
+        assert!(tempo_tilt(0, Some(80.0)) > tempo_tilt(0, Some(150.0)), "slower in the small hours");
+        assert!(tempo_tilt(2, Some(150.0)) > tempo_tilt(2, Some(80.0)), "faster at midday");
+        assert_eq!(tempo_tilt(2, None), 0.0, "no tempo, no tilt");
+        for b in 0..4u8 {
+            for bpm in [40.0, 90.0, 125.0, 200.0] {
+                let t = tempo_tilt(b, Some(bpm));
+                assert!((0.0..=TILT_WEIGHT).contains(&t), "bucket {b} at {bpm}: {t}");
+            }
+        }
+        assert_eq!(day_bucket(0), 0);
+        assert_eq!(day_bucket(13 * 3_600_000), 2);
+        assert_eq!(day_bucket(23 * 3_600_000 + 86_400_000 * 5), 3);
+
+        let db = db("tilt");
+        let me = db.create_user("me", "x", true).unwrap();
+        candidate(&db, me, "fast", "A", 0.800, Some(150.0), true, None, None);
+        candidate(&db, me, "slow", "B", 0.795, Some(80.0), true, None, None);
+        candidate(&db, me, "far", "C", 0.750, Some(80.0), true, None, None);
+        let pool = db.top_discoveries(me, 400);
+        let (night, _) = hand(&db, me, &pool, "", 3, 0);
+        assert_eq!(ids(&night), vec!["slow", "fast", "far"], "a hair apart: the hour decides");
+        let (midday, _) = hand(&db, me, &pool, "", 3, 2);
+        assert_eq!(ids(&midday), vec!["fast", "slow", "far"]);
+        // A real gap in fit is never closed by the hour: `far` is the slow
+        // one too, and it stays last at night.
+    }
+
+    /// The chart cadence counts the collector's own buys: a person's pulls
+    /// (a Date keep, an artist-page listen) and failures do not move it.
+    #[test]
+    fn the_chart_cadence_counts_collector_buys_only() {
+        let db = db("cadence");
+        let me = db.create_user("me", "x", true).unwrap();
+        let pull = |ext: &str| {
+            db.record_pull(me, ext, "track", "t", "a", "https://x", "", 0.8, "job").unwrap()
+        };
+        pull("mine-1");
+        pull("mine-2");
+        let failed = pull("mine-3");
+        pull("keep-1");
+        pull("tap-1");
+        db.set_pull_origin(me, "mine-1", "collector").unwrap();
+        db.set_pull_origin(me, "mine-2", "collector").unwrap();
+        db.set_pull_origin(me, "mine-3", "collector").unwrap();
+        db.fail_pull(failed).unwrap();
+        assert_eq!(db.pulled_ext_ids(me, 0).len(), 5, "the ledger holds everything");
+        assert_eq!(db.collector_buys_since(me, 0), 2, "the cadence counts the collector's live buys");
+        assert_eq!(db.collector_buys_since(me, crate::db::now_ms() + 1), 0, "inside the window only");
     }
 }

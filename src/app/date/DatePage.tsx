@@ -204,11 +204,13 @@ export function DatePage() {
   const [poolBeyond, setPoolBeyond] = useState(0);
   const candidateFetchAt = useRef(0);
   /*
-   * The deck to deal: the ordinary mix, or one of the two AI decks - only
-   * just-released music, or only the small obscure acts. Flipping one re-deals
-   * from scratch (clear the dealt hand and drop the refill throttle so the
-   * effect below runs at once with the new mode), and in a mode the library
-   * half of the deck is set aside so the mode actually constrains what shows.
+   * The deck to deal: the default (your taste, nothing blended in), or one
+   * of the labelled decks - the charts or the fresh shelf filtered through
+   * your taste, only just-released music, or only the small obscure acts.
+   * Flipping one re-deals from scratch (clear the dealt hand and drop the
+   * refill throttle so the effect below runs at once with the new mode), and
+   * in a mode the library half of the deck is set aside so the mode actually
+   * constrains what shows.
    */
   const [mode, setMode] = useState<DateMode | null>(null);
   // A mode flip empties the deck ON PURPOSE to re-deal. That is not a finished
@@ -997,12 +999,22 @@ export function DatePage() {
           </div>,
           document.body,
         )}
-      {/* The two AI decks - only just-released music, or only the small obscure
-          acts. Rendered OUTSIDE the populated/empty split below, so a mode that
-          dealt nothing can always be toggled back off (tapping the lit chip
-          returns to the everything deck); without this a user could be stranded
-          in an empty mode with no control on screen. Mutually exclusive. */}
+      {/* The labelled decks. Charts and Fresh are the global chart and the
+          new-release shelf filtered through your taste - their own decks you
+          choose, never blended into the default one, which is your taste and
+          nothing else. New music is the fresh shelf in editorial order; Tiny
+          artists the small obscure acts. Rendered OUTSIDE the populated/empty
+          split below, so a mode that dealt nothing can always be toggled back
+          off (tapping the lit chip returns to the default deck); without this
+          a user could be stranded in an empty mode with no control on screen.
+          Mutually exclusive. */}
       <div className="dateModes" role="group" aria-label="Choose what to hear">
+        <FilterChip selected={mode === 'charts'} onSelectedChange={() => chooseMode('charts')}>
+          Charts
+        </FilterChip>
+        <FilterChip selected={mode === 'fresh'} onSelectedChange={() => chooseMode('fresh')}>
+          Fresh
+        </FilterChip>
         <FilterChip selected={mode === 'new'} onSelectedChange={() => chooseMode('new')}>
           New music
         </FilterChip>
@@ -1163,7 +1175,11 @@ export function DatePage() {
         <div className="emptyState emptyState--tall">
           <EmptyArt name="discovery" />
           <p className="emptyState__text">
-            {mode === 'new'
+            {mode === 'charts'
+              ? 'Nothing on the charts fits you right now - tap Charts above to go back to everything.'
+              : mode === 'fresh'
+              ? 'Nothing fresh fits you right now - tap Fresh above to go back to everything.'
+              : mode === 'new'
               ? 'No new releases left to meet right now - tap New music above to go back to everything.'
               : mode === 'tiny'
               ? 'No tiny artists left to meet right now - tap Tiny artists above to go back to everything.'

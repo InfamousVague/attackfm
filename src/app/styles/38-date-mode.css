@@ -251,12 +251,15 @@
   opacity: 0.35;
 }
 
-/* ---- the AI decks: two chips over the stack -------------------------------
-   Only just-released music, or only the small obscure acts. Mutually
-   exclusive; the ordinary mix is neither lit. */
+/* ---- the labelled decks: chips over the stack -----------------------------
+   The charts and the fresh shelf filtered through your taste, only
+   just-released music, or only the small obscure acts. Mutually exclusive;
+   the default deck is none lit. Four chips wrap on a narrow phone rather
+   than squeeze. */
 .dateModes {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: var(--glacier-space-2);
   margin-block-end: var(--glacier-space-3);

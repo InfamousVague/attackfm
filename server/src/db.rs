@@ -2013,6 +2013,23 @@ impl Db {
                 conn.execute(&format!("ALTER TABLE discoveries ADD COLUMN {decl}"), [])?;
             }
         }
+
+        /*
+         * `curator_pulls.origin` - WHO raised the pull: the collector's own
+         * buying pass ('collector'), or a person (a Date keep, an artist-page
+         * listen, a pasted link - left empty). The chart cadence counts the
+         * collector's buys and nothing else; before this it read every row in
+         * the ledger, so three artist-page taps could hand the next seat to
+         * the chart.
+         */
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('curator_pulls')")?
+            .query_map([], |r| r.get(0))?
+            .filter_map(Result::ok)
+            .collect();
+        if !have.iter().any(|c| c == "origin") {
+            conn.execute("ALTER TABLE curator_pulls ADD COLUMN origin TEXT NOT NULL DEFAULT ''", [])?;
+        }
         Ok(())
     }
 
@@ -6761,6 +6778,60 @@ impl Db {
         .unwrap_or_default()
     }
 
+    /// What one candidate's preview sounded like - its measured energy, on
+    /// the analyser's 0..1 scale - or None when nobody has listened yet.
+    /// This is the texture term a Music Date card owns up to having measured.
+    pub fn discovery_texture(&self, user_id: i64, ext_id: &str) -> Option<f64> {
+        self.lock()
+            .query_row(
+                "SELECT energy FROM discoveries WHERE user_id = ?1 AND ext_id = ?2",
+                params![user_id, ext_id],
+                |r| r.get::<_, Option<f64>>(0),
+            )
+            .ok()
+            .flatten()
+    }
+
+    /// When one candidate came out, as the catalogue spelled it.
+    pub fn discovery_released(&self, user_id: i64, ext_id: &str) -> Option<String> {
+        self.lock()
+            .query_row(
+                "SELECT released FROM discoveries WHERE user_id = ?1 AND ext_id = ?2",
+                params![user_id, ext_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten()
+            .filter(|s| !s.trim().is_empty())
+    }
+
+    /// The two readers above over a whole pool in one pass: ext_id ->
+    /// (texture, released). A deal walks four hundred rows and must not ask
+    /// four hundred questions.
+    pub fn discovery_extras(
+        &self,
+        user_id: i64,
+    ) -> std::collections::HashMap<String, (Option<f64>, Option<String>)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT ext_id, energy, released FROM discoveries
+              WHERE user_id = ?1 AND (energy IS NOT NULL OR COALESCE(released, '') != '')",
+        ) else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                (
+                    r.get::<_, Option<f64>>(1)?,
+                    r.get::<_, Option<String>>(2)?.filter(|s| !s.trim().is_empty()),
+                ),
+            ))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
     pub fn discovery_get(&self, user_id: i64, ext_id: &str) -> Option<DiscoveryRow> {
         let conn = self.lock();
         conn.query_row(
@@ -9557,6 +9628,32 @@ impl Db {
             .unwrap_or_default()
     }
 
+    /// Who raised this pull. Stamped by the collector's own pass on the rows
+    /// it buys ('collector'); a person's pulls keep the default ''.
+    pub fn set_pull_origin(&self, user_id: i64, ext_id: &str, origin: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE curator_pulls SET origin = ?3 WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id, origin],
+        )?;
+        Ok(())
+    }
+
+    /// The collector's own buys for this listener since a moment, failures
+    /// left out - the count the chart cadence alternates on. A Date keep or
+    /// an artist-page listen is a person's pull and does not move the seat.
+    pub fn collector_buys_since(&self, user_id: i64, since_ms: i64) -> usize {
+        self.lock()
+            .query_row(
+                "SELECT COUNT(*) FROM curator_pulls
+                  WHERE user_id = ?1 AND origin = 'collector'
+                    AND state != 'failed' AND created_at >= ?2",
+                params![user_id, since_ms],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            .max(0) as usize
+    }
+
     /// Pulls whose import is still out - what the landing check walks.
     pub fn open_pulls(&self) -> Vec<(i64, i64, String)> {
         let conn = self.lock();
@@ -10048,6 +10145,19 @@ impl Db {
             .unwrap_or_default()
     }
 
+    /// How many preview dates this listener has judged one way since a
+    /// moment - "every third keep this sitting" is read off this.
+    pub fn candidate_verdicts_since(&self, user_id: i64, verdict: &str, since_ms: i64) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT COUNT(*) FROM date_candidate_verdicts
+                  WHERE user_id = ?1 AND verdict = ?2 AND at >= ?3",
+                params![user_id, verdict, since_ms],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
     /// Turn down an audition: tombstone the row and hand back the file to
     /// delete, if and only if this listener is the one it was fetched for.
     ///
@@ -10260,10 +10370,19 @@ impl Db {
          *
          * So it is derived instead of stored. Adoption is a completed listen
          * or a heart (collector.rs), and both are already recorded per user -
-         * `plays_user_track` and the `favorites` primary key are exactly the
-         * "did THIS user touch THIS track" lookups these probes need. No new
-         * column, nothing to backfill, and no second copy of the rule to drift
-         * from the one the promotion path already follows.
+         * `listen_events_user_track` and the `favorites` primary key are
+         * exactly the "did THIS user touch THIS track" lookups these probes
+         * need. No new column, nothing to backfill, and no second copy of the
+         * rule to drift from the one the promotion path already follows.
+         *
+         * A COMPLETED listen, not a `plays` row. `plays` is written by
+         * `POST /api/plays` with no qualification at all - "the client
+         * decides what qualifies" - so a bare row there is a play START, and
+         * starting a song says you were curious, not that the pick landed.
+         * The dial used to read a heart and an eight-second bail as the same
+         * yes. `listen_events.completed` is the listener's own rule (finished,
+         * or ran long enough to count) and the same fact the promotion path
+         * adopts on.
          *
          * Found by PR #3, which fixed it with three new columns and a
          * backfill; the fact was already on file.
@@ -10275,8 +10394,9 @@ impl Db {
                          WHERE pt.pull_id = cp.id
                            AND (EXISTS (SELECT 1 FROM favorites f
                                          WHERE f.user_id = cp.user_id AND f.track_id = pt.track_id)
-                             OR EXISTS (SELECT 1 FROM plays p
-                                         WHERE p.user_id = cp.user_id AND p.track_id = pt.track_id))
+                             OR EXISTS (SELECT 1 FROM listen_events le
+                                         WHERE le.user_id = cp.user_id AND le.track_id = pt.track_id
+                                           AND le.completed = 1))
                       )
                     ), 0),
                     COUNT(*)
@@ -11816,15 +11936,35 @@ mod pool_threads {
 
 #[cfg(test)]
 mod pull_adoption_is_per_listener {
-    //! `pull_adoption` is derived from plays and favourites rather than read
-    //! off `curator_pulls.state`, because a pull row can be flipped by a
-    //! promotion and the state has no room to say WHOSE gesture did it. On a
-    //! one-person hub that is harmless. On a shared one it meant a housemate's
-    //! listen tuned YOUR collector's spending. (Promotion itself is now
-    //! owner-only - `promote_curator_track_for` - but the dial's measure stays
-    //! derived, so the two never have to agree by accident.)
+    //! `pull_adoption` is derived from completed listens and favourites
+    //! rather than read off `curator_pulls.state`, because a pull row can be
+    //! flipped by a promotion and the state has no room to say WHOSE gesture
+    //! did it. On a one-person hub that is harmless. On a shared one it meant
+    //! a housemate's listen tuned YOUR collector's spending. (Promotion
+    //! itself is now owner-only - `promote_curator_track_for` - but the
+    //! dial's measure stays derived, so the two never have to agree by
+    //! accident.) And it is a COMPLETED listen: a bare `plays` row is a
+    //! start, and a start is not adoption.
 
     use super::*;
+    use crate::listens::{ingest, IncomingListen};
+
+    /// One sitting on `track_id`, finished or not.
+    fn listen(track_id: i64, completed: bool) -> IncomingListen {
+        IncomingListen {
+            track_id,
+            started_at: 1_000,
+            ms_listened: if completed { 180_000 } else { 8_000 },
+            duration_ms: Some(200_000),
+            completed,
+            skipped: !completed,
+            context: "test".into(),
+            ended_at_ms: None,
+            volume_ups: 0,
+            seek_backs: 0,
+            device: String::new(),
+        }
+    }
 
     fn fresh(name: &str) -> Db {
         let d = std::env::temp_dir().join(format!("afm-adopt-{}-{}", name, std::process::id()));
@@ -11876,11 +12016,11 @@ mod pull_adoption_is_per_listener {
         landed_pull(&db, me, "dz-1", id);
         landed_pull(&db, you, "dz-1", id);
 
-        // YOU play it. That is your adoption, on any hub.
-        db.record_play(you, id).unwrap();
+        // YOU play it through. That is your adoption, on any hub.
+        assert_eq!(ingest(&db, you, &[listen(id, true)]), 1);
         // ...and the promotion path runs as it does after any completed play.
         // A plain library row has no owner to adopt it, so this is a no-op on
-        // the track; what matters is that my dial reads the PLAYS, not this.
+        // the track; what matters is that my dial reads the LISTENS, not this.
         db.promote_curator_track_for(id, you);
 
         let now = now_ms();
@@ -11894,6 +12034,34 @@ mod pull_adoption_is_per_listener {
         // Now I heart it. That is mine, and it counts.
         db.set_favorite(me, id, true).unwrap();
         assert_eq!(db.pull_adoption(me, now), (1, 1), "a heart of my own is adoption");
+    }
+
+    /// A play START is not a yes. The home feed's `plays` row is written
+    /// with no qualification, and the dial read it as adoption - so a song
+    /// bailed on at eight seconds argued for MORE reach. Only a completed
+    /// listen or a heart counts.
+    #[test]
+    fn a_bare_play_is_not_adoption() {
+        let db = fresh("bare-play");
+        let me = db.create_user("me", "x", true).unwrap();
+        let started = add_track(&db, "started.flac");
+        let finished = add_track(&db, "finished.flac");
+        let hearted = add_track(&db, "hearted.flac");
+        landed_pull(&db, me, "dz-1", started);
+        landed_pull(&db, me, "dz-2", finished);
+        landed_pull(&db, me, "dz-3", hearted);
+        let now = now_ms();
+
+        // A play row, and even a sitting that was bailed on: nothing.
+        db.record_play(me, started).unwrap();
+        assert_eq!(ingest(&db, me, &[listen(started, false)]), 1);
+        assert_eq!(db.pull_adoption(me, now), (0, 3), "a start is not adoption");
+
+        // Finishing one counts; hearting another counts.
+        assert_eq!(ingest(&db, me, &[listen(finished, true)]), 1);
+        assert_eq!(db.pull_adoption(me, now), (1, 3), "a completed listen is adoption");
+        db.set_favorite(me, hearted, true).unwrap();
+        assert_eq!(db.pull_adoption(me, now), (2, 3), "a heart is adoption");
     }
 }
 
