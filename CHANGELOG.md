@@ -15,6 +15,16 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.88
+
+- Every song on Music Date now comes with a full profile already written, so
+  the card tells you who you are meeting the moment it lands instead of
+  looking them up while you wait.
+- Where they are from, when they started, their genres, how many people
+  listen, what they are best known for and who they sound like — each from a
+  source that is named, and left out entirely when nobody actually knows.
+- The card also says the tempo, and which record the song is off.
+
 ## 0.5.87
 
 - On Music Date, keep, pass and undo are now on the card itself — over the
