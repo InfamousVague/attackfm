@@ -815,6 +815,33 @@ CREATE TABLE IF NOT EXISTS artist_lore (
   built_at INTEGER NOT NULL
 );
 
+-- The catalogue's read on one ARTIST, cached hub-wide so the second date that
+-- meets them is instant. A band is a band whoever is listening - the same
+-- argument artist_lore makes - so this is not per-user.
+--
+-- The body is JSON rather than columns on purpose: open() lands new TABLES on
+-- a deployed database and never new columns, so a JSON payload is the only
+-- shape that can gain a field later without a migrate() entry.
+--
+-- The PROSE deliberately stays out of here. It lives in artist_lore and is
+-- spliced in when the profile is served, so a blurb that lands later deepens
+-- every cached profile without rewriting a single row.
+CREATE TABLE IF NOT EXISTS artist_profiles (
+  k          TEXT PRIMARY KEY,
+  artist     TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  -- Which sources actually answered, comma separated. The client renders a
+  -- block only when its source is in here, so an empty list is a profile that
+  -- says nothing rather than one that guesses.
+  sources    TEXT NOT NULL DEFAULT '',
+  -- The last SUCCESSFUL build, and the last ATTEMPT. Split because a failed
+  -- build must advance the attempt clock and leave the body alone: an outage
+  -- should never blank a profile somebody already has.
+  built_at   INTEGER NOT NULL,
+  checked_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS artist_profiles_stale ON artist_profiles(checked_at);
+
 CREATE TABLE IF NOT EXISTS song_lore (
   track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   body     TEXT NOT NULL,
@@ -6551,6 +6578,173 @@ impl Db {
             }
         }
         out
+    }
+
+    /// Distinct artist names sitting in the discovery pool, most promising
+    /// first - the ones a deck is most likely to deal next, so warming them is
+    /// warming what someone is actually about to meet.
+    pub fn discovery_artists(&self, limit: usize) -> Vec<String> {
+        let db = self.conn.lock().unwrap();
+        let Ok(mut stmt) = db.prepare(
+            "SELECT artist FROM discoveries
+             WHERE TRIM(artist) != ''
+             GROUP BY LOWER(artist)
+             ORDER BY MAX(score) DESC
+             LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        let rows = stmt.query_map([limit as i64], |r| r.get::<_, String>(0));
+        match rows {
+            Ok(it) => it.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// The cached profiles for these folded keys: (k, body JSON, sources, built_at).
+    pub fn artist_profile_rows(&self, keys: &[String]) -> Vec<(String, String, String, i64)> {
+        let db = self.conn.lock().unwrap();
+        let mut out = Vec::new();
+        for k in keys {
+            let row = db.query_row(
+                "SELECT k, body, sources, built_at FROM artist_profiles WHERE k = ?1",
+                [k],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, i64>(3)?,
+                    ))
+                },
+            );
+            if let Ok(v) = row {
+                out.push(v);
+            }
+        }
+        out
+    }
+
+    /// Store a built profile.
+    ///
+    /// The guard is the point: a build that answered from FEWER sources than
+    /// the stored row never overwrites it. A Deezer-only inline build racing a
+    /// full background one would otherwise throw away the deep profile the
+    /// sweep just wrote, and the card would visibly lose its genres.
+    pub fn artist_profile_put(
+        &self,
+        k: &str,
+        artist: &str,
+        body: &str,
+        sources: &str,
+        built_at: i64,
+        now: i64,
+    ) -> rusqlite::Result<()> {
+        let depth = sources.split(',').filter(|s| !s.trim().is_empty()).count() as i64;
+        let db = self.conn.lock().unwrap();
+        db.execute(
+            "INSERT INTO artist_profiles (k, artist, body, sources, built_at, checked_at)
+             VALUES (?1, ?2, ?3, ?4, ?7, ?5)
+             ON CONFLICT(k) DO UPDATE SET
+               artist = excluded.artist,
+               body = excluded.body,
+               sources = excluded.sources,
+               built_at = excluded.built_at,
+               checked_at = excluded.checked_at
+             WHERE ?6 >= (
+               LENGTH(artist_profiles.sources) - LENGTH(REPLACE(artist_profiles.sources, ',', ''))
+             ) + (CASE WHEN artist_profiles.sources = '' THEN 0 ELSE 1 END)",
+            rusqlite::params![k, artist, body, sources, now, depth, built_at],
+        )?;
+        Ok(())
+    }
+
+    /// An attempt that found nothing. Advances the attempt clock ONLY, so a
+    /// name the catalogues do not know is not asked about again this hour and
+    /// a profile that already exists survives the miss untouched.
+    pub fn artist_profile_touch(&self, k: &str, artist: &str, now: i64) {
+        let db = self.conn.lock().unwrap();
+        let _ = db.execute(
+            "INSERT INTO artist_profiles (k, artist, body, sources, built_at, checked_at)
+             VALUES (?1, ?2, '{}', '', 0, ?3)
+             ON CONFLICT(k) DO UPDATE SET checked_at = ?3",
+            rusqlite::params![k, artist, now],
+        );
+    }
+
+    /// Which of these keys have no usable profile yet, or one old enough to
+    /// rebuild - and are not inside their retry cooldown.
+    pub fn artist_profile_gaps(
+        &self,
+        keys: &[String],
+        stale_before: i64,
+        retry_before: i64,
+    ) -> Vec<String> {
+        let db = self.conn.lock().unwrap();
+        let mut out = Vec::new();
+        for k in keys {
+            let row: Option<(i64, i64, String)> = db
+                .query_row(
+                    "SELECT built_at, checked_at, sources FROM artist_profiles WHERE k = ?1",
+                    [k],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .ok();
+            /*
+             * Three states, not two, and the difference decides whether the
+             * deep pass ever runs:
+             *
+             *   no row              never looked at        -> build
+             *   built_at 0, sources SHALLOW: the inline Deezer-only build ran
+             *                       because somebody was waiting on a panel,
+             *                       and the full pass has never run -> build
+             *                       NOW, with no cooldown. Getting this wrong
+             *                       is what left every profile stuck on
+             *                       `partial` forever: the shallow build
+             *                       stamped built_at, the gap query saw a fresh
+             *                       row, and the deepening never happened.
+             *   built_at 0, no src  the last attempt FAILED or found nothing
+             *                       -> respect the cooldown
+             *   built_at > 0        fully built -> only when genuinely stale
+             */
+            match row {
+                None => out.push(k.clone()),
+                Some((0, _, sources)) if !sources.trim().is_empty() => out.push(k.clone()),
+                Some((0, checked, _)) => {
+                    if checked < retry_before {
+                        out.push(k.clone());
+                    }
+                }
+                Some((built, checked, _)) => {
+                    if built < stale_before && checked < retry_before {
+                        out.push(k.clone());
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// How much of an artist this listener already has here: tracks on the hub,
+    /// and how many of them they have hearted.
+    pub fn artist_holdings(&self, user_id: i64, artist: &str) -> (i64, i64) {
+        let db = self.conn.lock().unwrap();
+        let tracks: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM tracks WHERE deleted = 0 AND LOWER(artist) = LOWER(?1)",
+                [artist],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let hearted: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM favorites f JOIN tracks t ON t.id = f.track_id
+                 WHERE f.user_id = ?1 AND t.deleted = 0 AND LOWER(t.artist) = LOWER(?2)",
+                rusqlite::params![user_id, artist],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        (tracks, hearted)
     }
 
     pub fn artist_lore_put(&self, k: &str, artist: &str, body: &str) -> rusqlite::Result<()> {

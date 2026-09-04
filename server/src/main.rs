@@ -51,6 +51,7 @@ mod curator;
 mod fx;
 mod db;
 mod discover;
+mod artistprofile;
 mod dlna;
 mod discovery;
 mod mixes;
@@ -550,6 +551,16 @@ async fn main() {
     // The buying arm rides beside the curator: same taste, real money - er,
     // real disk. See collector.rs for the honesty rules.
     collector::spawn(state.clone());
+    /*
+     * Artist profiles, built ahead of the deck that will want them.
+     *
+     * Its own slow loop rather than a step in the collector's five-minute
+     * cycle, for the same reason the canvas sweep is its own: every step is a
+     * request to somebody else's catalogue, and MusicBrainz asks for a second
+     * between calls. Starts well after boot so a restart does not spend its
+     * first minutes on profiles nobody has asked for yet.
+     */
+    artistprofile::spawn_warm(state.clone());
 
     // The audio analyser: measures each file's loudness and brightness (and a
     // tempo where the curator has none), one polite track at a time.
@@ -786,6 +797,7 @@ async fn main() {
         .route("/api/curator/pulls", get(collector::status))
         .route("/api/date/briefing", get(collector::date_briefing))
         .route("/api/date/artist", get(collector::date_artist))
+        .route("/api/date/profiles", post(collector::date_profiles))
         .route("/api/date/candidates", get(collector::date_candidates))
         .route("/api/date/preview", get(collector::date_preview))
         .route("/api/date/candidate-verdict", post(collector::date_candidate_verdict))

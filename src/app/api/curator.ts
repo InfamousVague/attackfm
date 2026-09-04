@@ -113,6 +113,14 @@ export interface PreviewDateCard {
   /** Which bench dealt it: 'trending' (the charts), 'fresh' (new releases),
    *  or 'taste' - the card wears the answer as its subtitle. */
   lane?: string;
+  /** The pool's own tempo read. Absent on a `tiny` card, which skips the
+   *  analysis gate on purpose - draw nothing rather than "- BPM". */
+  bpm?: number | null;
+  /** How well the catalogue thinks the SONG does, 0-1 within its harvest. */
+  popularity?: number | null;
+  /** Who this is, built before the card was dealt. `null` when the hub has
+   *  not got to them yet; absent entirely on a hub from before profiles. */
+  profile?: DateArtistProfile | null;
 }
 
 /** The best measured candidates, ready to date on their thirty seconds -
@@ -138,17 +146,63 @@ export async function fetchDateCandidates(
   return { cards: out.candidates ?? [], total: out.total ?? (out.candidates ?? []).length };
 }
 
-/** What the AI (and Deezer) know about a card's artist, for the date's profile
- *  panel: a short who/where-from line, a few releases, and how big they are. */
+/**
+ * Who a card's artist is - built by the hub before the card was dealt.
+ *
+ * Every block is attributed and OPTIONAL, and `sources` is the contract: a
+ * panel renders a block only when its source is in that list. That is what
+ * keeps this honest - a tiny act with nothing but a catalogue entry gets a
+ * thin profile rather than an invented one, and nothing here is ever written
+ * by a model except `blurb`, which is prose and says so.
+ */
 export interface DateArtistProfile {
   /** The honest one-line "who they are / where they're from", or empty when
    *  the server has not learned this artist yet (it fills in behind the ask). */
   blurb: string;
   /** A short discography - albums, newest first, with years. Facts from the
-   *  catalogue, so even an artist no model knows still gets a real list. */
+   *  catalogue, so even an artist no model knows still gets a real list.
+   *  Kept at the top level for hubs and bundles from before the rest. */
   discography: string[];
   /** Deezer fan count, when known - the "how big are they" number. */
   fans: number | null;
+  /** Which sources actually answered: 'deezer' | 'musicbrainz' |
+   *  'listenbrainz' | 'spotify'. Empty means nobody did. */
+  sources?: string[];
+  /** Only the catalogue answered so far and the full build has not run yet -
+   *  worth re-asking in a moment. */
+  partial?: boolean;
+  deezer?: {
+    fans?: number | null;
+    albums?: number | null;
+    picture?: string | null;
+    discography?: string[];
+    /** The songs of theirs most people reach for. */
+    top?: string[];
+    /** Who the catalogue puts near them - relatedness, not a read on you. */
+    related?: string[];
+  };
+  musicbrainz?: {
+    /** Town if MusicBrainz has one, else country. */
+    from?: string | null;
+    began?: string | null;
+    ended?: string | null;
+    /** 'Person' | 'Group' | … - the difference between "formed" and "born". */
+    kind?: string | null;
+    /** MusicBrainz's own short note distinguishing same-named acts. */
+    note?: string | null;
+    genres?: string[];
+  };
+  listenbrainz?: { listeners?: number | null };
+  spotify?: {
+    genres?: string[];
+    followers?: number | null;
+    /** Spotify's own 0-100. */
+    popularity?: number | null;
+    image?: string | null;
+  };
+  /** How much of them is already on this server, and how much you have
+   *  hearted. Computed per request, never stored. */
+  yours?: { tracks: number; hearted: number };
 }
 
 /** Look up the current card's artist. Cheap to call as cards advance; the
@@ -162,11 +216,44 @@ export async function fetchDateArtist(
     `/api/date/artist?name=${encodeURIComponent(name)}`,
     { token: session.token },
   );
+  return normaliseProfile(out);
+}
+
+/** Every field optional and defaulted here, so a new bundle against an older
+ *  hub degrades to what that hub knows rather than to `undefined`. */
+export function normaliseProfile(out: Partial<DateArtistProfile>): DateArtistProfile {
   return {
+    ...out,
     blurb: out.blurb ?? '',
-    discography: out.discography ?? [],
-    fans: out.fans ?? null,
+    discography: out.discography ?? out.deezer?.discography ?? [],
+    fans: out.fans ?? out.deezer?.fans ?? null,
+    sources: out.sources ?? [],
   };
+}
+
+/**
+ * Who all of these are, in one ask.
+ *
+ * The deck's library half never passes through the deal, and a deck open a
+ * while outruns whatever the deal attached - both want the same thing, and
+ * asking per card was one request per artist as they came up. On-file only:
+ * a name the hub has not built yet answers `null` and is queued behind the
+ * reply, so this stays fast however many names go in.
+ */
+export async function fetchDateProfiles(
+  session: ServerSession,
+  artists: string[],
+): Promise<Record<string, DateArtistProfile | null>> {
+  const out = await request<{ profiles?: Record<string, Partial<DateArtistProfile> | null> }>(
+    session.url,
+    '/api/date/profiles',
+    { method: 'POST', token: session.token, body: JSON.stringify({ artists }) },
+  );
+  const rows: Record<string, DateArtistProfile | null> = {};
+  for (const [name, p] of Object.entries(out.profiles ?? {})) {
+    rows[name] = p ? normaliseProfile(p) : null;
+  }
+  return rows;
 }
 
 /** A FRESH preview URL for one candidate - the stored one carries an

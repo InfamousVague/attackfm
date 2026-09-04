@@ -310,6 +310,85 @@
   opacity: 0.65;
 }
 
+/* MusicBrainz's own note distinguishing same-named acts - "the Sheffield one".
+   Quieter than the name it qualifies, because it is a footnote to it. */
+.dateProfile__note {
+  font-weight: 400;
+  color: var(--glacier-text-muted);
+}
+
+/* Where they are from and when they started. Facts, so they sit above the
+   prose rather than inside it - the prose is the one line here a model wrote,
+   and it must never be mistaken for the source of a place or a year. */
+.dateProfile__facts {
+  margin: 0;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+/* One vocabulary's tags, never two merged. */
+.dateProfile__genres {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+.dateProfile__genre {
+  font-size: var(--glacier-font-size-xs);
+  padding: 1px var(--glacier-space-2);
+  border-radius: 999px;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+}
+
+/* What this server already has of theirs. */
+.dateProfile__yours {
+  margin: 0;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-accent-text, var(--glacier-text));
+}
+
+/* The rest, behind a press - the panel is height-capped and the card is still
+   the subject, so a discography does not get to push the deck around. */
+.dateProfile__more {
+  align-self: center;
+  margin-block-start: 2px;
+  padding: 2px var(--glacier-space-2);
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.dateProfile__deep {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dateProfile__head {
+  margin: var(--glacier-space-2) 0 0;
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--glacier-text-muted);
+}
+
+.dateProfile__related {
+  margin: 0;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
 .dateProfile__disco {
   margin: 2px 0 0;
   padding: 0;

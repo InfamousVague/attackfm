@@ -33,6 +33,8 @@ import {
 } from './datePassed.ts';
 import { bumpDateActivity } from './dateActivity.ts';
 import { CardFace } from './DateCardFace.tsx';
+import { DateProfile } from './DateProfile.tsx';
+import { knownProfile, seedDateProfiles, warmDateProfiles } from './dateProfiles.ts';
 import { loadAudioUrl, type Track } from '../core/tauri.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import { createPortal } from 'react-dom';
@@ -40,11 +42,9 @@ import { hushBeats, speakBeats } from '../booth/djVoice.ts';
 import { dateVoiceEnabled } from './dateVoice.ts';
 import {
   dateCandidateVerdict,
-  fetchDateArtist,
   fetchDateBriefing,
   fetchDateCandidates,
   fetchDatePreview,
-  type DateArtistProfile,
   type DateBriefingSong,
   type DateMode,
   type PreviewDateCard,
@@ -58,12 +58,6 @@ const PREVIEW_SCHEME = 'preview:';
 /** How many verdicts can be walked back. */
 const UNDO_DEPTH = 10;
 
-/** 1_234_567 -> "1.2M", 12_300 -> "12.3K" - the artist's fan count, humanised. */
-function formatFans(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
-  return String(n);
-}
 
 /** A decision, and what it actually changed - see the note on `undos`. */
 interface Verdict {
@@ -316,42 +310,42 @@ export function DatePage() {
   const current = deck[0] ?? null;
   const upcoming = deck[1] ?? null;
 
-  // What the AI (and the catalogue) know about the current card's artist, for
-  // the profile panel under the deck. Fetched lazily as cards advance, cached
-  // per artist, and the next card's artist is warmed so its panel is ready the
-  // moment it becomes current. The `live` flag drops a stale answer if the deck
-  // moved on before it arrived.
-  const [profile, setProfile] = useState<DateArtistProfile | null>(null);
-  const profileCache = useRef<Map<string, DateArtistProfile>>(new Map());
+  /*
+   * Who the current card is by.
+   *
+   * The hub builds these when it deals the hand, so the usual path is not a
+   * fetch at all - `seedDateProfiles` takes them straight off the cards and the
+   * panel is populated on the card's first frame. This used to be one request
+   * per card as it came up, which is why the first card of every sitting said
+   * "Looking them up…".
+   *
+   * The warm below covers the two cases the deal cannot: the library half of
+   * the deck (auditions never pass through the deal) and a deck open long
+   * enough to outrun what it was dealt. One request for the next eight, not
+   * eight requests.
+   */
+  const [profileTick, setProfileTick] = useState(0);
+  const profile = current?.artist ? knownProfile(current.artist) : undefined;
   useEffect(() => {
-    if (!session || !current?.artist) {
-      setProfile(null);
-      return;
-    }
+    seedDateProfiles(candidates);
+    setProfileTick((n) => n + 1);
+  }, [candidates]);
+  useEffect(() => {
+    if (!session) return;
+    // From index 0, not 1: `mine` exists at mount before any candidate has
+    // arrived, so the current card's own artist can be the one missing.
+    const names = deck.slice(0, 8).map((t) => t.artist).filter(Boolean);
+    if (names.length === 0) return;
     let live = true;
-    const name = current.artist;
-    const cached = profileCache.current.get(name);
-    if (cached) {
-      setProfile(cached);
-    } else {
-      setProfile(null);
-      void fetchDateArtist(session, name)
-        .then((p) => {
-          profileCache.current.set(name, p);
-          if (live) setProfile(p);
-        })
-        .catch(() => {});
-    }
-    const next = upcoming?.artist;
-    if (next && next !== name && !profileCache.current.has(next)) {
-      void fetchDateArtist(session, next)
-        .then((p) => profileCache.current.set(next, p))
-        .catch(() => {});
-    }
+    void warmDateProfiles(session, names).then(() => {
+      if (live) setProfileTick((n) => n + 1);
+    });
     return () => {
       live = false;
     };
-  }, [session, current?.artist, upcoming?.artist]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the deck's identity is the signal; the store dedupes the rest
+  }, [session, deck.length, current?.artist]);
+  void profileTick;
 
   /*
    * The intro: walking in, the deck HOLDS - no snippet plays - while a full
@@ -1158,33 +1152,11 @@ export function DatePage() {
             </div>
           </div>
 
-          {/* Who this is: the AI's short read on the artist, and the real
-              discography from the catalogue. Sits OUTSIDE .dateStack so it does
-              not ride the card's drag or catch the swipe. */}
-          {current && (
-            <section className="dateProfile" aria-label={`About ${current.artist}`}>
-              <h3 className="dateProfile__who">{current.artist}</h3>
-              {profile?.blurb ? (
-                <p className="dateProfile__blurb">{profile.blurb}</p>
-              ) : (
-                <p className="dateProfile__blurb dateProfile__blurb--thin">
-                  {profile ? 'Still getting to know this one.' : 'Looking them up…'}
-                </p>
-              )}
-              {profile && profile.discography.length > 0 && (
-                <ul className="dateProfile__disco">
-                  {profile.discography.slice(0, 4).map((r) => (
-                    <li key={r} className="dateProfile__release">
-                      {r}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {profile?.fans != null && profile.fans > 0 && (
-                <p className="dateProfile__fans">{formatFans(profile.fans)} fans on Deezer</p>
-              )}
-            </section>
-          )}
+          {/* Who this is - built by the hub before this card was dealt, and
+              rendered a block at a time, each one only when a real source
+              answered for it. Sits OUTSIDE .dateStack so it does not ride the
+              card's drag or catch the swipe. */}
+          {current && <DateProfile artist={current.artist} profile={profile} />}
 
         </>
       ) : (

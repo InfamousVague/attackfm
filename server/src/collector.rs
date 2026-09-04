@@ -1407,6 +1407,12 @@ pub async fn date_candidates(
             "extId": d.ext_id, "title": d.title, "artist": d.artist,
             "cover": d.cover, "preview": d.preview, "seed": d.seed,
             "lane": lane_of(d),
+            // Facts the pool already measured and this deal was discarding.
+            // `bpm` is absent for a `tiny` card - that deck bypasses the
+            // analysis gate on purpose - so the client must draw nothing
+            // rather than "- BPM".
+            "bpm": d.bpm,
+            "popularity": d.popularity,
         })
     };
     let mut cards: Vec<serde_json::Value> = Vec::new();
@@ -1494,60 +1500,35 @@ pub async fn date_candidates(
             .iter()
             .filter_map(|c| c.get("artist").and_then(|a| a.as_str()).map(str::to_string))
             .collect();
+
+        /*
+         * Every card leaves here already knowing who it is by.
+         *
+         * This is a DATABASE READ over the dealt hand and nothing else - at
+         * most twenty-five rows, no network. It must stay that way: the moment
+         * somebody "improves" this into a lookup, dealing a hand stops being
+         * instant and the deck stalls on its first card. Whatever is missing
+         * is filled by the pass below, in time for the NEXT hand.
+         */
+        let profiles = crate::artistprofile::known(&state, caller.id, &names);
+        for card in cards.iter_mut() {
+            let who = card.get("artist").and_then(|a| a.as_str()).unwrap_or("").to_string();
+            if let Some(obj) = card.as_object_mut() {
+                obj.insert(
+                    "profile".into(),
+                    profiles.get(&who).cloned().unwrap_or(serde_json::Value::Null),
+                );
+            }
+        }
+
         let st = state.clone();
         tokio::spawn(async move {
-            crate::lore::ensure_artists(&st, &names).await;
+            // Profiles first: the prose is the slow optional half, and
+            // `ensure` finishes by asking for it anyway.
+            crate::artistprofile::ensure(&st, &names).await;
         });
     }
     Ok(Json(json!({ "candidates": cards, "total": total })))
-}
-
-/// Deezer's fan count for an artist - the honest "how big are they" number.
-async fn deezer_fans(c: &reqwest::Client, id: u64) -> Option<u64> {
-    let v: serde_json::Value = c
-        .get(format!("https://api.deezer.com/artist/{id}"))
-        .send()
-        .await
-        .ok()?
-        .json()
-        .await
-        .ok()?;
-    v.get("nb_fan").and_then(|x| x.as_u64())
-}
-
-/// A short discography: the artist's albums, newest first, one line each with
-/// its year, deduped by title. Facts straight from Deezer - true even for an
-/// act no model has ever heard of, which is the whole point of not leaving the
-/// profile to the model's memory.
-async fn deezer_discography(c: &reqwest::Client, id: u64) -> Vec<String> {
-    let Ok(resp) = c
-        .get(format!("https://api.deezer.com/artist/{id}/albums"))
-        .query(&[("limit", "50")])
-        .send()
-        .await
-    else {
-        return Vec::new();
-    };
-    let Ok(v) = resp.json::<serde_json::Value>().await else {
-        return Vec::new();
-    };
-    let Some(items) = v.get("data").and_then(|d| d.as_array()) else {
-        return Vec::new();
-    };
-    let mut rows: Vec<(String, String)> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for a in items {
-        let title = a.get("title").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
-        if title.is_empty() || !seen.insert(title.to_lowercase()) {
-            continue;
-        }
-        let date = a.get("release_date").and_then(|x| x.as_str()).unwrap_or("").to_string();
-        let year = date.get(0..4).unwrap_or("").to_string();
-        let line = if year.is_empty() { title } else { format!("{title} ({year})") };
-        rows.push((date, line));
-    }
-    rows.sort_by(|a, b| b.0.cmp(&a.0));
-    rows.into_iter().map(|(_, line)| line).take(6).collect()
 }
 
 /// `GET /api/date/artist?name=` - who the current card's artist is, for the
@@ -1561,34 +1542,126 @@ pub async fn date_artist(
     headers: HeaderMap,
     axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    crate::auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let caller =
+        crate::auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let name = q.get("name").map(|s| s.trim().to_string()).unwrap_or_default();
     if name.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "name is required".into()));
     }
 
-    let blurb = crate::lore::known_artists(&state, std::slice::from_ref(&name))
-        .get(&crate::discovery::artist_key_public(&name))
-        .cloned()
-        .unwrap_or_default();
+    /*
+     * The store first. A hit is a single-digit-millisecond answer with no
+     * outbound request at all, where this used to spend three uncached
+     * catalogue calls on every card of every sitting.
+     */
+    let mut profile = crate::artistprofile::known(&state, caller.id, std::slice::from_ref(&name))
+        .remove(&name)
+        .unwrap_or(serde_json::Value::Null);
 
-    let c = crate::discovery::client(12);
-    let (fans, discography) = match crate::discovery::deezer_artist_id_public(&c, &name).await {
-        Some(id) => tokio::join!(deezer_fans(&c, id), deezer_discography(&c, id)),
-        None => (None, Vec::new()),
-    };
+    let have_sources = profile
+        .get("sources")
+        .and_then(|s| s.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false);
 
-    // No prose yet: research this artist behind the reply so a later visit has
-    // it, exactly as the deal itself does for the dealt hand.
-    if blurb.is_empty() {
+    if !have_sources {
+        // Never seen: build the shallow one inline so the panel is not empty -
+        // the same latency this endpoint always had - and let the full build
+        // deepen it behind the reply.
+        crate::artistprofile::build_fast(&state, &name).await;
+        profile = crate::artistprofile::known(&state, caller.id, std::slice::from_ref(&name))
+            .remove(&name)
+            .unwrap_or(serde_json::Value::Null);
+    }
+
+    // Deepen (or research the prose) behind the reply, exactly as the deal does
+    // for a dealt hand.
+    {
         let st = state.clone();
         let n = name.clone();
         tokio::spawn(async move {
-            crate::lore::ensure_artists(&st, &[n]).await;
+            crate::artistprofile::ensure(&st, &[n]).await;
         });
     }
 
-    Ok(Json(json!({ "blurb": blurb, "discography": discography, "fans": fans })))
+    /*
+     * The three fields the older client reads, kept verbatim beside the new
+     * shape. An OTA bundle can outrun this binary in either direction, and a
+     * panel that loses its discography because the server got better is a
+     * regression however good the new fields are.
+     */
+    let blurb = profile
+        .get("blurb")
+        .and_then(|b| b.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let discography = profile
+        .pointer("/deezer/discography")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let fans = profile.pointer("/deezer/fans").cloned().unwrap_or(serde_json::Value::Null);
+
+    let mut out = json!({ "blurb": blurb, "discography": discography, "fans": fans });
+    if let (Some(dst), Some(src)) = (out.as_object_mut(), profile.as_object()) {
+        for (k, v) in src {
+            if k != "blurb" {
+                dst.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    Ok(Json(out))
+}
+
+#[derive(serde::Deserialize)]
+pub struct ProfilesBody {
+    pub artists: Vec<String>,
+}
+
+/// `POST /api/date/profiles` - who all of these are, in one ask.
+///
+/// The deck's library half never passes through `date_candidates`, so its cards
+/// have no profile riding along; and a deck that has been open a while outruns
+/// whatever the deal attached. Both want the same thing: everyone in the next
+/// stretch, at once. Twenty-five names went as twenty-five requests before
+/// this, one per card as it came up.
+///
+/// POST rather than GET because twenty-five artist names in a query string is a
+/// URL-length trap. Keyed by THE EXACT STRING THE CLIENT SENT: the client
+/// cannot compute the server's folded key, and a second copy of that fold in
+/// TypeScript is a rule with two homes that will drift.
+///
+/// On file only - it never builds inline. A miss answers `null` and is queued
+/// behind the reply, so this stays a fast read however many names arrive.
+pub async fn date_profiles(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<ProfilesBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller =
+        crate::auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let names: Vec<String> = body
+        .artists
+        .into_iter()
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())
+        .take(40)
+        .collect();
+    if names.is_empty() {
+        return Ok(Json(json!({ "profiles": {} })));
+    }
+
+    let found = crate::artistprofile::known(&state, caller.id, &names);
+    let mut out = serde_json::Map::new();
+    for n in &names {
+        out.insert(n.clone(), found.get(n).cloned().unwrap_or(serde_json::Value::Null));
+    }
+
+    let st = state.clone();
+    tokio::spawn(async move {
+        crate::artistprofile::ensure(&st, &names).await;
+    });
+
+    Ok(Json(json!({ "profiles": out })))
 }
 
 /// `GET /api/date/preview?extId=` - a FRESH preview URL, resolved live.
@@ -1612,18 +1685,40 @@ pub async fn date_preview(
         .send()
         .await
     {
-        Ok(resp) => resp
-            .json::<serde_json::Value>()
-            .await
-            .ok()
-            .and_then(|v| v.get("preview").and_then(|p| p.as_str()).map(str::to_string))
-            .filter(|p| !p.trim().is_empty()),
+        Ok(resp) => resp.json::<serde_json::Value>().await.ok(),
         Err(_) => None,
     };
-    match fresh {
+    // The whole track object was already on the wire and one field was being
+    // kept. The rest is the song's own half of the profile, at no extra cost:
+    // which record it is off, when it came out, and whether it is explicit.
+    let album = fresh
+        .as_ref()
+        .and_then(|v| v.pointer("/album/title"))
+        .and_then(|x| x.as_str())
+        .map(str::to_string);
+    let released = fresh
+        .as_ref()
+        .and_then(|v| v.get("release_date"))
+        .and_then(|x| x.as_str())
+        .filter(|d| d.len() >= 4)
+        .map(str::to_string);
+    let explicit = fresh
+        .as_ref()
+        .and_then(|v| v.get("explicit_lyrics"))
+        .and_then(|x| x.as_bool());
+    let preview = fresh
+        .as_ref()
+        .and_then(|v| v.get("preview").and_then(|p| p.as_str()).map(str::to_string))
+        .filter(|p| !p.trim().is_empty());
+    match preview {
         Some(preview) => {
             state.db.update_discovery_preview(caller.id, ext, &preview);
-            Ok(Json(json!({ "preview": preview })))
+            Ok(Json(json!({
+                "preview": preview,
+                "album": album,
+                "released": released,
+                "explicit": explicit,
+            })))
         }
         None => Err((StatusCode::NOT_FOUND, "the catalogue has no clip for this one".into())),
     }

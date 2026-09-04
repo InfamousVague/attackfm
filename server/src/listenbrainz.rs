@@ -102,7 +102,7 @@ fn enc(s: &str) -> String {
     out
 }
 
-fn client() -> Option<reqwest::Client> {
+pub(crate) fn client() -> Option<reqwest::Client> {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
         .user_agent(MB_UA)
@@ -126,7 +126,7 @@ pub async fn cycle(state: &Arc<AppState>) {
 
 /// The artist's MusicBrainz id, by name - cached forever, including misses,
 /// because MB politely asks not to be asked twice.
-async fn artist_mbid(state: &Arc<AppState>, c: &reqwest::Client, name: &str) -> Option<String> {
+pub(crate) async fn artist_mbid(state: &Arc<AppState>, c: &reqwest::Client, name: &str) -> Option<String> {
     let key = discovery::artist_key_public(name);
     if key.is_empty() {
         return None;
@@ -164,6 +164,82 @@ async fn artist_mbid(state: &Arc<AppState>, c: &reqwest::Client, name: &str) -> 
     found
 }
 
+/// What MusicBrainz knows about an artist as an ACT rather than as a catalogue
+/// entry: where they are from, when they started, whether they are a person or
+/// a band, and the community's genre tags.
+///
+/// This is the only source here for "where they're from". The lore blurb
+/// sometimes says it in prose, but prose written by a model is not a fact - and
+/// the whole point of the profile is that every line traces to somebody who
+/// actually knows. MB is also the only free source that distinguishes a group
+/// from a person, which is the difference between "formed in 2011" and "born".
+///
+/// One request, then the 1.1s MusicBrainz asks for. Genres are preferred over
+/// raw tags: `genres` is the curated vocabulary, `tags` is anything anyone
+/// typed, and mixing the two puts "seen them live" beside "shoegaze".
+pub(crate) async fn artist_facts(c: &reqwest::Client, mbid: &str) -> Option<serde_json::Value> {
+    let url = format!("https://musicbrainz.org/ws/2/artist/{mbid}?inc=tags+genres&fmt=json");
+    let v: Option<serde_json::Value> = async { c.get(&url).send().await.ok()?.json().await.ok() }.await;
+    tokio::time::sleep(MB_GAP).await;
+    let v = v?;
+
+    let mut genres: Vec<String> = v
+        .get("genres")
+        .and_then(|g| g.as_array())
+        .map(|arr| {
+            let mut rows: Vec<(i64, String)> = arr
+                .iter()
+                .filter_map(|g| {
+                    let name = g.get("name")?.as_str()?.trim().to_string();
+                    let count = g.get("count").and_then(|c| c.as_i64()).unwrap_or(0);
+                    (!name.is_empty()).then_some((count, name))
+                })
+                .collect();
+            rows.sort_by(|a, b| b.0.cmp(&a.0));
+            rows.into_iter().map(|(_, n)| n).collect()
+        })
+        .unwrap_or_default();
+    genres.truncate(4);
+
+    let area = v
+        .pointer("/area/name")
+        .and_then(|x| x.as_str())
+        .map(String::from);
+    let begin_area = v
+        .pointer("/begin-area/name")
+        .and_then(|x| x.as_str())
+        .map(String::from);
+    // The town if MB has one, else the country. "From Sheffield" beats "From
+    // the United Kingdom" every time, and neither is worth inventing.
+    let from = begin_area.or(area);
+    let began = v
+        .pointer("/life-span/begin")
+        .and_then(|x| x.as_str())
+        .and_then(|d| d.get(0..4))
+        .map(String::from);
+    let ended = v
+        .pointer("/life-span/end")
+        .and_then(|x| x.as_str())
+        .and_then(|d| d.get(0..4))
+        .map(String::from);
+    let kind = v.get("type").and_then(|x| x.as_str()).map(String::from);
+    let note = v
+        .get("disambiguation")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+        .map(String::from);
+
+    Some(serde_json::json!({
+        "from": from,
+        "began": began,
+        "ended": ended,
+        "kind": kind,
+        "note": note,
+        "genres": genres,
+    }))
+}
+
 /// Similar artists, with the contribution cap doing the anti-fame work.
 async fn similar_artists(c: &reqwest::Client, mbid: &str) -> Vec<(String, String, i64)> {
     let url = format!(
@@ -190,7 +266,7 @@ async fn similar_artists(c: &reqwest::Client, mbid: &str) -> Vec<(String, String
 }
 
 /// Worldwide listener counts for a batch of artists, in one POST.
-async fn artist_popularity(c: &reqwest::Client, mbids: &[String]) -> HashMap<String, u64> {
+pub(crate) async fn artist_popularity(c: &reqwest::Client, mbids: &[String]) -> HashMap<String, u64> {
     if mbids.is_empty() {
         return HashMap::new();
     }

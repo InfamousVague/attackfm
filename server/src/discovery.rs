@@ -537,6 +537,35 @@ pub fn title_key_public(title: &str) -> String {
     title_key(title)
 }
 
+/// The catalogue's id for an artist, but only when the name really matches.
+///
+/// The difference from `deezer_artist_id_public` is the whole reason this
+/// exists: that one falls back to Deezer's first hit, which is right for a
+/// read-only suggestion and wrong for anything DURABLE. Among small acts
+/// same-name collisions are the rule, and a wrong first hit cached as an
+/// artist's profile is a stranger's fan count and a stranger's discography
+/// shown under their name on every card they appear on, until the row expires.
+/// A miss here is a profile that stays thin, which is the honest failure.
+pub(crate) async fn deezer_artist_id_strict(c: &reqwest::Client, name: &str) -> Option<u64> {
+    deezer_artist_id(c, name, true).await
+}
+
+/// The whole `/artist/{id}` object in ONE request - fan count, album count,
+/// picture and link all come from the same body, where the old profile code
+/// spent a request per field.
+pub(crate) async fn deezer_artist_object(c: &reqwest::Client, id: u64) -> Option<serde_json::Value> {
+    c.get(format!("https://api.deezer.com/artist/{id}"))
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()
+}
+
+/// The politeness gap, so callers outside this module keep the same rhythm.
+pub(crate) const CATALOGUE_GAP: Duration = GAP;
+
 async fn deezer_artist_id(c: &reqwest::Client, name: &str, strict: bool) -> Option<u64> {
     let v: serde_json::Value = c
         .get("https://api.deezer.com/search/artist")
@@ -574,7 +603,7 @@ async fn deezer_artist_id(c: &reqwest::Client, name: &str, strict: bool) -> Opti
     chosen.and_then(|a| a.get("id")).and_then(|i| i.as_u64())
 }
 
-async fn deezer_related(c: &reqwest::Client, id: u64) -> Option<Vec<(u64, String)>> {
+pub(crate) async fn deezer_related(c: &reqwest::Client, id: u64) -> Option<Vec<(u64, String)>> {
     let v: serde_json::Value = c
         .get(format!("https://api.deezer.com/artist/{id}/related"))
         .query(&[("limit", "10")])

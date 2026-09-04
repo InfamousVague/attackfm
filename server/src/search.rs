@@ -87,7 +87,7 @@ fn token_cache() -> &'static Mutex<Option<(String, u64)>> {
 ///
 /// The old anonymous `get_access_token` endpoint that stood here is gone from
 /// Spotify's side; asking it just wasted a request per search.
-async fn spotify_token() -> Option<String> {
+pub(crate) async fn spotify_token() -> Option<String> {
     let id = std::env::var("AFM_SPOTIFY_CLIENT_ID").ok().filter(|v| !v.is_empty())?;
     let secret = std::env::var("AFM_SPOTIFY_CLIENT_SECRET").ok().filter(|v| !v.is_empty())?;
     {
@@ -194,6 +194,55 @@ pub(crate) async fn spotify_playlist_search(q: &str) -> Vec<SearchResult> {
     out
 }
 
+
+/// Spotify's own read on an artist: the genres nobody else here has, the
+/// follower count, and their 0-100 popularity.
+///
+/// Two requests behind this hub's ordinary client-credentials token - the same
+/// one search already mints and caches, so this adds no new auth path and no
+/// new secret. `None` when the hub has no Spotify app configured, and the
+/// layer simply disappears from the profile rather than erroring.
+///
+/// The match is STRICT on the folded name. Spotify's search is happy to answer
+/// a tiny act's name with a big act that shares a word, and this answer is
+/// about to be cached and shown as fact - a thin profile is the honest failure,
+/// a confident wrong one is not.
+pub(crate) async fn spotify_artist(name: &str) -> Option<Value> {
+    let token = spotify_token().await?;
+    let want = crate::discovery::artist_key_public(name);
+    if want.is_empty() {
+        return None;
+    }
+    let found: Value = client()
+        .get("https://api.spotify.com/v1/search")
+        .bearer_auth(&token)
+        .query(&[("type", "artist"), ("limit", "5"), ("q", name)])
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    let items = found.pointer("/artists/items")?.as_array()?;
+    let hit = items.iter().find(|a| {
+        a.get("name")
+            .and_then(|x| x.as_str())
+            .map(|n| crate::discovery::artist_key_public(n) == want)
+            .unwrap_or(false)
+    })?;
+    let id = hit.get("id").and_then(|x| x.as_str())?;
+    // The search item already carries genres/followers on most objects, but not
+    // reliably; the artist endpoint always does.
+    client()
+        .get(format!("https://api.spotify.com/v1/artists/{id}"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .ok()?
+        .json::<Value>()
+        .await
+        .ok()
+}
 
 #[allow(dead_code)]
 pub(crate) async fn spotify_search(q: &str) -> Vec<SearchResult> {
