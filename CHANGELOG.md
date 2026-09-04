@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.95
+
+- Your profile pictures have their buttons back off them. The banner and your
+  face each keep one — change the picture — and the rest of the row is gone.
+- Press and hold either picture for the others: reposition it, or remove it.
+- Choosing a picture still takes you to the cropper on the way in, so framing
+  it is part of picking it rather than a button you have to find afterwards.
+
 ## 0.5.94
 
 - The buttons on your banner — reposition, change, remove — take a tap again.
