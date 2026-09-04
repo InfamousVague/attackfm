@@ -977,9 +977,16 @@ fn build_descriptive(
 /// genre, and three finished songs by one person IS a pattern.
 const ARTIST_CONFIDENCE: f32 = 3.0;
 
-/// An artist name folded for matching.
+/// An artist name folded for matching - THE fold, the one the pool's
+/// rejection memory is written in (`discovery::artist_key_public`: accents
+/// and punctuation folded, "and"/"the"/"&" dropped, so "Florence + The
+/// Machine" and "florence and the machine" are one artist). There were two
+/// folds for a while: this one was a plain lowercase, and a dismissed
+/// "The National" written by the dismiss endpoint in the pool's fold was
+/// never matched by the seed list reading it in this one. One vocabulary,
+/// everywhere an artist is a key: affinities, seeds, rejections, thumbs.
 pub fn artist_key(s: &str) -> String {
-    s.trim().to_lowercase()
+    crate::discovery::artist_key_public(s)
 }
 
 /// The descriptive accumulators - centroids, bands, affinities - shared by
