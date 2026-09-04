@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { refreshSpeakers, setSpeakerHub } from './speakers.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import {
   ConnectSocket,
@@ -99,6 +100,20 @@ const PlaybackSyncContext = createContext<PlaybackSyncValue | null>(null);
  */
 export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
   const { session } = useServerSession();
+
+  // Speakers on the hub's network are driven through the hub, so the module
+  // that talks to them needs to know which hub and with what. Here because
+  // this provider already holds the session and already owns "where can the
+  // sound go" for this device. See player/speakers.ts.
+  useEffect(() => {
+    setSpeakerHub(session ? { url: session.url, token: session.token } : null);
+    // Warmed here rather than when the panel opens: the hub answers from a
+    // cache it refreshes itself, so this is one cheap request per session -
+    // and it means the speakers are already in the list the first time
+    // somebody opens the picker, instead of appearing a second later under
+    // their thumb.
+    if (session) void refreshSpeakers();
+  }, [session?.url, session?.token]);
   const [connected, setConnected] = useState(false);
   const [devices, setDevices] = useState<ConnectDevice[]>([]);
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);

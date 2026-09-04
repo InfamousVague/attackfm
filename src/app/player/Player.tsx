@@ -31,6 +31,14 @@ import { isHeld } from '../downloads/offline.ts';
 import { loadScrubTape } from './scrubTape.ts';
 import { useConnect } from './playbackSync.tsx';
 import { castLoad, castMediaFor, castPause, castPlay, castSeek, useCastSnapshot } from './cast.ts';
+import {
+  speakerLoad,
+  speakerPause,
+  speakerResume,
+  speakerSeek,
+  speakerVolume,
+  useSpeakers,
+} from './speakers.ts';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useJamOptional } from './jam.tsx';
@@ -266,6 +274,18 @@ export function Player({
   const casting = cast.session != null && !remoteOnly;
   const castingRef = useRef(casting);
   castingRef.current = casting;
+  /* A speaker on the network holds the sound on exactly the same terms as a
+     TV does - the page stays the brain, the decks run on muted as the clock -
+     so it rides the cast mirror's shape rather than a mode of its own. Same
+     `remoteOnly` exclusion, same reason: a device that is itself a Connect
+     remote has no playback to mirror. */
+  const net = useSpeakers();
+  const onSpeaker = net.session != null && !remoteOnly;
+  const onSpeakerRef = useRef(onSpeaker);
+  onSpeakerRef.current = onSpeaker;
+  /** When a URI was last handed to the speaker, so the transport effects do
+   *  not fire a Play at a renderer that is still being told what to play. */
+  const speakerLoadAt = useRef(0);
   /** `playing` through a ref, for cast effects keyed to the SONG - whether a
    *  freshly loaded track should run must not itself reload the track. */
   const playingRef = useRef(playing);
@@ -3404,6 +3424,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       castSeek(to * 1000);
       castQuietUntil.current = Date.now() + 3000;
     }
+    if (onSpeakerRef.current) {
+      speakerSeek(to * 1000);
+      castQuietUntil.current = Date.now() + 3000;
+    }
     // The listener has chosen a spot; a recovery aimed at the old one is void,
     // and the seek itself earns a fresh set of attempts.
     clearStall();
@@ -3643,9 +3667,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // every crossfade edge.
   useEffect(() => {
     for (const el of [audioRef.current, audioBRef.current]) {
-      if (el) el.muted = casting;
+      if (el) el.muted = casting || onSpeaker;
     }
-  }, [casting]);
+  }, [casting, onSpeaker]);
 
   // What the TV should fetch: re-sent when the song changes or the session
   // starts. The TV joins AT the deck's current position, so starting a cast
@@ -3686,6 +3710,73 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     if (playing) castPlay();
     else castPause();
   }, [casting, playing]);
+
+  /*
+   * The same four moves, aimed at a speaker on the network.
+   *
+   * What the speaker fetches is a TRACK ID, not a URL: the hub builds the URL
+   * because only the hub knows the address it can be reached at on that wifi,
+   * and it mints the speaker a stream token of its own. So this only has to
+   * say which song - and it can only say that for a song the HUB has, which
+   * is every song except one sitting in a local folder on this device.
+   */
+  useEffect(() => {
+    if (!onSpeaker || !track || downloading) return;
+    const id = trackIdFromPath(track.path);
+    if (id == null) return;
+    castQuietUntil.current = Date.now() + 4000;
+    speakerLoadAt.current = Date.now();
+    speakerLoad(id);
+    // A renderer starts where the URL starts. Mid-song hand-offs catch up with
+    // a seek once it is loaded rather than restarting the listener's song.
+    const at = Math.round(position * 1000);
+    if (at > 2000) window.setTimeout(() => speakerSeek(at), 1200);
+    // Loading a URI starts it playing - that is what the hub's play route
+    // does. If the listener had this paused, put it back once the load has
+    // landed, rather than letting a hand-off quietly un-pause their music.
+    if (!playingRef.current) window.setTimeout(() => speakerPause(), 1400);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed to the song and the session, like its cast twin
+  }, [onSpeaker, track?.path, downloading]);
+
+  /*
+   * Play and pause travel - except across a load.
+   *
+   * These effects all run on the commit that opens the session, and a Play
+   * racing the SetAVTransportURI is a Play at a renderer holding no URI. Some
+   * ignore it; some answer 500 and sit there. The load already leaves the
+   * speaker playing (and pauses it again just above if it should not be), so
+   * there is nothing for this to do in that window anyway.
+   */
+  useEffect(() => {
+    if (!onSpeaker) return;
+    if (Date.now() - speakerLoadAt.current < 1500) return;
+    if (playing) speakerResume();
+    else speakerPause();
+  }, [onSpeaker, playing]);
+
+  // The speaker's own volume, where it has one. The deck is muted, so this is
+  // the only volume the listener can actually hear.
+  useEffect(() => {
+    if (!onSpeaker) return;
+    if (Date.now() - speakerLoadAt.current < 1500) return;
+    speakerVolume(volume);
+  }, [onSpeaker, volume]);
+
+  // The speaker is the clock; the silent deck follows it. Same threshold and
+  // the same quiet window as the TV - see the note on that effect for why a
+  // deck left running ahead cuts the tail off the song being heard.
+  useEffect(() => {
+    if (!onSpeaker || !net.media) return;
+    if (Date.now() < castQuietUntil.current) return;
+    const el = activeAudio();
+    if (!el || scrubbing.current) return;
+    const theirs = net.media.positionMs / 1000;
+    const deckS = deckTime(el);
+    if (Math.abs(theirs - deckS) > 2.5 && theirs > 0) {
+      el.currentTime = Math.max(0, theirs - srcOffset.current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on each poll; everything else rides refs
+  }, [onSpeaker, net.media?.positionMs]);
 
   /*
    * The TV is the clock; the silent deck follows it.

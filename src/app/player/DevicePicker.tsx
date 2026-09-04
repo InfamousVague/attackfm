@@ -1,9 +1,10 @@
 import { IconButton, Popover, Text } from '@glacier/react';
-import { Airplay, Cast, Check, Globe, Laptop, MonitorSpeaker, Smartphone } from '@glacier/icons';
+import { Airplay, Cast, Check, Globe, Laptop, MonitorSpeaker, Smartphone, Speaker } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { useConnect } from './playbackSync.tsx';
 import type { ConnectDevice } from './connect.ts';
 import { castConnect, castDisconnect, castDiscovery, useCastSnapshot } from './cast.ts';
+import { refreshSpeakers, speakerConnect, speakerDisconnect, useSpeakers } from './speakers.ts';
 import { isTauri, tauriCall } from '../core/tauri.ts';
 
 /**
@@ -75,6 +76,14 @@ export function DeviceList() {
   const { connected, devices, activeDeviceId, thisDeviceId, transfer } = useConnect();
   const cast = useCastSnapshot();
   const airplay = useAirplay();
+  const net = useSpeakers();
+
+  // The hub's list, read when the panel opens. It caches its last look for a
+  // minute, so this is nearly always free; `scanSpeakers` is the button that
+  // actually spends three seconds on the wire.
+  useEffect(() => {
+    void refreshSpeakers();
+  }, []);
 
   // Active scan only while these rows are on screen - it is the mode Google
   // says to reserve for an open chooser, because it wakes every cast device
@@ -89,7 +98,7 @@ export function DeviceList() {
   const hasConnect = connected && online.length >= 2;
   const hasCast = cast.available && (cast.devices.length > 0 || cast.session != null);
 
-  if (!hasConnect && !hasCast && !airplay) {
+  if (!hasConnect && !hasCast && !airplay && net.speakers.length === 0) {
     return (
       <Text tone="muted" size="sm">
         No other devices to play on right now.
@@ -206,6 +215,44 @@ export function DeviceList() {
             Cast to
           </Text>
           {castRows}
+        </>
+      )}
+      {/* Speakers on the hub's own network: an amp, a streamer, a TV that
+          runs none of our software. The hub found them and the hub drives
+          them, so these rows work on an iPhone exactly as on a laptop -
+          nothing here depends on what THIS device can see. */}
+      {net.speakers.length > 0 && (
+        <>
+          <Text tone="muted" size="xs" className="deviceList__head">
+            On your network
+          </Text>
+          {net.speakers.map((s) => {
+            const on = net.session?.id === s.id;
+            return (
+              <button
+                key={`net-${s.id}`}
+                type="button"
+                className="deviceRow"
+                data-active={on || undefined}
+                onClick={() => (on ? speakerDisconnect() : speakerConnect(s))}
+              >
+                <span className="deviceRow__icon">
+                  <Speaker size={16} />
+                </span>
+                <span className="deviceRow__body">
+                  <span className="deviceRow__name">{s.name}</span>
+                  <span className="deviceRow__state">
+                    {on ? 'Playing here — tap to stop' : (s.model ?? 'Tap to play here')}
+                  </span>
+                </span>
+                {on && (
+                  <span className="deviceRow__check" aria-hidden>
+                    <Check size={16} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </>
       )}
       {/* The system's own speakers, behind the sheet iOS insists on drawing
