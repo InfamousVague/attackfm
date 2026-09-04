@@ -68,11 +68,22 @@ pub enum Seat {
     Closer,
 }
 
+/// Who the DJ is when nobody has said otherwise: Laura, whose read is bright
+/// and quick and sounds like somebody enjoying the record rather than
+/// announcing it.
+///
+/// A PREMADE voice, and that is a constraint rather than a preference. This
+/// default ships to every hub, and a cloned voice belongs to exactly one
+/// ElevenLabs account - shipping one here would leave every other box asking
+/// the API for a voice that is not theirs and getting silence. Which voice a
+/// particular hub speaks in is that hub's `AFM_DJ_VOICE_ID` to say.
+pub const DEFAULT_VOICE: &str = "FGY2WhTYpPnrIDTdsKH5";
+
 /// The voice the clips are minted in. Part of the cache key, so switching
 /// voices re-speaks the library rather than serving the old voice's clips.
 fn voice_id() -> String {
     crate::ai::setting("djVoiceId", "AFM_DJ_VOICE_ID")
-        .unwrap_or_else(|| "JBFqnCBsd6RMkjVDRZzb".to_string())
+        .unwrap_or_else(|| DEFAULT_VOICE.to_string())
 }
 
 /// The voice this hub is actually speaking in, for the settings pane. Same

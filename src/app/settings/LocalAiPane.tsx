@@ -212,6 +212,7 @@ function duration(seconds: number): string {
  * show it.
  */
 const DJ_VOICES = [
+  { id: 'FGY2WhTYpPnrIDTdsKH5', label: 'Laura - bright and quick' },
   { id: 'tnSpp4vdxKPjI9w0GnoV', label: 'Hope - upbeat and clear' },
   { id: 'oW8bn5YtBB89X2nJ0DT9', label: 'Verity - chatty British storyteller' },
   { id: 'nPczCjzI2devNBz1zQrb', label: 'Brian - deep late-night radio' },
@@ -225,9 +226,13 @@ const DJ_VOICES = [
  * The pane asks the server (`current`, from /api/ai/voices) rather than
  * assuming, because these drifted apart: the pane showed Hope while the box's
  * own drop-in named a different voice, so the picker was describing something
- * nobody could hear. This is only what a hub too old to answer gets.
+ * nobody could hear. This is only what a hub too old to answer gets - and it
+ * matches the server's own default (voice.rs `DEFAULT_VOICE`), which is the
+ * one thing that makes it a fair guess rather than a second opinion. It is
+ * also in DJ_VOICES above, deliberately: a Select whose value names no option
+ * shows an empty box.
  */
-const DEFAULT_DJ_VOICE = 'tnSpp4vdxKPjI9w0GnoV';
+const DEFAULT_DJ_VOICE = 'FGY2WhTYpPnrIDTdsKH5';
 
 /** How ElevenLabs' own word for where a voice came from reads on a row. */
 const VOICE_KIND: Record<string, string> = {

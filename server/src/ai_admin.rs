@@ -87,9 +87,10 @@ fn settings_json() -> Value {
         ("fastModel", "AFM_FAST_ENRICH_MODEL", Some("qwen3.5:9b")),
         ("refinementModel", "AFM_REFINEMENT_MODEL", Some("gemma4:12b")),
         ("djModel", "AFM_DJ_MODEL", None),
-        // The DJ's mouth. Default matches voice.rs's own (George); the pane
-        // offers the popular five, verified against the account's list.
-        ("djVoiceId", "AFM_DJ_VOICE_ID", Some("JBFqnCBsd6RMkjVDRZzb")),
+        // The DJ's mouth. Must match voice.rs's own default or the pane
+        // reports a voice the minting does not use; the pane lists whatever
+        // the account actually has (see `voices`).
+        ("djVoiceId", "AFM_DJ_VOICE_ID", Some(crate::voice::DEFAULT_VOICE)),
     ];
     let mut out = serde_json::Map::new();
     /*
