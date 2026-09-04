@@ -9587,9 +9587,43 @@ impl Db {
     /// landed at least this long ago, how many were adopted?
     pub fn pull_adoption(&self, user_id: i64, landed_before_ms: i64) -> (i64, i64) {
         let conn = self.lock();
+        /*
+         * Adopted BY THE LISTENER WHOSE PULL IT WAS - which `state` cannot say.
+         *
+         * `promote_curator_track` takes a track id and no user: it flips every
+         * pull row containing that track to 'promoted', whoever did the
+         * listening. On a hub with one person that is the same thing. On a hub
+         * with eleven it is not: a housemate hearting a song your collector
+         * fetched marked YOUR pull adopted, your dial read "my picks are
+         * landing", and it spent more on the strength of somebody else's
+         * taste. The measure has to name who adopted, and `state` has nowhere
+         * to put that.
+         *
+         * So it is derived instead of stored. Adoption is a completed listen
+         * or a heart (collector.rs), and both are already recorded per user -
+         * `plays_user_track` and the `favorites` primary key are exactly the
+         * "did THIS user touch THIS track" lookups these probes need. No new
+         * column, nothing to backfill, and no second copy of the rule to drift
+         * from the one the promotion path already follows.
+         *
+         * Found by PR #3, which fixed it with three new columns and a
+         * backfill; the fact was already on file.
+         */
         conn.query_row(
-            "SELECT COALESCE(SUM(state = 'promoted'), 0), COUNT(*) FROM curator_pulls
-             WHERE user_id = ?1 AND state IN ('landed', 'promoted') AND created_at < ?2",
+            "SELECT COALESCE(SUM(
+                      EXISTS (
+                        SELECT 1 FROM curator_pull_tracks pt
+                         WHERE pt.pull_id = cp.id
+                           AND (EXISTS (SELECT 1 FROM favorites f
+                                         WHERE f.user_id = cp.user_id AND f.track_id = pt.track_id)
+                             OR EXISTS (SELECT 1 FROM plays p
+                                         WHERE p.user_id = cp.user_id AND p.track_id = pt.track_id))
+                      )
+                    ), 0),
+                    COUNT(*)
+               FROM curator_pulls cp
+              WHERE cp.user_id = ?1 AND cp.state IN ('landed', 'promoted')
+                AND cp.created_at < ?2",
             params![user_id, landed_before_ms],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -10935,5 +10969,85 @@ mod judged_candidates {
         let you = db.create_user("you", "", false).unwrap();
         offer(&db, you, "dz-2", "Boards of Canada", "Dayvan Cowboy");
         assert!(db.discovery_get(you, "dz-2").is_some());
+    }
+}
+
+
+#[cfg(test)]
+mod pull_adoption_is_per_listener {
+    //! `promote_curator_track` takes a track id and no user, so it flips every
+    //! member's pull row containing that track. On a one-person hub that is
+    //! harmless. On a shared one it meant a housemate's listen tuned YOUR
+    //! collector's spending.
+
+    use super::*;
+
+    fn fresh(name: &str) -> Db {
+        let d = std::env::temp_dir().join(format!("afm-adopt-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    /// A plain library row, the way the other db tests make one.
+    fn add_track(db: &Db, rel: &str) -> i64 {
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind)
+                 VALUES (?1,?1,'A','A','Al',0,0,'music')",
+                params![rel],
+            )
+            .unwrap();
+        db.track_id_by_path(rel).expect("indexed")
+    }
+
+    /// Give `user` a landed pull carrying `track_id`, created far enough back
+    /// to be inside the adoption window.
+    fn landed_pull(db: &Db, user: i64, ext: &str, track_id: i64) -> i64 {
+        let conn = db.lock();
+        conn.execute(
+            "INSERT INTO curator_pulls (user_id, ext_id, kind, title, artist, url, state, created_at)
+             VALUES (?1, ?2, 'track', 't', 'A', 'u', 'landed', 1)",
+            params![user, ext],
+        )
+        .unwrap();
+        let pull: i64 = conn.query_row("SELECT last_insert_rowid()", [], |r| r.get(0)).unwrap();
+        conn.execute(
+            "INSERT INTO curator_pull_tracks (pull_id, track_id) VALUES (?1, ?2)",
+            params![pull, track_id],
+        )
+        .unwrap();
+        pull
+    }
+
+    #[test]
+    fn a_housemates_listen_does_not_tune_my_collector() {
+        let db = fresh("housemate");
+        let me = db.create_user("me", "x", true).unwrap();
+        let you = db.create_user("you", "x", false).unwrap();
+
+        let id = add_track(&db, "song.flac");
+
+        // We both had it pulled.
+        landed_pull(&db, me, "dz-1", id);
+        landed_pull(&db, you, "dz-1", id);
+
+        // YOU play it. That is your adoption, on any hub.
+        db.record_play(you, id).unwrap();
+        // ...and the promotion path marks the track adopted hub-wide, which is
+        // correct for the LIBRARY and is exactly what used to leak into my dial.
+        db.promote_curator_track(id);
+
+        let now = now_ms();
+        assert_eq!(db.pull_adoption(you, now), (1, 1), "your own listen is your adoption");
+        assert_eq!(
+            db.pull_adoption(me, now),
+            (0, 1),
+            "my pull landed but I never touched it - it must not read as adopted"
+        );
+
+        // Now I heart it. That is mine, and it counts.
+        db.set_favorite(me, id, true).unwrap();
+        assert_eq!(db.pull_adoption(me, now), (1, 1), "a heart of my own is adoption");
     }
 }
