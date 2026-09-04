@@ -382,6 +382,8 @@ pub struct ShelfInput {
     /// (anchor display name) per ext_id, for the card - strongest first.
     pub anchor_names: std::collections::HashMap<String, Vec<(String, String, f64)>>,
     pub friends: Vec<crate::db::FriendPlay>,
+    /// Signs the preview paths (see preview.rs).
+    pub secret: Vec<u8>,
 }
 
 fn item(d: &crate::db::DiscoveryRow, inp: &ShelfInput) -> TrendItem {
@@ -391,7 +393,13 @@ fn item(d: &crate::db::DiscoveryRow, inp: &ShelfInput) -> TrendItem {
         artist: d.artist.clone(),
         cover: d.cover.clone(),
         url: d.url.clone(),
-        preview: d.preview.clone(),
+        // The hub's own signed path, resolved fresh when tapped - the pool's
+        // stored Deezer link expires, and a card that plays it plays nothing.
+        preview: if d.preview.is_empty() {
+            String::new()
+        } else {
+            crate::preview::path_for(&inp.secret, &d.ext_id)
+        },
         seed: d.seed.clone(),
         lane: inp.lanes.get(&d.ext_id).map(|(l, _)| l.clone()).unwrap_or_default(),
         bpm: d.bpm,
@@ -521,6 +529,7 @@ pub async fn shelves(
         anchors,
         hearted,
         anchor_names,
+        secret: state.stream_secret.clone(),
     };
     Ok(axum::Json(compose(&inp)))
 }
@@ -582,6 +591,7 @@ mod shelves_tests {
             anchors,
             hearted,
             anchor_names: HashMap::new(),
+            secret: b"test".to_vec(),
             friends: vec![crate::db::FriendPlay {
                 track_id: 7,
                 completions: 3,
@@ -620,6 +630,8 @@ mod shelves_tests {
         assert_eq!(riser["rank"], 3.0);
         assert_eq!(riser["measured"]["tempo"], true);
         assert_eq!(riser["measured"]["texture"], false);
+        let p = riser["preview"].as_str().unwrap();
+        assert!(p.starts_with("/api/preview/riser/"), "the hub's signed path, not the stale link: {p}");
     }
 
     #[test]

@@ -1332,14 +1332,21 @@ async fn new_music_lists(state: &Arc<AppState>, user: i64) -> Vec<serde_json::Va
 /// The model groups the discovery pool into a few themed playlists of unowned
 /// music; every ext_id is validated back against the pool, and the full track is
 /// attached so the client can preview or import it.
-fn nm_item(db: &crate::db::Db, user: i64, d: &crate::db::DiscoveryRow) -> serde_json::Value {
+fn nm_item(db: &crate::db::Db, user: i64, secret: &[u8], d: &crate::db::DiscoveryRow) -> serde_json::Value {
     let anchors: Vec<serde_json::Value> = anchors_of(db, user, &d.ext_id)
         .into_iter()
         .map(|a| json!({ "artist": a.artist, "kind": a.kind, "strength": a.strength }))
         .collect();
+    // The hub's own signed path (preview.rs): the stored catalogue link
+    // expires, and a row that plays it plays nothing.
+    let preview = if d.preview.is_empty() {
+        String::new()
+    } else {
+        crate::preview::path_for(secret, &d.ext_id)
+    };
     json!({
         "id": d.ext_id, "title": d.title, "artist": d.artist, "cover": d.cover,
-        "url": d.url, "preview": d.preview, "seed": d.seed, "anchors": anchors, "bpm": d.bpm,
+        "url": d.url, "preview": preview, "seed": d.seed, "anchors": anchors, "bpm": d.bpm,
         "lyricsRead": d.lyric_vec.is_some(), "score": d.score,
     })
 }
@@ -1402,7 +1409,7 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
             .iter()
             .filter(|d| lanes.get(&d.ext_id).is_some_and(|(l, _)| l == lane))
             .take(12)
-            .map(|d| nm_item(&state.db, user, d))
+            .map(|d| nm_item(&state.db, user, &state.stream_secret, d))
             .collect();
         if items.len() >= 4 {
             lead.push(json!({ "id": id, "title": title, "blurb": blurb, "items": items }));
@@ -1499,7 +1506,7 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
                     .filter_map(|k| usize::try_from(k).ok())
                     .filter(|k| *k >= 1 && *k <= n && used.insert(*k))
                     .filter_map(|k| pool.get(k - 1))
-                    .map(|d| nm_item(&state.db, user, d))
+                    .map(|d| nm_item(&state.db, user, &state.stream_secret, d))
                     .collect()
             })
             .unwrap_or_default();

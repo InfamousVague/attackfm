@@ -68,7 +68,16 @@ export async function fetchNewMusic(
       '/api/new-music',
       { token: session.token, signal },
     );
-    return (reply.playlists ?? []).filter((l) => l.items?.length > 0);
+    // Preview paths arrive relative and signed (see api/trending.ts): made
+    // absolute here so a row can play them inside the tap.
+    return (reply.playlists ?? [])
+      .filter((l) => l.items?.length > 0)
+      .map((l) => ({
+        ...l,
+        items: l.items.map((t) =>
+          t.preview && t.preview.startsWith('/') ? { ...t, preview: `${session.url}${t.preview}` } : t,
+        ),
+      }));
   } catch (e) {
     if (e instanceof ServerError && e.status === 404) return [];
     throw e;

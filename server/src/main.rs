@@ -60,6 +60,7 @@ mod programmer;
 mod trending;
 mod dj;
 mod reactions;
+mod preview;
 mod dj_voice;
 mod enrichment;
 mod features;
@@ -655,6 +656,7 @@ async fn main() {
         // The invite page's wall: a signed, public glance of the library.
         .route("/api/wall", get(wall::wall))
         .route("/api/wall/mine", get(wall::wall_mine))
+        .route("/api/preview/{ext_id}/{sig}", get(preview::clip))
         .route("/api/wall/art/{id}/{sig}", get(wall::art))
         .route("/api/wall/canvas/{id}/{sig}", get(wall::canvas_clip))
         .route("/api/canvas", get(canvas::canvas))

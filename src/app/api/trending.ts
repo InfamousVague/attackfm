@@ -96,6 +96,21 @@ function shelf<T>(raw: unknown, fallbackId: string, fallbackLabel: string): Tren
  * moving" from "this server predates the feature" - both hide the shelves,
  * and neither is worth a message. Any other failure throws, like every feed.
  */
+/**
+ * The server hands out its own signed, relative preview path per card
+ * (`/api/preview/...`) rather than the catalogue's stored link, which
+ * expires; it is made absolute here, where the wall's covers are, so the
+ * card can hand a playable URL to an <audio> element inside the tap.
+ */
+function hubPreviews<S extends { items: Array<{ preview?: string }> }>(base: string, s: S): S {
+  return {
+    ...s,
+    items: s.items.map((i) =>
+      i.preview && i.preview.startsWith('/') ? { ...i, preview: `${base}${i.preview}` } : i,
+    ),
+  };
+}
+
 export async function fetchTrending(
   session: ServerSession,
   signal?: AbortSignal,
@@ -110,8 +125,8 @@ export async function fetchTrending(
       ? ((raw.friends as { names: unknown[] }).names.filter((n): n is string => typeof n === 'string'))
       : [];
     return {
-      global: shelf<TrendItem>(raw.global, 'trend-global', 'Charts, filtered for you'),
-      scene: shelf<TrendItem>(raw.scene, 'trend-scene', 'Rising in your scene'),
+      global: hubPreviews(session.url, shelf<TrendItem>(raw.global, 'trend-global', 'Charts, filtered for you')),
+      scene: hubPreviews(session.url, shelf<TrendItem>(raw.scene, 'trend-scene', 'Rising in your scene')),
       friends: { ...friends, names },
     };
   } catch (e) {
