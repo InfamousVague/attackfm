@@ -5802,7 +5802,7 @@ impl Db {
                      f.audio_fingerprint, COALESCE(f.audio_fingerprint_dims,0),
                      COALESCE(f.ai_genres,''), COALESCE(f.ai_sonic_traits,''),
                      COALESCE(p.canonical_profile,''),
-                     t.curator_user_id, t.added_at, COALESCE(t.kind, 'music')
+                     t.curator_user_id, t.added_at, COALESCE(t.kind, 'music'), t.title
              FROM tracks t LEFT JOIN track_features f ON f.track_id = t.id
              LEFT JOIN song_profile_layers p ON p.track_id = t.id
              WHERE t.deleted = 0",
@@ -5862,6 +5862,7 @@ impl Db {
                 added_at: r.get(26).unwrap_or(0),
                 audio_fingerprint: decode(r.get(20)?, r.get(21)?),
                 kind: r.get(27)?,
+                title: r.get(28)?,
             })
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
@@ -10446,6 +10447,9 @@ pub struct TrackFeatures {
     pub ai_specific_tags: Vec<String>,
     pub ai_sonic_traits: Vec<String>,
     pub artist: String,
+    /// The tag title, so a list can fold a track to the same `artist|title`
+    /// key a "not this one" was recorded under (discovery::key_of).
+    pub title: String,
     /// The analyser's audio character (features.rs), None until measured.
     pub energy: Option<f64>,
     pub brightness: Option<f64>,

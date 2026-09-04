@@ -1071,6 +1071,7 @@ mod tests {
             ai_specific_tags: Vec::new(),
             ai_sonic_traits: Vec::new(),
             artist: format!("artist{id}"),
+            title: format!("title{id}"),
             energy: Some(0.5),
             brightness: None,
             dynamic_range: None,

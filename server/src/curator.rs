@@ -938,15 +938,26 @@ pub(crate) fn score(f: &TrackFeatures, taste: &Taste) -> f32 {
     0.45 * lyric + 0.3 * tempo + 0.25 * genre
 }
 
-/// Picks the best `n`, never more than `PER_ARTIST_CAP` from one artist.
-pub(crate) fn take_spread(mut ranked: Vec<(f32, &TrackFeatures)>, n: usize) -> Vec<i64> {
-    ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+/// Picks the best `n`, never more than `cap` from one artist.
+///
+/// Ties go to the NEWER arrival, then the higher id. The sort used to be
+/// stable on score alone, which meant equal scores kept `all_features`' scan
+/// order - rowid ascending - and because every term a track cannot answer
+/// scores the same neutral value, an un-enriched library ties in blocks and
+/// the tail of every list was "the oldest rows", which reads as random.
+pub(crate) fn take_spread(mut ranked: Vec<(f32, &TrackFeatures)>, n: usize, cap: usize) -> Vec<i64> {
+    ranked.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.1.added_at.cmp(&a.1.added_at))
+            .then_with(|| b.1.track_id.cmp(&a.1.track_id))
+    });
     let mut per_artist: HashMap<String, usize> = HashMap::new();
     let mut out = Vec::new();
     for (_, f) in ranked {
         let key = f.artist.to_lowercase();
         let count = per_artist.entry(key).or_insert(0);
-        if *count >= PER_ARTIST_CAP {
+        if *count >= cap {
             continue;
         }
         *count += 1;
@@ -956,6 +967,71 @@ pub(crate) fn take_spread(mut ranked: Vec<(f32, &TrackFeatures)>, n: usize) -> V
         }
     }
     out
+}
+
+/// Orders a picked list for FLOW: tempo ascending, energy as the secondary,
+/// so a mix climbs instead of lurching. Score decided who is in; this
+/// decides the order they play in. A track with no measured tempo sorts
+/// first (as 0), which is where the tempo lane always put it.
+pub(crate) fn ramp(mut ids: Vec<i64>, by_id: &HashMap<i64, &TrackFeatures>) -> Vec<i64> {
+    let key = |id: &i64| -> (f64, f64, i64) {
+        let f = by_id.get(id);
+        (
+            f.and_then(|f| f.bpm).unwrap_or(0.0),
+            f.and_then(|f| f.energy).unwrap_or(0.0),
+            *id,
+        )
+    };
+    ids.sort_by(|a, b| {
+        let (xa, ya, ia) = key(a);
+        let (xb, yb, ib) = key(b);
+        xa.partial_cmp(&xb)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| ya.partial_cmp(&yb).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| ia.cmp(&ib))
+    });
+    ids
+}
+
+/// What one listener has said "not this" to lately, folded the way the
+/// discovery pool folds it, so a built list cannot hand back a song or an
+/// artist they dismissed from the shelf last week.
+///
+/// The taste model's `rejected` set covers songs they bailed on; this covers
+/// the OTHER refusal - the explicit dismiss, recorded by `artist|title` key
+/// and by artist, which is keyed on names because it was made about a
+/// catalogue candidate that may since have landed in the library under a
+/// track id the refusal never knew.
+#[derive(Default)]
+pub(crate) struct Rejections {
+    /// `discovery::key_of(artist, title)` keys refused in the last 90 days.
+    pub(crate) tracks: HashSet<String>,
+    /// `discovery::artist_key` keys refused in the last 30 days.
+    pub(crate) artists: HashSet<String>,
+}
+
+/// A track-level dismiss holds this long; an artist-level one, shorter -
+/// the same windows the discovery pool honours (`discovery::is_rejected`).
+const TRACK_REJECT_MS: i64 = 90 * 24 * 60 * 60 * 1000;
+const ARTIST_REJECT_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+
+impl Rejections {
+    pub(crate) fn load(db: &crate::db::Db, user: i64, now: i64) -> Self {
+        Rejections {
+            tracks: db.rejected_keys_since(user, "track", now - TRACK_REJECT_MS),
+            artists: db.rejected_keys_since(user, "artist", now - ARTIST_REJECT_MS),
+        }
+    }
+
+    /// Whether this track, or whoever made it, was dismissed recently.
+    pub(crate) fn blocks(&self, f: &TrackFeatures) -> bool {
+        if self.tracks.is_empty() && self.artists.is_empty() {
+            return false;
+        }
+        (!self.artists.is_empty() && self.artists.contains(&crate::discovery::artist_key_public(&f.artist)))
+            || (!self.tracks.is_empty()
+                && self.tracks.contains(&crate::discovery::key_of(&f.artist, &f.title)))
+    }
 }
 
 /// How many distinct tracks a listener must have played inside the window
@@ -1197,6 +1273,27 @@ async fn curate_cycle(state: &Arc<AppState>) {
         if taste.heard.len() < 4 {
             continue;
         }
+        /*
+         * The two things the mixes must never deal back, read once here:
+         * what they dismissed from the shelf by name (`Rejections`), and how
+         * much each song actually earned in the ledger - the summed positive
+         * weight of its verdicts, which is what "you keep coming back to"
+         * means in numbers. The mood mixes tally by this rather than by the
+         * model's PREDICTED fit, so a hearted forty-play song outweighs a
+         * once-played one the model happens to like.
+         */
+        let rejections = Rejections::load(&state.db, user, now_ms());
+        let ledger: HashMap<i64, f32> = {
+            let now_s = now_ms() / 1000;
+            let mut m: HashMap<i64, f32> = HashMap::new();
+            for v in &verdicts {
+                let w = v.weight(now_s);
+                if w > 0.0 {
+                    *m.entry(v.track_id).or_default() += w;
+                }
+            }
+            m
+        };
 
         /*
          * WHOSE music this listener's lists may draw on.
@@ -1227,7 +1324,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
         }
 
         // The blend: the best overall answer to this listener.
-        let blend = take_spread(fresh.clone(), LIST_LEN);
+        let blend = take_spread(fresh.clone(), LIST_LEN, PER_ARTIST_CAP);
 
         // The tempo lane: only what sits near their tempo, then ordered as a
         // ramp so the list flows instead of lurching.
@@ -1240,12 +1337,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
             .cloned()
             .collect();
         lane.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-        let mut lane_ids = take_spread(lane.clone(), LIST_LEN);
-        lane_ids.sort_by(|a, b| {
-            let x = by_id.get(a).and_then(|f| f.bpm).unwrap_or(0.0);
-            let y = by_id.get(b).and_then(|f| f.bpm).unwrap_or(0.0);
-            x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        let lane_ids = ramp(take_spread(lane.clone(), LIST_LEN, PER_ARTIST_CAP), &by_id);
 
         // The lyrical echo: nearest to their centre of gravity in words alone.
         let echo: Vec<(f32, &TrackFeatures)> = match &taste.lyric {
@@ -1255,7 +1347,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
                 .collect(),
             None => Vec::new(),
         };
-        let echo_ids = take_spread(echo, LIST_LEN);
+        let echo_ids = take_spread(echo, LIST_LEN, PER_ARTIST_CAP);
 
         let tempo_label = taste.tempo_center().map(|t| t.round() as i64);
         let top_genre = taste.favourite_tags(1).first().map(|(g, _)| g.clone());
@@ -1383,8 +1475,14 @@ async fn curate_cycle(state: &Arc<AppState>) {
         // The mood lists, from the analyser's audio character (features.rs).
         // Whole library including what you play on repeat - a mood list is
         // something to put ON, not a discovery engine - ranked to taste so
-        // the top of each list is still yours.
+        // the top of each list is still yours. Not what they pushed away,
+        // though: a song they bailed on or dismissed by name is not a mood.
         let pool: Vec<&TrackFeatures> = all.iter().filter(|f| available(f)).collect();
+        let mood_pool: Vec<&TrackFeatures> = pool
+            .iter()
+            .copied()
+            .filter(|f| !taste.rejected.contains(&f.track_id) && !rejections.blocks(f))
+            .collect();
         let moods: [(&str, &str, &str, fn(&TrackFeatures) -> bool); 4] = [
             ("mood-chill", "Chill", "Low energy, easy pace.", |f| {
                 f.energy.is_some_and(|e| e <= 0.4) && f.bpm.is_none_or(|b| b < 105.0)
@@ -1401,12 +1499,12 @@ async fn curate_cycle(state: &Arc<AppState>) {
             }),
         ];
         for (slug, name, blurb, fits) in moods {
-            let ranked: Vec<(f32, &TrackFeatures)> = pool
+            let ranked: Vec<(f32, &TrackFeatures)> = mood_pool
                 .iter()
                 .filter(|f| fits(f))
                 .map(|f| (crate::taste::score(f, &taste), *f))
                 .collect();
-            let ids = take_spread(ranked, LIST_LEN);
+            let ids = take_spread(ranked, LIST_LEN, PER_ARTIST_CAP);
             if ids.len() >= 8 {
                 let _ = state.db.put_curated(user, slug, name, blurb, &ids);
             }
@@ -1419,11 +1517,12 @@ async fn curate_cycle(state: &Arc<AppState>) {
         // These replace the old genre-camp `mix-1..3` lists, which were a
         // whole-string genre `contains` over the fresh pool; build_daily sweeps
         // the stale `mix-*` slugs. See mixes.rs.
+        let hour_bucket = (((now_ms() / 1000 / 3600) % 24) / 6).clamp(0, 3) as usize;
         if let Some(mp) = crate::mood::load(state, user) {
-            crate::mixes::build_daily(state, user, &all, &mp, &taste);
-            crate::mixes::build_daylist(state, user, &all, &mp);
+            crate::mixes::build_daily(state, user, &all, &by_id, &mp, &taste, &rejections, hour_bucket);
+            crate::mixes::build_daylist(state, user, &all, &by_id, &mp, &taste, &rejections);
         }
-        crate::mixes::build_moods(state, user, &all, &by_id, &taste);
+        crate::mixes::build_moods(state, user, &all, &by_id, &taste, &rejections, &ledger);
 
         // The decade station: where your rotation lives in time, heard tracks
         // welcome - a station is a place, not a surprise.
@@ -1444,7 +1543,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
                 .filter(|f| f.year.is_some_and(|y| (d0..d0 + 10).contains(&y)))
                 .map(|f| (crate::taste::score(f, &taste), *f))
                 .collect();
-            let ids = take_spread(ranked, LIST_LEN);
+            let ids = take_spread(ranked, LIST_LEN, PER_ARTIST_CAP);
             if ids.len() >= 8 {
                 let _ = state.db.put_curated(
                     user,
@@ -1737,7 +1836,7 @@ pub async fn playlist_suggestions(
             .filter(|f| !on_list.contains(&f.track_id))
             .map(|f| (score(f, &taste), f))
             .collect();
-        take_spread(ranked, 10)
+        take_spread(ranked, 10, PER_ARTIST_CAP)
     };
 
     Ok(Json(json!({
@@ -1797,7 +1896,7 @@ pub async fn enhance_queue(
         .filter(|f| !on_queue.contains(&f.track_id) && !f.quarantined)
         .map(|f| (score(f, &taste), f))
         .collect();
-    let ids = take_spread(ranked, want);
+    let ids = take_spread(ranked, want, PER_ARTIST_CAP);
 
     let offered: Vec<(i64, &str, i64)> =
         ids.iter().enumerate().map(|(i, id)| (*id, "enhance", i as i64)).collect();
@@ -1827,5 +1926,57 @@ mod verdict_taste {
         assert_eq!(taste.tempo, Some(80.0), "weight decides the median, not row count");
         // Both ids stay heard - a skipped song is still one the listener met.
         assert!(taste.heard.contains(&1) && taste.heard.contains(&2));
+    }
+
+    fn by(id: i64, artist: &str, added_at: i64) -> TrackFeatures {
+        TrackFeatures { track_id: id, artist: artist.into(), added_at, ..Default::default() }
+    }
+
+    /// The cap is the caller's, and equal scores go to the newer arrival and
+    /// then the higher id - never to rowid order, which read as "the oldest
+    /// un-enriched rows" at the tail of every list.
+    #[test]
+    fn take_spread_respects_the_cap_and_breaks_ties_toward_the_new() {
+        let a1 = by(1, "A", 10);
+        let a2 = by(2, "A", 20);
+        let a3 = by(3, "A", 30);
+        let b1 = by(4, "B", 5);
+        let b2 = by(5, "B", 5);
+        let ranked = vec![(0.9, &a1), (0.9, &a2), (0.9, &a3), (0.9, &b1), (0.9, &b2)];
+
+        let two = take_spread(ranked.clone(), 10, 2);
+        assert_eq!(two, vec![3, 2, 5, 4], "newest first within a tie, at most two of A");
+        let three = take_spread(ranked.clone(), 10, 3);
+        assert_eq!(three, vec![3, 2, 1, 5, 4], "a cap of three lets the third A in");
+        assert_eq!(take_spread(ranked, 2, 3), vec![3, 2], "n still bounds the list");
+
+        // Score outranks arrival: an older track with a better score leads.
+        let old_good = by(6, "C", 1);
+        let new_meh = by(7, "D", 99);
+        assert_eq!(take_spread(vec![(0.5, &new_meh), (0.8, &old_good)], 5, 2), vec![6, 7]);
+    }
+
+    /// A ramp climbs: tempo never falls from one track to the next, and at
+    /// equal tempo energy does not either.
+    #[test]
+    fn ramp_is_monotone_in_bpm_then_energy() {
+        let mut fast = feat(1, 150.0);
+        fast.energy = Some(0.9);
+        let mut slow = feat(2, 80.0);
+        slow.energy = Some(0.2);
+        let mut mid_hot = feat(3, 110.0);
+        mid_hot.energy = Some(0.8);
+        let mut mid_cool = feat(4, 110.0);
+        mid_cool.energy = Some(0.3);
+        let unmeasured = TrackFeatures { track_id: 5, ..Default::default() };
+        let by_id: HashMap<i64, &TrackFeatures> =
+            [(1, &fast), (2, &slow), (3, &mid_hot), (4, &mid_cool), (5, &unmeasured)].into_iter().collect();
+
+        let out = ramp(vec![1, 3, 5, 2, 4], &by_id);
+        assert_eq!(out, vec![5, 2, 4, 3, 1]);
+        let bpm = |id: &i64| by_id[id].bpm.unwrap_or(0.0);
+        for w in out.windows(2) {
+            assert!(bpm(&w[0]) <= bpm(&w[1]), "tempo must not fall: {out:?}");
+        }
     }
 }

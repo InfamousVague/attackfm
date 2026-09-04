@@ -34,6 +34,10 @@ const FRESH_MS: i64 = 20 * 60 * 60 * 1000;
 const KMEANS_ROUNDS: usize = 12;
 /// A cluster below this share of the listening is noise, not a mood.
 const MIN_SHARE: f64 = 0.12;
+/// Fingerprints among the recently played tracks before the clustering runs
+/// on SOUND rather than prose - the same bar the artist stations use
+/// (`programmer::build_stations`). Under it the text space is the fallback.
+const SOUND_MIN: usize = 3;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,7 +62,23 @@ pub struct MoodCluster {
     /// The embedding centroid, L2-normalised. Not serialized small - a few KB
     /// per cluster - but read whole by one scorer, like the vectors it is
     /// made of.
+    ///
+    /// ALWAYS in the prose space (lyric/sonic embeddings) when the members
+    /// have one, whatever space the clustering ran in - the discovery scorer
+    /// and the mood stations judge candidates by their words and dim-check
+    /// against this, so it stays the vector they can answer.
     pub centroid: Vec<f32>,
+    /// The centroid in the measured-audio space (`audio_fingerprint`), when
+    /// the clustering ran there. This is what the Daily Mixes bucket by: two
+    /// songs that SOUND alike land together, not two that were described
+    /// alike. Absent on a profile clustered before this existed, or for a
+    /// listener whose recent plays carry too few fingerprints.
+    #[serde(default)]
+    pub sound_centroid: Option<Vec<f32>>,
+    /// Weighted median release year of the members that have one - the era
+    /// this mood lives in, so a lane can lean toward its own decade.
+    #[serde(default)]
+    pub year: Option<i64>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -171,6 +191,49 @@ pub fn kmeans(points: &[Vec<f32>], weights: &[f32], k: usize) -> (Vec<usize>, Ve
     (assign, centres)
 }
 
+/// Whether a body of tracks carries enough measured audio to be clustered by
+/// SOUND. Lyric and sonic vectors both embed prose - genre words, themes -
+/// and in that space two songs described alike sit together however
+/// differently they sound (programmer.rs says it plainly: Katy Perry beside
+/// Wet Leg). The fingerprint is derived from the recording, so when enough of
+/// what the listener played has one, that is the space a mood is drawn in.
+pub(crate) fn by_sound<'a>(feats: impl Iterator<Item = &'a TrackFeatures>) -> bool {
+    feats.filter(|f| f.audio_fingerprint.is_some()).count() >= SOUND_MIN
+}
+
+/// The vector one track is placed by: the fingerprint when the clustering
+/// runs on sound and the track has one, else the lyric vector, else the
+/// sonic. Returns the vector and whether it is a SOUND vector, so the
+/// majority-dims filter's verdict on which space won can be read back.
+pub(crate) fn point_vec(f: &TrackFeatures, sound: bool) -> Option<(&Vec<f32>, bool)> {
+    if sound {
+        if let Some(v) = f.audio_fingerprint.as_ref() {
+            return Some((v, true));
+        }
+    }
+    f.lyric_vec.as_ref().or(f.sonic_vec.as_ref()).map(|v| (v, false))
+}
+
+/// Weighted median, or None when there is nothing to take one of.
+pub(crate) fn weighted_median(vals: &mut Vec<(f64, f32)>) -> Option<f64> {
+    if vals.is_empty() {
+        return None;
+    }
+    vals.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let total: f32 = vals.iter().map(|(_, w)| w.max(0.0)).sum();
+    if total <= 0.0 {
+        return Some(vals[vals.len() / 2].0);
+    }
+    let mut acc = 0.0f32;
+    for (x, w) in vals.iter() {
+        acc += w.max(0.0);
+        if acc >= total / 2.0 {
+            return Some(*x);
+        }
+    }
+    Some(vals[vals.len() - 1].0)
+}
+
 /// How many moods a body of listening can honestly support.
 pub fn k_for(distinct_tracks: usize) -> usize {
     match distinct_tracks {
@@ -268,26 +331,32 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64) -> Option<MoodProfile> {
     let all = state.db.all_features();
     let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
 
-    // One point per distinct track: its embedding, at its accumulated weight.
-    // The lyric vector first - it is the one the enricher always makes - and
-    // the sonic one where a track has no words.
+    // One point per distinct track: its vector, at its accumulated weight.
+    // The audio fingerprint when enough of what they played carries one -
+    // a mood is a SOUND before it is a set of genre words - else the lyric
+    // vector (the one the enricher always makes), else the sonic.
+    let sound = by_sound(weight_by_track.keys().filter_map(|id| by_id.get(id).copied()));
     let mut ids = Vec::new();
     let mut points = Vec::new();
     let mut weights = Vec::new();
+    let mut is_sound = Vec::new();
     for (&id, &w) in &weight_by_track {
         let Some(f) = by_id.get(&id) else { continue };
-        let v = f.lyric_vec.as_ref().or(f.sonic_vec.as_ref());
-        let Some(v) = v else { continue };
+        let Some((v, from_sound)) = point_vec(f, sound) else { continue };
         let mut v = v.clone();
         norm(&mut v);
         ids.push(id);
         points.push(v);
         weights.push(w);
+        is_sound.push(from_sound);
     }
     if ids.len() < 4 {
         return None;
     }
     // Vectors must agree on dimensions to cluster; keep the majority size.
+    // With fingerprints and prose both in the running this is also the
+    // verdict on which SPACE the moods are drawn in: whichever most of the
+    // recent listening can answer.
     let dims = {
         let mut counts: HashMap<usize, usize> = HashMap::new();
         for p in &points {
@@ -296,6 +365,7 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64) -> Option<MoodProfile> {
         counts.into_iter().max_by_key(|(_, n)| *n).map(|(d, _)| d).unwrap_or(0)
     };
     let keep: Vec<usize> = (0..points.len()).filter(|&i| points[i].len() == dims).collect();
+    let sound_space = keep.first().is_some_and(|&i| is_sound[i]);
     let ids: Vec<i64> = keep.iter().map(|&i| ids[i]).collect();
     let points: Vec<Vec<f32>> = keep.iter().map(|&i| points[i].clone()).collect();
     let weights: Vec<f32> = keep.iter().map(|&i| weights[i]).collect();
@@ -325,6 +395,17 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64) -> Option<MoodProfile> {
             .collect();
         bpms.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let bpm = (!bpms.is_empty()).then(|| bpms[bpms.len() / 2]);
+
+        // The era, by listening weight: the year the mood's heaviest plays
+        // were made in, not the mean of whatever years happen to be tagged.
+        let mut years: Vec<(f64, f32)> = members
+            .iter()
+            .filter_map(|&i| {
+                let y = by_id.get(&ids[i]).and_then(|f| f.year).filter(|y| *y > 1900)?;
+                Some((y as f64, weights[i]))
+            })
+            .collect();
+        let year = weighted_median(&mut years).map(|y| y.round() as i64);
 
         let energies: Vec<f64> = members
             .iter()
@@ -375,6 +456,24 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64) -> Option<MoodProfile> {
             }
         }
 
+        /*
+         * Two centroids when the clustering ran on sound. The k-means centre
+         * is a fingerprint, and that is what the mixes bucket by. But the
+         * discovery scorer and the mood stations meet candidates by their
+         * WORDS and dim-check against `centroid` - so `centroid` stays the
+         * prose projection of the same members (their lyric/sonic mean), and
+         * a mood drawn by ear still answers a question asked in text. Only a
+         * cluster whose members have no prose vector at all falls back to
+         * publishing the fingerprint there, which those readers skip exactly
+         * as they skipped a dim mismatch before.
+         */
+        let (centroid, sound_centroid) = if sound_space {
+            let prose = prose_centroid(members.iter().filter_map(|&i| by_id.get(&ids[i]).map(|f| (*f, weights[i]))));
+            (prose.unwrap_or_else(|| centroid.clone()), Some(centroid.clone()))
+        } else {
+            (centroid.clone(), None)
+        };
+
         clusters.push(MoodCluster {
             name: plain_name(&tags),
             blurb: String::new(),
@@ -384,7 +483,9 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64) -> Option<MoodProfile> {
             tags,
             exemplar_ids,
             hours,
-            centroid: centroid.clone(),
+            centroid,
+            sound_centroid,
+            year,
         });
     }
     clusters.sort_by(|a, b| b.share.partial_cmp(&a.share).unwrap_or(std::cmp::Ordering::Equal));
@@ -402,6 +503,31 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64) -> Option<MoodProfile> {
         let _ = state.db.save_mood_profile(user, &json);
     }
     Some(profile)
+}
+
+/// The weighted mean of a set of members' prose vectors (lyric first, sonic
+/// as fallback), over the majority dimension among them, L2-normalised.
+/// None when no member has one.
+fn prose_centroid<'a>(members: impl Iterator<Item = (&'a TrackFeatures, f32)>) -> Option<Vec<f32>> {
+    let vecs: Vec<(&Vec<f32>, f32)> = members
+        .filter_map(|(f, w)| f.lyric_vec.as_ref().or(f.sonic_vec.as_ref()).map(|v| (v, w)))
+        .collect();
+    if vecs.is_empty() {
+        return None;
+    }
+    let mut counts: HashMap<usize, usize> = HashMap::new();
+    for (v, _) in &vecs {
+        *counts.entry(v.len()).or_default() += 1;
+    }
+    let dims = counts.into_iter().max_by_key(|(_, n)| *n).map(|(d, _)| d)?;
+    let mut mean = vec![0f32; dims];
+    for (v, w) in vecs.into_iter().filter(|(v, _)| v.len() == dims) {
+        for (m, x) in mean.iter_mut().zip(v) {
+            *m += x * w.max(0.0);
+        }
+    }
+    norm(&mut mean);
+    Some(mean)
 }
 
 /// "Melancholic indie", from the top tags. The honest fallback, and the seed
@@ -557,6 +683,8 @@ mod tests {
                 exemplar_ids: vec![],
                 hours: [0.25; 4],
                 centroid: v(1.0, 0.0),
+                sound_centroid: None,
+                year: None,
             }],
         };
         let near = affinity(&profile, Some(&v(0.95, 0.05)), Some(102.0));
@@ -572,5 +700,37 @@ mod tests {
         assert_eq!(k_for(10), 2);
         assert_eq!(k_for(20), 3);
         assert_eq!(k_for(300), 4);
+    }
+
+    /// Three fingerprints among the recent plays and the moods are drawn by
+    /// ear; under that, by prose - and a track is placed by the vector that
+    /// matches the space, never by whichever it happens to have.
+    #[test]
+    fn sound_gate_needs_three_fingerprints_and_picks_the_matching_vector() {
+        let mut printed = TrackFeatures { track_id: 1, ..Default::default() };
+        printed.audio_fingerprint = Some(vec![1.0, 0.0]);
+        printed.lyric_vec = Some(vec![0.0, 1.0, 0.0]);
+        let mut words = TrackFeatures { track_id: 2, ..Default::default() };
+        words.lyric_vec = Some(vec![0.0, 1.0, 0.0]);
+        let mut sonic = TrackFeatures { track_id: 3, ..Default::default() };
+        sonic.sonic_vec = Some(vec![0.0, 0.0, 1.0]);
+
+        assert!(!by_sound([&printed, &words, &sonic].into_iter()), "one fingerprint is not a sound");
+        assert!(by_sound([&printed, &printed, &printed].into_iter()));
+
+        // In the sound space the fingerprint wins; in prose it is never used.
+        assert_eq!(point_vec(&printed, true), Some((&vec![1.0, 0.0], true)));
+        assert_eq!(point_vec(&printed, false), Some((&vec![0.0, 1.0, 0.0], false)));
+        // A track without one falls back to prose either way, flagged so.
+        assert_eq!(point_vec(&words, true), Some((&vec![0.0, 1.0, 0.0], false)));
+        assert_eq!(point_vec(&sonic, true), Some((&vec![0.0, 0.0, 1.0], false)));
+    }
+
+    #[test]
+    fn weighted_median_follows_the_weight() {
+        let mut years = vec![(1975.0, 0.1), (2019.0, 5.0), (2021.0, 0.1)];
+        assert_eq!(weighted_median(&mut years), Some(2019.0), "the heavy year is the median");
+        let mut none: Vec<(f64, f32)> = Vec::new();
+        assert_eq!(weighted_median(&mut none), None);
     }
 }

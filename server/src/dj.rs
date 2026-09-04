@@ -1744,6 +1744,7 @@ mod ranking_tests {
             ai_specific_tags: Vec::new(),
             ai_sonic_traits: Vec::new(),
             artist: "test".into(),
+            title: "test".into(),
             energy: Some(energy),
             brightness: Some(brightness),
             dynamic_range: Some(dynamic),
