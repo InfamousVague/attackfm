@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.92
+
+- Adding a song to the queue no longer starts playing it. Right-clicking a row
+  and choosing a menu item was also counting as a click on the row itself.
+- The library page stops scrolling over the top bar on desktop.
+
 ## 0.5.91
 
 - Changing song no longer logs a handful of connection errors behind the
