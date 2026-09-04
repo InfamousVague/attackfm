@@ -1,6 +1,6 @@
 import { Button, Text, useToast } from '@glacier/react';
 import { Check, Copy, Download, UserRound } from '@glacier/icons';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import QRCode from 'qrcode';
 import { GlassSheet } from '../ux/GlassSheet.tsx';
 import { profileLink } from '../servers/registry.ts';
@@ -58,6 +58,27 @@ function thumbnail(url: string, size: number, ratio = 1): Promise<string | null>
   });
 }
 
+/**
+ * The card's ground when there is no banner: a gradient chosen by the handle.
+ *
+ * Seeded rather than fixed so two people's cards do not come out identical -
+ * a share card is a picture of a PERSON, and the one thing it always knows
+ * about them is their name. The same handle always lands on the same colours,
+ * which is what makes it read as theirs rather than as decoration.
+ *
+ * Deep and low-chroma on purpose: white type and a white QR sit on this, and
+ * the accent the app uses elsewhere is far too bright to put them on.
+ */
+function seededGround(handle: string): CSSProperties {
+  let h = 0;
+  for (let i = 0; i < handle.length; i += 1) h = (h * 31 + handle.charCodeAt(i)) % 360;
+  // A second hue a step around the wheel, so the sweep has somewhere to go.
+  const far = (h + 48) % 360;
+  return {
+    background: `linear-gradient(155deg, hsl(${h} 46% 30%) 0%, hsl(${far} 52% 12%) 100%)`,
+  };
+}
+
 function ProfileCardFace({
   cardRef,
   handle,
@@ -74,27 +95,39 @@ function ProfileCardFace({
   qr: string | null;
 }) {
   return (
-    <div className="shareCard" ref={cardRef}>
+    <div
+      className="shareCard shareCard--profile"
+      ref={cardRef}
+      /* The seeded gradient rides on the card itself so it is the ground the
+         whole card sits on rather than a panel laid over one. A banner, when
+         there is one, covers it. */
+      style={seededGround(handle)}
+    >
+      {/* The banner IS the card's background - not a picture inside a frame
+          inside a card. An <img> rather than a CSS background-image because
+          this DOM is rasterised for the saved picture and an absolutely
+          positioned img is the form that reliably draws. */}
+      {banner && <img className="shareProfile__bg" src={banner} alt="" aria-hidden />}
+      {/* Type over a photograph needs a ground of its own. A vertical wash,
+          dark at the foot where the link and the QR live, so a bright banner
+          cannot swallow them - and no backdrop-filter, which has no backdrop
+          inside the shot. */}
+      <div className="shareProfile__veil" aria-hidden />
       <div className="shareCard__head">
         <img className="shareCard__logo" src={logo} alt="AttackFM" />
         <span className="shareCard__kicker">On AttackFM</span>
       </div>
-      {/* The face over the band, which is the shape the profile page itself
-          wears - the card should look like the page it points at. */}
-      <div className="shareCard__art shareProfileArt" data-n={0}>
-        {banner ? (
-          <img className="shareProfileArt__banner" src={banner} alt="" />
-        ) : (
-          <span className="shareProfileArt__banner shareProfileArt__banner--bare" aria-hidden />
-        )}
-        {avatar ? (
-          <img className="shareProfileArt__face" src={avatar} alt="" />
-        ) : (
-          <span className="shareProfileArt__face shareProfileArt__face--bare" aria-hidden>
-            <UserRound size={30} />
-          </span>
-        )}
-      </div>
+      {/* Centred on the card's own picture, with nothing around it but a ring.
+          It used to sit in a rounded square in the middle of the card, which
+          is a card inside a card - two frames saying the same thing, and the
+          inner one shrinking the picture to make room for itself. */}
+      {avatar ? (
+        <img className="shareProfile__face" src={avatar} alt="" />
+      ) : (
+        <span className="shareProfile__face shareProfile__face--bare" aria-hidden>
+          <UserRound size={38} />
+        </span>
+      )}
       <p className="shareCard__name">@{handle}</p>
       <p className="shareCard__sub">Add me and we can listen along</p>
       <div className="shareCard__qrRow">

@@ -1683,63 +1683,93 @@
 }
 
 /*
- * The profile card's picture: the face over the band, which is the shape the
- * profile page itself wears - the card should look like the page it points at.
+ * The profile card is the picture. Not a picture INSIDE it.
  *
- * Same 220px square as a playlist's mosaic so the three cards stack to the
- * same height in a gallery, but laid out rather than gridded: the band takes
- * the top two thirds and the face sits across its lower edge. Both pictures
- * arrive as data URLs (ShareProfile re-draws them through a canvas), because
- * this DOM is rasterised and a registry URL would not draw inside the shot.
+ * It used to hold the banner and the face in a rounded square in the middle of
+ * the card, which is a card inside a card: two frames saying the same thing,
+ * and the inner one shrinking the person to make room for itself. The banner
+ * is the whole ground now, the face sits centred on it, and the only frame is
+ * the card's own edge.
  */
-.shareProfileArt {
+.shareCard--profile {
   position: relative;
-  display: block;
-  /* The face hangs over the band's lower edge, and the square's own clip cut
-     it in half. The card's corners are rounded by the BANNER instead. */
-  overflow: visible;
+  /* NOT `align-items: center`. The card is a flex column, and centring its
+     items makes every child shrink to its own content - which squashed the
+     head row's logo and kicker together in the middle instead of holding them
+     to opposite edges. The one thing that needs centring is the face, and it
+     centres itself with an auto margin. */
+  text-align: center;
 }
 
-/* Scoped under the container, not written bare: `.shareCard__art img` is an
-   element-plus-class selector and beats a lone class, so a bare
-   `.shareProfileArt__face` lost every declaration it made and the face came
-   out 220px square. Measured, not assumed - the computed box said 220. */
-.shareProfileArt .shareProfileArt__banner {
+/* Behind everything, including the head row - the card's ground, not a band
+   at the top of it. The seeded gradient sits on the card itself (see
+   ShareProfile's `seededGround`), so this simply covers it when a banner
+   exists and leaves it showing when one does not. */
+.shareCard--profile .shareProfile__bg {
   position: absolute;
-  inset: 0 0 auto;
+  inset: 0;
   inline-size: 100%;
-  block-size: 62%;
+  block-size: 100%;
   object-fit: cover;
   display: block;
-  border-start-start-radius: 18px;
-  border-start-end-radius: 18px;
+  z-index: 0;
 }
 
-/* No banner is not a hole: the card's own accent, so the face still sits on
-   something rather than on the card's flat backing. */
-.shareProfileArt .shareProfileArt__banner--bare {
+/*
+ * The ground the type stands on.
+ *
+ * A banner is somebody's photograph and can be any brightness at all, and the
+ * card's own name, link and QR are white. A vertical wash - barely there at
+ * the head, heavy at the foot where the link and the QR live - keeps them
+ * legible without hiding the picture that is the point of the card. A plain
+ * flat scrim would do the second job by giving up the first.
+ *
+ * Painted, not blurred: this DOM is rasterised for the saved picture and a
+ * backdrop-filter has no backdrop inside the shot.
+ */
+.shareCard--profile .shareProfile__veil {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   background: linear-gradient(
-    150deg,
-    color-mix(in srgb, var(--glacier-accent-solid, #ff5e5e) 65%, #1b1b20),
-    #1b1b20
+    180deg,
+    rgba(10, 10, 13, 0.42) 0%,
+    rgba(10, 10, 13, 0.18) 32%,
+    rgba(10, 10, 13, 0.66) 74%,
+    rgba(10, 10, 13, 0.88) 100%
   );
 }
 
-.shareProfileArt .shareProfileArt__face {
-  position: absolute;
-  inset-block-start: 38%;
-  inset-inline-start: 50%;
-  translate: -50% 0;
-  inline-size: 96px;
-  block-size: 96px;
+/* Everything the card says sits above both. */
+.shareCard--profile > *:not(.shareProfile__bg):not(.shareProfile__veil) {
+  position: relative;
+  z-index: 2;
+}
+
+/* The QR and the link on a photograph. The plate they sit on is a hint of
+   white on the playlist card, which has a flat ground; over somebody's banner
+   that is invisible on a bright picture and mud on a busy one. Darker and far
+   more opaque here, because this is the one part of the card a person has to
+   actually READ. */
+.shareCard--profile .shareCard__qrRow {
+  background: rgba(10, 10, 13, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* The face, centred on the card's own picture with nothing around it but a
+   ring. The ring is what separates a portrait from the photograph behind it at
+   any brightness - a shadow alone disappears against a pale banner. */
+.shareCard--profile .shareProfile__face {
+  inline-size: 132px;
+  block-size: 132px;
+  margin: 6px auto 18px;
   border-radius: 999px;
   object-fit: cover;
-  /* The ring is what separates the face from the band behind it at any
-     brightness - a shadow alone disappears against a pale banner. */
-  border: 3px solid #17171b;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
   display: grid;
   place-items: center;
-  background: #24242b;
-  color: rgba(255, 255, 255, 0.55);
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+  background: rgba(20, 20, 24, 0.55);
+  color: rgba(255, 255, 255, 0.7);
 }
+
