@@ -653,6 +653,7 @@ async fn main() {
         // Spotify Canvas for the playing track (inert without AFM_SPOTIFY_SP_DC).
         // The invite page's wall: a signed, public glance of the library.
         .route("/api/wall", get(wall::wall))
+        .route("/api/wall/mine", get(wall::wall_mine))
         .route("/api/wall/art/{id}/{sig}", get(wall::art))
         .route("/api/wall/canvas/{id}/{sig}", get(wall::canvas_clip))
         .route("/api/canvas", get(canvas::canvas))

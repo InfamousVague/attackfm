@@ -38,6 +38,35 @@ pub async fn wall(State(state): State<Arc<AppState>>) -> Json<Value> {
     Json(json!({ "covers": covers, "canvases": canvases }))
 }
 
+/// `GET /api/wall/mine` - the same wall for a signed-in member, drawn only
+/// from what they may hear: their own auditions and everyone's promoted
+/// music, never another member's unadopted pull. This is the face of the
+/// Discover page, and a member's own page must not show them a sleeve
+/// they cannot play.
+pub async fn wall_mine(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, StatusCode> {
+    let caller = auth::require_caller(&state.db, &headers)?;
+    let covers: Vec<String> = state
+        .db
+        .random_art_ids_for(caller.id, COVERS)
+        .into_iter()
+        .map(|id| {
+            let sig = auth::public_sig(&state.stream_secret, &format!("art.{id}"));
+            format!("/api/wall/art/{id}/{sig}")
+        })
+        .collect();
+    let canvases: Vec<String> = canvas::sample_sidecars_for(&state, CANVASES, caller.id)
+        .into_iter()
+        .map(|id| {
+            let sig = auth::public_sig(&state.stream_secret, &format!("canvas.{id}"));
+            format!("/api/wall/canvas/{id}/{sig}")
+        })
+        .collect();
+    Ok(Json(json!({ "covers": covers, "canvases": canvases })))
+}
+
 /// `GET /api/wall/art/{id}/{sig}` - a cover the wall named. `?w=` variants as
 /// the member route takes them.
 pub async fn art(

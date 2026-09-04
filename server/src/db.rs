@@ -2676,6 +2676,45 @@ impl Db {
             .unwrap_or_default()
     }
 
+    /// The same wall, but for a signed-in member: what THEY may hear. Their
+    /// own auditions and everyone's promoted music, never another member's
+    /// unadopted pull and never a book's cover. The public wall is a glance
+    /// at the whole box; this one is the face of the Discover page and a
+    /// member's page must not show them a sleeve they cannot play.
+    pub fn random_art_ids_for(&self, user_id: i64, limit: i64) -> Vec<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT art_id FROM (SELECT DISTINCT art_id FROM tracks
+               WHERE deleted = 0 AND art_id IS NOT NULL AND art_id != ''
+                 AND COALESCE(kind, 'music') != 'book'
+                 AND (curator_user_id IS NULL OR curator_user_id = ?1
+                      OR COALESCE(curator_promoted, 0) = 1))
+             ORDER BY RANDOM() LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, limit], |r| r.get::<_, String>(0))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+    }
+
+    /// Track ids a member may hear, at random (see `random_art_ids_for`).
+    pub fn random_track_ids_for(&self, user_id: i64, limit: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id FROM tracks
+              WHERE deleted = 0 AND COALESCE(kind, 'music') != 'book'
+                AND (curator_user_id IS NULL OR curator_user_id = ?1
+                     OR COALESCE(curator_promoted, 0) = 1)
+              ORDER BY RANDOM() LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, limit], |r| r.get::<_, i64>(0))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+    }
+
     /// A random handful of track ids (canvas::sample_sidecars sifts them).
     pub fn random_track_ids(&self, limit: i64) -> Vec<i64> {
         let conn = self.lock();
@@ -11799,6 +11838,50 @@ mod home_shelves_are_per_listener {
             titles(&db, db.recent_album_track_lists_for(uid, 12).into_iter().flatten().collect())
         };
         check("recent_album_track_lists_for", flat(bob), flat(alice));
+    }
+}
+
+#[cfg(test)]
+mod wall_of_mine {
+    //! The Discover hero's wall shows a member only what they may hear.
+    use super::*;
+
+    #[test]
+    fn never_another_members_unadopted_audition_and_never_a_book() {
+        let d = std::env::temp_dir().join(format!("afm-wall-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let db = Db::open(&d.join("t.sqlite")).unwrap();
+        let me = db.create_user("me", "x", true).unwrap();
+        let other = db.create_user("other", "x", false).unwrap();
+        let mut add = |rel: &str, art: &str, kind: &str, owner: Option<i64>, promoted: bool| {
+            db.lock()
+                .execute(
+                    "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind,
+                                         art_id,curator_user_id,curator_promoted)
+                     VALUES (?1,?1,'A','A','Al',0,0,?2,?3,?4,?5)",
+                    rusqlite::params![rel, kind, art, owner, promoted as i64],
+                )
+                .unwrap();
+            db.track_id_by_path(rel).unwrap()
+        };
+        let plain = add("p.flac", "art-plain", "music", None, false);
+        let mine = add("m.flac", "art-mine", "music", Some(me), false);
+        let theirs = add("t.flac", "art-theirs", "music", Some(other), false);
+        let promoted = add("q.flac", "art-promoted", "music", Some(other), true);
+        let book = add("b.m4b", "art-book", "book", None, false);
+
+        let mut art = db.random_art_ids_for(me, 100);
+        art.sort();
+        assert_eq!(art, vec!["art-mine", "art-plain", "art-promoted"]);
+        let mut ids = db.random_track_ids_for(me, 100);
+        ids.sort();
+        let mut want = vec![plain, mine, promoted];
+        want.sort();
+        assert_eq!(ids, want, "not {theirs} (another's pull) nor {book} (a book)");
+
+        // The public wall still glances at the whole box - that is its job.
+        assert_eq!(db.random_art_ids(100).len(), 5);
     }
 }
 

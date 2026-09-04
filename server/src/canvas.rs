@@ -352,6 +352,17 @@ fn sidecar_for(state: &AppState, track_id: i64) -> Option<std::path::PathBuf> {
 /// no record of which tracks HAVE a clip - the sidecar is the record - so a
 /// random handful of the library is asked; a library with clips on a tenth
 /// of its songs answers from a few hundred stats, which is nothing.
+/// The clips a member may see: their own auditions and promoted music only.
+pub fn sample_sidecars_for(state: &AppState, n: usize, user_id: i64) -> Vec<i64> {
+    state
+        .db
+        .random_track_ids_for(user_id, 600)
+        .into_iter()
+        .filter(|id| sidecar_for(state, *id).is_some_and(|p| p.is_file()))
+        .take(n)
+        .collect()
+}
+
 pub fn sample_sidecars(state: &AppState, n: usize) -> Vec<i64> {
     state
         .db
