@@ -43,6 +43,15 @@
 	<string>AttackFM uses the microphone only when you press the DJ’s talk button, to hear what music you ask for.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>AttackFM uses the camera only to scan QR codes: signing in from another device you own, and adding a friend from their code.</string>
+	<!-- Picking your profile picture and banner, and a cover for a playlist.
+	     Read-only and only when you tap to choose one: nothing is ever written
+	     back to your library, which is why there is no Add usage key here. On
+	     iOS 14+ the web view's file input uses the out-of-process picker and
+	     would often work without this - but "often" is not a contract, and an
+	     app that touches the photo library without declaring why is one App
+	     Review can reject. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>AttackFM opens your photo library only when you choose a profile picture, a banner, or a playlist cover.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>AttackFM connects to your music server on this network.</string>
 	<key>UIApplicationSceneManifest</key>

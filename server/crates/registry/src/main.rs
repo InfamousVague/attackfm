@@ -2301,15 +2301,33 @@ async fn main() {
         presence: Mutex::new(HashMap::new()),
     });
 
-    // DELETE belongs here as much as GET does: `/v1/friends/{id}` is the only
-    // route on this service that is neither GET nor POST, and leaving it off
-    // this list did not make it unreachable in an obvious way - it made the
-    // browser refuse it at the preflight, so unfriending failed silently in the
-    // app while curl against the same endpoint worked perfectly. OPTIONS is
-    // named for the preflight itself.
+    /*
+     * Every method this router actually serves, and the list is load-bearing in
+     * a way that hides: a method missing here is not unreachable in any obvious
+     * way. The route answers curl perfectly and the browser refuses it at the
+     * PREFLIGHT, so the feature fails in the app and nowhere else.
+     *
+     * DELETE was added the first time that happened, when unfriending failed
+     * silently. PUT is the second time and it cost five features at once, all
+     * of them quiet except the one with a button and an error on it: profile
+     * pictures and banners, editing your profile, share grants, preference sync
+     * and resume sync are ALL PUT, and every one of them had been failing with
+     * "Failed to fetch" since the day it shipped.
+     *
+     * So this list is now the whole vocabulary of the router rather than the
+     * methods somebody remembered. If a route is ever added with a method that
+     * is not here, it will fail the same silent way - the test below is what
+     * should catch that, not the next person to notice a button doing nothing.
+     */
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
         .allow_headers(Any);
 
     let app = Router::new()
@@ -2386,4 +2404,81 @@ async fn main() {
         })
         .await
         .expect("serve");
+}
+
+#[cfg(test)]
+mod cors_tests {
+    /// Every HTTP method this router serves must be in the CORS allow list.
+    ///
+    /// This bug has now happened twice, and both times it was invisible: the
+    /// route answers curl perfectly and the BROWSER refuses it at the
+    /// preflight, so the feature fails only inside the app. DELETE cost silent
+    /// unfriending; PUT cost profile pictures, profile edits, share grants,
+    /// preference sync and resume sync, all at once, for as long as they had
+    /// existed.
+    ///
+    /// So the test reads this file rather than trusting a memory: it finds the
+    /// methods actually used in route definitions and checks each one is named
+    /// in `allow_methods`. Add a route with a method nobody added to the list
+    /// and this fails here, instead of failing on somebody's phone.
+    #[test]
+    fn every_method_the_router_serves_is_allowed_by_cors() {
+        let src = include_str!("main.rs");
+        let allow_start = src
+            .find("allow_methods([")
+            .expect("the CORS layer should still call allow_methods");
+        let allow_end = src[allow_start..]
+            .find("])")
+            .map(|i| allow_start + i)
+            .expect("allow_methods should be a closed list");
+        let allow = &src[allow_start..allow_end];
+
+        /*
+         * The router is wired AFTER the CORS layer is built, so the text to
+         * search is everything up to this test module - not everything before
+         * `allow_methods`, which was the first version of this test and passed
+         * happily with PUT removed because every route definition sat outside
+         * the window it was looking at. A guard that cannot fail is worse than
+         * no guard: it says the thing is checked.
+         */
+        let router = src
+            .split_once("mod cors_tests {")
+            .map(|(before, _)| before)
+            .unwrap_or(src);
+
+        for (used_as, method) in [
+            (".get(", "GET"),
+            (".post(", "POST"),
+            (".put(", "PUT"),
+            ("routing::put(", "PUT"),
+            (".delete(", "DELETE"),
+            ("routing::delete(", "DELETE"),
+            (".patch(", "PATCH"),
+            ("routing::patch(", "PATCH"),
+        ] {
+            if router.contains(used_as) {
+                assert!(
+                    allow.contains(method),
+                    "the router serves {method} (found `{used_as}`) but the CORS \
+                     allow_methods list does not name it - the browser will refuse \
+                     every one of those routes at the preflight, and it will look \
+                     like the feature simply does nothing"
+                );
+            }
+        }
+    }
+
+    /// The one that was actually broken, named so a future edit that drops it
+    /// fails with the reason attached.
+    #[test]
+    fn put_is_allowed_because_profile_pictures_ride_on_it() {
+        let src = include_str!("main.rs");
+        let start = src.find("allow_methods([").expect("allow_methods");
+        let end = start + src[start..].find("])").expect("closed list");
+        assert!(
+            src[start..end].contains("Method::PUT"),
+            "profile pictures, profile edits, share grants, prefs sync and resume \
+             sync are all PUT; without it they fail with \"Failed to fetch\""
+        );
+    }
 }

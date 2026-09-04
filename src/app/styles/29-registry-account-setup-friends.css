@@ -592,3 +592,11 @@
    profile is now what the HEADER's share button does while you are on this
    page (nav/shareDoor.ts), so the card carries your name and your pictures
    and nothing that competes with it. */
+
+/* What went wrong with the picture you just chose, under your handle where the
+   buttons that chose it are. This used to render only in the Friends shelf far
+   below - a message nobody scrolls to find, which reads as nothing happening. */
+.profileHero__note {
+  margin-block-start: var(--glacier-space-2);
+  text-wrap: balance;
+}

@@ -380,7 +380,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       <input
         ref={coverInput}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/*"
         hidden
         onChange={(e) => {
           const file = e.currentTarget.files?.[0];

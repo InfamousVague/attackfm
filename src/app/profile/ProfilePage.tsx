@@ -251,7 +251,18 @@ export function ProfilePage({
   // it. Friends live on Profile now: the grid used to be a tab of its own, and
   // by request it is folded back in under you, where it began.
   const [profileFor, setProfileFor] = useState<RegistryFriend | null>(null);
-  const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  /*
+   * The page's one status line, and WHERE it is shown is half of it.
+   *
+   * It used to render only inside the Friends shelf, a long way down the page
+   * from the buttons that pick a picture. So a picture that was refused said
+   * so, correctly and in plain words, on a part of the screen nobody was
+   * looking at - which reads exactly like nothing happening at all. `at` puts
+   * each answer beside the control that asked the question.
+   */
+  const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string; at: 'pictures' | 'friends' } | null>(
+    null,
+  );
 
   /*
    * The two pictures.
@@ -299,7 +310,7 @@ export function ProfilePage({
       const { url } = await uploadProfileImage(registry.token, kind, small);
       apply({ ...registry, [kind === 'avatar' ? 'avatarUrl' : 'bannerUrl']: url });
     } catch (err) {
-      setNote({ tone: 'bad', text: messageOf(err) });
+      setNote({ tone: 'bad', text: messageOf(err), at: 'pictures' });
     } finally {
       setPicking(null);
     }
@@ -316,7 +327,7 @@ export function ProfilePage({
       ]);
       apply({ ...registry, avatarUrl: null, bannerUrl: null });
     } catch (err) {
-      setNote({ tone: 'bad', text: messageOf(err) });
+      setNote({ tone: 'bad', text: messageOf(err), at: 'pictures' });
     } finally {
       setPicking(null);
     }
@@ -329,9 +340,9 @@ export function ProfilePage({
       try {
         const next = await enterServer(url.replace(/\/+$/, ''), registry.token);
         applySession(next);
-        setNote({ tone: 'ok', text: `Listening from ${hostOf(url)} now.` });
+        setNote({ tone: 'ok', text: `Listening from ${hostOf(url)} now.`, at: 'friends' });
       } catch (err) {
-        setNote({ tone: 'bad', text: messageOf(err) });
+        setNote({ tone: 'bad', text: messageOf(err), at: 'friends' });
       }
     },
     [registry, applySession],
@@ -353,10 +364,26 @@ export function ProfilePage({
 
   return (
     <div className="homePage profilePage">
+      {/*
+       * `image/*` rather than a list of formats, and the difference is the
+       * whole feature on a phone.
+       *
+       * iOS turns an accept list into UTTypes and filters the photo picker to
+       * them. A list of jpeg/png/webp does not contain HEIC - which is what
+       * every iPhone camera has written by default since 2017 - so the picker
+       * opened onto a library with the photographs greyed out and only
+       * screenshots (PNG) selectable. It looked like the picker was broken;
+       * it was doing exactly what it had been told.
+       *
+       * `image/*` shows the whole library and lets iOS hand over a JPEG
+       * transcode of a HEIC, which costs us nothing: everything here is
+       * re-encoded to JPEG on the way out anyway (pickImage.ts). Anything the
+       * browser cannot decode is caught there and said out loud.
+       */}
       <input
         ref={fileInput}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/*"
         hidden
         onChange={(e) => {
           const file = e.currentTarget.files?.[0];
@@ -436,6 +463,14 @@ export function ProfilePage({
 
           <span className="profileHero__body">
             <h1 className="profileHero__handle">@{account.handle}</h1>
+            {/* Beside the buttons that caused it. A picture refused for its
+                format or its size is the one failure on this page a person is
+                actively waiting on. */}
+            {note?.at === 'pictures' && (
+              <Text size="sm" tone={note.tone === 'ok' ? 'success' : 'danger'} className="profileHero__note">
+                {note.text}
+              </Text>
+            )}
             <span className="profileHero__caption">
               {session
                 ? `Listening from ${hostOf(session.url)}${session.username ? ` as ${session.username}` : ''}`
@@ -470,7 +505,7 @@ export function ProfilePage({
           <Heading level={2} noMargin className="homeShelfTitle">
             Friends
           </Heading>
-          {note && (
+          {note?.at === 'friends' && (
             <Text size="sm" tone={note.tone === 'ok' ? 'success' : 'danger'}>
               {note.text}
             </Text>
