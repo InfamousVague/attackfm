@@ -1,4 +1,5 @@
-import { ContextMenu, MenuItem, MenuSeparator, MenuSub, useToast } from '@glacier/react';
+import { Button, ContextMenu, Drawer, MenuItem, MenuSeparator, MenuSub, useToast } from '@glacier/react';
+import { useDesktopLayout } from '../ux/useDesktopLayout.ts';
 import { MenuStop } from '../ux/MenuStop.tsx';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import {
@@ -195,6 +196,55 @@ export function TrackMenu({
     }
   };
 
+  const DESKTOP = useDesktopLayout();
+  const [moreOpen, setMoreOpen] = useState(false);
+  /* Everything behind "More…", as one list the two renderings share: the
+     desktop flyout and the phone's sheet must never drift apart. Each row
+     keeps the gate it always had. */
+  const more: { key: string; icon: ReactNode; label: string; run: () => void }[] = [];
+  if (selection) {
+    more.push({ key: 'select', icon: <CopyCheck size={15} />, label: 'Select songs…', run: () => selection.start(track.path) });
+  }
+  // By name, to a friend's own hub - no file leaves this one.
+  if (registry?.session) {
+    more.push({ key: 'send', icon: <Send size={15} />, label: 'Send to a friend…', run: () => setSending(true) });
+  }
+  // An endless run in this song's direction. It plays first, and the station
+  // keeps the queue fed behind it for as long as it is on - see radio.tsx.
+  if (radio && session) {
+    more.push({
+      key: 'radio',
+      icon: <Radio size={15} />,
+      label: 'Start radio from this',
+      run: () => {
+        // The seed plays first - a station "from this song" that did not play
+        // it would be a station from somewhere else.
+        playNext(track);
+        radio.start(track);
+      },
+    });
+  }
+  if (session && trackId !== null) {
+    more.push({ key: 'quick', icon: <Sparkles size={15} />, label: 'Generate custom queue', run: () => setQuickQueue(true) });
+    more.push({ key: 'explore', icon: <Sparkles size={15} />, label: 'Choose the sound for a mix…', run: () => setExploring(true) });
+  }
+  // The importer matches a song by searching for its title and artist, so it
+  // can arrive as a live cut, a remix, or a cover - correctly tagged either
+  // way, which is why only a listener ever catches it. Admin-only: it edits a
+  // file the whole server shares.
+  if (canReport) {
+    more.push({ key: 'report', icon: <SearchX size={15} />, label: 'Wrong song?', run: () => setReporting(true) });
+  }
+  // The song, on this device: it plays with the hub off, the wifi gone, or
+  // the plane door shut. Held songs offer the way back out.
+  if (canKeep) {
+    more.push(
+      held
+        ? { key: 'keep', icon: <Trash2 size={15} />, label: 'Remove from this device', run: () => void unpinTrack(track.path) }
+        : { key: 'keep', icon: keeping ? <Check size={15} /> : <ArrowDownToLine size={15} />, label: keeping ? 'Keeping…' : 'Keep on this device', run: () => void keep() },
+    );
+  }
+
   return (
     <>
       <ContextMenu
@@ -268,75 +318,23 @@ export function TrackMenu({
             )}
             <MenuSeparator />
             {/* THE SECOND LEVEL: everything else, unchanged, one row further
-                in. A kit flyout: it opens on tap as well as hover, and a pick
-                inside it closes the whole stack - so on a phone it is one
-                more tap, never a second menu to dismiss. */}
-            <MenuSub label="More…" icon={<Ellipsis size={15} />} menuClassName="trackMenuMore">
-              {selection && (
-                <MenuItem icon={<CopyCheck size={15} />} onSelect={() => selection.start(track.path)}>
-                  Select songs…
-                </MenuItem>
-              )}
-              {/* By name, to a friend's own hub - no file leaves this one. */}
-              {registry?.session && (
-                <MenuItem icon={<Send size={15} />} onSelect={() => setSending(true)}>
-                  Send to a friend…
-                </MenuItem>
-              )}
-              {/* An endless run in this song's direction. It plays first, and
-                  the station keeps the queue fed behind it for as long as it
-                  is on - see radio.tsx. */}
-              {radio && session && (
-                <MenuItem
-                  icon={<Radio size={15} />}
-                  onSelect={() => {
-                    // The seed plays first - a station "from this song" that did
-                    // not play it would be a station from somewhere else.
-                    playNext(track);
-                    radio.start(track);
-                  }}
-                >
-                  Start radio from this
-                </MenuItem>
-              )}
-              {session && trackId !== null && (
-                <>
-                  <MenuItem icon={<Sparkles size={15} />} onSelect={() => setQuickQueue(true)}>
-                    Generate custom queue
-                  </MenuItem>
-                  <MenuItem icon={<Sparkles size={15} />} onSelect={() => setExploring(true)}>
-                    Choose the sound for a mix…
-                  </MenuItem>
-                </>
-              )}
-              {/* The importer matches a song by searching for its title and
-                  artist, so it can arrive as a live cut, a remix, or a cover -
-                  correctly tagged either way, which is why only a listener ever
-                  catches it. Offered wherever a song is, because that is where
-                  you are standing when you notice. Admin-only: it edits a file
-                  the whole server shares. */}
-              {canReport && (
-                <MenuItem icon={<SearchX size={15} />} onSelect={() => setReporting(true)}>
-                  Wrong song?
-                </MenuItem>
-              )}
-              {/* The song, on this device: it plays with the hub off, the wifi
-                  gone, or the plane door shut. Held songs offer the way back
-                  out, since the whole point is that the space is yours. */}
-              {canKeep &&
-                (held ? (
-                  <MenuItem icon={<Trash2 size={15} />} onSelect={() => void unpinTrack(track.path)}>
-                    Remove from this device
-                  </MenuItem>
-                ) : (
-                  <MenuItem
-                    icon={keeping ? <Check size={15} /> : <ArrowDownToLine size={15} />}
-                    onSelect={() => void keep()}
-                  >
-                    {keeping ? 'Keeping…' : 'Keep on this device'}
+                in. At desktop widths a kit flyout; on a phone a bottom sheet -
+                the flyout opens to the side with no flip, and at 375px it hung
+                a third of itself off the right edge with its labels cut. A
+                pick in either closes the whole stack. */}
+            {DESKTOP ? (
+              <MenuSub label="More…" icon={<Ellipsis size={15} />} menuClassName="trackMenuMore">
+                {more.map((a) => (
+                  <MenuItem key={a.key} icon={a.icon} onSelect={a.run}>
+                    {a.label}
                   </MenuItem>
                 ))}
-            </MenuSub>
+              </MenuSub>
+            ) : (
+              <MenuItem icon={<Ellipsis size={15} />} onSelect={() => setMoreOpen(true)}>
+                More…
+              </MenuItem>
+            )}
           </MenuStop>
         }
       >
@@ -356,6 +354,30 @@ export function TrackMenu({
       )}
       {(sending || everOpened.current.sending) && (
         <SendToFriendDialog track={track} open={sending} onClose={() => setSending(false)} />
+      )}
+      {/* The phone's "More…": a sheet, hoisted here beside the other dialogs
+          for the same reason they are - a sheet rendered inside the menu is
+          unmounted by the tap that opened it. */}
+      {moreOpen && (
+        <Drawer open onClose={() => setMoreOpen(false)} side="bottom" size="md" title={track.title} className="trackMoreSheet">
+          <div className="trackMoreSheet__rows">
+            {more.map((a) => (
+              <Button
+                key={a.key}
+                variant="ghost"
+                fullWidth
+                className="trackMoreRow"
+                onClick={() => {
+                  setMoreOpen(false);
+                  a.run();
+                }}
+              >
+                {a.icon}
+                <span>{a.label}</span>
+              </Button>
+            ))}
+          </div>
+        </Drawer>
       )}
       {(reporting || everOpened.current.reporting) && (
         <WrongSongModal

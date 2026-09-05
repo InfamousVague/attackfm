@@ -479,3 +479,16 @@
 .trackMenuMore {
   min-inline-size: 13rem;
 }
+
+/* The phone's "More…" sheet: the folded rows as full-width ghost buttons,
+   each reading left to right like the menu row it stands in for. */
+.trackMoreSheet__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.trackMoreRow {
+  justify-content: flex-start;
+  gap: var(--glacier-space-3);
+  min-block-size: 2.75rem;
+}
