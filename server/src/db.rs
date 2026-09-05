@@ -4396,6 +4396,14 @@ impl Db {
 
     /// Finds a user by exact name, case-insensitively - how one person names
     /// another when adding them.
+    /// Whether an account exists on this hub at all - the whole test for
+    /// whether a playlist can be shared with it (see `playlist_member_add`).
+    pub fn user_exists(&self, user_id: i64) -> bool {
+        self.lock()
+            .query_row("SELECT 1 FROM users WHERE id = ?1", params![user_id], |_| Ok(()))
+            .is_ok()
+    }
+
     pub fn user_by_username(&self, username: &str) -> Option<(i64, String)> {
         let conn = self.lock();
         conn.query_row(

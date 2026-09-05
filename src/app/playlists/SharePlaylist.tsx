@@ -2,7 +2,7 @@ import { Button, IconButton, SegmentedControl, Text, useToast } from '@glacier/r
 import { Check, Copy, Download, ListMusic, LogOut, X } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { fetchFriends, mirrorFriendsToHub, type Friend } from '../api/friends.ts';
+import { fetchFriends, fetchMembers, mirrorFriendsToHub, type Friend, type Member } from '../api/friends.ts';
 import type { PlaylistMember } from '../api/playlists.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
@@ -143,6 +143,10 @@ export function SharePlaylistDrawer({
   const [friends, setFriends] = useState<Friend[] | null>(null);
   const [current, setCurrent] = useState<PlaylistMember[] | null>(null);
   const [elsewhere, setElsewhere] = useState<string[]>([]);
+  // Everyone on this server, when the hub can say (null on an older hub, and
+  // the sheet falls back to friends only). Being here is the consent now -
+  // see the server's playlist_member_add.
+  const [roster, setRoster] = useState<Member[] | null>(null);
   const [busy, setBusy] = useState<number | 'leave' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,12 +171,18 @@ export function SharePlaylistDrawer({
       .then((handles) => (handles.length ? mirrorFriendsToHub(session, handles, token ?? undefined) : undefined))
       .then(() => fetchFriends(session))
       .then((f) => f.friends);
-    void Promise.all([hubFriends, who, account])
-      .then(([hub, seated, handles]) => {
+    const everyone = fetchMembers(session).catch(() => null);
+    void Promise.all([hubFriends, who, account, everyone])
+      .then(([hub, seated, handles, all]) => {
         if (!live) return;
         setFriends(hub);
         setCurrent(seated);
-        const here = new Set(hub.map((f) => f.username.toLowerCase()));
+        setRoster(all);
+        // "Here" is anyone on this server, not only the friends the registry
+        // could match: a handle that IS a member under another username was
+        // being filed as "not on this server", and the link that pill offers
+        // makes a copy on their side, never a seat at this list.
+        const here = new Set([...hub, ...(all ?? [])].map((f) => f.username.toLowerCase()));
         const me = registry?.session?.account.handle.toLowerCase();
         setElsewhere(handles.filter((h) => h.toLowerCase() !== me && !here.has(h.toLowerCase())));
       })
@@ -188,6 +198,7 @@ export function SharePlaylistDrawer({
   const nameOf = (userId: number) =>
     seated.find((m) => m.userId === userId)?.username ??
     friends?.find((f) => f.userId === userId)?.username ??
+    roster?.find((f) => f.userId === userId)?.username ??
     '';
 
   const setSeat = async (userId: number, seat: Seat | null) => {
@@ -226,13 +237,22 @@ export function SharePlaylistDrawer({
     }
   };
 
-  const candidates = useMemo(
-    () =>
-      (friends ?? [])
-        .filter((f) => !seated.some((m) => m.userId === f.userId))
-        .sort((a, b) => a.username.localeCompare(b.username)),
-    [friends, seated],
-  );
+  // Everyone on the server who is not yet seated, friends first; on an
+  // older hub with no roster, the friends alone, as before.
+  const candidates = useMemo(() => {
+    const me = (session?.username ?? '').toLowerCase();
+    const isFriend = new Set((friends ?? []).map((f) => f.userId));
+    const pool: Member[] = roster
+      ? roster.filter((m) => m.username.toLowerCase() !== me)
+      : (friends ?? []).map((f) => ({ userId: f.userId, username: f.username }));
+    return pool
+      .filter((f) => !seated.some((m) => m.userId === f.userId))
+      .sort(
+        (a, b) =>
+          Number(isFriend.has(b.userId)) - Number(isFriend.has(a.userId)) ||
+          a.username.localeCompare(b.username),
+      );
+  }, [friends, roster, seated, session?.username]);
   const loading = friends === null && !error;
 
   // ---- the link face ------------------------------------------------------
@@ -507,7 +527,7 @@ export function SharePlaylistDrawer({
 
           {!loading && isOwner && share && (
             <section className="shareSheet__room">
-              <h3 className="shareSheet__h">Friends on this server</h3>
+              <h3 className="shareSheet__h">{roster ? 'On this server' : 'Friends on this server'}</h3>
               {candidates.length === 0 ? (
                 <Text tone="muted" size="sm" className="shareSheet__empty">
                   {(friends ?? []).length === 0

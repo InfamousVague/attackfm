@@ -1,4 +1,4 @@
-import { request, type ServerSession } from './http.ts';
+import { request, type ServerSession, ServerError } from './http.ts';
 
 // --- friends ---------------------------------------------------------------
 
@@ -20,6 +20,26 @@ export interface FriendsFeed {
   incoming: FriendRequest[];
   /** Asks you sent, waiting on theirs. */
   outgoing: FriendRequest[];
+}
+
+/** One person on this server, as the share sheet seats them. */
+export interface Member {
+  userId: number;
+  username: string;
+}
+
+/**
+ * Everyone on this server - the people a playlist can be shared with. An
+ * older hub answers 404, and the caller falls back to friends-only.
+ */
+export async function fetchMembers(session: ServerSession): Promise<Member[] | null> {
+  try {
+    const out = await request<{ members?: Member[] }>(session.url, '/api/members', { token: session.token });
+    return (out.members ?? []).filter((m) => typeof m.userId === 'number' && typeof m.username === 'string');
+  } catch (e) {
+    if (e instanceof ServerError && e.status === 404) return null;
+    throw e;
+  }
 }
 
 export async function fetchFriends(session: ServerSession): Promise<FriendsFeed> {

@@ -878,6 +878,21 @@ pub async fn playlist_members(
 /// may do. Owner only, and only a FRIEND on this hub: the friendship is the
 /// consent - a share to a stranger by username would be a way to push a list
 /// at anyone on the box.
+/// `GET /api/members` - who is on this server, for the share sheet. Every
+/// signed-in member may ask: a username is not a secret on a box you are a
+/// member of (the server-info route already names the owner), and "who can
+/// I seat" has to be answerable without being an admin.
+pub async fn members(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let members: Vec<serde_json::Value> = state
+        .db
+        .list_users()
+        .into_iter()
+        .map(|(id, username, _)| json!({ "userId": id, "username": username }))
+        .collect();
+    Ok(Json(json!({ "members": members })))
+}
+
 pub async fn playlist_member_add(
     State(state): State<Arc<AppState>>,
     Path(playlist_id): Path<i64>,
@@ -891,18 +906,28 @@ pub async fn playlist_member_add(
         return Err(bad(StatusCode::BAD_REQUEST, "role must be viewer or editor"));
     }
     let target = match (body.user_id, body.username.as_deref().map(str::trim)) {
-        (Some(id), _) => Some(id),
-        (None, Some(name)) if !name.is_empty() => state.db.user_by_username(name).map(|(id, _)| id),
-        _ => None,
-    };
-    let Some(target) = target else {
-        return Err(bad(StatusCode::BAD_REQUEST, "name a friend to share with"));
+        (Some(id), _) => id,
+        (None, Some(name)) if !name.is_empty() => match state.db.user_by_username(name) {
+            Some((id, _)) => id,
+            // A name was given and matches nobody here: that is "not on this
+            // server", and it should say so rather than "name someone".
+            None => return Err(bad(StatusCode::NOT_FOUND, "nobody by that name on this server")),
+        },
+        _ => return Err(bad(StatusCode::BAD_REQUEST, "name someone on this server to share with")),
     };
     if target == caller.id {
         return Err(bad(StatusCode::BAD_REQUEST, "that is your own list"));
     }
-    if !state.db.are_friends(caller.id, target) {
-        return Err(bad(StatusCode::FORBIDDEN, "you can only share with friends on this server"));
+    /*
+     * Being on this server IS the consent. Everyone here was invited by an
+     * admin, and a shared box is already a circle. The old rule - friends on
+     * this server only - filed the owner's partner under "not on this server"
+     * whenever her attack.fm handle differed from her hub username, and the
+     * link that pill pointed at makes a COPY of the list on her side, never a
+     * seat at his. Strangers are still refused: they are not on the box.
+     */
+    if !state.db.user_exists(target) {
+        return Err(bad(StatusCode::NOT_FOUND, "nobody by that name on this server"));
     }
     let fresh = state
         .db

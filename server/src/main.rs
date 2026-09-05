@@ -737,6 +737,7 @@ async fn main() {
         // and what others put in or took out. Static segment, so it sits
         // beside `/api/playlists/{id}` without being mistaken for an id.
         .route("/api/playlists/activity", get(api::playlist_activity))
+        .route("/api/members", get(api::members))
         .route("/api/playlists/{id}/membership", delete(api::playlist_leave))
         .route("/api/playlists/{id}/tracks", post(api::playlist_track_append))
         .route("/api/playlists/{id}/tracks/{track_id}", delete(api::playlist_track_remove))
