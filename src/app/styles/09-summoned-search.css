@@ -214,8 +214,8 @@
 }
 
 /* The smart badge: a filled accent circle at the icon's corner, with a ring
-   of the surface behind it so it never bleeds into the arrows, and a white
-   sparkle inside - the same drawing a solid button uses. The shuffle glyph
+   of the surface behind it so it never bleeds into the arrows, and a dark
+   sparkle inside - the Play button's own two colours. The shuffle glyph
    itself keeps plain shuffle-on's colour: smart is the same control one
    step further, and the badge is the whole of the difference. (It used to
    be a bare accent-tinted sparkle over an accent-tinted glyph, which read as
@@ -228,8 +228,10 @@
   block-size: 16px;
   padding: 3px;
   border-radius: 50%;
+  /* The Play button's own two colours, so the badge and the big button read
+     as one family - the sparkle dark on the accent, not white. */
   background: var(--glacier-accent-solid);
-  color: #fff;
+  color: var(--glacier-on-accent, #fff);
   box-shadow: 0 0 0 2px var(--glacier-bg);
 }
 
