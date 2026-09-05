@@ -17,7 +17,7 @@ import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { trackIdFromPath } from '../server.ts';
 import { useMemo } from 'react';
 import { Button, IconButton, Slider, SortableList, Text, useToast } from '@glacier/react';
-import { ChevronDown, Music, Radio, X } from '@glacier/icons';
+import { ChevronDown, Music, Radio, Sparkles, X } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import { artSized } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
@@ -25,6 +25,7 @@ import { useJamOptional } from './jam.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { remotePath } from '../server.ts';
 import { useRadioOptional } from './radio.tsx';
+import { enhancerLabel } from './smartShuffle.ts';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { fetchHousehold, type HouseholdPerson } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -302,6 +303,7 @@ export function QueuePanel({
                   <span className="queueRow__artist">
                     <ArtistLink artist={current.artist} beforeOpen={onClose} />
                   </span>
+                  <DjPickBadge path={current.path} />
                   {(() => {
                     const why = djReason(trackIdFromPath(current.path)) ?? djWhy(current.path);
                     return why ? <span className="queueRow__why">{why}</span> : null;
@@ -420,6 +422,7 @@ export function QueuePanel({
                           ) : null;
                         })()}
                       </span>
+                      <DjPickBadge path={r.track.path} />
                       {(() => {
                         // The DJ's own reason for this pick, when this queue
                         // came from the DJ. Computed server-side either way;
@@ -466,6 +469,22 @@ function Cover({ track }: { track: Track }) {
   return (
     <span className="queueRow__cover" aria-hidden>
       {track.artwork ? <img {...art} src={src ?? undefined} alt="" loading="lazy" /> : <Music size={16} />}
+    </span>
+  );
+}
+
+/**
+ * Smart shuffle's mark on a song the DJ dealt into the line, with the lane it
+ * came down - new music, on repeat, similar - so a stranger in the queue
+ * arrives with its reason. Nothing for a song the listener queued.
+ */
+function DjPickBadge({ path }: { path: string }) {
+  const label = enhancerLabel(path);
+  if (!label) return null;
+  return (
+    <span className="queueRow__pick">
+      <Sparkles size={11} aria-hidden="true" />
+      {label}
     </span>
   );
 }

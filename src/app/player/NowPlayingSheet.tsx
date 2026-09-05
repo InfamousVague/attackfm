@@ -23,6 +23,7 @@ import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useB
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
 import { AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
+import { SMART_SHUFFLE_LABEL } from './smartShuffle.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
 import { NpDjButton } from './NpDjButton.tsx';
@@ -715,6 +716,7 @@ export function NowPlayingSheet({
   onScrub,
   commitSeek,
   shuffle,
+  smart,
   cycleShuffle,
   canSkip,
   skipBack,
@@ -792,7 +794,9 @@ export function NowPlayingSheet({
   onScrub: (to: number) => void;
   commitSeek: (to: number) => void;
   shuffle: boolean;
-  /** off -> shuffle -> off. */
+  /** Smart shuffle: enhancers mixed in. Only meaningful while shuffle is on. */
+  smart: boolean;
+  /** off -> shuffle -> smart shuffle -> off. */
   cycleShuffle: () => void;
   canSkip: boolean;
   skipBack: () => void;
@@ -1859,15 +1863,23 @@ export function NowPlayingSheet({
         {track?.kind === 'book' ? (
           <DevicePicker always size="md" />
         ) : (
+        /* Three states in one control: off, shuffle, smart shuffle. The
+            sparkle only appears on the third, because it is the only one that
+            adds anything to the queue - a badge that lit for ordinary shuffle
+            would be decoration promising a feature. The accessible name says
+            what the sparkle means, since the sparkle itself cannot. */
         <IconButton
           variant="ghost"
-          aria-label="Shuffle"
+          className="npShuffle"
+          aria-label={shuffle && smart ? SMART_SHUFFLE_LABEL : 'Shuffle'}
           aria-pressed={shuffle}
           data-on={shuffle || undefined}
+          data-smart={(shuffle && smart) || undefined}
           onClick={cycleShuffle}
         >
           <span className="shuffleGlyph">
             <Shuffle size={20} />
+            {shuffle && smart && <Sparkles className="shuffleGlyph__spark" size={11} />}
           </span>
         </IconButton>
         )}

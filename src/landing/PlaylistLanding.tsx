@@ -574,6 +574,8 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
                 onSkipBackDisp={() => step(-1)}
                 onSkipForwardDisp={() => step(1)}
                 shuffle={shuffle}
+                // A preview deck has no hub to ask for picks: plain shuffle only.
+                smart={false}
                 setShuffle={setShuffle}
                 repeat={repeat}
                 setRepeat={setRepeat}

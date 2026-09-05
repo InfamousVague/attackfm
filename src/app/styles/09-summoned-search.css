@@ -192,19 +192,88 @@
   }
 }
 
-/* The shuffle glyph's seat. Smart shuffle's sparkle badge used to hang off this
-   - a third state on the same control, tinted with the accent, plus a matching
-   dot drawn on the mini strip via the control's accessible name. That mode is
-   parked (see Player.tsx), and its rules are gone with it rather than left
-   waiting for an attribute nothing sets: dead CSS keyed on `[data-smart]` and
-   `[aria-label='Smart shuffle']` reads as live styling for a feature that is
-   not there, and the next person to touch the transport has to prove it is not.
-   The seat itself stays, because the glyph is still centred in it. */
+/* Smart shuffle's badge: the sparkle rides the shuffle glyph's top-right
+   corner rather than sitting beside it, so the control keeps one silhouette
+   and one tap target at every state. It appears only in the third state -
+   a badge that lit for ordinary shuffle would promise a feature that state
+   does not have. */
 .shuffleGlyph {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+/* The sheet's shuffle seat is a thumb's target whatever the kit's ghost
+   button measures at the current density: three states cycle through one
+   control, and a miss costs a whole lap of the cycle. 2.75rem is the 44px
+   floor, the same literal the strip's own transport is held to (chapter 19). */
+.npShuffle {
+  min-inline-size: 2.75rem;
+  min-block-size: 2.75rem;
+}
+
+.shuffleGlyph__spark {
+  position: absolute;
+  inset-block-start: -3px;
+  inset-inline-end: -5px;
+  color: var(--glacier-accent-text);
+}
+
+/* The lit state a mode this quiet still needs: shuffle's own `data-on` tint
+   plus the accent, so smart reads as further along the same control rather
+   than as a different button. */
+[data-smart] .shuffleGlyph {
+  color: var(--glacier-accent-text);
+}
+
+/* The same sparkle on the mini strip, drawn rather than composed: the strip's
+   transport is the kit's own, so there is no element of ours to put an icon
+   inside. It hangs off the control's accessible NAME, which PlayerStrip
+   rewrites to "Smart shuffle: ..." in that mode - a contract the kit exposes
+   on purpose, unlike its hashed class names. If the kit ever renames the
+   control the sparkle quietly stops appearing, which is the right way for a
+   badge to fail. The sheet's own button (which portals out of .appPlayer)
+   carries a real sparkle instead; see .shuffleGlyph__spark. */
+.appPlayer [aria-label^='Smart shuffle'] {
+  position: relative;
+  color: var(--glacier-accent-text);
+}
+
+.appPlayer [aria-label^='Smart shuffle']::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: 50%;
+  background: var(--glacier-accent-solid);
+  box-shadow: 0 0 6px var(--glacier-accent-solid);
+}
+
+/* The DJ's mark on a song it dealt into the queue - "DJ pick · New", "DJ pick
+   · On repeat", "DJ pick · Similar", or a bare "DJ pick" from a hub that
+   answers without lanes. A small accent pill under the artist line, hugging
+   its text (the meta column is flex, so the badge must not stretch to it),
+   in the same tint the smart control wears so the two read as one feature.
+   Tokens only: the accent ramp follows the album tint and the theme. */
+.queueRow__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  align-self: flex-start;
+  margin-block-start: var(--glacier-space-1);
+  padding-block: 1px;
+  padding-inline: var(--glacier-space-2);
+  border: 1px solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 550;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 /* ---- the on-demand station row ------------------------------------------- */

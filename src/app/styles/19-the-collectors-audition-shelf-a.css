@@ -559,8 +559,11 @@
 
   /* Shuffle and repeat stay off the strip - they belong to the full-screen Now
      Playing, where there is room for them. The heart keeps its seat in the
-     leading rail, opposite the lyrics mic. */
+     leading rail, opposite the lyrics mic. Smart shuffle renames the control
+     (PlayerStrip relabels it for the badge), so its name is matched here
+     too, or the third state would walk straight out from behind this rule. */
   .appPlayer [aria-label="Shuffle"],
+  .appPlayer [aria-label^="Smart shuffle"],
   .appPlayer [aria-label^="Repeat"] {
     display: none;
   }
