@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.116
+
+- The groove panel fills its own width on the phone. Its rows used to stop
+  a third of the way short of the edge.
+
 ## 0.5.115
 
 - The DJ button on Now Playing opens a new deck. At the top, "For right now"

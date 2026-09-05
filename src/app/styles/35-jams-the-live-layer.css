@@ -246,16 +246,25 @@
 }
 
 /* The panel wears the same padding the equalizer's does (.eqPopoverPanel):
-   the kit's default is a menu's, and this is a room, not a menu. */
+   the kit's default is a menu's, and this is a room, not a menu.
+
+   Width belongs to the PANEL, never to the body. On a phone the kit sizes
+   the popover itself to the screen (the positioner and the glass it paints
+   run edge to edge, minus the margin), and a body with its own cap sat
+   inside that at 20rem - every divider, the Host pill, Share link and Leave
+   stopping a third of the way short of the panel's edge. The floor is what
+   keeps a desktop panel from shrinking to its shortest line; the phone's
+   width wins over it. */
 .jamPanel {
   padding: var(--glacier-space-3);
+  min-inline-size: min(19rem, calc(100vw - 2rem));
 }
 .jamPanel__body {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-3);
-  min-inline-size: 17rem;
-  max-inline-size: 20rem;
+  inline-size: 100%;
+  min-inline-size: 0;
 }
 
 .jamPanel__title {
