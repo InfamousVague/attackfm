@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.112
+
+- The space around the smart shuffle mark is truly clear now - it cuts
+  through the button, so what is behind the control shows through.
+
 ## 0.5.111
 
 - The smart shuffle mark: a dark sparkle on the accent, with clear space
