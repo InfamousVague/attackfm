@@ -213,13 +213,14 @@
   min-block-size: 2.75rem;
 }
 
-/* The smart badge: a filled accent circle at the icon's corner, with a ring
-   of the surface behind it so it never bleeds into the arrows, and a dark
-   sparkle inside - the Play button's own two colours. The shuffle glyph
-   itself keeps plain shuffle-on's colour: smart is the same control one
-   step further, and the badge is the whole of the difference. (It used to
-   be a bare accent-tinted sparkle over an accent-tinted glyph, which read as
-   a smudge on the icon rather than a mark beside it.) */
+/* The smart badge: a filled accent circle at the icon's corner, a DARK
+   sparkle inside (dark in both themes - the on-accent token computed light
+   over most album tints, and the owner wants it dark), and a 2px TRANSPARENT
+   gap around it: not a painted ring, a cut-out. The shuffle arrows are
+   masked away around the badge, so whatever the sheet is showing behind
+   the control shows through the gap. The shuffle glyph itself keeps plain
+   shuffle-on's colour: smart is the same control one step further, and the
+   badge is the whole of the difference. */
 .shuffleGlyph__spark {
   position: absolute;
   inset-block-start: -7px;
@@ -228,11 +229,16 @@
   block-size: 16px;
   padding: 3px;
   border-radius: 50%;
-  /* The Play button's own two colours, so the badge and the big button read
-     as one family - the sparkle dark on the accent, not white. */
   background: var(--glacier-accent-solid);
-  color: var(--glacier-on-accent, #fff);
-  box-shadow: 0 0 0 2px var(--glacier-bg);
+  color: #17171a;
+}
+
+/* The gap: the badge is 16px with its centre 1px past the icon's right edge
+   and 1px below its top (from the offsets above), so a 10px circle there -
+   the badge's 8px plus 2px of air - is what the arrows step back from. */
+[data-smart] .shuffleGlyph > svg:first-child {
+  -webkit-mask: radial-gradient(circle at calc(100% + 1px) 1px, transparent 10px, #000 10.5px);
+  mask: radial-gradient(circle at calc(100% + 1px) 1px, transparent 10px, #000 10.5px);
 }
 
 /* The same sparkle on the mini strip, drawn rather than composed: the strip's
