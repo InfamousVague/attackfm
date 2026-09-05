@@ -377,3 +377,26 @@
   color: var(--glacier-text-muted);
   line-height: 1.3;
 }
+
+/* The DJ conversation's composer row: the message bar, and the mic beside
+   it. The bar keeps its own look; the row only seats the two. */
+.djComposerRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--glacier-space-2);
+}
+
+.djComposerRow > .djComposer {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.djTalk {
+  flex: none;
+  min-inline-size: 2.75rem;
+  min-block-size: 2.75rem;
+}
+
+.djTalk[data-on] {
+  color: var(--glacier-accent-text);
+}

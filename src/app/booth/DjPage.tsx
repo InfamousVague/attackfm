@@ -10,6 +10,7 @@ import { artSized } from '../server.ts';
 import { useDjChat, useDjPlay, DJ_AUTHOR, type DjEmbed, type DjMessage } from './djChat.tsx';
 import { useDjRun } from './djSession.ts';
 import { useSaidNo } from './saidNo.ts';
+import { DjTalkButton } from './DjTalkButton.tsx';
 import { SayNoItems, Thumbs, useSayNo } from './sayNo.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import type { Track } from '../core/tauri.ts';
@@ -424,20 +425,23 @@ export function DjPage() {
             ))}
           </div>
         </div>
-        <MessageBar
-          className="djComposer"
-          value={draft}
-          onValueChange={setDraft}
-          busy={chat.busy}
-          placeholder="Tell the DJ what you're after"
-          minRows={1}
-          maxRows={4}
-          onSend={({ text }) => {
-            if (!text.trim()) return;
-            chat.send(text);
-            setDraft('');
-          }}
-        />
+        <div className="djComposerRow">
+          <MessageBar
+            className="djComposer"
+            value={draft}
+            onValueChange={setDraft}
+            busy={chat.busy}
+            placeholder="Tell the DJ what you're after"
+            minRows={1}
+            maxRows={4}
+            onSend={({ text }) => {
+              if (!text.trim()) return;
+              chat.send(text);
+              setDraft('');
+            }}
+          />
+          <DjTalkButton onHeard={(text) => chat.send(text)} />
+        </div>
       </div>
     );
   }
@@ -470,20 +474,26 @@ export function DjPage() {
           templates={{ one: '{first} is going through the crates' }}
         />
       )}
-      <MessageBar
-        className="djComposer"
-        value={draft}
-        onValueChange={setDraft}
-        busy={chat.busy}
-        placeholder="Tell the DJ what you're after"
-        minRows={1}
-        maxRows={4}
-        onSend={({ text }) => {
-          if (!text.trim()) return;
-          chat.send(text);
-          setDraft('');
-        }}
-      />
+      {/* The composer, and the mic beside it: the conversation is the DJ
+          surface everyone reaches from Now Playing, and it never had a way
+          to talk - the recorder lived on the Booth's hero, a developer page. */}
+      <div className="djComposerRow">
+        <MessageBar
+          className="djComposer"
+          value={draft}
+          onValueChange={setDraft}
+          busy={chat.busy}
+          placeholder="Tell the DJ what you're after"
+          minRows={1}
+          maxRows={4}
+          onSend={({ text }) => {
+            if (!text.trim()) return;
+            chat.send(text);
+            setDraft('');
+          }}
+        />
+        <DjTalkButton onHeard={(text) => chat.send(text)} />
+      </div>
     </div>
   );
 }

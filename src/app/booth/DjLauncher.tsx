@@ -16,11 +16,11 @@
 
 import { Button, Spinner } from '@glacier/react';
 import { Flame, Lightbulb, Mic, MoonStar, Play, Sparkles, Square, TrendingUp, Waves } from '@glacier/icons';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
+import { useTalkToDj } from './useTalkToDj.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { startDjRun } from './djSession.ts';
-import { djHear } from '../server.ts';
 import { DjToast } from './DjSetBridge.tsx';
 import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
 import type { Track } from '../core/tauri.ts';
@@ -64,20 +64,6 @@ export function DjLauncher({
   // The mic's state lives up here with the other hooks - the early return
   // below fires while the library is still loading, and a hook declared after
   // it would change the hook order the moment tracks arrive.
-  const [recording, setRecording] = useState(false);
-  const [hearing, setHearing] = useState(false);
-  const recRef = useRef<MediaRecorder | null>(null);
-  const stopTimer = useRef(0);
-  // Unmount mid-recording: let go of the mic rather than leaving it hot.
-  useEffect(
-    () => () => {
-      window.clearTimeout(stopTimer.current);
-      const rec = recRef.current;
-      if (rec && rec.state !== 'inactive') rec.stop();
-      rec?.stream.getTracks().forEach((t) => t.stop());
-    },
-    [],
-  );
 
   // The DJ reads a server library and a listening history; without either there
   // is nothing for it to spin.
@@ -122,63 +108,24 @@ export function DjLauncher({
    * server's own cap, and the stream is released the moment recording ends -
    * a page holding the mic open is how the orange dot outlives the feature.
    */
-  const canTalk = typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
-
-  const talk = async () => {
-    if (recording) {
-      // Second tap: stop; onstop below sends what was said.
-      window.clearTimeout(stopTimer.current);
-      recRef.current?.stop();
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // iOS records mp4/aac, everything else webm/opus; the server's ffmpeg
-      // reads either, so the first supported container wins.
-      const mime = ['audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m));
-      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-      const chunks: Blob[] = [];
-      rec.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-      rec.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        setRecording(false);
-        recRef.current = null;
-        const clip = new Blob(chunks, { type: rec.mimeType || 'application/octet-stream' });
-        if (clip.size === 0) return;
-        setHearing(true);
-        void (async () => {
-          try {
-            const { heard, fetching } = await djHear(session, clip);
-            // The set plays through the SAME start() the chips use, so the
-            // patter, the voice beats and the bridge all come along.
-            if (fetching.length > 0) {
-              setToast(
-                `Heard: “${heard}” — fetching ${fetching.length} new ${
-                  fetching.length === 1 ? 'track' : 'tracks'
-                } for you in the background.`,
-              );
-            }
-            await start(heard);
-          } catch (err) {
-            setToast(err instanceof Error ? err.message : 'The DJ could not hear that.');
-          } finally {
-            setHearing(false);
-          }
-        })();
-      };
-      recRef.current = rec;
-      rec.start();
-      setRecording(true);
-      setToast(null);
-      stopTimer.current = window.setTimeout(() => {
-        if (recRef.current?.state === 'recording') recRef.current.stop();
-      }, 20_000);
-    } catch {
-      setToast('The DJ needs the microphone for that — allow it and try again.');
-    }
-  };
+  // Tap to talk, tap again to send - the recorder is shared with the DJ
+  // conversation's composer (useTalkToDj); here what the hub heard becomes
+  // the set's brief, through the SAME start() the chips use, so the patter,
+  // the voice beats and the bridge all come along.
+  const { canTalk, recording, hearing, talk } = useTalkToDj(
+    session,
+    async ({ heard, fetching }) => {
+      if (fetching.length > 0) {
+        setToast(
+          `Heard: “${heard}” — fetching ${fetching.length} new ${
+            fetching.length === 1 ? 'track' : 'tracks'
+          } for you in the background.`,
+        );
+      }
+      await start(heard);
+    },
+    (message) => setToast(message),
+  );
 
   // The Booth's face: one hero that IS the brief, and a row of moods that
   // steer it - every chip a whole request, no field to fill first.
