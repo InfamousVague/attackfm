@@ -126,6 +126,10 @@ export async function primeEnhancers(
     return;
   }
   if (key === poolKey && (pool.length > 0 || !refillable)) return;
+  // A different queue is a different question: drop the old pool NOW, not
+  // when the answer lands, or a step taken while the request is in flight
+  // deals a suggestion computed for the queue that just left.
+  if (key !== poolKey) pool = [];
   loading = true;
   refillable = false;
   try {
