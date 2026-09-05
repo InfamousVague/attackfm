@@ -783,6 +783,7 @@ async fn main() {
         .route("/api/jams/{id}/end", post(jams::end))
         .route("/api/jams/{id}/state", post(jams::set_state))
         .route("/api/jams/{id}/queue", post(jams::add_to_queue))
+        .route("/api/jams/{id}/queue/{track_id}", delete(jams::withdraw_from_queue))
         .route("/api/home", get(home::feed))
         .route("/api/discover", get(discover::feed))
         .route("/api/push/register", post(push::register))
