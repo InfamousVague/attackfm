@@ -281,31 +281,28 @@ export async function fetchDjStations(session: ServerSession): Promise<DjStation
 }
 
 /**
- * What the DJ WOULD deal for a seed, without starting a set - the ids only,
- * so a card can wear its picks' sleeves before anyone taps it.
- *
- * Posts `{ seed, filter? }` to the analyze door. A hub that only knows the
- * trait form of that route (a body of track ids) refuses a seed-only body,
- * and this throws; the caller falls back to sleeves it can pick locally. The
- * timeout is short on purpose: a peek that takes twenty seconds is not a
- * peek, and the fallback is already on screen.
+ * What the DJ would deal for a seed, as ids - the deck's hero wears their
+ * sleeves before anyone taps. The hub's preview door runs the same taste
+ * maths and station constraint as a press and stops before anything a
+ * press writes or buys (no dealt impression, no patter, no voice).
  */
-export async function analyzeDjSeed(
+export async function peekDj(
   session: ServerSession,
   seed: string,
   filter?: string,
   signal?: AbortSignal,
+  count = 4,
 ): Promise<number[]> {
-  const body: Record<string, unknown> = { seed: seed.trim() };
-  if (filter) body.filter = filter;
-  const out = await request<{ trackIds?: unknown }>(session.url, '/api/dj/analyze', {
-    method: 'POST',
-    token: session.token,
-    signal,
-    timeoutMs: 20_000,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const params = new URLSearchParams();
+  if (seed.trim()) params.set('seed', seed.trim());
+  if (filter) params.set('filter', filter);
+  params.set('count', String(count));
+  params.set('hour', String(new Date().getHours()));
+  const out = await request<{ trackIds?: unknown }>(
+    session.url,
+    `/api/dj/preview?${params.toString()}`,
+    { token: session.token, signal, timeoutMs: 20_000 },
+  );
   return Array.isArray(out.trackIds)
     ? out.trackIds.filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
     : [];

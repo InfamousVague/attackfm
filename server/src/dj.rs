@@ -727,7 +727,62 @@ pub async fn station(
         }
     }
 
-    let ask = Ask { seed: &seed, want, curate: false, hour: q.hour, filter: q.filter.as_deref() };
+    let ask = Ask {
+        seed: &seed,
+        want,
+        curate: false,
+        hour: q.hour,
+        filter: q.filter.as_deref(),
+        preview: false,
+    };
+    let reply = build_reply(&state, caller.id, &ask).await?;
+    Ok(Json(reply))
+}
+
+/// `GET /api/dj/preview?seed=&hour=&filter=&count=` - what the seed WOULD
+/// deal, as track ids, so the deck's hero can wear their sleeves before
+/// anyone taps it. The same taste maths and station constraint as a press,
+/// stopped before anything the press writes or buys: no exploration seats,
+/// no impression in the dealt ledger (a peek must not hold the songs back
+/// from the real set), no patter, no voice. The two catalogue doors answer
+/// from their own live build, ids only.
+pub async fn preview(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<DjQuery>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let caller =
+        auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let want = q.count.unwrap_or(4).clamp(2, 8);
+    let seed = q.seed.trim().to_string();
+    let live = match crate::vibes::key_for_seed(&seed) {
+        Some("charts") => Some(crate::vibes::build_charts_reply(&state, caller.id, false).await),
+        Some("newmusic") => Some(crate::vibes::build_new_music_reply(&state, caller.id, false).await),
+        _ => None,
+    };
+    if let Some(body) = live {
+        let ids: Vec<i64> = body
+            .get("blocks")
+            .and_then(|b| b.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|b| b.get("trackIds").and_then(|t| t.as_array()))
+            .flatten()
+            .filter_map(|v| v.as_i64())
+            .take(want)
+            .collect();
+        if !ids.is_empty() {
+            return Ok(Json(json!({ "ai": false, "vibe": seed, "trackIds": ids })));
+        }
+    }
+    let ask = Ask {
+        seed: &seed,
+        want,
+        curate: false,
+        hour: q.hour,
+        filter: q.filter.as_deref(),
+        preview: true,
+    };
     let reply = build_reply(&state, caller.id, &ask).await?;
     Ok(Json(reply))
 }
@@ -745,6 +800,9 @@ pub(crate) struct Ask<'a> {
     pub hour: Option<u32>,
     /// A literal constraint on the pool, when the station has one.
     pub filter: Option<&'a str>,
+    /// A peek, not a press: stop once the picks are chosen and answer their
+    /// ids. Nothing after that point is read-only (see `preview`).
+    pub preview: bool,
 }
 
 /// The whole set, built: picks scored against taste, runs cut, lines written,
@@ -937,6 +995,13 @@ pub(crate) async fn build_reply(
     }
     if picks.is_empty() {
         return Ok(json!({ "ai": false, "vibe": seed, "blocks": [] }));
+    }
+    // A peek stops here: below this line the exploration seats sample, the
+    // dealt ledger records an impression, the model writes patter and the
+    // voice mints beats - all of which a card showing "what you'd get" must
+    // neither buy nor cause.
+    if ask.preview {
+        return Ok(json!({ "ai": false, "vibe": seed, "trackIds": picks }));
     }
 
     /*

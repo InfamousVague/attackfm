@@ -9,7 +9,7 @@ import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { useJamOptional } from './jam.tsx';
 import { startDjRun } from '../booth/djSession.ts';
 import { MOODS } from '../booth/DjLauncher.tsx';
-import { analyzeDjSeed, fetchDjStations, type DjStation } from '../api/dj.ts';
+import { peekDj, fetchDjStations, type DjStation } from '../api/dj.ts';
 import { recentDjAsks } from '../booth/djAsks.ts';
 import { clockInWords } from '../booth/djClock.ts';
 import { artSized, trackIdFromPath } from '../server.ts';
@@ -98,8 +98,8 @@ function useStations(session: ServerSession | null, open: boolean): DjStation[] 
 
 /**
  * What the DJ would deal for the hero's seed - the ids, so the card can wear
- * their sleeves. One ask per seed per hour; a hub that cannot answer a seed
- * (the route's older trait form) leaves the card on its local guess.
+ * their sleeves. One ask per seed per hour; a hub older than the preview
+ * door (0.5.115) answers 404 and the card keeps its local guess.
  */
 function usePeek(
   session: ServerSession | null,
@@ -121,14 +121,14 @@ function usePeek(
       return;
     }
     const ctl = new AbortController();
-    void analyzeDjSeed(session, seed, filter, ctl.signal)
+    void peekDj(session, seed, filter, ctl.signal)
       .then((got) => {
         peekBySeed.set(key, { at: hourStamp(), ids: got });
         if (!ctl.signal.aborted) setIds(got);
       })
       .catch(() => {
-        // Refused or slow: the local guess stays. Not cached, so the next
-        // open asks again in case the hub has caught up.
+        // An older hub or a slow one: the local guess stays. Not cached, so
+        // the next open asks again in case the hub has caught up.
       });
     return () => ctl.abort();
   }, [key, seed, filter, session]);

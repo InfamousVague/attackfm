@@ -15,6 +15,19 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.115
+
+- The DJ button on Now Playing opens a new deck. At the top, "For right now"
+  reads the clock and your hour's best station, and wears the sleeves of what
+  the DJ would actually play - tap to start it. When a song is on, "More like
+  this" starts a set from that artist's corner of your library.
+- Moods are cards now, each with its own icon and colour and three words on
+  what it plays. Your stations scroll underneath, with the things you have
+  asked the DJ for lately, and "Say what you're after" opens the conversation
+  and the mic.
+- In a groove the deck knows who sets the pace: the host's sets go to the
+  room, and a listener who joined sees why they cannot start one.
+
 ## 0.5.114
 
 - The song menu's "More" opens as a sheet on the phone, with every row in

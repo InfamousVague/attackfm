@@ -835,6 +835,7 @@ async fn main() {
         .route("/api/dj/hear", post(dj_voice::hear))
         .route("/api/dj/stations", get(stations::stations))
         .route("/api/dj/analyze", post(dj::analyze_seed))
+        .route("/api/dj/preview", get(dj::preview))
         .route("/api/dj/note", post(dj::set_note))
         .route("/api/dj/queue", post(dj::trait_queue))
         .route("/api/features/status", get(features::status))

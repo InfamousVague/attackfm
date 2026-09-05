@@ -168,7 +168,7 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64, key: &str) {
     } else if key == "newmusic" {
         Ok(build_new_music_reply(state, user, true).await)
     } else {
-        let ask = crate::dj::Ask { seed, want: 15, curate: true, hour: None, filter: None };
+        let ask = crate::dj::Ask { seed, want: 15, curate: true, hour: None, filter: None, preview: false };
         crate::dj::build_reply(state, user, &ask).await
     };
     if let Ok(body) = built {

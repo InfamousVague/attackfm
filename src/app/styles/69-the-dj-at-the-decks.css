@@ -203,14 +203,18 @@
   font-size: var(--glacier-font-size-xs);
   color: var(--glacier-text-muted);
   line-height: 1.35;
-  white-space: nowrap;
+  /* Two lines, not one: at phone width a station's blurb never fit on one
+     and every hero read as "Slow records for a dim ro…". */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* The follower's explanation is a sentence, not a line: let it wrap. */
 .npDjHero__blurb--wrap {
-  white-space: normal;
+  display: block;
+  -webkit-line-clamp: unset;
 }
 
 .npDjHero__play {
@@ -369,13 +373,25 @@
   border-radius: var(--glacier-radius-full);
   display: grid;
   place-items: center;
-  background: hsl(var(--mood-hue, 260) 80% 55% / 0.16);
-  color: hsl(var(--mood-hue, 260) 75% 40%);
-}
-
-[data-theme='dark'] .npDjMood__icon {
   background: hsl(var(--mood-hue, 260) 80% 60% / 0.2);
   color: hsl(var(--mood-hue, 260) 85% 70%);
+}
+
+/* Dark-first, like the rest of the app: the "system" preset REMOVES
+   data-theme from the root (appearance.tsx), so a rule keyed on
+   [data-theme='dark'] never fires for most phones. Light is the override -
+   the media query for the un-stamped root, the attribute for the explicit
+   choice - the same recipe as .aboutHero__mark. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .npDjMood__icon {
+    background: hsl(var(--mood-hue, 260) 80% 55% / 0.16);
+    color: hsl(var(--mood-hue, 260) 75% 40%);
+  }
+}
+
+:root[data-theme='light'] .npDjMood__icon {
+  background: hsl(var(--mood-hue, 260) 80% 55% / 0.16);
+  color: hsl(var(--mood-hue, 260) 75% 40%);
 }
 
 .npDjMood__text {
