@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.109
+
+- The smart shuffle mark is a small circle at the corner of the shuffle icon
+  now, with room around it, and the icon itself matches ordinary shuffle.
+
 ## 0.5.108
 
 - Smart shuffle. Tap shuffle twice for the sparkle: the DJ weaves in songs
