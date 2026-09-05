@@ -37,6 +37,7 @@ import { DownloadNotices } from './notify/DownloadNotices.tsx';
 import { VerboseNotices } from './notify/VerboseNotices.tsx';
 import { FriendNotices } from './notify/FriendNotices.tsx';
 import { ShareNotices } from './notify/ShareNotices.tsx';
+import { PlaylistNotices } from './notify/PlaylistNotices.tsx';
 import { NewMusicNotices } from './notify/NewMusicNotices.tsx';
 import { MusicDateNotices } from './notify/MusicDateNotices.tsx';
 import { SharedPlaylistBridge } from './playlists/SharedPlaylistBridge.tsx';
@@ -56,6 +57,7 @@ import { setArtistDoor } from './nav/artistDoor.ts';
 import { setMusicDateDoor } from './nav/musicDateDoor.ts';
 import { setDownloadsDoor } from './nav/downloadsDoor.ts';
 import { setDiscoverDoor } from './nav/discoverDoor.ts';
+import { setPlaylistDoor } from './nav/playlistDoor.ts';
 import { setNowPlayingPath } from './player/nowPlayingStore.ts';
 import { settingsBack } from './settings/settingsBack.ts';
 import { useNavStack } from './nav/useNavStack.ts';
@@ -494,6 +496,12 @@ export function App() {
     setDiscoverDoor(() => goTab('discover'));
     return () => setDiscoverDoor(null);
   }, [goTab]);
+  // A playlist's opener, for the "shared a playlist with you" and "added to"
+  // rows - the bell has no prop path to goPlaylist either.
+  useEffect(() => {
+    setPlaylistDoor(goPlaylist);
+    return () => setPlaylistDoor(null);
+  }, [goPlaylist]);
 
   /*
    * Which of the app's two standing glyphs the header carries here.
@@ -917,6 +925,10 @@ export function App() {
                 waits for an answer, so it rings either way. */}
             <FriendNotices />
             <ShareNotices />
+            {/* The same kind of news, one step further in: a friend shared a
+                LIST with you, or added to one you share. Addressed, so it
+                rings either way; polled off the hub's own ledger. */}
+            <PlaylistNotices />
             {/* The discovery pair: the app's own background work - the shelf of
                 new music picked for you, and the Music Date pool filling -
                 turned into a nudge instead of something you had to open the

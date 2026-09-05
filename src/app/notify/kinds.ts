@@ -11,7 +11,20 @@
 //! back to its own id rather than vanishing, which is what the pane has always
 //! done and what lets the server add one without a frontend release.
 
-import { Bell, Bot, Compass, Disc3, Download, Scissors, Sparkles, TriangleAlert, Users } from '@glacier/icons';
+import {
+  Bell,
+  Bot,
+  Compass,
+  Disc3,
+  Download,
+  ListMinus,
+  ListPlus,
+  Scissors,
+  Sparkles,
+  TriangleAlert,
+  UserMinus,
+  Users,
+} from '@glacier/icons';
 import type { ComponentType } from 'react';
 
 export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
@@ -49,6 +62,18 @@ export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
     label: 'New to discover',
     hint: 'When the discovery shelf has fresh music picked for your taste.',
   },
+  // Shared playlists - local-only kinds, raised by the client's
+  // PlaylistNotices watcher off the hub's own activity ledger. Addressed to
+  // you (a friend chose YOUR name to share with, and adds to a list you are
+  // on), so they ring whether or not verbose is on, like a friend request.
+  'playlist-shared': {
+    label: 'Shared playlists',
+    hint: 'When a friend shares a playlist with you.',
+  },
+  'playlist-add': {
+    label: 'Playlist additions',
+    hint: 'When somebody adds songs to a playlist you share.',
+  },
   // ---- verbose kinds: local-only, behind the device's "verbose" switch ----
   // These never appear in the server's push list (set_pref would 400 on
   // them) and are raised by the client's own watchers, like 'failed'. Each
@@ -74,6 +99,21 @@ export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
   ai: {
     label: 'AI finished',
     hint: 'When a background AI pass completes, with what it did.',
+  },
+  // The quiet half of the shared-playlist news: a song taken out, somebody
+  // leaving, a list taken away. Housekeeping rather than an offer, so it
+  // sits behind the same switch as the machine's own chatter.
+  'playlist-removed': {
+    label: 'Playlist removals',
+    hint: 'When somebody takes a song out of a playlist you share.',
+  },
+  'playlist-left': {
+    label: 'Playlist departures',
+    hint: 'When somebody leaves a playlist you share.',
+  },
+  'playlist-unshared': {
+    label: 'Playlist withdrawn',
+    hint: 'When a friend stops sharing a playlist with you.',
   },
 };
 
@@ -101,7 +141,15 @@ export function noticeGlyph(kind: string): ComponentType<{ size?: number }> {
     case 'newmusic':
       return Compass;
     case 'friends':
+    case 'playlist-shared':
       return Users;
+    case 'playlist-add':
+      return ListPlus;
+    case 'playlist-removed':
+      return ListMinus;
+    case 'playlist-left':
+    case 'playlist-unshared':
+      return UserMinus;
     case 'download-started':
       return Download;
     case 'stems-started':

@@ -37,6 +37,8 @@ import { useFollowNowPlaying } from '../player/nowPlayingStore.ts';
 import { usePlaylists } from './playlists.tsx';
 import { CoverWall } from './CoverWall.tsx';
 import { notePlaylistPlayed } from './playlistRecency.ts';
+import { markSharedSeen } from './sharedSeen.ts';
+import { dismissNotice } from '../notify/notices.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
@@ -125,6 +127,20 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   useEffect(() => {
     if (!playlist) onGone();
   }, [playlist, onGone]);
+
+  // Opening a list somebody shared with you is what accepts the invitation:
+  // the New badge on the Library's "Shared with you" tile comes off, and the
+  // bell's standing "shared a playlist with you" row is taken down. Keyed on
+  // the strings, not the object, for the reason the suggestions effect
+  // below gives - the store hands back a fresh object every render.
+  const sharedWithMe = !!playlist && !playlist.origin && playlist.role !== undefined && playlist.role !== 'owner';
+  const sharedHub = session?.url ?? '';
+  const openedId = playlist?.id;
+  useEffect(() => {
+    if (!sharedWithMe || !openedId) return;
+    markSharedSeen(sharedHub, openedId);
+    dismissNotice(`playlist-shared:${openedId}`);
+  }, [sharedWithMe, sharedHub, openedId]);
 
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
 

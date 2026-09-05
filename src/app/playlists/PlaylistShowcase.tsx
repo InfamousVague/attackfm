@@ -12,12 +12,15 @@ import {
   Pencil,
   Plus,
   Trash2,
+  Users,
   X,
 } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { OnRepeatChip } from '../library/OnRepeatChip.tsx';
 import { usePlaylists, type Playlist } from './playlists.tsx';
+import { sharedSeenKey, useSharedSeen } from './sharedSeen.ts';
+import { useServerSession } from '../servers/serverSession.tsx';
 import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
@@ -79,21 +82,39 @@ export function MosaicCover({ tracks, fallback, tone }: { tracks: Track[]; fallb
 function Tile({
   cover,
   name,
+  caption,
+  fresh,
   onOpen,
   onDelete,
   menu,
 }: {
   cover: ReactNode;
   name: string;
+  /** A quiet second line under the name - whose list this is, on a shared one. */
+  caption?: string;
+  /** Wears a New badge: a list shared with you that this device has not opened. */
+  fresh?: boolean;
   onOpen: () => void;
   onDelete?: () => void;
   /** Extra items above Delete - the playlist options the page's own menu has. */
   menu?: ReactNode;
 }) {
   const tile = (
-    <button type="button" className="playlistTile" onClick={onOpen}>
+    <button
+      type="button"
+      className="playlistTile"
+      data-fresh={fresh || undefined}
+      aria-label={fresh ? `${name}, new` : undefined}
+      onClick={onOpen}
+    >
       {cover}
+      {fresh && (
+        <span className="playlistTileBadge" aria-hidden>
+          New
+        </span>
+      )}
       <span className="playlistTileName">{name}</span>
+      {caption && <span className="playlistTileCaption">{caption}</span>}
     </button>
   );
   if (!onDelete && !menu) return tile;
@@ -248,6 +269,11 @@ export function PlaylistShowcase({
   // removeTrack went with the strip's modal - shedding a row was only ever
   // offered there, and Recent never offered it at all.
   const { playlists, create, remove, rename, setMeta, setCover, setAutoStem } = usePlaylists();
+  // Which shared lists this device has opened - the New badge is the
+  // complement. The hub scopes the ledger, since two hubs both have a list 7.
+  const { session } = useServerSession();
+  const hub = session?.url ?? '';
+  const seenShared = useSharedSeen();
   /*
    * Hold a tile for its menu - and let go without opening the playlist.
    *
@@ -370,7 +396,7 @@ export function PlaylistShowcase({
    * folder gets its own labelled grid underneath, in alphabetical order - a
    * folder's position should not move when you play something inside it.
    */
-  const { loose, foldered, generated, elsewhere } = useMemo(() => {
+  const { loose, foldered, generated, elsewhere, shared } = useMemo(() => {
     const sorted = [...playlists].sort(
       (a, b) =>
         Math.max(b.createdAt, playlistPlayedAt(b.id)) -
@@ -383,11 +409,22 @@ export function PlaylistShowcase({
     // into the loose grid would put two "Gym" lists side by side with no way
     // to tell whose box each one plays from.
     const hubs = new Map<string, typeof sorted>();
+    // Lists a friend on THIS hub shared with you. `role` is the server's own
+    // answer to "is the owner somebody else" - it is set on every list from a
+    // hub that shares, 'owner' on yours and 'editor'/'viewer' on theirs - so
+    // no second request for the caller's id is needed. They leave the loose
+    // grid: a friend's list among your own, with the friend's folder name
+    // over it, was the "invites are invisible" complaint in one picture.
+    const theirs: typeof sorted = [];
     for (const p of sorted) {
       if (p.origin) {
         const bucket = hubs.get(p.origin);
         if (bucket) bucket.push(p);
         else hubs.set(p.origin, [p]);
+        continue;
+      }
+      if (p.role !== undefined && p.role !== 'owner') {
+        theirs.push(p);
         continue;
       }
       if (!p.folder) {
@@ -412,8 +449,14 @@ export function PlaylistShowcase({
         label: serverLabelFor(origin) ?? 'Another server',
         lists,
       })),
+      // The ones not yet opened first: that is the invitation the section
+      // exists to show, and it should be at the thumb rather than wherever
+      // the owner's last edit left it among lists you have already seen.
+      shared: theirs
+        .map((p) => ({ p, fresh: !seenShared.has(sharedSeenKey(hub, p.id)) }))
+        .sort((a, b) => Number(b.fresh) - Number(a.fresh)),
     };
-  }, [playlists]);
+  }, [playlists, seenShared, hub]);
 
   // Real sleeves for the two whole-library doors, for the Real covers style.
   // On repeat has no list of its own here, so it wears the library's own
@@ -500,6 +543,48 @@ export function PlaylistShowcase({
               both are yours by your own hand or your own habit. (All songs
               and Music Date moved to Discover - by request.) */}
           <OnRepeatChip onOpenSongs={onOpenSongs} />
+        </div>
+      </section>
+      )}
+
+      {/* Lists friends shared with you, ahead of your own: an invitation
+          should be the first thing on the shelf, not a tile you have to
+          recognise as not yours. Each says whose it is, and wears New until
+          this device has opened it - opening is what accepts the invitation,
+          and it also takes the bell's row away. Read-only tiles - no hold
+          menu, no delete: renaming, filing and covers are the owner's, and
+          leaving lives on the page, beside the list it leaves. Absent when
+          there are none. */}
+      {show === 'personal' && shared.length > 0 && (
+      <section className="homeShelf" data-shelf="shared">
+        <h2 className="homeShelfTitle">
+          <Users size={15} className="showcaseFolderGlyph" aria-hidden />
+          Shared with you
+          <span className="showcaseFolderCount">{shared.length}</span>
+        </h2>
+        <div className="showcaseGrid">
+          {shared.map(({ p: playlist, fresh }) => (
+            <Tile
+              key={playlist.id}
+              name={playlist.name}
+              caption={`by ${playlist.ownerName ?? 'a friend'}`}
+              fresh={fresh}
+              cover={
+                playlist.coverUrl ? (
+                  <div className="tileSquircle tileRecent" aria-hidden>
+                    <img className="tileChosenCover" src={playlist.coverUrl} alt="" loading="lazy" />
+                  </div>
+                ) : (
+                  <MosaicCover
+                    tracks={playlist.paths.map((p) => byPath.get(p)).filter((t): t is Track => t !== undefined)}
+                    fallback={<ListMusic size={24} />}
+                    tone="tileRecent"
+                  />
+                )
+              }
+              onOpen={() => onOpenPlaylist(playlist.id)}
+            />
+          ))}
         </div>
       </section>
       )}

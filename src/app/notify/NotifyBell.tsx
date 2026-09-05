@@ -4,9 +4,11 @@ import { Bell, Download, Trash2, X } from '@glacier/icons';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { noticeGlyph } from './kinds.ts';
 import { clearNotices, dismissNotice, markAllRead, msOf, useNotices, useUnreadKinds, useUnreadNotices } from './notices.ts';
+import type { Notice, NoticeDoor } from './notices.ts';
 import { useHasDownloadQueue } from '../../plugins/runtime/pluginHooks.tsx';
 import { discoverDoorOpen, openDiscover } from '../nav/discoverDoor.ts';
 import { musicDateDoorOpen, openMusicDate } from '../nav/musicDateDoor.ts';
+import { openPlaylistById, playlistDoorOpen } from '../nav/playlistDoor.ts';
 
 /**
  * The bell, and the news behind it.
@@ -228,7 +230,7 @@ export function NotifyBell({
                  * the download queue happened to be empty - which is nearly
                  * always.
                  */
-                canOpen={canOpenDoor(n.door, hasQueue, onOpenFriends != null)}
+                canOpen={canOpenDoor(n.door, hasQueue, onOpenFriends != null, n.playlist)}
                 onOpen={() => {
                   setOpen(false);
                   if (n.door === 'downloads') onOpenDownloads();
@@ -238,6 +240,10 @@ export function NotifyBell({
                   // bell needs no handler threaded down to it for either.
                   else if (n.door === 'discover') openDiscover();
                   else if (n.door === 'date') openMusicDate();
+                  // A shared list, or one somebody added to: the page itself,
+                  // through the same kind of seam. Opening it is also what
+                  // marks the share seen and takes this row away.
+                  else if (n.door === 'playlist' && n.playlist) openPlaylistById(n.playlist);
                 }}
               />
             ))}
@@ -278,9 +284,10 @@ export function NotifyBell({
  * asking keeps a stale row from a build that had neither honest).
  */
 function canOpenDoor(
-  door: 'downloads' | 'friends' | 'discover' | 'date' | null,
+  door: NoticeDoor,
   hasQueue: boolean,
   hasFriends: boolean,
+  playlist: string | undefined,
 ): boolean {
   switch (door) {
     case 'downloads':
@@ -291,6 +298,10 @@ function canOpenDoor(
       return discoverDoorOpen();
     case 'date':
       return musicDateDoorOpen();
+    case 'playlist':
+      // A row that names no list (an older shape, or a hand-edited ring)
+      // cannot be a door to one.
+      return !!playlist && playlistDoorOpen();
     default:
       return false;
   }
@@ -303,7 +314,7 @@ function NoticeRow({
   onOpen,
 }: {
   canOpen: boolean;
-  notice: { id: string; at: number; kind: string; title: string; body: string; art: string | null; door: 'downloads' | 'friends' | 'discover' | 'date' | null };
+  notice: Notice;
   unseen: boolean;
   onOpen: () => void;
 }) {

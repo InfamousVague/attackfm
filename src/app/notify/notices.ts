@@ -53,7 +53,13 @@ export interface Notice {
   /** Cover for the row, already an app URL. Null draws the kind's glyph. */
   art: string | null;
   /** Where a press lands, or null for a line of news with nowhere to go. */
-  door: 'downloads' | 'friends' | 'discover' | 'date' | null;
+  door: NoticeDoor;
+  /**
+   * The playlist a `'playlist'` door opens - the store's id (`Playlist.id`).
+   * Only ever set beside that door; a playlist row without it has nowhere to
+   * go and is drawn unpressable.
+   */
+  playlist?: string;
   /**
    * The one song this news is about, when it is about one - a single-track
    * landing. It rides into the OS notification's extra payload, so tapping
@@ -62,6 +68,9 @@ export interface Notice {
   song?: { title: string; artist: string };
   read: boolean;
 }
+
+/** Where a row can land. `'playlist'` carries its target in `Notice.playlist`. */
+export type NoticeDoor = 'downloads' | 'friends' | 'discover' | 'date' | 'playlist' | null;
 
 /** What `noteNotice` is given: the row, minus the bookkeeping it does itself. */
 export type NewNotice = Omit<Notice, 'read' | 'at'> & { at?: number };
@@ -115,9 +124,11 @@ function load(): Notice[] {
           e.door === 'downloads' ||
           e.door === 'friends' ||
           e.door === 'discover' ||
-          e.door === 'date'
+          e.door === 'date' ||
+          e.door === 'playlist'
             ? e.door
             : null,
+        ...(typeof e.playlist === 'string' ? { playlist: e.playlist } : {}),
         ...(e.song && typeof e.song.title === 'string'
           ? { song: { title: e.song.title, artist: String(e.song.artist ?? '') } }
           : {}),
@@ -212,6 +223,7 @@ export function noteNotice(n: NewNotice): void {
     body: clamp(n.body),
     art: n.art,
     door: n.door,
+    ...(n.playlist ? { playlist: n.playlist } : {}),
     ...(n.song ? { song: n.song } : {}),
     read: false,
   };

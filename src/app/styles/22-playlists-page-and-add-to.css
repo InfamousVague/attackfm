@@ -1251,6 +1251,47 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ---- Shared with you -----------------------------------------------------
+   A friend's list on your shelf says whose it is under the name, and wears
+   New on the cover's corner until this device has opened it. The badge is
+   the accent ramp, not a colour of its own, so it reads as the same "new"
+   the bell's dot means; a hairline of shadow keeps it legible over a bright
+   cover in either theme. The caption is the name's quieter twin: same
+   clamp, muted, one size down. The tile needs a positioning context for
+   the badge and had none - it is a bare column - so it gains one here. */
+.playlistTile {
+  position: relative;
+}
+
+.playlistTileCaption {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  /* Tighter to the name than the name is to the cover: they are one label. */
+  margin-block-start: calc(-1 * var(--glacier-space-1) / 2);
+}
+
+.playlistTileBadge {
+  position: absolute;
+  inset-block-start: var(--glacier-space-2);
+  inset-inline-end: var(--glacier-space-2);
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-contrast, #fff);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
+
 /* ---- A cover somebody chose ---------------------------------------------
    Fills the same squircle frame the mosaic uses, so a playlist with a picture
    and one without still read as the same kind of tile. */
