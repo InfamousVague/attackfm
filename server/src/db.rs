@@ -2155,6 +2155,14 @@ impl Db {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// The raw connection, for a test in ANOTHER module that has to age a row
+    /// or plant a column no public writer sets - `added_at`, most often, so a
+    /// track can be older than the process that inserted it. Test builds only.
+    #[cfg(test)]
+    pub(crate) fn lock_for_test(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.lock()
+    }
+
     // --- meta -------------------------------------------------------------
 
     pub fn meta_get(&self, key: &str) -> Option<String> {

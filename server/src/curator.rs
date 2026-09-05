@@ -950,25 +950,41 @@ pub(crate) fn score(f: &TrackFeatures, taste: &Taste) -> f32 {
 /// scores the same neutral value, an un-enriched library ties in blocks and
 /// the tail of every list was "the oldest rows", which reads as random.
 pub(crate) fn take_spread(mut ranked: Vec<(f32, &TrackFeatures)>, n: usize, cap: usize) -> Vec<i64> {
+    let mut per_artist: HashMap<String, usize> = HashMap::new();
+    spread_pick(&mut ranked, n, cap, &mut per_artist)
+        .into_iter()
+        .map(|(_, f)| f.track_id)
+        .collect()
+}
+
+/// The walk under `take_spread`, with the artist counter handed IN so several
+/// lanes of one reply can share it: smart shuffle fills three lists that are
+/// dealt as one, and a cap kept per lane would let one artist take two of
+/// each. Picks are DRAINED out of `ranked`, so what is left can be offered a
+/// second time when another lane comes up short.
+fn spread_pick<'a>(
+    ranked: &mut Vec<(f32, &'a TrackFeatures)>,
+    n: usize,
+    cap: usize,
+    per_artist: &mut HashMap<String, usize>,
+) -> Vec<(f32, &'a TrackFeatures)> {
     ranked.sort_by(|a, b| {
         b.0.partial_cmp(&a.0)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| b.1.added_at.cmp(&a.1.added_at))
             .then_with(|| b.1.track_id.cmp(&a.1.track_id))
     });
-    let mut per_artist: HashMap<String, usize> = HashMap::new();
     let mut out = Vec::new();
-    for (_, f) in ranked {
-        let key = f.artist.to_lowercase();
+    let mut i = 0;
+    while i < ranked.len() && out.len() < n {
+        let key = ranked[i].1.artist.to_lowercase();
         let count = per_artist.entry(key).or_insert(0);
         if *count >= cap {
+            i += 1;
             continue;
         }
         *count += 1;
-        out.push(f.track_id);
-        if out.len() >= n {
-            break;
-        }
+        out.push(ranked.remove(i));
     }
     out
 }
@@ -1837,19 +1853,207 @@ pub struct EnhanceBody {
     pub count: Option<usize>,
 }
 
-/// `POST /api/queue/enhance` - songs that belong in THIS queue but are not in
-/// it yet.
+// --- smart shuffle: what the DJ mixes into THIS queue ------------------------
+
+/// Which door a smart-shuffle pick came in through. The listener asked for a
+/// DJ that "mixes on new music and top repeated songs and fills what we're
+/// listening to with similar music" - three reasons to reach for a song that
+/// is not on the queue, and the client shows which one applied.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Lane {
+    /// Sounds like what is playing.
+    Similar,
+    /// New to this listener: just landed, never met, or their own audition.
+    New,
+    /// On repeat: came back to it this fortnight, or heavy rotation this month.
+    Repeat,
+}
+
+impl Lane {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Lane::Similar => "similar",
+            Lane::New => "new",
+            Lane::Repeat => "repeat",
+        }
+    }
+}
+
+/// The two pools that name a lane, gathered from the ledger for one
+/// listener. Everything else a candidate can be is "similar".
+#[derive(Default)]
+pub(crate) struct LanePools {
+    pub(crate) new: HashSet<i64>,
+    pub(crate) repeat: HashSet<i64>,
+}
+
+/// A song they came back to inside this window is "on repeat".
+const REPEAT_WINDOW_MS: i64 = 14 * 24 * 60 * 60 * 1000;
+/// An arrival inside this window is "new" - a bound the newest-N query does
+/// not carry on its own. Without it every song in a library under `NEW_POOL`
+/// rows is "new", the repeat and similar lanes never see a candidate, and a
+/// small hub's smart shuffle is the recently-added shelf wearing a DJ's hat.
+const NEW_WINDOW_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+/// How far down the recently-added and never-played shelves to read.
+const NEW_POOL: i64 = 200;
+/// How many of the month's most-played count as heavy rotation.
+const REPEAT_TOP: i64 = 60;
+
+/// What is new and what is on repeat for one listener, from the ledger.
 ///
-/// The playlist suggester above answers the same question for a saved
-/// playlist, by its id. Smart shuffle needs it for whatever happens to be
+/// New: the library's recent arrivals this listener may hear (their own
+/// pending auditions included, another member's not - `recently_added_for`
+/// already draws that line), what they have never played, and their own
+/// unadopted auditions outright - the collector fetched those FOR them, and
+/// there is no newer music in the building. Repeat: songs they returned to
+/// this fortnight, and the month's heavy rotation.
+pub(crate) fn lane_pools(
+    db: &crate::db::Db,
+    caller: i64,
+    all: &[TrackFeatures],
+    now: i64,
+) -> LanePools {
+    let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
+    let arrived_lately = |id: &i64| by_id.get(id).map_or(false, |f| f.added_at >= now - NEW_WINDOW_MS);
+    let mut new: HashSet<i64> =
+        db.recently_added_for(caller, NEW_POOL).into_iter().filter(arrived_lately).collect();
+    new.extend(db.unplayed(caller, NEW_POOL));
+    new.extend(
+        all.iter()
+            .filter(|f| f.quarantined && f.curator_user_id == Some(caller))
+            .map(|f| f.track_id),
+    );
+    let mut repeat: HashSet<i64> = db.recent_repeats(caller, now - REPEAT_WINDOW_MS).into_keys().collect();
+    repeat.extend(db.top_plays(caller, now - WINDOW_30D_MS, REPEAT_TOP).into_iter().map(|(id, _)| id));
+    LanePools { new, repeat }
+}
+
+/// How `n` picks split across the lanes: (similar, new, repeat). Half of the
+/// deal sounds like the queue, a quarter is new, and the rest is on repeat -
+/// six picks are three, one and two.
+pub(crate) fn lane_quotas(n: usize) -> (usize, usize, usize) {
+    let similar = n.div_ceil(2);
+    let new = n / 4;
+    (similar, new, n - similar - new)
+}
+
+/// The picks for one queue, each with the lane it came through, best fit
+/// first.
+///
+/// Fit is two questions blended: does it sound like what is PLAYING (the
+/// queue's own centroid, the term the old enhancer was built on), and does
+/// this LISTENER like it (their verdict-trained model, when they have given
+/// it enough to go on). 0.6 to the queue, because the request was "fill what
+/// we're listening to", and 0.4 to the person, so two members playing the
+/// same album are not dealt the same six songs.
+///
+/// A candidate is any live track not on the queue, never a book, not
+/// something this listener dismissed lately, and not another member's
+/// unadopted audition - the caller's OWN auditions are allowed, and are the
+/// newest music they have. Each lane takes its quota by fit; a song that is
+/// both new and on repeat is new; a lane that comes up short hands the
+/// shortfall to similar, and only when similar cannot fill either do the
+/// other two overflow, so a tiny library still gets a full deal. One shared
+/// artist counter runs across all three lanes: no artist twice in a lane,
+/// and none more than twice in the reply.
+pub(crate) fn smart_lanes(
+    queue: &[i64],
+    all: &[TrackFeatures],
+    user_taste: Option<&crate::taste::UserTaste>,
+    rejections: &Rejections,
+    caller: i64,
+    pools: &LanePools,
+    want: usize,
+) -> Vec<(i64, Lane)> {
+    let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
+    let queue_taste = taste_from(queue, &by_id);
+    let on_queue: HashSet<i64> = queue.iter().copied().collect();
+
+    let mut similar: Vec<(f32, &TrackFeatures)> = Vec::new();
+    let mut new: Vec<(f32, &TrackFeatures)> = Vec::new();
+    let mut repeat: Vec<(f32, &TrackFeatures)> = Vec::new();
+    for f in all {
+        if on_queue.contains(&f.track_id)
+            || f.kind == "book"
+            || rejections.blocks(f)
+            || (f.quarantined && f.curator_user_id != Some(caller))
+        {
+            continue;
+        }
+        let queue_fit = score(f, &queue_taste);
+        let fit = match user_taste {
+            Some(t) => 0.6 * queue_fit + 0.4 * crate::taste::score(f, t),
+            None => queue_fit,
+        };
+        if pools.new.contains(&f.track_id) {
+            new.push((fit, f));
+        } else if pools.repeat.contains(&f.track_id) {
+            repeat.push((fit, f));
+        } else {
+            similar.push((fit, f));
+        }
+    }
+
+    /// One lane's turn: up to `n` of its best, under the shared artist cap.
+    fn deal(
+        lane: &mut Vec<(f32, &TrackFeatures)>,
+        n: usize,
+        tag: Lane,
+        per_artist: &mut HashMap<String, usize>,
+        picks: &mut Vec<(f32, i64, Lane)>,
+    ) {
+        for (fit, f) in spread_pick(lane, n, PER_ARTIST_CAP, per_artist) {
+            picks.push((fit, f.track_id, tag));
+        }
+    }
+
+    let (_, q_new, q_repeat) = lane_quotas(want);
+    let mut per_artist: HashMap<String, usize> = HashMap::new();
+    let mut picks: Vec<(f32, i64, Lane)> = Vec::new();
+    // The two named lanes first, so similar's share is whatever they left -
+    // its own quota plus their shortfall.
+    deal(&mut new, q_new, Lane::New, &mut per_artist, &mut picks);
+    deal(&mut repeat, q_repeat, Lane::Repeat, &mut per_artist, &mut picks);
+    let short = want.saturating_sub(picks.len());
+    deal(&mut similar, short, Lane::Similar, &mut per_artist, &mut picks);
+    // Similar could not fill either: the named lanes may overflow.
+    let short = want.saturating_sub(picks.len());
+    deal(&mut new, short, Lane::New, &mut per_artist, &mut picks);
+    let short = want.saturating_sub(picks.len());
+    deal(&mut repeat, short, Lane::Repeat, &mut per_artist, &mut picks);
+
+    picks.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.1.cmp(&a.1))
+    });
+    picks.into_iter().map(|(_, id, lane)| (id, lane)).collect()
+}
+
+/// The wire shape: `trackIds` as it always was, so a client that predates
+/// the lanes still reads a flat list, and `lanes` beside it keyed by id.
+pub(crate) fn enhance_reply(picks: &[(i64, Lane)], ai: bool) -> serde_json::Value {
+    let ids: Vec<i64> = picks.iter().map(|(id, _)| *id).collect();
+    let lanes: serde_json::Map<String, serde_json::Value> =
+        picks.iter().map(|(id, lane)| (id.to_string(), json!(lane.as_str()))).collect();
+    json!({ "trackIds": ids, "lanes": lanes, "ai": ai })
+}
+
+/// `POST /api/queue/enhance` - smart shuffle: songs that belong in THIS queue
+/// but are not in it yet, each tagged with why.
+///
+/// The playlist suggester above answers "what else belongs here" for a saved
+/// playlist, by its id. Smart shuffle asks it of whatever happens to be
 /// playing - an album, a Liked list, a DJ set, a hand-built queue that was
-/// never saved anywhere - so this takes the ids directly. Same shape of
-/// answer, same taste model, same spread across artists.
+/// never saved - so this takes the ids directly. The answer is three lanes
+/// (`smart_lanes`): what sounds like the queue, what is new to the listener,
+/// and what they have on repeat, scored against the queue AND the listener's
+/// own model rather than the queue alone.
 ///
-/// Quarantined auditions are excluded, the way every other list-building path
-/// learned to (an audition is a judgement not yet made), and every returned
-/// track is logged as a DJ impression so a mixed-in song that gets finished
-/// or hearted teaches the same ledger the exploration slots read.
+/// Body `{trackIds, count?}` -> `{trackIds, lanes: {id: "similar"|"new"|
+/// "repeat"}, ai}`. Every returned track is logged as a DJ impression under
+/// its own slot, so a mixed-in song that gets finished or hearted teaches the
+/// same ledger the exploration slots read.
 pub async fn enhance_queue(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1857,31 +2061,405 @@ pub async fn enhance_queue(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let caller =
         auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let ai = ai_url().is_some();
 
     // Under three songs a queue has no character to match, and suggestions
     // would be noise wearing a confident label - the same floor the playlist
     // suggester uses.
     if body.track_ids.len() < 3 {
-        return Ok(Json(json!({ "trackIds": [], "ai": ai_url().is_some() })));
+        return Ok(Json(enhance_reply(&[], ai)));
     }
     let want = body.count.unwrap_or(6).clamp(1, 12);
-    let all = state.db.all_features();
-    let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
-    let taste = taste_from(&body.track_ids, &by_id);
-    let on_queue: HashSet<i64> = body.track_ids.iter().copied().collect();
-
-    let ranked: Vec<(f32, &TrackFeatures)> = all
-        .iter()
-        .filter(|f| !on_queue.contains(&f.track_id) && !f.quarantined)
-        .map(|f| (score(f, &taste), f))
-        .collect();
-    let ids = take_spread(ranked, want, PER_ARTIST_CAP);
+    let now = now_ms();
+    // The listener's model when they have one; the library either way.
+    let (user_taste, all) = match user_taste_for(&state, caller.id) {
+        Some((taste, all)) => (Some(taste), all),
+        None => (None, state.db.all_features()),
+    };
+    let rejections = Rejections::load(&state.db, caller.id, now);
+    let pools = lane_pools(&state.db, caller.id, &all, now);
+    let picks = smart_lanes(
+        &body.track_ids,
+        &all,
+        user_taste.as_ref(),
+        &rejections,
+        caller.id,
+        &pools,
+        want,
+    );
 
     let offered: Vec<(i64, &str, i64)> =
-        ids.iter().enumerate().map(|(i, id)| (*id, "enhance", i as i64)).collect();
+        picks.iter().enumerate().map(|(i, (id, _))| (*id, "enhance", i as i64)).collect();
     state.db.record_dj_impressions(caller.id, &offered);
 
-    Ok(Json(json!({ "trackIds": ids, "ai": ai_url().is_some() })))
+    Ok(Json(enhance_reply(&picks, ai)))
+}
+
+#[cfg(test)]
+mod smart_shuffle {
+    //! The three lanes, and the doors a candidate must pass through.
+
+    use super::*;
+
+    fn feat(id: i64, artist: &str, bpm: f64) -> TrackFeatures {
+        TrackFeatures {
+            track_id: id,
+            artist: artist.into(),
+            title: format!("song{id}"),
+            bpm: Some(bpm),
+            genre: "rock".into(),
+            ..Default::default()
+        }
+    }
+
+    /// A queue of three 120bpm rock songs by three artists, ids 1-3.
+    fn queue_feats() -> Vec<TrackFeatures> {
+        vec![feat(1, "Q1", 120.0), feat(2, "Q2", 120.0), feat(3, "Q3", 120.0)]
+    }
+
+    fn deal(all: &[TrackFeatures], pools: &LanePools, want: usize) -> Vec<(i64, Lane)> {
+        smart_lanes(&[1, 2, 3], all, None, &Rejections::default(), 7, pools, want)
+    }
+
+    fn lane_of(picks: &[(i64, Lane)], id: i64) -> Option<Lane> {
+        picks.iter().find(|(i, _)| *i == id).map(|(_, l)| *l)
+    }
+
+    fn count(picks: &[(i64, Lane)], lane: Lane) -> usize {
+        picks.iter().filter(|(_, l)| *l == lane).count()
+    }
+
+    #[test]
+    fn quotas_are_half_a_quarter_and_the_rest() {
+        assert_eq!(lane_quotas(6), (3, 1, 2));
+        assert_eq!(lane_quotas(1), (1, 0, 0));
+        assert_eq!(lane_quotas(4), (2, 1, 1));
+        assert_eq!(lane_quotas(12), (6, 3, 3));
+        for n in 1..=12 {
+            let (s, nw, r) = lane_quotas(n);
+            assert_eq!(s + nw + r, n);
+        }
+    }
+
+    /// Six picks with plenty in every lane: three similar, one new, two on
+    /// repeat - and every id is in exactly one lane.
+    #[test]
+    fn six_picks_deal_three_one_and_two() {
+        let mut all = queue_feats();
+        for id in 10..30 {
+            all.push(feat(id, &format!("S{id}"), 120.0));
+        }
+        let pools = LanePools {
+            new: (10..15).collect(),
+            repeat: (15..20).collect(),
+        };
+        let picks = deal(&all, &pools, 6);
+        assert_eq!(picks.len(), 6, "{picks:?}");
+        assert_eq!(count(&picks, Lane::Similar), 3, "{picks:?}");
+        assert_eq!(count(&picks, Lane::New), 1, "{picks:?}");
+        assert_eq!(count(&picks, Lane::Repeat), 2, "{picks:?}");
+        let ids: HashSet<i64> = picks.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids.len(), 6, "no id twice: {picks:?}");
+        for (id, lane) in &picks {
+            let expect = if pools.new.contains(id) {
+                Lane::New
+            } else if pools.repeat.contains(id) {
+                Lane::Repeat
+            } else {
+                Lane::Similar
+            };
+            assert_eq!(*lane, expect, "{id} is in the lane its pool names");
+        }
+    }
+
+    /// Nothing new in the building: similar takes the new lane's seat, so the
+    /// deal is still six.
+    #[test]
+    fn similar_absorbs_a_short_lane() {
+        let mut all = queue_feats();
+        for id in 10..30 {
+            all.push(feat(id, &format!("S{id}"), 120.0));
+        }
+        let pools = LanePools { new: HashSet::new(), repeat: (15..20).collect() };
+        let picks = deal(&all, &pools, 6);
+        assert_eq!(picks.len(), 6);
+        assert_eq!(count(&picks, Lane::Similar), 4, "{picks:?}");
+        assert_eq!(count(&picks, Lane::New), 0);
+        assert_eq!(count(&picks, Lane::Repeat), 2);
+
+        // And when similar has nothing either, the named lanes overflow
+        // rather than the deal coming up short.
+        let pools = LanePools { new: (10..30).collect(), repeat: HashSet::new() };
+        let picks = deal(&all, &pools, 6);
+        assert_eq!(picks.len(), 6, "{picks:?}");
+        assert_eq!(count(&picks, Lane::New), 6);
+    }
+
+    /// A song that is both new and on repeat is new.
+    #[test]
+    fn new_outranks_repeat_when_a_song_is_both() {
+        let mut all = queue_feats();
+        for id in 10..20 {
+            all.push(feat(id, &format!("S{id}"), 120.0));
+        }
+        let pools = LanePools { new: [10].into(), repeat: [10, 11].into() };
+        let picks = deal(&all, &pools, 6);
+        assert_eq!(lane_of(&picks, 10), Some(Lane::New), "{picks:?}");
+        assert_eq!(lane_of(&picks, 11), Some(Lane::Repeat), "{picks:?}");
+    }
+
+    /// The doors: a book never, a dismissed artist never, another member's
+    /// audition never - and the caller's own audition can, as new.
+    #[test]
+    fn books_rejections_and_strangers_auditions_are_never_dealt() {
+        let mut all = queue_feats();
+        let mut book = feat(10, "Narrator", 120.0);
+        book.kind = "book".into();
+        all.push(book);
+        all.push(feat(11, "Bad Band", 120.0));
+        let mut theirs = feat(12, "Theirs", 120.0);
+        theirs.quarantined = true;
+        theirs.curator_user_id = Some(99);
+        all.push(theirs);
+        let mut mine = feat(13, "Mine", 120.0);
+        mine.quarantined = true;
+        mine.curator_user_id = Some(7);
+        all.push(mine);
+        all.push(feat(14, "Plain", 120.0));
+
+        let rejections = Rejections {
+            artists: [crate::discovery::artist_key_public("Bad Band")].into(),
+            tracks: HashSet::new(),
+        };
+        let pools = LanePools { new: [10, 11, 12, 13].into(), repeat: HashSet::new() };
+        let picks = smart_lanes(&[1, 2, 3], &all, None, &rejections, 7, &pools, 6);
+        let ids: Vec<i64> = picks.iter().map(|(id, _)| *id).collect();
+        assert!(!ids.contains(&10), "a book is never dealt: {picks:?}");
+        assert!(!ids.contains(&11), "a dismissed artist is never dealt: {picks:?}");
+        assert!(!ids.contains(&12), "another member's audition is never dealt: {picks:?}");
+        assert_eq!(lane_of(&picks, 13), Some(Lane::New), "my own audition is new music: {picks:?}");
+        assert!(ids.contains(&14));
+        assert!(!ids.iter().any(|id| [1, 2, 3].contains(id)), "never the queue itself");
+    }
+
+    /// One artist counter for the whole deal: a favourite with a song in
+    /// every lane still gets at most two of the six.
+    #[test]
+    fn no_artist_more_than_twice_across_the_reply() {
+        let mut all = queue_feats();
+        // "Fav" sits in every lane with the best possible fit (the queue's
+        // own tempo); the rest are off-tempo filler.
+        for id in 10..16 {
+            all.push(feat(id, "Fav", 120.0));
+        }
+        for id in 20..40 {
+            all.push(feat(id, &format!("F{id}"), 60.0));
+        }
+        let pools = LanePools {
+            new: [10, 11, 20, 21, 22].into(),
+            repeat: [12, 13, 23, 24, 25].into(),
+        };
+        let picks = deal(&all, &pools, 6);
+        assert_eq!(picks.len(), 6, "{picks:?}");
+        let favs = picks.iter().filter(|(id, _)| (10..16).contains(id)).count();
+        assert_eq!(favs, 2, "at most two by one artist in the reply: {picks:?}");
+    }
+
+    /// Best fit first, whatever the lane - a client that only reads
+    /// `trackIds` gets the closest match at the top, as before.
+    #[test]
+    fn the_reply_is_ordered_by_fit() {
+        let mut all = queue_feats();
+        all.push(feat(10, "Near", 120.0));
+        all.push(feat(11, "Far", 60.0));
+        all.push(feat(12, "Mid", 100.0));
+        let picks = deal(&all, &LanePools::default(), 3);
+        let ids: Vec<i64> = picks.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids, vec![10, 12, 11]);
+    }
+
+    /// The listener's own model moves the fit when they have one.
+    #[test]
+    fn the_listeners_model_is_blended_in() {
+        let mut all = queue_feats();
+        all.push(feat(10, "Loved", 100.0));
+        all.push(feat(11, "Unknown", 110.0));
+        // Tempo alone: 11 is nearer the queue's 120, and leads.
+        let plain = deal(&all, &LanePools::default(), 2);
+        assert_eq!(plain[0].0, 11);
+        // A listener whose model is all scene, and who returns to "Loved":
+        // their 0.4 outweighs the queue's 0.6 on a ten-bpm difference.
+        let mut taste = crate::taste::UserTaste::cold(7);
+        taste.weights = crate::taste::Weights::from_array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+        taste.artists.insert(crate::taste::artist_key("Loved"), 1.0);
+        taste.artists.insert(crate::taste::artist_key("Unknown"), -1.0);
+        let with = smart_lanes(&[1, 2, 3], &all, Some(&taste), &Rejections::default(), 7, &LanePools::default(), 2);
+        assert_eq!(with[0].0, 10, "{with:?}");
+    }
+
+    /// Old clients still read `trackIds`; new ones read `lanes` beside it.
+    #[test]
+    fn the_wire_shape_keeps_track_ids_and_adds_lanes() {
+        let reply = enhance_reply(&[(10, Lane::Similar), (11, Lane::New), (12, Lane::Repeat)], false);
+        assert_eq!(reply["trackIds"], json!([10, 11, 12]));
+        assert_eq!(reply["lanes"]["10"], "similar");
+        assert_eq!(reply["lanes"]["11"], "new");
+        assert_eq!(reply["lanes"]["12"], "repeat");
+        assert_eq!(reply["ai"], false);
+        let empty = enhance_reply(&[], true);
+        assert_eq!(empty["trackIds"], json!([]));
+        assert_eq!(empty["lanes"], json!({}));
+    }
+
+    // --- the pools, read off a real ledger ----------------------------------
+
+    fn temp_db(name: &str) -> crate::db::Db {
+        let dir = std::env::temp_dir().join(format!("afm-smart-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::db::Db::open(&dir.join("t.sqlite")).unwrap()
+    }
+
+    fn track(db: &crate::db::Db, rel: &str, artist: &str) -> i64 {
+        let t = crate::db::ScannedTrack {
+            rel_path: rel.into(),
+            title: rel.into(),
+            artist: artist.into(),
+            album_artist: artist.into(),
+            album: "Al".into(),
+            track_no: None,
+            disc_no: None,
+            year: None,
+            genre: "rock".into(),
+            lyrics: String::new(),
+            duration_ms: Some(200_000),
+            codec: "flac".into(),
+            lossless: true,
+            sample_rate: None,
+            bit_depth: None,
+            channels: None,
+            bitrate: None,
+            size_bytes: 1,
+            mtime: 1,
+            art_id: None,
+            chapters: String::new(),
+        };
+        db.upsert_track(&t, 1).unwrap();
+        db.track_id_by_path(rel).unwrap()
+    }
+
+    /// Ages a track, and any plays of it, so it is neither a recent arrival
+    /// nor this month's heavy rotation.
+    fn age(db: &crate::db::Db, id: i64, days: i64) {
+        let at = now_ms() - days * 86_400_000;
+        let conn = db.lock_for_test();
+        conn.execute("UPDATE tracks SET added_at = ?2 WHERE id = ?1", rusqlite::params![id, at])
+            .unwrap();
+        conn.execute("UPDATE plays SET played_at = ?2 WHERE track_id = ?1", rusqlite::params![id, at])
+            .unwrap();
+    }
+
+    fn listen(db: &crate::db::Db, user: i64, id: i64, ago_ms: i64) {
+        let tags = (format!("t{id}"), "A".to_string(), "Al".to_string(), String::new());
+        db.insert_listen(
+            user,
+            id,
+            &tags,
+            now_ms() - ago_ms,
+            200_000,
+            Some(200_000),
+            true,
+            false,
+            "album",
+            &crate::db::ListenShape::default(),
+        )
+        .unwrap();
+    }
+
+    /// A track that landed this week is new; one that landed last year and
+    /// has been played is not.
+    #[test]
+    fn a_new_arrival_lands_in_lane_new() {
+        let db = temp_db("arrival");
+        let me = db.create_user("me", "x", true).unwrap();
+        let mut ids = Vec::new();
+        for i in 0..8 {
+            ids.push(track(&db, &format!("q{i}.flac"), &format!("A{i}")));
+        }
+        let fresh = track(&db, "fresh.flac", "Fresh");
+        // Everything but the fresh one is old and already met, long ago.
+        for id in &ids {
+            db.record_play(me, *id).unwrap();
+            age(&db, *id, 400);
+        }
+        let all = db.all_features();
+        let pools = lane_pools(&db, me, &all, now_ms());
+        assert!(pools.new.contains(&fresh), "this week's arrival is new");
+        assert!(!pools.new.contains(&ids[3]), "an old, played song is not");
+
+        let picks = smart_lanes(&ids[..3], &all, None, &Rejections::default(), me, &pools, 6);
+        assert_eq!(lane_of(&picks, fresh), Some(Lane::New), "{picks:?}");
+        assert_eq!(lane_of(&picks, ids[4]), Some(Lane::Similar), "{picks:?}");
+    }
+
+    /// A song they came back to twice this fortnight is on repeat.
+    #[test]
+    fn a_repeat_lands_in_lane_repeat() {
+        let db = temp_db("repeat");
+        let me = db.create_user("me", "x", true).unwrap();
+        let mut ids = Vec::new();
+        for i in 0..8 {
+            let id = track(&db, &format!("q{i}.flac"), &format!("A{i}"));
+            db.record_play(me, id).unwrap();
+            age(&db, id, 400);
+            ids.push(id);
+        }
+        let loved = ids[5];
+        listen(&db, me, loved, 2 * 86_400_000);
+        listen(&db, me, loved, 5 * 86_400_000);
+        let all = db.all_features();
+        let pools = lane_pools(&db, me, &all, now_ms());
+        assert!(pools.repeat.contains(&loved), "two sittings this fortnight is a repeat");
+        assert!(!pools.new.contains(&loved));
+
+        let picks = smart_lanes(&ids[..3], &all, None, &Rejections::default(), me, &pools, 6);
+        assert_eq!(lane_of(&picks, loved), Some(Lane::Repeat), "{picks:?}");
+        assert_eq!(count(&picks, Lane::Repeat), 1);
+        // Eight songs, three on the queue, one on repeat: the four left are
+        // similar, and the deal is five - the library ran out, not the lanes.
+        assert_eq!(count(&picks, Lane::Similar), 4, "similar took the rest: {picks:?}");
+        assert_eq!(picks.len(), 5);
+    }
+
+    /// A never-played song is new to this listener, and a dismissed artist
+    /// stays out even when it is - the ledger's rejection, not a hand-built
+    /// one.
+    #[test]
+    fn unplayed_is_new_and_a_ledger_rejection_holds() {
+        let db = temp_db("unplayed");
+        let me = db.create_user("me", "x", true).unwrap();
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            let id = track(&db, &format!("q{i}.flac"), &format!("A{i}"));
+            db.record_play(me, id).unwrap();
+            age(&db, id, 400);
+            ids.push(id);
+        }
+        let never = track(&db, "never.flac", "Never Met");
+        age(&db, never, 400);
+        let dismissed = track(&db, "no.flac", "Bad Band");
+        age(&db, dismissed, 400);
+        db.reject_discovery(me, "artist", &crate::discovery::artist_key_public("Bad Band"));
+
+        let all = db.all_features();
+        let now = now_ms();
+        let pools = lane_pools(&db, me, &all, now);
+        assert!(pools.new.contains(&never), "never played is new");
+        let rejections = Rejections::load(&db, me, now);
+        let picks = smart_lanes(&ids[..3], &all, None, &rejections, me, &pools, 6);
+        assert_eq!(lane_of(&picks, never), Some(Lane::New), "{picks:?}");
+        assert!(lane_of(&picks, dismissed).is_none(), "a dismissed artist is never dealt: {picks:?}");
+    }
 }
 
 #[cfg(test)]
