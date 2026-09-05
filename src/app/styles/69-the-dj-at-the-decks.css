@@ -1,29 +1,24 @@
 /* --- the DJ at the decks --------------------------------------------------
  *
- * The Now Playing action row's DJ seat: the panel a tap opens, wearing the
- * Booth's vocabulary at popover scale. The set it starts is app-level state
+ * The Now Playing action row's DJ seat: the panel a tap opens, a small deck
+ * of cards at popover scale. The set it starts is app-level state
  * (djSession); nothing here owns playback.
+ *
+ * Every colour is a token, and the accent ramp on this screen is the
+ * album's own tint - so the hero's wash, the play disc and the countdown
+ * all take the record's colour without a rule here knowing it. The moods
+ * are the one exception by design: each carries its OWN hue (set on the
+ * card as --mood-hue), so six moods read as six things.
  */
 
 /* The PANEL owns the width and the content fills it exactly - the first cut
    sized the content instead, and inside the kit's wider panel it huddled
    left with a void on the right. Same discipline as the EQ's panel above
-   it in the cascade: one width, declared once, on the box that draws. */
+   it in the cascade: one width, declared once, on the box that draws.
+   Height, scrolling and the gesture contract come from .popoverSheet. */
 .npDjPanel {
   inline-size: min(22rem, calc(100vw - 2rem));
   padding: var(--glacier-space-3);
-}
-
-/* While the set is cueing the panel carries one small disc and a line - it
-   does not need the chips' full spread. :has() lets the PANEL notice what
-   it holds, since its class is fixed at the trigger. */
-.npDjPanel:has(.npDjCue) {
-  /* Explicit, and important: the kit's panel carries its own width voice
-     and the cueing state must win it. */
-  inline-size: 15rem !important;
-  width: 15rem !important;
-  min-inline-size: 0 !important;
-  min-width: 0 !important;
 }
 
 .npDj {
@@ -31,45 +26,231 @@
   flex-direction: column;
   gap: var(--glacier-space-3);
   inline-size: 100%;
+  min-inline-size: 0;
 }
 
-.npDj__chips {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--glacier-space-2);
-}
-
-/* The cueing face: a record spinning while the set is cut. The rim is a
-   conic fill driven by --cue (0..1) - the countdown made shape - and the
-   label swaps between the falling number and a patient ellipsis. All of it
-   drinks the accent tokens, so a set cued from an album-tinted screen
-   counts down in that album's colour. */
-
-.npDjCue {
+.npDjSection {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: var(--glacier-space-2);
-  padding: var(--glacier-space-2);
+  min-inline-size: 0;
 }
 
-.npDjCue__disc {
+.npDjSection__label {
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+/* ── One card, many faces ──────────────────────────────────────────────
+   Every tappable thing in the deck is a .npDjCard: a raised surface, a
+   hairline, the accent on hover, a press that gives. A real <button> in
+   every case, so the name it carries (aria-label says what a tap does) is
+   the name a screen reader announces. 44px is the floor on every one. */
+.npDjCard {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  text-align: start;
+  color: var(--glacier-text);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  /* 44px is the floor, in pixels: the app's root rem is under 16px, and a
+     card sized in rem alone came in two pixels short of a thumb. */
+  min-block-size: max(2.75rem, 44px);
+  min-inline-size: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--glacier-duration-fast) var(--glacier-ease-out),
+    border-color var(--glacier-duration-fast) var(--glacier-ease-out),
+    opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.npDjCard:hover:not(:disabled) {
+  border-color: var(--glacier-accent-7);
+}
+
+.npDjCard:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.npDjCard:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+.npDjCard:disabled {
+  cursor: default;
+}
+
+/* While the hero is cueing, the rest of the deck stands down: dimmed, not
+   hidden, so the panel keeps its shape and nothing jumps when the needle
+   drops. A follower's deck (data-locked) reads the same way for the same
+   reason - the hero says why. */
+.npDj[data-cueing] .npDjCard:not(.npDjHero),
+.npDj[data-locked] .npDjCard:not(.npDjHero) {
+  opacity: 0.45;
+}
+
+/* ── 1. For right now ──────────────────────────────────────────────────
+   Art first: the 2x2 of what the DJ would play, then the clock in words,
+   the station's name, its line, and one play disc. The wash behind it is
+   the accent's soft step, so on an album-tinted screen the card sits in
+   the record's own colour. */
+.npDjHero {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-2);
+  background: linear-gradient(135deg, var(--glacier-accent-soft), var(--glacier-surface-raised) 72%);
+  border-color: var(--glacier-accent-border);
+}
+
+.npDjHero--locked {
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  cursor: default;
+}
+
+.npDjHero__art {
   position: relative;
-  inline-size: 4.25rem;
-  block-size: 4.25rem;
+  inline-size: 5.5rem;
+  block-size: 5.5rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  /* Squircle clipping on a grid of imgs: the corners have to be cut on the
+     wrapper, and Safari needs the isolation to actually cut them. */
+  isolation: isolate;
+  flex: none;
+}
+
+.npDjMosaic {
+  display: grid;
+  inline-size: 100%;
+  block-size: 100%;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 0;
+  transition:
+    filter var(--glacier-duration-normal) var(--glacier-ease-out),
+    opacity var(--glacier-duration-normal) var(--glacier-ease-out);
+}
+
+.npDjMosaic[data-n='1'] {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.npDjMosaic img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.npDjMosaic--blank {
+  place-items: center;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* The cueing face: the mosaic goes down, the ring comes up on top of it. */
+.npDjHero__art[data-dim] .npDjMosaic {
+  filter: saturate(0.35) brightness(0.55);
+}
+
+.npDjHero__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.npDjHero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--glacier-accent-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.npDjHero__title {
+  font-size: var(--glacier-font-size-md);
+  font-weight: var(--glacier-font-weight-bold);
+  line-height: 1.2;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.npDjHero__blurb {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The follower's explanation is a sentence, not a line: let it wrap. */
+.npDjHero__blurb--wrap {
+  white-space: normal;
+}
+
+.npDjHero__play {
+  inline-size: max(2.75rem, 44px);
+  block-size: max(2.75rem, 44px);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-contrast);
+  display: grid;
+  place-items: center;
+  flex: none;
+  box-shadow: var(--glacier-shadow-1);
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.npDjHero:hover:not(:disabled) .npDjHero__play {
+  transform: scale(1.06);
+}
+
+.npDjHero:disabled .npDjHero__play {
+  opacity: 0.5;
+}
+
+/* ── The countdown ring, on the hero's face ────────────────────────────
+   A quiet rail and a fill whose dashoffset the component walks down with
+   the seconds; the number sits in a pill of the panel's own surface so it
+   reads over the dimmed sleeves in either theme. The stroke is thick enough
+   to read across a phone held at arm's length. */
+.npDjCue {
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
 }
 
-/* The ring is the countdown made shape: a quiet rail, and a fill whose
-   dashoffset the component walks down with the seconds. The stroke is
-   thick enough to read across a phone held at arm's length - the conic
-   rim this replaces was not. */
 .npDjCue__ring {
   position: absolute;
-  inset: 0;
-  inline-size: 100%;
-  block-size: 100%;
+  inset: 5%;
+  inline-size: 90%;
+  block-size: 90%;
 }
 
 .npDjCue__rail {
@@ -87,17 +268,282 @@
 }
 
 .npDjCue__num {
-  font-size: var(--glacier-font-size-xl);
+  position: relative;
+  min-inline-size: 2rem;
+  block-size: 2rem;
+  padding-inline: 0.4em;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface);
+  color: var(--glacier-accent-text);
+  font-size: var(--glacier-font-size-lg);
   font-weight: var(--glacier-font-weight-bold);
   font-variant-numeric: tabular-nums;
-  color: var(--glacier-accent-text);
-  position: relative;
+  display: grid;
+  place-items: center;
+  box-shadow: var(--glacier-shadow-1);
 }
 
-.npDjCue__line {
+/* ── 2. More like this ─────────────────────────────────────────────────
+   The song on the deck as a station of one: its sleeve, its name, and the
+   line that says where the set will wander. */
+.npDjLike {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-2);
+}
+
+.npDjLike__art {
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: var(--glacier-radius-md);
+  object-fit: cover;
+  flex: none;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  display: grid;
+  place-items: center;
+}
+
+.npDjLike__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.npDjLike__title {
   font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.npDjLike__blurb {
+  font-size: var(--glacier-font-size-xs);
   color: var(--glacier-text-muted);
-  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.npDjLike__go {
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+/* ── 3. Moods ──────────────────────────────────────────────────────────
+   Two columns of compact cards: a tinted disc holding the mood's glyph,
+   the label, three words under it. The tint is the card's own --mood-hue
+   at a low alpha over the surface, and the glyph the same hue at a
+   readable lightness - two lightnesses, one per theme, because a 45%
+   colour that sings on white is mud on near-black. */
+.npDjMoods {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--glacier-space-2);
+}
+
+.npDjMood {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  min-block-size: 3.25rem;
+}
+
+.npDjMood__icon {
+  flex: none;
+  inline-size: 2.125rem;
+  block-size: 2.125rem;
+  border-radius: var(--glacier-radius-full);
+  display: grid;
+  place-items: center;
+  background: hsl(var(--mood-hue, 260) 80% 55% / 0.16);
+  color: hsl(var(--mood-hue, 260) 75% 40%);
+}
+
+[data-theme='dark'] .npDjMood__icon {
+  background: hsl(var(--mood-hue, 260) 80% 60% / 0.2);
+  color: hsl(var(--mood-hue, 260) 85% 70%);
+}
+
+.npDjMood__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+}
+
+.npDjMood__label {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Three words wrap to two lines on a narrow phone rather than lose their
+   third to an ellipsis - "slow, warm, un..." says less than nothing. */
+.npDjMood__hint {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ── 4. Your stations ──────────────────────────────────────────────────
+   The rest of the hub's dial, run along sideways. Bled to the panel's
+   edges (the negative margin undoes the panel's padding, the padding puts
+   it back inside the scroller) so the edge fade lands where the panel
+   ends, not a gutter short of it. Its own touch-action: the panel is
+   pan-y, and a row that inherits that cannot be dragged along. */
+.npDjStations {
+  gap: var(--glacier-space-2);
+  margin-inline: calc(-1 * var(--glacier-space-3));
+  padding-inline: var(--glacier-space-3);
+  padding-block: 2px;
+  touch-action: pan-x pan-y;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: var(--glacier-space-3);
+}
+
+.npDjStation {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  inline-size: 9.5rem;
+  padding: var(--glacier-space-2);
+  scroll-snap-align: start;
+}
+
+.npDjStation__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: var(--glacier-space-1);
+}
+
+.npDjStation__art {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  flex: none;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  display: grid;
+  place-items: center;
+}
+
+/* The mark of a station a model named, as opposed to one the play log did. */
+.npDjStation__ai {
+  color: var(--glacier-accent-text);
+  opacity: 0.85;
+  display: inline-flex;
+}
+
+.npDjStation__name {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.2;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.npDjStation__blurb {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ── 5. Recent asks ────────────────────────────────────────────────────
+   The listener's own last three briefs, as pills with a history glyph. */
+.npDjAsks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.npDjAsk {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  max-inline-size: 100%;
+  padding-inline: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-full);
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text);
+}
+
+.npDjAsk > svg {
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+.npDjAsk > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 6. Talk ───────────────────────────────────────────────────────────
+   One full-width row at the foot: the conversation and its microphone. */
+.npDjTalk {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  min-block-size: max(3rem, 48px);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+}
+
+.npDjTalk__glyphs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  color: var(--glacier-accent-text);
+  flex: none;
+}
+
+.npDjTalk__label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .npDjCard,
+  .npDjHero__play,
+  .npDjMosaic,
+  .npDjCue__fill {
+    transition: none;
+  }
 }
 
 

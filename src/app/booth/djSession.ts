@@ -75,8 +75,11 @@ export async function startDjRun(
   session: ServerSession,
   library: Track[],
   seed = '',
+  /** A station's literal constraint (`unplayed`, `genre:{g}`, `artist:{a}`)
+   *  - the pool the set is dealt from, where the seed is only a steer. */
+  opts: { filter?: string } = {},
 ): Promise<{ queue: Track[]; ai: boolean }> {
-  const reply = await fetchDj(session, seed);
+  const reply = await fetchDj(session, seed, undefined, opts);
   const byId = new Map<number, Track>();
   for (const t of library) {
     const id = trackIdFromPath(t.path);

@@ -29,18 +29,28 @@ import djMascot from '../../assets/dj-mascot.webp';
 /** The Booth's steering row: each chip is a whole brief, one tap from sound.
  *  The seeds mirror the server's own mood-mix recipes, so the chip and the
  *  curated shelf speak the same dialect. */
-export const MOODS: { label: string; seed: string; Icon: typeof Waves }[] = [
-  { label: 'Chill', seed: 'something chill and unhurried', Icon: Waves },
-  { label: 'Energy', seed: 'high energy, turn it up', Icon: Flame },
-  { label: 'Late night', seed: 'late night, low lights', Icon: MoonStar },
-  { label: 'Focus', seed: 'steady focus, no distractions', Icon: Lightbulb },
+export const MOODS: {
+  label: string;
+  seed: string;
+  Icon: typeof Waves;
+  /** Three words under the label, where a card has room for them (the Now
+   *  Playing deck): what the mood sounds like, not what it is called. */
+  hint: string;
+  /** The mood's own colour, as a hue the card tints its glyph with - six
+   *  moods, six hues, so the deck reads as six things and not six pills. */
+  hue: number;
+}[] = [
+  { label: 'Chill', seed: 'something chill and unhurried', Icon: Waves, hint: 'slow, warm, unhurried', hue: 196 },
+  { label: 'Energy', seed: 'high energy, turn it up', Icon: Flame, hint: 'loud, fast, lit', hue: 18 },
+  { label: 'Late night', seed: 'late night, low lights', Icon: MoonStar, hint: 'dim, deep, after-hours', hue: 262 },
+  { label: 'Focus', seed: 'steady focus, no distractions', Icon: Lightbulb, hint: 'steady, even, wordless', hue: 44 },
   // The charts: what everyone is playing, from what is already on the box -
   // owned hits plus the collector's pre-downloaded chart auditions. The seed
   // string is the server's vibe contract (vibes.rs), verbatim.
-  { label: 'Charts', seed: 'the charts right now', Icon: TrendingUp },
+  { label: 'Charts', seed: 'the charts right now', Icon: TrendingUp, hint: 'big, now, everywhere', hue: 334 },
   // New music: the dates waiting to meet you and the arrivals you have not
   // heard, dates leading. Same contract discipline - the seed IS the key.
-  { label: 'New music', seed: 'the new music waiting for me', Icon: Sparkles },
+  { label: 'New music', seed: 'the new music waiting for me', Icon: Sparkles, hint: 'fresh, unheard, yours', hue: 150 },
 ];
 
 export function DjLauncher({

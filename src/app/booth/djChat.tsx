@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { noteDjAsk } from './djAsks.ts';
 import type { ConversationViewProps } from '@glacier/react';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -190,6 +191,9 @@ export function DjChatProvider({
       // in front of it only muddied what the server embeds.
       const seed = lastAsk.current && !opts?.station ? `${lastAsk.current}. ${text}` : text;
       lastAsk.current = text;
+      // The listener's OWN words, remembered for the deck's "recent asks" -
+      // a station tap is the hub's sentence, not theirs, and is not kept.
+      if (!opts?.station) noteDjAsk(text);
       setBusy(true);
       void fetchDj(session, seed, 24, { filter: opts?.filter })
         .then((reply) => {
