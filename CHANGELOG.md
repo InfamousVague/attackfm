@@ -15,6 +15,16 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.106
+
+- Share a playlist with anyone on your server. The share sheet now lists
+  everyone here, friends first; being on the server is the invitation. It used
+  to file a housemate whose attack.fm name differed from their username under
+  "not on this server" and point you at the link, which only makes a copy.
+- Open a shared playlist by pasting its link or typing its code into Search -
+  the same door a tapped link opens, for phones where the link only launches
+  the app.
+
 ## 0.5.105
 
 - Music Date is back at the top of Discover as the card with the big
