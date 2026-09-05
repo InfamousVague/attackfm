@@ -213,18 +213,24 @@
   min-block-size: 2.75rem;
 }
 
+/* The smart badge: a filled accent circle at the icon's corner, with a ring
+   of the surface behind it so it never bleeds into the arrows, and a white
+   sparkle inside - the same drawing a solid button uses. The shuffle glyph
+   itself keeps plain shuffle-on's colour: smart is the same control one
+   step further, and the badge is the whole of the difference. (It used to
+   be a bare accent-tinted sparkle over an accent-tinted glyph, which read as
+   a smudge on the icon rather than a mark beside it.) */
 .shuffleGlyph__spark {
   position: absolute;
-  inset-block-start: -3px;
-  inset-inline-end: -5px;
-  color: var(--glacier-accent-text);
-}
-
-/* The lit state a mode this quiet still needs: shuffle's own `data-on` tint
-   plus the accent, so smart reads as further along the same control rather
-   than as a different button. */
-[data-smart] .shuffleGlyph {
-  color: var(--glacier-accent-text);
+  inset-block-start: -7px;
+  inset-inline-end: -9px;
+  inline-size: 16px;
+  block-size: 16px;
+  padding: 3px;
+  border-radius: 50%;
+  background: var(--glacier-accent-solid);
+  color: #fff;
+  box-shadow: 0 0 0 2px var(--glacier-bg);
 }
 
 /* The same sparkle on the mini strip, drawn rather than composed: the strip's
