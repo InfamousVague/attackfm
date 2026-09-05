@@ -245,15 +245,81 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The panel wears the same padding the equalizer's does (.eqPopoverPanel):
+   the kit's default is a menu's, and this is a room, not a menu. */
+.jamPanel {
+  padding: var(--glacier-space-3);
+}
 .jamPanel__body {
   display: flex;
   flex-direction: column;
-  gap: var(--glacier-space-2);
-  min-inline-size: 13rem;
+  gap: var(--glacier-space-3);
+  min-inline-size: 17rem;
+  max-inline-size: 20rem;
 }
 
 .jamPanel__title {
   font-weight: 650;
+  font-size: var(--glacier-font-size-md, 1rem);
+  line-height: 1.2;
+}
+.jamPanel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+.jamPanel__glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--glacier-accent-solid) 18%, transparent);
+  color: var(--glacier-accent-text);
+}
+.jamPanel__glyph[data-live] {
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-on-accent, #fff);
+}
+.jamPanel__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.jamPanel__sub {
+  line-height: 1.35;
+}
+.jamPanel__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding-block-start: var(--glacier-space-3);
+  border-block-start: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+.jamPanel__label {
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+.jamPanel__memberText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+}
+.jamPanel__memberName {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 550;
+}
+.jamPanel__memberMeta {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
 }
 
 .jamPanel__who {
@@ -270,6 +336,7 @@
   align-items: center;
   gap: var(--glacier-space-2);
   min-inline-size: 0;
+  min-block-size: 2rem;
 }
 
 .jamPanel__member span {
@@ -281,16 +348,25 @@
 .jamPanel__host {
   margin-inline-start: auto;
   flex: none;
+  padding: 2px var(--glacier-space-2);
+  border-radius: 999px;
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--glacier-text-muted);
+  background: color-mix(in srgb, var(--glacier-accent-solid) 18%, transparent);
+  color: var(--glacier-accent-text);
 }
 
 .jamPanel__actions {
   display: flex;
-  justify-content: flex-end;
+  gap: var(--glacier-space-2);
+  padding-block-start: var(--glacier-space-3);
+  border-block-start: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+.jamPanel__actions > * {
+  flex: 1 1 0;
+  min-inline-size: 0;
 }
 
 /* The room's own face, when the song has no cover to lend it.
@@ -318,7 +394,7 @@
   align-items: center;
   gap: var(--glacier-space-2);
   min-inline-size: 0;
-  font-size: var(--glacier-font-size-xs);
+  font-size: var(--glacier-font-size-sm);
   color: var(--glacier-text);
 }
 
@@ -335,9 +411,12 @@
 .jamPanel__pass {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--glacier-space-2);
-  flex-wrap: wrap;
+  padding-block-start: var(--glacier-space-3);
+  border-block-start: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+.jamPanel__pass > :last-child {
+  margin-inline-start: auto;
 }
 
 /* ── The groove's pending line (QueuePanel) ─────────────────────────────────

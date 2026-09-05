@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Button, IconButton, Popover, Text } from '@glacier/react';
-import { Music, Share2, User, Users } from '@glacier/icons';
+import { Music, Share2, Users } from '@glacier/icons';
 import { useJamOptional } from './jam.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { ShareJamSheet } from './ShareJam.tsx';
+import { FriendAvatar } from '../profile/RegistryFriends.tsx';
 
 /**
  * Who else is hearing this, on the screen where you are hearing it.
@@ -80,18 +81,25 @@ export function JamBadge() {
         }
       >
         <div className="jamPanel__body">
-          <span className="jamPanel__title">Groove</span>
-          <Text tone="muted" size="xs">
-            Play the same thing at the same time. Whoever starts it sets the pace;
-            everyone else follows along, and anyone can add to the queue.
-          </Text>
+          <div className="jamPanel__head">
+            <span className="jamPanel__glyph" aria-hidden>
+              <Users size={18} />
+            </span>
+            <div className="jamPanel__heading">
+              <span className="jamPanel__title">Groove</span>
+              <Text tone="muted" size="xs" className="jamPanel__sub">
+                Play the same thing at the same time. Whoever starts it sets the
+                pace; everyone follows, and anyone can add to the queue.
+              </Text>
+            </div>
+          </div>
           {failed && (
             <Text tone="danger" size="xs">
               This server could not start a groove. It may be running an older build.
             </Text>
           )}
           <div className="jamPanel__actions">
-            <Button variant="solid" size="sm" disabled={busy} onClick={() => void startJam()}>
+            <Button variant="solid" size="sm" fullWidth disabled={busy} onClick={() => void startJam()}>
               {busy ? 'Starting…' : 'Start a groove'}
             </Button>
           </div>
@@ -100,15 +108,18 @@ export function JamBadge() {
               reason Start is: this is where you are when you would want it. */}
           {joinable.length > 0 && (
             <>
-              <span className="jamPanel__title">Live now</span>
+              <div className="jamPanel__section">
+              <span className="jamPanel__label">Live now</span>
               <ul className="jamPanel__who">
                 {joinable.map((r) => (
                   <li key={r.id} className="jamPanel__member">
-                    <User size={13} aria-hidden />
-                    <span>
-                      {r.hostName}
-                      {r.memberCount > 1 ? ` · ${r.memberCount} inside` : ''}
-                      {r.trackTitle ? ` · ${r.trackTitle}` : ''}
+                    <FriendAvatar handle={r.hostName} size="sm" />
+                    <span className="jamPanel__memberText">
+                      <span className="jamPanel__memberName">{r.hostName}</span>
+                      <span className="jamPanel__memberMeta">
+                        {r.memberCount > 1 ? `${r.memberCount} inside` : 'alone so far'}
+                        {r.trackTitle ? ` · ${r.trackTitle}` : ''}
+                      </span>
                     </span>
                     <Button
                       variant="ghost"
@@ -122,6 +133,7 @@ export function JamBadge() {
                   </li>
                 ))}
               </ul>
+              </div>
             </>
           )}
         </div>
@@ -165,45 +177,59 @@ export function JamBadge() {
       }
     >
       <div className="jamPanel__body">
-        <span className="jamPanel__title">
-          {jam.hosting ? 'Your groove' : `${room.hostName}'s groove`}
-        </span>
-        <Text tone="muted" size="xs">
-          {room.memberCount === 1
-            ? 'Just you so far'
-            : `${room.memberCount} listening${others === 1 ? ' — one other' : ''}`}
-          {jam.hosting ? ' · you set the pace' : ' · following along'}
-          {room.hostQuiet && !jam.hosting ? ' · the host has gone quiet' : ''}
-        </Text>
+        <div className="jamPanel__head">
+          <span className="jamPanel__glyph" data-live aria-hidden>
+            <Users size={18} />
+          </span>
+          <div className="jamPanel__heading">
+            <span className="jamPanel__title">
+              {jam.hosting ? 'Your groove' : `${room.hostName}'s groove`}
+            </span>
+            <Text tone="muted" size="xs" className="jamPanel__sub">
+              {room.memberCount === 1
+                ? 'Just you so far'
+                : `${room.memberCount} listening${others === 1 ? ' — one other' : ''}`}
+              {jam.hosting ? ' · you set the pace' : ' · following along'}
+              {room.hostQuiet && !jam.hosting ? ' · the host has gone quiet' : ''}
+            </Text>
+          </div>
+        </div>
 
         {/* What the room is hearing, by name - the one line a member whose
             library lacks the song still gets, instead of silence. */}
         {room.trackTitle && (
-          <span className="jamPanel__now">
-            <Music size={13} aria-hidden />
-            <span>
-              {room.trackTitle}
-              {room.trackArtist ? ` · ${room.trackArtist}` : ''}
-              {room.playing ? '' : ' · paused'}
+          <div className="jamPanel__section">
+            <span className="jamPanel__label">{room.playing ? 'Playing' : 'Paused'}</span>
+            <span className="jamPanel__now">
+              <Music size={14} aria-hidden />
+              <span>
+                {room.trackTitle}
+                {room.trackArtist ? ` · ${room.trackArtist}` : ''}
+              </span>
             </span>
-          </span>
+          </div>
         )}
 
         {/* Named, not just counted. "3 listening" tells you the room is busy;
             the names tell you whose evening you are in - and who has been
             here longest, which is who the clock passes to. */}
         {(room.people?.length ?? room.members.length) > 0 && (
-          <ul className="jamPanel__who">
-            {(room.people ?? room.members.map((name, i) => ({ id: i, name, host: name === room.hostName, joinedAt: 0, seenAt: 0 }))).map((p) => (
-              <li key={p.id} className="jamPanel__member">
-                {/* One person per row, so the group glyph stays the ROOM's mark
-                    and never stands next to a single name. */}
-                <User size={13} aria-hidden />
-                <span>{p.name}</span>
-                {p.host && <span className="jamPanel__host">host</span>}
-              </li>
-            ))}
-          </ul>
+          <div className="jamPanel__section">
+            <span className="jamPanel__label">In the groove</span>
+            <ul className="jamPanel__who">
+              {(room.people ?? room.members.map((name, i) => ({ id: i, name, host: name === room.hostName, joinedAt: 0, seenAt: 0 }))).map((p) => (
+                <li key={p.id} className="jamPanel__member">
+                  {/* One person per row, with their face: the group glyph stays
+                      the ROOM's mark and never stands next to a single name. */}
+                  <FriendAvatar handle={p.name} size="sm" />
+                  <span className="jamPanel__memberText">
+                    <span className="jamPanel__memberName">{p.name}</span>
+                  </span>
+                  {p.host && <span className="jamPanel__host">Host</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {/* Two ways to hand the room over, and they are for different people.
@@ -227,7 +253,7 @@ export function JamBadge() {
               Code {room.id.toUpperCase()}
             </button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => setSharing(true)}>
+          <Button variant="outline" size="sm" onClick={() => setSharing(true)}>
             <Share2 size={14} />
             Share link
           </Button>
@@ -237,8 +263,8 @@ export function JamBadge() {
           {/* A host has two exits: hand the room on, or close it. Leaving
               used to end it for everyone, which is the one thing a host
               stepping out for a moment never meant. */}
-          <Button variant="ghost" size="sm" onClick={() => void jam.leave()}>
-            {jam.hosting && room.memberCount > 1 ? 'Leave (hand it on)' : 'Leave'}
+          <Button variant="outline" size="sm" onClick={() => void jam.leave()}>
+            {jam.hosting && room.memberCount > 1 ? 'Leave, hand it on' : 'Leave'}
           </Button>
           {jam.hosting && room.memberCount > 1 && (
             <Button variant="ghost" size="sm" onClick={() => void jam.end()}>
