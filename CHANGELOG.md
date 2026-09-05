@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.114
+
+- The song menu's "More" opens as a sheet on the phone, with every row in
+  view - it used to hang off the edge of the screen.
+
 ## 0.5.113
 
 - Jam is now Groove, everywhere.
