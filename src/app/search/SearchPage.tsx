@@ -40,7 +40,7 @@ import { useQueueControls } from '../player/queueControls.tsx';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { artworkUrl, genreArtwork, isCutoutArt } from '../ux/artwork.ts';
-import { spotifyWebUrl } from '../servers/deepLink.ts';
+import { openPlaylistCode, playlistCodeFromText, spotifyWebUrl } from '../servers/deepLink.ts';
 import { openExternal } from '../core/openExternal.ts';
 import { usePluginCommands, useAcquire } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
@@ -48,7 +48,7 @@ import { usePendingPlay } from '../player/pendingPlay.tsx';
 import { parseQuery, searchLibrary, type LocalGenre } from './trackSearch.ts';
 import { useOwned } from '../library/owned.ts';
 import { useSearchRecents, type Recent } from './searchRecents.ts';
-import { fetchFriends, type RegistryFriend } from '../servers/registry.ts';
+import { fetchFriends, fetchPlaylistShare, type RegistryFriend } from '../servers/registry.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import {
   BESIDE,
@@ -270,6 +270,37 @@ export function SearchPage({
    * worth waiting a moment for. Every other lane stays instant and local.
    */
   const [spoken, setSpoken] = useState<SpokenHit[]>([]);
+  // A shared playlist the query names: a pasted link is taken at its word, a
+  // bare six-letter code is asked of the registry first (PARADE is a word
+  // before it is a code), and only a code that answers becomes a row.
+  const [sharedHit, setSharedHit] = useState<{ code: string; name: string; by: string } | null>(null);
+  const sharedRef = playlistCodeFromText(query);
+  const sharedKey = sharedRef ? `${sharedRef.code}:${sharedRef.bare ? 1 : 0}` : '';
+  useEffect(() => {
+    if (!sharedKey) {
+      setSharedHit(null);
+      return;
+    }
+    const [code = '', bareFlag = '0'] = sharedKey.split(':');
+    if (!code) return;
+    let live = true;
+    const timer = window.setTimeout(
+      () => {
+        void fetchPlaylistShare(code)
+          .then((s) => {
+            if (live) setSharedHit({ code, name: s.name, by: s.by });
+          })
+          .catch(() => {
+            if (live) setSharedHit(null);
+          });
+      },
+      bareFlag === '1' ? 400 : 0,
+    );
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [sharedKey]);
   useEffect(() => {
     if (!searching) {
       setSpoken([]);
@@ -521,6 +552,20 @@ export function SearchPage({
    * Always the https form. The `spotify:` scheme is one this app now answers,
    * so handing that back to the system would just return here.
    */
+  // A shared playlist, by link or by code: the same door a tapped link
+  // comes through. A pasted link is offered at once (a link is an action,
+  // not a search); a bare code only once the registry has answered.
+  if (sharedRef && (!sharedRef.bare || sharedHit?.code === sharedRef.code)) {
+    const named = sharedHit && sharedHit.code === sharedRef.code ? sharedHit : null;
+    commandItems.push({
+      t: 'action',
+      id: 'open-shared-playlist',
+      label: named ? `Open “${named.name}” shared by ${named.by}` : 'Open shared playlist',
+      group: 'Actions',
+      run: () => openPlaylistCode(sharedRef.code),
+    });
+  }
+
   const spotifyWeb = spotifyWebUrl(query);
   if (spotifyWeb) {
     commandItems.push({

@@ -184,6 +184,40 @@ export function clearPlaylistLink(): void {
   pendingPlaylist = null;
 }
 
+/**
+ * The same door a tapped link comes through, for a code the listener typed
+ * or a link they pasted. Universal links depend on the phone's native build
+ * knowing the share host, and a partner's phone did not: the link opened
+ * the app and nothing followed, and there was nowhere to type the code. The
+ * Search page recognises both and hands them here.
+ */
+export function openPlaylistCode(code: string): void {
+  const c = code.trim();
+  if (!c) return;
+  pendingPlaylist = c;
+  for (const handler of playlistSubscribers) handler(c);
+}
+
+/** The registry's code alphabet: six of these, no 0/1/I/L/O/U. */
+const SHARE_CODE = /^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{6}$/;
+
+/**
+ * A playlist code in whatever a person might type or paste: a share link
+ * (`…/p/CODE`, on any host), the app's own scheme, or the bare six-character
+ * code read off a card. `bare` is true for the last, so a caller can confirm
+ * it with the registry before promising a playlist - six capitals can also
+ * be a word.
+ */
+export function playlistCodeFromText(text: string): { code: string; bare: boolean } | null {
+  const t = text.trim();
+  if (!t) return null;
+  const linked = playlistCodeFromUrl(t);
+  if (linked && /^(https?:\/\/|attackfm:\/\/)/i.test(t)) return { code: linked, bare: false };
+  const up = t.toUpperCase();
+  if (SHARE_CODE.test(up)) return { code: up, bare: true };
+  return null;
+}
+
 // --- jam links ---------------------------------------------------------------
 //
 // https://registry.attack.fm/j/<code>  or  attackfm://j/<code>: a live
