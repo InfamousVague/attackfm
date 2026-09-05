@@ -15,6 +15,18 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.113
+
+- Jam is now Groove, everywhere.
+- In a groove, anyone can add: tap a song and it goes to the room - "Sent to
+  the groove" - and shows up straight away in the queue with your name on it,
+  with a note if the host's player has gone quiet. You can take back a song
+  you added. The host takes guests' songs in even while paused.
+- The song menu is shorter: Play next, Add to queue (or Add to the groove),
+  Add to playlist, Heart, Go to artist - and everything else under More.
+- The groove panel is properly laid out now: who is in, what is playing, the
+  code and the link, and clear buttons to leave or end.
+
 ## 0.5.112
 
 - The space around the smart shuffle mark is truly clear now - it cuts
