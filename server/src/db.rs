@@ -39,6 +39,22 @@ pub struct PlaylistRow {
     pub role: String,
 }
 
+/// One line of a shared list's news, as playlist_activity_for hands it out.
+/// Names are joined in so the feed never has to ask twice.
+#[derive(Debug, Clone)]
+pub struct PlaylistActivityRow {
+    pub id: i64,
+    pub playlist_id: i64,
+    pub playlist_name: String,
+    pub owner_id: i64,
+    pub owner_name: String,
+    pub actor_id: i64,
+    pub actor_name: String,
+    pub kind: String,
+    pub track_id: Option<i64>,
+    pub at: i64,
+}
+
 pub struct Db {
     conn: Mutex<Connection>,
 }
@@ -520,6 +536,27 @@ CREATE TABLE IF NOT EXISTS playlist_members (
   PRIMARY KEY (playlist_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS playlist_members_user ON playlist_members(user_id);
+
+-- What happened on a shared list, kept for the people it happened TO. Until
+-- this table nothing recorded WHO added a song or WHEN a list was shared -
+-- playlist_tracks is (list, track, position) and a share simply appeared in
+-- the friend's list response - so there was no way to tell a member "ana
+-- added Dreams" or to show an invite as anything but a new row. One row per
+-- event: `shared` (owner let target_id in), `added` / `removed` (actor put
+-- track_id in or took it out), `left` (target_id let themselves out),
+-- `unshared` (owner showed target_id out). Who gets told what is decided at
+-- read time (playlist_activity_for), never here. Pruned past sixty days on
+-- write, the way chart_snapshots is.
+CREATE TABLE IF NOT EXISTS playlist_activity (
+  id          INTEGER PRIMARY KEY,
+  playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+  actor_id    INTEGER NOT NULL,
+  target_id   INTEGER,
+  kind        TEXT NOT NULL,
+  track_id    INTEGER,
+  at          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS playlist_activity_list ON playlist_activity(playlist_id, at);
 
 -- Where each listener left off, so a phone can pick up what the desktop
 -- started. One row per user per track.
@@ -3283,22 +3320,154 @@ impl Db {
     }
 
     /// Let a user in, or change what they may do. Upsert on the pair, so
-    /// promoting a viewer to editor is the same call as adding them.
-    pub fn playlist_member_put(&self, playlist_id: i64, user_id: i64, role: &str) -> rusqlite::Result<()> {
-        self.lock().execute(
+    /// promoting a viewer to editor is the same call as adding them. Returns
+    /// true when the row is NEW - the share - and false for a role change on
+    /// someone already in, so the caller can tell an invite from a promotion.
+    pub fn playlist_member_put(&self, playlist_id: i64, user_id: i64, role: &str) -> rusqlite::Result<bool> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let present: bool = tx
+            .query_row(
+                "SELECT 1 FROM playlist_members WHERE playlist_id = ?1 AND user_id = ?2",
+                params![playlist_id, user_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        tx.execute(
             "INSERT INTO playlist_members (playlist_id, user_id, role, added_at) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(playlist_id, user_id) DO UPDATE SET role = excluded.role",
             params![playlist_id, user_id, role, now_ms()],
         )?;
-        Ok(())
+        tx.commit()?;
+        Ok(!present)
     }
 
-    pub fn playlist_member_remove(&self, playlist_id: i64, user_id: i64) -> rusqlite::Result<()> {
-        self.lock().execute(
+    /// Returns true when a member row actually went.
+    pub fn playlist_member_remove(&self, playlist_id: i64, user_id: i64) -> rusqlite::Result<bool> {
+        let gone = self.lock().execute(
             "DELETE FROM playlist_members WHERE playlist_id = ?1 AND user_id = ?2",
             params![playlist_id, user_id],
         )?;
-        Ok(())
+        Ok(gone > 0)
+    }
+
+    /// Write down one thing that happened on a list - see the table comment
+    /// for the kinds. The track edits (`added`, `removed`) are recorded ONLY
+    /// when the list has somebody let in: a private list's own edits are
+    /// nobody's news, and writing them would fill the table for nothing. The
+    /// membership kinds always land - `shared` is what creates the first
+    /// member, and `left`/`unshared` are called after the row is gone, so a
+    /// last member leaving would otherwise vanish without the owner hearing.
+    /// Returns whether a row was written. Rows past sixty days go with it.
+    pub fn playlist_activity_record(
+        &self,
+        playlist_id: i64,
+        actor_id: i64,
+        kind: &str,
+        target_id: Option<i64>,
+        track_id: Option<i64>,
+    ) -> rusqlite::Result<bool> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        if matches!(kind, "added" | "removed") {
+            let shared: bool = tx
+                .query_row(
+                    "SELECT 1 FROM playlist_members WHERE playlist_id = ?1 LIMIT 1",
+                    params![playlist_id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if !shared {
+                tx.commit()?;
+                return Ok(false);
+            }
+        }
+        let now = now_ms();
+        tx.execute(
+            "INSERT INTO playlist_activity (playlist_id, actor_id, target_id, kind, track_id, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![playlist_id, actor_id, target_id, kind, track_id, now],
+        )?;
+        tx.execute(
+            "DELETE FROM playlist_activity WHERE at < ?1",
+            params![now - 60 * 86_400_000],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// What is news to `user_id` about the lists they share, newest first:
+    /// at most `limit` rows at or after `since`. The rules, because they ARE
+    /// the feature:
+    ///  - nobody is told about their own actions;
+    ///  - the OWNER hears everything on their list - every add and remove,
+    ///    every share they made (they made it, so it is filtered as their
+    ///    own), every leave;
+    ///  - a MEMBER hears the adds and removes from their own `added_at` on -
+    ///    a newcomer is not handed the history from before they joined - and
+    ///    the share that let them in; other people's shares and leaves are
+    ///    not theirs to hear;
+    ///  - someone shown OUT hears that, and only that, though they are no
+    ///    longer on the list - "you were removed" is news precisely because
+    ///    the list has just stopped being theirs to see;
+    ///  - a stranger hears nothing at all, rows or no rows.
+    pub fn playlist_activity_for(&self, user_id: i64, since: i64, limit: usize) -> Vec<PlaylistActivityRow> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT a.id, a.playlist_id, p.name, p.user_id, o.username,
+                    a.actor_id, COALESCE(u.username, ''), a.kind, a.track_id, a.at
+               FROM playlist_activity a
+               JOIN playlists p ON p.id = a.playlist_id
+               JOIN users o ON o.id = p.user_id
+               LEFT JOIN users u ON u.id = a.actor_id
+               LEFT JOIN playlist_members m ON m.playlist_id = a.playlist_id AND m.user_id = ?1
+              WHERE a.at >= ?2
+                AND a.actor_id != ?1
+                AND (
+                      p.user_id = ?1
+                   OR (m.user_id IS NOT NULL AND a.kind IN ('added', 'removed') AND a.at >= m.added_at)
+                   OR (m.user_id IS NOT NULL AND a.kind = 'shared' AND a.target_id = ?1)
+                   OR (a.kind = 'unshared' AND a.target_id = ?1)
+                )
+              ORDER BY a.at DESC, a.id DESC
+              LIMIT ?3",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since, limit as i64], |r| {
+            Ok(PlaylistActivityRow {
+                id: r.get(0)?,
+                playlist_id: r.get(1)?,
+                playlist_name: r.get(2)?,
+                owner_id: r.get(3)?,
+                owner_name: r.get(4)?,
+                actor_id: r.get(5)?,
+                actor_name: r.get(6)?,
+                kind: r.get(7)?,
+                track_id: r.get(8)?,
+                at: r.get(9)?,
+            })
+        })
+        .map(|r| r.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// The little a feed line needs to name a song: (title, artist, art id).
+    /// Deliberately NOT `track()`, which hides soft-deleted rows: a song that
+    /// was added and has since gone from disk should still be named in the
+    /// line that says it was added. None only when the row itself is gone.
+    pub fn track_caption(&self, id: i64) -> Option<(String, String, Option<String>)> {
+        self.lock()
+            .query_row(
+                "SELECT title, artist, art_id FROM tracks WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()
     }
 
     /// Take ONE track out of a playlist, atomically, and close the gap in the
@@ -12948,5 +13117,268 @@ mod explore_ledger_skip_semantics {
         assert!(!met.contains("slipped on"), "a thumb slipping is not a meeting: {met:?}");
         assert!(met.contains("actually heard"), "twelve seconds is");
         assert!(met.contains("finished fast"), "and so is finishing");
+    }
+}
+
+#[cfg(test)]
+mod playlist_activity {
+    //! Who is told what about a shared list. The rows are cheap; the feature
+    //! is the visibility - a member hearing about a private list, or about
+    //! their own add, or about history from before they joined, is the bug.
+
+    use super::*;
+
+    fn fresh(name: &str) -> Db {
+        let d = std::env::temp_dir().join(format!("afm-plact-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Db::open(&d.join("t.sqlite")).unwrap()
+    }
+
+    fn track(db: &Db, rel: &str, title: &str) -> i64 {
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind)
+                 VALUES (?1,?2,'Fleetwood Mac','Fleetwood Mac','Rumours',0,0,'music')",
+                rusqlite::params![rel, title],
+            )
+            .unwrap();
+        db.track_id_by_path(rel).unwrap()
+    }
+
+    /// The newest row's id - what the route never needs but a test does.
+    fn last_id(db: &Db) -> i64 {
+        db.lock()
+            .query_row("SELECT MAX(id) FROM playlist_activity", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// Pin a row's clock, so ordering and "before they joined" are exact
+    /// rather than a race against the millisecond.
+    fn set_at(db: &Db, id: i64, at: i64) {
+        db.lock()
+            .execute("UPDATE playlist_activity SET at = ?2 WHERE id = ?1", params![id, at])
+            .unwrap();
+    }
+
+    fn set_joined(db: &Db, playlist: i64, user: i64, at: i64) {
+        db.lock()
+            .execute(
+                "UPDATE playlist_members SET added_at = ?3 WHERE playlist_id = ?1 AND user_id = ?2",
+                params![playlist, user, at],
+            )
+            .unwrap();
+    }
+
+    fn kinds(rows: &[PlaylistActivityRow]) -> Vec<&str> {
+        rows.iter().map(|r| r.kind.as_str()).collect()
+    }
+
+    /// Owner + a shared list + two friends let in as editors.
+    struct Scene {
+        db: Db,
+        owner: i64,
+        ana: i64,
+        ben: i64,
+        list: i64,
+    }
+
+    fn scene(name: &str) -> Scene {
+        let db = fresh(name);
+        let owner = db.create_user("matt", "x", true).unwrap();
+        let ana = db.create_user("ana", "x", false).unwrap();
+        let ben = db.create_user("ben", "x", false).unwrap();
+        let list = db.create_playlist(owner, "Late shift").unwrap();
+        Scene { db, owner, ana, ben, list }
+    }
+
+    fn share(s: &Scene, who: i64) {
+        assert!(s.db.playlist_member_put(s.list, who, "editor").unwrap(), "first share is new");
+        assert!(s.db.playlist_activity_record(s.list, s.owner, "shared", Some(who), None).unwrap());
+    }
+
+    fn add(s: &Scene, who: i64, track_id: i64) -> bool {
+        assert!(s.db.playlist_append_track(s.list, track_id).unwrap());
+        s.db.playlist_activity_record(s.list, who, "added", None, Some(track_id)).unwrap()
+    }
+
+    #[test]
+    fn a_share_is_news_to_the_one_invited_and_nobody_else() {
+        let s = scene("share");
+        let stranger = s.db.create_user("cat", "x", false).unwrap();
+        share(&s, s.ana);
+        share(&s, s.ben);
+
+        let ana = s.db.playlist_activity_for(s.ana, 0, 50);
+        assert_eq!(kinds(&ana), vec!["shared"], "{ana:?}");
+        assert_eq!(ana[0].playlist_name, "Late shift");
+        assert_eq!(ana[0].owner_name, "matt");
+        assert_eq!(ana[0].actor_name, "matt");
+        assert_eq!(ana[0].actor_id, s.owner);
+        // Ben hears about HIS invite only, not Ana's.
+        let ben = s.db.playlist_activity_for(s.ben, 0, 50);
+        assert_eq!(ben.len(), 1, "{ben:?}");
+        // Someone on the hub but not on the list hears nothing.
+        assert!(s.db.playlist_activity_for(stranger, 0, 50).is_empty());
+        // The owner made both shares: their own doing is not their news.
+        assert!(s.db.playlist_activity_for(s.owner, 0, 50).is_empty());
+    }
+
+    #[test]
+    fn an_editors_add_reaches_the_owner_and_the_others_but_not_the_editor() {
+        let s = scene("add");
+        share(&s, s.ana);
+        share(&s, s.ben);
+        let dreams = track(&s.db, "dreams.flac", "Dreams");
+        assert!(add(&s, s.ana, dreams));
+
+        let owner = s.db.playlist_activity_for(s.owner, 0, 50);
+        assert_eq!(kinds(&owner), vec!["added"], "{owner:?}");
+        assert_eq!(owner[0].actor_name, "ana");
+        assert_eq!(owner[0].track_id, Some(dreams));
+        assert_eq!(
+            s.db.track_caption(dreams),
+            Some(("Dreams".to_string(), "Fleetwood Mac".to_string(), None))
+        );
+        let ben = s.db.playlist_activity_for(s.ben, 0, 50);
+        assert_eq!(kinds(&ben), vec!["added", "shared"], "{ben:?}");
+        // Ana added it: her own add is not news to her, only her invite is.
+        let ana = s.db.playlist_activity_for(s.ana, 0, 50);
+        assert_eq!(kinds(&ana), vec!["shared"], "{ana:?}");
+    }
+
+    #[test]
+    fn a_newcomer_is_not_told_the_history_from_before_they_joined() {
+        let s = scene("late");
+        let now = now_ms();
+        share(&s, s.ana);
+        let early = track(&s.db, "early.flac", "Go Your Own Way");
+        assert!(add(&s, s.ana, early));
+        set_at(&s.db, last_id(&s.db), now - 10_000);
+
+        // Ben arrives after that add, then Ana adds again.
+        share(&s, s.ben);
+        set_joined(&s.db, s.list, s.ben, now - 5_000);
+        set_at(&s.db, last_id(&s.db), now - 5_000);
+        let later = track(&s.db, "later.flac", "The Chain");
+        assert!(add(&s, s.ana, later));
+        set_at(&s.db, last_id(&s.db), now);
+
+        let ben = s.db.playlist_activity_for(s.ben, 0, 50);
+        assert_eq!(kinds(&ben), vec!["added", "shared"], "{ben:?}");
+        assert_eq!(ben[0].track_id, Some(later), "only the add since he joined: {ben:?}");
+        // The owner has always been there: both adds.
+        let owner = s.db.playlist_activity_for(s.owner, 0, 50);
+        let tracks: Vec<_> = owner.iter().filter_map(|r| r.track_id).collect();
+        assert_eq!(tracks, vec![later, early], "{owner:?}");
+    }
+
+    #[test]
+    fn your_own_adds_are_never_news_and_a_stranger_hears_nothing() {
+        let s = scene("own");
+        let stranger = s.db.create_user("cat", "x", false).unwrap();
+        share(&s, s.ana);
+        let mine = track(&s.db, "mine.flac", "Songbird");
+        assert!(add(&s, s.owner, mine));
+        let hers = track(&s.db, "hers.flac", "Gold Dust Woman");
+        assert!(add(&s, s.ana, hers));
+
+        let owner = s.db.playlist_activity_for(s.owner, 0, 50);
+        assert_eq!(owner.iter().filter_map(|r| r.track_id).collect::<Vec<_>>(), vec![hers], "{owner:?}");
+        let ana = s.db.playlist_activity_for(s.ana, 0, 50);
+        assert_eq!(ana.iter().filter_map(|r| r.track_id).collect::<Vec<_>>(), vec![mine], "{ana:?}");
+        // Rows exist; none of them are the stranger's to see.
+        let n: i64 = s.db.lock().query_row("SELECT COUNT(*) FROM playlist_activity", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 3);
+        assert!(s.db.playlist_activity_for(stranger, 0, 50).is_empty());
+    }
+
+    #[test]
+    fn a_private_lists_edits_are_nobodys_news_until_it_is_shared() {
+        let s = scene("private");
+        let one = track(&s.db, "one.flac", "Never Going Back Again");
+        assert!(!add(&s, s.owner, one), "no members: no row");
+        assert!(
+            !s.db.playlist_activity_record(s.list, s.owner, "removed", None, Some(one)).unwrap(),
+            "a remove on a private list is no row either"
+        );
+        let n: i64 = s.db.lock().query_row("SELECT COUNT(*) FROM playlist_activity", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+
+        share(&s, s.ana);
+        let two = track(&s.db, "two.flac", "You Make Loving Fun");
+        assert!(add(&s, s.owner, two), "shared now: the add is news");
+        let ana = s.db.playlist_activity_for(s.ana, 0, 50);
+        assert_eq!(kinds(&ana), vec!["added", "shared"], "{ana:?}");
+        assert_eq!(ana[0].track_id, Some(two));
+    }
+
+    #[test]
+    fn since_and_limit_are_honoured_newest_first() {
+        let s = scene("window");
+        let now = now_ms();
+        share(&s, s.ana);
+        set_at(&s.db, last_id(&s.db), now - 40_000);
+        let mut ids = Vec::new();
+        for (i, rel) in ["a.flac", "b.flac", "c.flac"].iter().enumerate() {
+            let t = track(&s.db, rel, rel);
+            assert!(add(&s, s.ana, t));
+            // Inserted in order a, b, c at 30s, 20s, 10s ago.
+            set_at(&s.db, last_id(&s.db), now - (30_000 - 10_000 * i as i64));
+            ids.push(t);
+        }
+        let all = s.db.playlist_activity_for(s.owner, 0, 50);
+        let order: Vec<_> = all.iter().filter_map(|r| r.track_id).collect();
+        assert_eq!(order, vec![ids[2], ids[1], ids[0]], "newest first: {all:?}");
+        assert!(all.windows(2).all(|w| w[0].at >= w[1].at));
+
+        let recent = s.db.playlist_activity_for(s.owner, now - 20_000, 50);
+        let order: Vec<_> = recent.iter().filter_map(|r| r.track_id).collect();
+        assert_eq!(order, vec![ids[2], ids[1]], "at or after since: {recent:?}");
+
+        let one = s.db.playlist_activity_for(s.owner, 0, 1);
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].track_id, Some(ids[2]), "limit keeps the newest: {one:?}");
+    }
+
+    #[test]
+    fn a_leave_is_the_owners_news_and_being_shown_out_is_the_targets() {
+        let s = scene("gone");
+        share(&s, s.ana);
+        share(&s, s.ben);
+        // Ana lets herself out.
+        assert!(s.db.playlist_member_remove(s.list, s.ana).unwrap());
+        assert!(s.db.playlist_activity_record(s.list, s.ana, "left", Some(s.ana), None).unwrap());
+        let owner = s.db.playlist_activity_for(s.owner, 0, 50);
+        assert_eq!(kinds(&owner), vec!["left"], "{owner:?}");
+        assert_eq!(owner[0].actor_name, "ana");
+        // Ben is still on the list; somebody else leaving is not his news,
+        // and it is not Ana's own news either.
+        assert_eq!(kinds(&s.db.playlist_activity_for(s.ben, 0, 50)), vec!["shared"]);
+        assert!(s.db.playlist_activity_for(s.ana, 0, 50).is_empty(), "her invite went with her");
+
+        // The owner shows Ben out.
+        assert!(s.db.playlist_member_remove(s.list, s.ben).unwrap());
+        assert!(!s.db.playlist_member_remove(s.list, s.ben).unwrap(), "already gone");
+        assert!(s.db.playlist_activity_record(s.list, s.owner, "unshared", Some(s.ben), None).unwrap());
+        let ben = s.db.playlist_activity_for(s.ben, 0, 50);
+        assert_eq!(kinds(&ben), vec!["unshared"], "no longer a member, but told so: {ben:?}");
+        assert_eq!(ben[0].actor_name, "matt");
+        // The owner did it: not their news.
+        assert_eq!(kinds(&s.db.playlist_activity_for(s.owner, 0, 50)), vec!["left"]);
+    }
+
+    #[test]
+    fn a_promotion_is_not_a_second_invite_and_old_rows_are_pruned() {
+        let s = scene("prune");
+        share(&s, s.ana);
+        assert!(!s.db.playlist_member_put(s.list, s.ana, "viewer").unwrap(), "already in: a role change");
+        assert_eq!(s.db.playlist_role(s.list, s.ana).as_deref(), Some("viewer"));
+        // Push the invite past sixty days; the next write sweeps it.
+        set_at(&s.db, last_id(&s.db), now_ms() - 61 * 86_400_000);
+        let t = track(&s.db, "t.flac", "Second Hand News");
+        assert!(add(&s, s.ana, t));
+        let n: i64 = s.db.lock().query_row("SELECT COUNT(*) FROM playlist_activity", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1, "the stale share is gone, the add remains");
     }
 }

@@ -904,10 +904,17 @@ pub async fn playlist_member_add(
     if !state.db.are_friends(caller.id, target) {
         return Err(bad(StatusCode::FORBIDDEN, "you can only share with friends on this server"));
     }
-    state
+    let fresh = state
         .db
         .playlist_member_put(playlist_id, target, role)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // The invite, as news to the one invited. A promotion (viewer to editor)
+    // reuses this route and is not a second invitation.
+    if fresh {
+        let _ = state
+            .db
+            .playlist_activity_record(playlist_id, caller.id, "shared", Some(target), None);
+    }
     Ok(Json(json!({ "ok": true, "userId": target, "role": role })))
 }
 
@@ -923,10 +930,19 @@ pub async fn playlist_member_remove(
     if role != "owner" && user_id != caller.id {
         return Err(bad(StatusCode::FORBIDDEN, "only the owner can remove others"));
     }
-    state
+    let gone = state
         .db
         .playlist_member_remove(playlist_id, user_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if gone {
+        // Shown out by the owner is `unshared`, news to the one shown out;
+        // a member using this route on their own id has left, which is the
+        // owner's news - the same row `playlist_leave` writes.
+        let kind = if user_id == caller.id { "left" } else { "unshared" };
+        let _ = state
+            .db
+            .playlist_activity_record(playlist_id, caller.id, kind, Some(user_id), None);
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -944,10 +960,15 @@ pub async fn playlist_leave(
     if role == "owner" {
         return Err(bad(StatusCode::BAD_REQUEST, "this is your own list; delete it instead"));
     }
-    state
+    let gone = state
         .db
         .playlist_member_remove(playlist_id, caller.id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if gone {
+        let _ = state
+            .db
+            .playlist_activity_record(playlist_id, caller.id, "left", Some(caller.id), None);
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -974,6 +995,14 @@ pub async fn playlist_track_append(
         .db
         .playlist_append_track(playlist_id, body.track_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // News to the others on the list - only when a row actually went in
+    // (a song already there is not added twice), and only on a list that
+    // HAS others: the record call itself stays quiet on a private list.
+    if added {
+        let _ = state
+            .db
+            .playlist_activity_record(playlist_id, caller.id, "added", None, Some(body.track_id));
+    }
     Ok(Json(json!({ "ok": true, "added": added })))
 }
 
@@ -990,7 +1019,63 @@ pub async fn playlist_track_remove(
         .db
         .playlist_remove_track(playlist_id, track_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if removed {
+        let _ = state
+            .db
+            .playlist_activity_record(playlist_id, caller.id, "removed", None, Some(track_id));
+    }
     Ok(Json(json!({ "ok": true, "removed": removed })))
+}
+
+/// `GET /api/playlists/activity?since=<epoch ms>&limit=<n>` - what is news to
+/// the caller about the lists they share, newest first: the invites they were
+/// sent, and what other people put in or took out. Who hears what is decided
+/// in db::playlist_activity_for; this route only shapes it. `since` defaults
+/// to a fortnight back, `limit` to 200 and never past 500. The track rides
+/// along by id, title, artist and art so a line can be drawn without a second
+/// request; a song whose row is gone comes back as `track: null`.
+pub async fn playlist_activity(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let now = crate::db::now_ms();
+    let since = q
+        .get("since")
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(now - 14 * 86_400_000);
+    let limit = q
+        .get("limit")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(200)
+        .clamp(1, 500);
+    let items: Vec<_> = state
+        .db
+        .playlist_activity_for(caller.id, since, limit)
+        .into_iter()
+        .map(|a| {
+            let track = a.track_id.and_then(|id| {
+                state
+                    .db
+                    .track_caption(id)
+                    .map(|(title, artist, art_id)| json!({ "id": id, "title": title, "artist": artist, "artId": art_id }))
+            });
+            json!({
+                "id": a.id,
+                "playlistId": a.playlist_id,
+                "playlistName": a.playlist_name,
+                "ownerId": a.owner_id,
+                "ownerName": a.owner_name,
+                "actorId": a.actor_id,
+                "actorName": a.actor_name,
+                "kind": a.kind,
+                "track": track,
+                "at": a.at,
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "now": now, "items": items })))
 }
 
 pub async fn update_playlist(
