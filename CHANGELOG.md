@@ -15,6 +15,15 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.107
+
+- Playlist invites you cannot miss: when someone shares a list with you it
+  rings the bell and the phone, and a "Shared with you" shelf at the top of
+  your playlists shows it with a New badge until you open it.
+- Hear about additions: when anyone else adds to a playlist you own or share,
+  the bell says so - "Ana added 3 songs to Late shift" - and a tap opens the
+  list. Your own adds are never news to you.
+
 ## 0.5.106
 
 - Share a playlist with anyone on your server. The share sheet now lists
