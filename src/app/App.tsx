@@ -58,6 +58,7 @@ import { setMusicDateDoor } from './nav/musicDateDoor.ts';
 import { setDownloadsDoor } from './nav/downloadsDoor.ts';
 import { setDiscoverDoor } from './nav/discoverDoor.ts';
 import { setPlaylistDoor } from './nav/playlistDoor.ts';
+import { setDjDoor } from './nav/djDoor.ts';
 import { setNowPlayingPath } from './player/nowPlayingStore.ts';
 import { settingsBack } from './settings/settingsBack.ts';
 import { useNavStack } from './nav/useNavStack.ts';
@@ -500,6 +501,7 @@ export function App() {
   // rows - the bell has no prop path to goPlaylist either.
   useEffect(() => {
     setPlaylistDoor(goPlaylist);
+    setDjDoor(() => setDjOpen(true));
     return () => setPlaylistDoor(null);
   }, [goPlaylist]);
 

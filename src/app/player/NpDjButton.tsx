@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, IconButton, Popover, Spinner, Text } from '@glacier/react';
-import { Bot, Sparkles } from '@glacier/icons';
+import { djDoorOpen, openDj } from '../nav/djDoor.ts';
+import { Bot, Sparkles, MessageCircle } from '@glacier/icons';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { usePlayNowOptional } from './playNow.tsx';
@@ -143,6 +144,26 @@ export function NpDjButton() {
           {busySeed === '' ? <Spinner size="sm" aria-label="Cueing" /> : <Sparkles size={15} />}
           From my taste
         </Button>
+        {/* The conversation - and its microphone. This popover was the only
+            DJ door outside the developer-mode Booth, and it could start a
+            set but never talk. */}
+        {djDoorOpen() && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            fullWidth
+            className="npDj__talk"
+            disabled={busy}
+            onClick={() => {
+              setOpen(false);
+              openDj();
+            }}
+          >
+            <MessageCircle size={15} />
+            Talk to the DJ
+          </Button>
+        )}
         <div className="npDj__chips" role="group" aria-label="Set the mood">
           {MOODS.map(({ label, seed, Icon }) => (
             <Button
