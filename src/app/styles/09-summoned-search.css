@@ -233,12 +233,29 @@
   color: #17171a;
 }
 
-/* The gap: the badge is 16px with its centre 1px past the icon's right edge
-   and 1px below its top (from the offsets above), so a 10px circle there -
-   the badge's 8px plus 2px of air - is what the arrows step back from. */
-[data-smart] .shuffleGlyph > svg:first-child {
-  -webkit-mask: radial-gradient(circle at calc(100% + 1px) 1px, transparent 10px, #000 10.5px);
-  mask: radial-gradient(circle at calc(100% + 1px) 1px, transparent 10px, #000 10.5px);
+/* The gap, cut through the WHOLE control. Masking only the arrows left the
+   ghost button's own tinted background showing through the hole, which read
+   as a dark half-transparent ring. So the mask sits on the button: an
+   annulus around the badge - keep the badge's 8px disc, knock out the 2px
+   of air around it, keep everything beyond - and the sheet itself shows
+   through the gap. The badge's centre is 1px past the 20px glyph's right
+   edge and 1px below its top, and the glyph is centred in the button, hence
+   half the button plus 11 across and minus 9 down. */
+.npShuffle[data-smart] {
+  -webkit-mask: radial-gradient(
+    circle at calc(50% + 11px) calc(50% - 9px),
+    #000 8px,
+    transparent 8.5px,
+    transparent 10px,
+    #000 10.5px
+  );
+  mask: radial-gradient(
+    circle at calc(50% + 11px) calc(50% - 9px),
+    #000 8px,
+    transparent 8.5px,
+    transparent 10px,
+    #000 10.5px
+  );
 }
 
 /* The same sparkle on the mini strip, drawn rather than composed: the strip's
