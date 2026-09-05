@@ -81,7 +81,7 @@ export function JamLanding({ jam }: { jam: JamDoc }) {
             <span className="joinCard__mark joinCard__mark--dead" aria-hidden>
               !
             </span>
-            <h1>That jam is not one we know about</h1>
+            <h1>That groove is not one we know about</h1>
             <Text tone="muted" size="sm">
               The link may have been mistyped. Ask whoever sent it for another.
             </Text>
@@ -97,14 +97,14 @@ export function JamLanding({ jam }: { jam: JamDoc }) {
               </span>
               <h1>{jam.by ? `Listen along with @${jam.by}` : 'Listen along'}</h1>
               <Text tone="muted" size="sm">
-                {where ? `A jam on ${where}` : 'A jam on AttackFM'} · same song, same moment
+                {where ? `A groove on ${where}` : 'A groove on AttackFM'} · same song, same moment
               </Text>
             </div>
 
             <AppDoors scheme={`j/${encodeURIComponent(jam.code)}`} label="Join in AttackFM" />
 
             {/* The limit, on the page rather than discovered after the tap.
-                A jam is rows on one server; being on that server is what lets
+                A groove is rows on one server; being on that server is what lets
                 anybody in, and no link can hand that over.
 
                 The server is named by its ADDRESS here, not by its name. Hubs
@@ -113,9 +113,9 @@ export function JamLanding({ jam }: { jam: JamDoc }) {
                 which is the opposite of what this sentence exists to say. A
                 host is unambiguous and is the thing they would have typed. */}
             <Text tone="muted" size="xs" className="carry">
-              <Music size={12} aria-hidden /> A jam happens on one server. If you are signed in to{' '}
+              <Music size={12} aria-hidden /> A groove happens on one server. If you are signed in to{' '}
               {host || 'that server'}, this walks you straight in. If you are not, you will need an
-              invite from someone who is - a jam is a room, not a broadcast.
+              invite from someone who is - a groove is a room, not a broadcast.
             </Text>
           </>
         )}

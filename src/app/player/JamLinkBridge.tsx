@@ -7,7 +7,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useJamOptional } from './jam.tsx';
 
 /**
- * A jam LINK, opened in the app.
+ * A groove LINK, opened in the app.
  *
  * The link says where a room is; whether you get into it is the hub's answer,
  * not the link's, and this is where that gets found out. Three ways it can go,
@@ -15,7 +15,7 @@ import { useJamOptional } from './jam.tsx';
  *
  *  - You are on that server: Join walks straight in.
  *  - You are on a DIFFERENT server: the link names the one it lives on, and
- *    says plainly that a jam is a room on one server. Guessing - switching
+ *    says plainly that a groove is a room on one server. Guessing - switching
  *    servers under someone because a link asked - is not this feature's to do.
  *  - The room has ended: nothing on the registry can know that (the row
  *    outlives the room by design), so the hub is what tells us, and the answer
@@ -51,7 +51,7 @@ export function JamLinkBridge() {
         if (live) setShare(s);
       })
       .catch((e: unknown) => {
-        if (live) setError(e instanceof Error ? e.message : 'Could not open that jam.');
+        if (live) setError(e instanceof Error ? e.message : 'Could not open that groove.');
       });
     return () => {
       live = false;
@@ -84,10 +84,10 @@ export function JamLinkBridge() {
       } else {
         // The registry row outlives the room; this is the hub saying the room
         // is not there any more, which is the one answer only it can give.
-        setError('That jam has ended. Ask whoever sent this to start another.');
+        setError('That groove has ended. Ask whoever sent this to start another.');
       }
     } catch {
-      setError('Could not walk into that jam just now.');
+      setError('Could not walk into that groove just now.');
     } finally {
       setBusy(false);
     }
@@ -111,7 +111,7 @@ export function JamLinkBridge() {
             <div className="sharedPlaylist__head">
               <div className="sharedPlaylist__who">
                 <h3 className="sharedPlaylist__name">
-                  <Users size={15} aria-hidden /> {share.by ? `@${share.by}'s jam` : 'A jam'}
+                  <Users size={15} aria-hidden /> {share.by ? `@${share.by}'s groove` : 'A groove'}
                 </h3>
                 <Text tone="muted" size="sm">
                   {share.hubName ? `On ${share.hubName}` : 'On another AttackFM server'}
@@ -132,7 +132,7 @@ export function JamLinkBridge() {
                  and "this one is on AttackFM" reads as a statement about the
                  app rather than about which box the room is on. */
               <Text tone="muted" size="xs">
-                A jam is a room on one server, and this one is on{' '}
+                A groove is a room on one server, and this one is on{' '}
                 {share.hubUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '')}. You would need to
                 be signed in there to walk into it - ask @{share.by} for an invite.
               </Text>
@@ -149,7 +149,7 @@ export function JamLinkBridge() {
                     Not now
                   </Button>
                   <Button variant="solid" size="sm" disabled={busy || !jam} onClick={() => void join()}>
-                    {busy ? 'Joining…' : 'Join the jam'}
+                    {busy ? 'Joining…' : 'Join the groove'}
                   </Button>
                 </>
               )}

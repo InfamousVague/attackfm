@@ -216,7 +216,7 @@ export const HANDBOOK_PAGES: readonly HandbookPage[] = [
       <>
         <P>
           One queue, whatever feeds it - an album, a playlist, a station, a
-          friend&rsquo;s jam. Crossfade, the equalizer and the sleep timer live
+          friend&rsquo;s groove. Crossfade, the equalizer and the sleep timer live
           in Playback settings; the disc itself scratches under your finger,
           on a real tape loop, because a jog wheel that ignores physics is just
           a button.
@@ -418,9 +418,10 @@ export const HANDBOOK_PAGES: readonly HandbookPage[] = [
           music never jumps rooms by accident.
         </P>
         <P>
-          Jams are their own room, not a hand-off: the host&rsquo;s player
-          sets the pace, everyone else follows it, and a friend&rsquo;s room
-          folds your picks into their queue instead of yours. If the host
+          A groove is its own room, not a hand-off: the host&rsquo;s player
+          sets the pace, everyone else follows it, and in a friend&rsquo;s
+          groove a tap on any song sends it to their queue instead of yours -
+          it shows as pending until their player picks it up. If the host
           steps out, the clock passes to whoever has been there longest.
         </P>
       </>

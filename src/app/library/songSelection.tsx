@@ -53,7 +53,7 @@ export function SelectionBar({
   onSelectAll: () => void;
 }) {
   const { isFavorite, toggleFavorite } = useLibrary();
-  const { playNext, addToQueue, inJam } = useQueueControls();
+  const { playNext, addToQueue, following } = useQueueControls();
   const { toast } = useToast();
   const [adding, setAdding] = useState(false);
 
@@ -86,7 +86,7 @@ export function SelectionBar({
     }
     toast({
       message: `${chosen.length} ${chosen.length === 1 ? 'song' : 'songs'} ${
-        inJam ? 'sent to the jam' : next ? 'playing next' : 'added to the queue'
+        following ? 'sent to the groove' : next ? 'playing next' : 'added to the queue'
       }`,
     });
     onClear();

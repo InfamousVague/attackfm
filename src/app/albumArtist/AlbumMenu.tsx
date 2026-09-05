@@ -1,7 +1,7 @@
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { MenuStop } from '../ux/MenuStop.tsx';
 import { ContextMenu, MenuItem } from '@glacier/react';
-import { ListEnd, ListStart, Play, Shuffle, User } from '@glacier/icons';
+import { ListEnd, ListStart, Play, Shuffle, User, Users } from '@glacier/icons';
 import type { ReactNode } from 'react';
 import { useQueueControls } from '../player/queueControls.tsx';
 import { shuffled } from '../ux/shuffle.ts';
@@ -36,7 +36,7 @@ export function AlbumMenu({
   className?: string;
   children: ReactNode;
 }) {
-  const { playNext, addToQueue, inJam } = useQueueControls();
+  const { playNext, addToQueue, following } = useQueueControls();
   /*
    * The same hold TrackMenu carries, for the same two reasons: the kit only
    * answers a touch long-press and does nothing about the release - so on a
@@ -68,24 +68,28 @@ export function AlbumMenu({
           <MenuItem icon={<Shuffle size={15} />} onSelect={shuffle}>
             Shuffle
           </MenuItem>
-          {/* The whole record into the line, in order - front of it or back. */}
+          {/* The whole record into the line, in order - front of it or back.
+              Following a groove there is no "next" of your own: one verb, the
+              record to the room. */}
+          {!following && (
+            <MenuItem
+              icon={<ListStart size={15} />}
+              onSelect={() => {
+                // Reversed so the record lands in running order: each playNext
+                // slots in front of the last.
+                for (const track of [...tracks].reverse()) playNext(track);
+              }}
+            >
+              Play next
+            </MenuItem>
+          )}
           <MenuItem
-            icon={<ListStart size={15} />}
-            onSelect={() => {
-              // Reversed so the record lands in running order: each playNext
-              // slots in front of the last.
-              for (const track of [...tracks].reverse()) playNext(track);
-            }}
-          >
-            Play next
-          </MenuItem>
-          <MenuItem
-            icon={<ListEnd size={15} />}
+            icon={following ? <Users size={15} /> : <ListEnd size={15} />}
             onSelect={() => {
               for (const track of tracks) addToQueue(track);
             }}
           >
-            {inJam ? 'Add to jam queue' : 'Add to queue'}
+            {following ? 'Add to the groove' : 'Add to queue'}
           </MenuItem>
           {onOpenArtist && artistName && (
             <MenuItem icon={<User size={15} />} onSelect={() => onOpenArtist(artistName)}>

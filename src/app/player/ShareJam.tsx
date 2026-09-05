@@ -11,7 +11,7 @@ import { saveCardImage } from '../widget/saveCard.ts';
 import logo from '../../assets/attack-white.png';
 
 /**
- * "Share this jam" - the room as a link, on the same card a playlist and an
+ * "Share this groove" - the room as a link, on the same card a playlist and an
  * invite wear.
  *
  * The panel already printed the room's code, and copying it is a real thing
@@ -20,7 +20,7 @@ import logo from '../../assets/attack-white.png';
  * anybody: it lands on a page that says whose room it is, and offers the app.
  *
  * WHAT THE LINK DOES NOT CARRY is as deliberate as what it does. Not the song:
- * a jam moves song to song, and a card describing one moment would be lying by
+ * a groove moves song to song, and a card describing one moment would be lying by
  * the time anybody opened it. Not a guest pass either - the link says where the
  * room is, and the hub decides who gets in, exactly as it does for the typed
  * code. Somebody who is not on that server gets a page that tells them so
@@ -61,7 +61,7 @@ function JamCard({
           <Users size={40} />
         </span>
       </div>
-      <p className="shareCard__name">{host ? `${host}'s jam` : 'A jam'}</p>
+      <p className="shareCard__name">{host ? `${host}'s groove` : 'A groove'}</p>
       <p className="shareCard__sub">
         {listening === 1 ? 'Just getting started' : `${listening} listening`}
         {where ? ` · on ${where}` : ''}
@@ -125,7 +125,7 @@ export function ShareJamSheet({
 
   // The link is minted on open, and the registry hands back the SAME code for
   // a room this account has already shared - so re-opening the sheet during
-  // one jam does not scatter a second link that means the same thing.
+  // one groove does not scatter a second link that means the same thing.
   useEffect(() => {
     if (!open) return;
     setLinkError(null);
@@ -194,8 +194,8 @@ export function ShareJamSheet({
       }
       await saveCardImage({
         dataUrl,
-        filename: 'attackfm-jam.png',
-        title: `${hostName ? `${hostName}'s jam` : 'A jam'} on AttackFM`,
+        filename: 'attackfm-groove.png',
+        title: `${hostName ? `${hostName}'s groove` : 'A groove'} on AttackFM`,
         say: (message) => toast({ message }),
       });
     } finally {
@@ -215,8 +215,8 @@ export function ShareJamSheet({
   };
 
   return (
-    <GlassSheet open={open} onClose={onClose} label="Share jam" className="shareSheet">
-      <h2 className="shareSheet__title">Share this jam</h2>
+    <GlassSheet open={open} onClose={onClose} label="Share groove" className="shareSheet">
+      <h2 className="shareSheet__title">Share this groove</h2>
       <div className="shareSheet__linkFace">
         <JamCard
           cardRef={cardRef}
@@ -250,7 +250,7 @@ export function ShareJamSheet({
             discovered by whoever follows it. */}
         <Text tone="muted" size="xs" className="shareSheet__hint">
           The link walks anyone on this server straight into the room. Someone who is not on it will
-          be told so - a jam is a room on one server, not a broadcast.
+          be told so - a groove is a room on one server, not a broadcast.
         </Text>
       </div>
     </GlassSheet>

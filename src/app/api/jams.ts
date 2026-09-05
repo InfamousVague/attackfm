@@ -19,6 +19,15 @@ export interface JamEvent {
   who: string;
 }
 
+/** A member's add the host has not folded in yet. */
+export interface JamPending {
+  trackId: number;
+  /** Who asked, by name. */
+  by: string;
+  /** Hub ms. */
+  at: number;
+}
+
 export interface Jam {
   id: string;
   hostId: number;
@@ -36,6 +45,14 @@ export interface Jam {
   queue: number[];
   /** Who asked for a track, by track id: "added by Kayla" on the row. */
   addedBy?: Record<string, string>;
+  /** Songs members have asked for that the host's player has not folded in
+   *  yet - shown at once, ahead of the host's own line. Absent from an older
+   *  hub, which is read as none. */
+  pending?: JamPending[];
+  /** The hub's clock when the host's player last reported. Absent from an
+   *  older hub. Compared against `now` (the same clock) to say "waiting for
+   *  the host's player" when it has been quiet too long. */
+  hostSeenAt?: number;
   updatedAt: number;
   /** The host's beat has stopped arriving; the room is about to change hands. */
   hostQuiet?: boolean;
@@ -153,8 +170,8 @@ export async function pushJamState(
   return out.additions ?? [];
 }
 
-/** A member drops a track into the room's queue; the host folds it in on its
- *  next beat. */
+/** A member drops a track into the groove's queue; the host folds it in on
+ *  its next beat, and until then it stands in the room's `pending`. */
 export async function addToJamQueue(
   session: ServerSession,
   id: string,
@@ -164,5 +181,19 @@ export async function addToJamQueue(
     token: session.token,
     method: 'POST',
     body: JSON.stringify({ trackId }),
+  });
+}
+
+/** Take back your own pending add before the host folds it in. An older hub
+ *  has no such route and answers 404, which callers swallow - the host's next
+ *  beat folds the song in regardless, exactly as before. */
+export async function withdrawFromJamQueue(
+  session: ServerSession,
+  id: string,
+  trackId: number,
+): Promise<void> {
+  await request(session.url, `/api/jams/${id}/queue/${trackId}`, {
+    token: session.token,
+    method: 'DELETE',
   });
 }

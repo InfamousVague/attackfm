@@ -9,6 +9,7 @@ import { useHasDownloadQueue } from '../../plugins/runtime/pluginHooks.tsx';
 import { discoverDoorOpen, openDiscover } from '../nav/discoverDoor.ts';
 import { musicDateDoorOpen, openMusicDate } from '../nav/musicDateDoor.ts';
 import { openPlaylistById, playlistDoorOpen } from '../nav/playlistDoor.ts';
+import { useJamOptional } from '../player/jam.tsx';
 
 /**
  * The bell, and the news behind it.
@@ -46,6 +47,9 @@ export function NotifyBell({
   const hasQueue = useHasDownloadQueue();
   const active = dl?.active ?? [];
   const [open, setOpen] = useState(false);
+  // A groove row's door is an answer: pressing it accepts the ask. The
+  // provider's own accept, so the row and the profile card do one thing.
+  const groove = useJamOptional();
 
   /**
    * Which rows were new when the panel opened.
@@ -230,7 +234,7 @@ export function NotifyBell({
                  * the download queue happened to be empty - which is nearly
                  * always.
                  */
-                canOpen={canOpenDoor(n.door, hasQueue, onOpenFriends != null, n.playlist)}
+                canOpen={canOpenDoor(n.door, hasQueue, onOpenFriends != null, n.playlist, groove !== null && !!n.from)}
                 onOpen={() => {
                   setOpen(false);
                   if (n.door === 'downloads') onOpenDownloads();
@@ -244,6 +248,9 @@ export function NotifyBell({
                   // through the same kind of seam. Opening it is also what
                   // marks the share seen and takes this row away.
                   else if (n.door === 'playlist' && n.playlist) openPlaylistById(n.playlist);
+                  // The ask, answered. The watcher takes the row away once
+                  // the poll no longer carries the invite.
+                  else if (n.door === 'groove' && n.from) void groove?.acceptInvite(n.from);
                 }}
               />
             ))}
@@ -288,8 +295,12 @@ function canOpenDoor(
   hasQueue: boolean,
   hasFriends: boolean,
   playlist: string | undefined,
+  hasGroove: boolean,
 ): boolean {
   switch (door) {
+    case 'groove':
+      // Only with a provider to say yes through, and an asker to say it to.
+      return hasGroove;
     case 'downloads':
       return hasQueue;
     case 'friends':

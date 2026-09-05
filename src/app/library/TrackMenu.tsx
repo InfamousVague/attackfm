@@ -1,10 +1,11 @@
-import { ContextMenu, MenuItem, MenuSeparator, useToast } from '@glacier/react';
+import { ContextMenu, MenuItem, MenuSeparator, MenuSub, useToast } from '@glacier/react';
 import { MenuStop } from '../ux/MenuStop.tsx';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import {
   UserRound,
   ArrowDownToLine,
   Check,
+  Ellipsis,
   ListEnd,
   ListMusic,
   ListStart,
@@ -14,6 +15,7 @@ import {
   Trash2,
   CopyCheck,
   Heart,
+  Users,
 } from '@glacier/icons';
 import { Send } from '@glacier/icons';
 import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -36,9 +38,17 @@ import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { artistDoorOpen, openArtist } from '../nav/artistDoor.ts';
 
 /**
- * The three things you can do to a song that are not "play it", wrapped around
- * whatever shows the song: play it next, put it at the end of the queue, or
- * file it in a playlist.
+ * The things you can do to a song that are not "play it", wrapped around
+ * whatever shows the song.
+ *
+ * TWO LEVELS, on purpose. The menu had grown to a dozen rows - every feature
+ * that touched a song added one - and "too many things" was the owner's own
+ * phrase for it. The first level is the handful a person reaches for from a
+ * row: the queue verb(s), the playlist, the heart, the artist. Everything
+ * else is still here, one row further in, behind "More…": nothing was
+ * removed, only folded. Following a groove the queue verbs collapse to ONE -
+ * "Add to the groove" - because a follower has no line of their own for a
+ * song to be next in.
  *
  * Every surface that draws a track should wear this, because the alternative is
  * what the app had - the menu on the song table and nowhere else, so filing a
@@ -68,7 +78,7 @@ export function TrackMenu({
    *  the menu still reads as one song's menu with a preface. */
   lead?: ReactNode;
 }) {
-  const { playNext, addToQueue, inJam } = useQueueControls();
+  const { playNext, addToQueue, following } = useQueueControls();
   const { isFavorite, toggleFavorite } = useLibrary();
   const { toast } = useToast();
   /** One queue verb, said once. See the note at the menu items. */
@@ -77,7 +87,7 @@ export function TrackMenu({
     else addToQueue(t);
     fireNativeHaptic('light');
     toast({
-      message: `“${t.title}” ${inJam ? 'sent to the jam' : next ? 'playing next' : 'added to the queue'}`,
+      message: `“${t.title}” ${following ? 'sent to the groove' : next ? 'playing next' : 'added to the queue'}`,
     });
   };
   // The station: a song is the most natural thing to start one from, and the
@@ -195,37 +205,40 @@ export function TrackMenu({
           <MenuStop>
             {lead}
             {lead && <MenuSeparator />}
-            {/* Both queue verbs answer now. They were the highest-frequency
+            {/* THE FIRST LEVEL: what a person reaches for from a row.
+
+                Both queue verbs answer now. They were the highest-frequency
                 "you did something and the app said nothing" in the app: the
                 menu closed and the song went into a list you cannot see from
                 where you are standing. The BULK version of the same verb has
                 always toasted ("3 songs added to the queue", songSelection),
                 so one song getting silence while three got a sentence was an
-                oversight rather than a decision. Same wording, singular. */}
-            <MenuItem icon={<ListStart size={15} />} onSelect={() => queued(track, true)}>
-              Play next
-            </MenuItem>
-            {/* The artist's page, from any held song anywhere. Most cards
-                print the name inside an element that is already a button, so
-                the menu is the one place this door fits every surface at
-                once - and books stay out, because authors have no page (the
-                library keeps them off the music shelves ArtistPage reads). */}
-            {artistDoorOpen() && track.kind !== 'book' && track.artist.trim() !== '' && (
-              <MenuItem icon={<UserRound size={15} />} onSelect={() => openArtist(track.artist)}>
-                Go to artist
+                oversight rather than a decision. Same wording, singular.
+
+                Following a groove there is ONE verb. Play next and Add to
+                queue both landed on the room anyway (queueControls), and two
+                rows that do the same thing read as a choice that is not
+                there. */}
+            {following ? (
+              <MenuItem icon={<Users size={15} />} onSelect={() => queued(track, false)}>
+                Add to the groove
               </MenuItem>
+            ) : (
+              <>
+                <MenuItem icon={<ListStart size={15} />} onSelect={() => queued(track, true)}>
+                  Play next
+                </MenuItem>
+                <MenuItem icon={<ListEnd size={15} />} onSelect={() => queued(track, false)}>
+                  Add to queue
+                </MenuItem>
+              </>
             )}
-            <MenuItem icon={<ListEnd size={15} />} onSelect={() => queued(track, false)}>
-              {inJam ? 'Add to jam queue' : 'Add to queue'}
-            </MenuItem>
             {/* One item, not a submenu of every list: the panel it opens can
                 search, create and un-add, none of which a nested menu of names
                 can do. */}
-            {selection && (
-              <MenuItem icon={<CopyCheck size={15} />} onSelect={() => selection.start(track.path)}>
-                Select songs…
-              </MenuItem>
-            )}
+            <MenuItem icon={<ListMusic size={15} />} onSelect={() => setFiling(true)}>
+              Add to playlist…
+            </MenuItem>
             {/* Love, in the menu.
 
                 It was only ever a button on the row - a heart on the search
@@ -243,68 +256,87 @@ export function TrackMenu({
                 {isFavorite(track.path) ? 'Remove from Liked' : 'Love this song'}
               </MenuItem>
             )}
-            <MenuItem icon={<ListMusic size={15} />} onSelect={() => setFiling(true)}>
-              Add to playlist…
-            </MenuItem>
-            {/* By name, to a friend's own hub - no file leaves this one. */}
-            {registry?.session && (
-              <MenuItem icon={<Send size={15} />} onSelect={() => setSending(true)}>
-                Send to a friend…
+            {/* The artist's page, from any held song anywhere. Most cards
+                print the name inside an element that is already a button, so
+                the menu is the one place this door fits every surface at
+                once - and books stay out, because authors have no page (the
+                library keeps them off the music shelves ArtistPage reads). */}
+            {artistDoorOpen() && track.kind !== 'book' && track.artist.trim() !== '' && (
+              <MenuItem icon={<UserRound size={15} />} onSelect={() => openArtist(track.artist)}>
+                Go to artist
               </MenuItem>
             )}
-            {/* An endless run in this song's direction. It plays first, and
-                the station keeps the queue fed behind it for as long as it
-                is on - see radio.tsx. */}
-            {radio && session && (
-              <MenuItem
-                icon={<Radio size={15} />}
-                onSelect={() => {
-                  // The seed plays first - a station "from this song" that did
-                  // not play it would be a station from somewhere else.
-                  playNext(track);
-                  radio.start(track);
-                }}
-              >
-                Start radio from this
-              </MenuItem>
-            )}
-            {session && trackId !== null && (
-              <>
-                <MenuItem icon={<Sparkles size={15} />} onSelect={() => setQuickQueue(true)}>
-                  Generate custom queue
+            <MenuSeparator />
+            {/* THE SECOND LEVEL: everything else, unchanged, one row further
+                in. A kit flyout: it opens on tap as well as hover, and a pick
+                inside it closes the whole stack - so on a phone it is one
+                more tap, never a second menu to dismiss. */}
+            <MenuSub label="More…" icon={<Ellipsis size={15} />} menuClassName="trackMenuMore">
+              {selection && (
+                <MenuItem icon={<CopyCheck size={15} />} onSelect={() => selection.start(track.path)}>
+                  Select songs…
                 </MenuItem>
-                <MenuItem icon={<Sparkles size={15} />} onSelect={() => setExploring(true)}>
-                  Choose the sound for a mix…
+              )}
+              {/* By name, to a friend's own hub - no file leaves this one. */}
+              {registry?.session && (
+                <MenuItem icon={<Send size={15} />} onSelect={() => setSending(true)}>
+                  Send to a friend…
                 </MenuItem>
-              </>
-            )}
-            {/* The song, on this device: it plays with the hub off, the wifi
-                gone, or the plane door shut. Held songs offer the way back
-                out, since the whole point is that the space is yours. */}
-            {/* The importer matches a song by searching for its title and
-                artist, so it can arrive as a live cut, a remix, or a cover -
-                correctly tagged either way, which is why only a listener ever
-                catches it. Offered wherever a song is, because that is where
-                you are standing when you notice. Admin-only: it edits a file
-                the whole server shares. */}
-            {canReport && (
-              <MenuItem icon={<SearchX size={15} />} onSelect={() => setReporting(true)}>
-                Wrong song?
-              </MenuItem>
-            )}
-            {canKeep &&
-              (held ? (
-                <MenuItem icon={<Trash2 size={15} />} onSelect={() => void unpinTrack(track.path)}>
-                  Remove from this device
-                </MenuItem>
-              ) : (
+              )}
+              {/* An endless run in this song's direction. It plays first, and
+                  the station keeps the queue fed behind it for as long as it
+                  is on - see radio.tsx. */}
+              {radio && session && (
                 <MenuItem
-                  icon={keeping ? <Check size={15} /> : <ArrowDownToLine size={15} />}
-                  onSelect={() => void keep()}
+                  icon={<Radio size={15} />}
+                  onSelect={() => {
+                    // The seed plays first - a station "from this song" that did
+                    // not play it would be a station from somewhere else.
+                    playNext(track);
+                    radio.start(track);
+                  }}
                 >
-                  {keeping ? 'Keeping…' : 'Keep on this device'}
+                  Start radio from this
                 </MenuItem>
-              ))}
+              )}
+              {session && trackId !== null && (
+                <>
+                  <MenuItem icon={<Sparkles size={15} />} onSelect={() => setQuickQueue(true)}>
+                    Generate custom queue
+                  </MenuItem>
+                  <MenuItem icon={<Sparkles size={15} />} onSelect={() => setExploring(true)}>
+                    Choose the sound for a mix…
+                  </MenuItem>
+                </>
+              )}
+              {/* The importer matches a song by searching for its title and
+                  artist, so it can arrive as a live cut, a remix, or a cover -
+                  correctly tagged either way, which is why only a listener ever
+                  catches it. Offered wherever a song is, because that is where
+                  you are standing when you notice. Admin-only: it edits a file
+                  the whole server shares. */}
+              {canReport && (
+                <MenuItem icon={<SearchX size={15} />} onSelect={() => setReporting(true)}>
+                  Wrong song?
+                </MenuItem>
+              )}
+              {/* The song, on this device: it plays with the hub off, the wifi
+                  gone, or the plane door shut. Held songs offer the way back
+                  out, since the whole point is that the space is yours. */}
+              {canKeep &&
+                (held ? (
+                  <MenuItem icon={<Trash2 size={15} />} onSelect={() => void unpinTrack(track.path)}>
+                    Remove from this device
+                  </MenuItem>
+                ) : (
+                  <MenuItem
+                    icon={keeping ? <Check size={15} /> : <ArrowDownToLine size={15} />}
+                    onSelect={() => void keep()}
+                  >
+                    {keeping ? 'Keeping…' : 'Keep on this device'}
+                  </MenuItem>
+                ))}
+            </MenuSub>
           </MenuStop>
         }
       >

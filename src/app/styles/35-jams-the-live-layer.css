@@ -339,3 +339,64 @@
   gap: var(--glacier-space-2);
   flex-wrap: wrap;
 }
+
+/* ── The groove's pending line (QueuePanel) ─────────────────────────────────
+   A guest's adds, drawn the moment they are sent and ahead of the host's own
+   line: they are the newest thing in the room and the one thing the guest is
+   waiting on. Quieter than a queued row - it is not in the line yet. */
+.queueRows--pending {
+  margin-block-end: var(--glacier-space-2);
+}
+
+.queueRow[data-pending] {
+  opacity: 0.78;
+}
+
+.queueRow[data-pending] .queueRow__cover {
+  outline: 1.5px dashed var(--glacier-accent-solid);
+  outline-offset: 1px;
+}
+
+.queueRow__withdraw {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+/* "Waiting for Matt's player" - the host's beat has stopped arriving, said
+   under the label rather than as an alarm. */
+.queueUp__note {
+  display: block;
+  margin-block: calc(-1 * var(--glacier-space-1)) var(--glacier-space-2);
+}
+
+/* ── The People shelf's groove card ─────────────────────────────────────────
+   The whole card is the Join; the pill on the face only says so. */
+.peopleCard--groove .peopleCard__face {
+  overflow: visible;
+}
+
+.peopleCard__cta {
+  position: absolute;
+  inset-block-end: var(--glacier-space-2);
+  inset-inline-end: var(--glacier-space-2);
+  padding: 0.2rem 0.7rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-contrast, #fff);
+  font-size: var(--glacier-font-size-xs, 0.75rem);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+/* Who is in, on its own line above what is on. */
+.peopleCard__who {
+  color: var(--glacier-text);
+  font-weight: var(--glacier-font-weight-medium, 500);
+}
+
+/* The folded second level of the song menu. Nothing special yet - the kit's
+   flyout carries its own glass - but named so the width can be tuned. */
+.trackMenuMore {
+  min-inline-size: 13rem;
+}

@@ -551,7 +551,7 @@ export function FriendsSection({
               const online = isOnline(f);
               const glance = weekGlance(f);
               // The two ways to reach a same-server friend from here. Listen
-              // along follows a friend who is PLAYING (they host); invite-to-jam
+              // along follows a friend who is PLAYING (they host); invite-to-groove
               // gathers an ONLINE friend into a room you host. A playing friend
               // when you are free gets the more specific of the two; anyone else
               // online gets the invite (which starts a room if you have none),
@@ -667,11 +667,11 @@ export function FriendsSection({
                       <Button
                         variant={jam?.current ? 'soft' : 'solid'}
                         size="sm"
-                        aria-label={`Invite ${f.handle} to jam`}
+                        aria-label={`Invite ${f.handle} to groove`}
                         onClick={() => void jam?.jamWith(f.handle)}
                       >
                         <Users size={15} />
-                        Invite to jam
+                        Invite to groove
                       </Button>
                     )}
                     {/* Their library is somewhere this device is not listening

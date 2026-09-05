@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useConnect } from './playbackSync.tsx';
+import { useJamOptional } from './jam.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
@@ -15,6 +16,14 @@ import { Player } from './Player.tsx';
  * having Connect at all. So the bar appears for a local track OR for the track
  * another device is playing, and the Player's own remote mode does the rest
  * (it shows that device's clock and sends commands instead of playing).
+ *
+ * The same holds for a GROOVE you are following: the host's song is the one
+ * this device should be steering to, and the steering lives in the Player -
+ * so a guest who joined with an idle deck had no Player to follow with, and
+ * no queue panel to send songs from. The room's track stands the strip up,
+ * the way a remote's does; the Player then takes the song over as its own
+ * (usePlayerConnect's follow, which treats a deck it does not own yet as a
+ * different song and resumes at the host's position).
  *
  * Lives inside the Connect provider because only a child of it can read the
  * shared session.
@@ -61,9 +70,15 @@ export function PlayerHost({
     remoteId != null
       ? (allTracks.find((t) => trackIdFromPath(t.path) === remoteId) ?? null)
       : null;
+  // Following a groove with nothing of our own on: the room's song.
+  const jam = useJamOptional();
+  const room = jam?.current ?? null;
+  const roomId = room !== null && !jam?.hosting ? room.trackId : null;
+  const roomTrack =
+    roomId != null ? (allTracks.find((t) => trackIdFromPath(t.path) === roomId) ?? null) : null;
   // A local track always wins: this device's own deck is what its transport
   // drives once it has one.
-  const shown = current ?? remoteTrack;
+  const shown = current ?? remoteTrack ?? roomTrack;
   /**
    * Whether the strip's track is this device's OWN deck, or a mirror of one
    * elsewhere. `current` is the app's track - set only by something this

@@ -66,11 +66,19 @@ export interface Notice {
    * the tray entry can START the song rather than merely open the app.
    */
   song?: { title: string; artist: string };
+  /**
+   * Who a `'groove'` door answers - the friend who asked. Only ever set
+   * beside that door; a groove row without it has nobody to say yes to and
+   * is drawn unpressable.
+   */
+  from?: string;
   read: boolean;
 }
 
-/** Where a row can land. `'playlist'` carries its target in `Notice.playlist`. */
-export type NoticeDoor = 'downloads' | 'friends' | 'discover' | 'date' | 'playlist' | null;
+/** Where a row can land. `'playlist'` carries its target in `Notice.playlist`;
+ *  `'groove'` is an ANSWER rather than a place - pressing it accepts the ask
+ *  named in `Notice.from`. */
+export type NoticeDoor = 'downloads' | 'friends' | 'discover' | 'date' | 'playlist' | 'groove' | null;
 
 /** What `noteNotice` is given: the row, minus the bookkeeping it does itself. */
 export type NewNotice = Omit<Notice, 'read' | 'at'> & { at?: number };
@@ -125,10 +133,12 @@ function load(): Notice[] {
           e.door === 'friends' ||
           e.door === 'discover' ||
           e.door === 'date' ||
-          e.door === 'playlist'
+          e.door === 'playlist' ||
+          e.door === 'groove'
             ? e.door
             : null,
         ...(typeof e.playlist === 'string' ? { playlist: e.playlist } : {}),
+        ...(typeof e.from === 'string' ? { from: e.from } : {}),
         ...(e.song && typeof e.song.title === 'string'
           ? { song: { title: e.song.title, artist: String(e.song.artist ?? '') } }
           : {}),
@@ -225,6 +235,7 @@ export function noteNotice(n: NewNotice): void {
     door: n.door,
     ...(n.playlist ? { playlist: n.playlist } : {}),
     ...(n.song ? { song: n.song } : {}),
+    ...(n.from ? { from: n.from } : {}),
     read: false,
   };
 

@@ -48,6 +48,8 @@ import { ShareServer } from './library/ShareServer.tsx';
 import { CarPlayBridge } from './player/CarPlayBridge.tsx';
 import { installSheetDismiss } from './player/playerDismiss.ts';
 import { ConnectPlayRouter, PlayerHost } from './player/PlayerHost.tsx';
+import { GroovePlayRouter } from './player/GroovePlayRouter.tsx';
+import { GrooveNotices } from './notify/GrooveNotices.tsx';
 import { IndexingStatus } from './nav/IndexingStatus.tsx';
 import { PrimaryNav } from './nav/PrimaryNav.tsx';
 import { APP_NAME, HeaderActionButtons, HeaderIdent } from './nav/HeaderChrome.tsx';
@@ -344,6 +346,9 @@ export function App() {
   // a pick to that device and returns true; playFrom then does nothing locally,
   // so the song changes on every device while control stays where it is.
   const connectRouteRef = useRef<((track: Track, context?: Track[]) => boolean) | null>(null);
+  // Populated by GroovePlayRouter while FOLLOWING a groove: a tap on a song
+  // then sends it to the room rather than starting it here, and returns true.
+  const grooveRouteRef = useRef<((track: Track, context?: Track[]) => boolean) | null>(null);
 
   // What playFrom needs to NAME the surface without joining its dependency
   // list: tab and detail are declared below (nav stack), so they travel by a
@@ -358,6 +363,10 @@ export function App() {
   // rides into memoized page props and the song table's column definitions,
   // so a fresh closure per render re-rendered every row on each track change.
   const playFrom = useCallback((track: Track, context?: Track[]) => {
+    // Following a groove: the pick is an ADD to the room, not a play here.
+    // Asked before Connect, because a person in a groove means the groove
+    // whichever of their own devices holds the audio.
+    if (grooveRouteRef.current?.(track, context)) return;
     // Another device is the one playing: hand it the pick rather than seizing
     // playback here. The active device loads and plays it, then reports, and
     // this device (a remote) updates from that report like any other.
@@ -887,6 +896,9 @@ export function App() {
                 Lives here, inside the Connect provider, because only a child of
                 it can read the shared session. */}
             <ConnectPlayRouter routeRef={connectRouteRef} />
+            {/* Teaches playFrom that a follower's tap is an add to the groove.
+                Same shape as the Connect router, asked first. */}
+            <GroovePlayRouter routeRef={grooveRouteRef} />
             {/* Watches the armed import job and, when it lands, swaps the
                 downloading placeholder for the real track and plays it. Headless;
                 sits inside the downloads + library providers. */}
@@ -926,6 +938,9 @@ export function App() {
                 machine's own work. A friend request is addressed to you and
                 waits for an answer, so it rings either way. */}
             <FriendNotices />
+            {/* An ask into a groove, in the bell - answered from the row.
+                Reads the groove provider's own poll; fetches nothing. */}
+            <GrooveNotices />
             <ShareNotices />
             {/* The same kind of news, one step further in: a friend shared a
                 LIST with you, or added to one you share. Addressed, so it

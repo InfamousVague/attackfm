@@ -7,22 +7,27 @@
 //!   - playNext: jump it to right after the current track.
 //!   - addToQueue: put it at the end of the line.
 //! With nothing playing, either one just starts it.
+//!
+//! Following a groove there is only ONE verb - "add to the groove" - because a
+//! follower has no line of their own to put a song next in; both handles land
+//! on the room, and surfaces read `following` to say so.
 
 import { createContext, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import type { Track } from '../core/tauri.ts';
 import { useJamOptional } from './jam.tsx';
-import { useServerSession } from '../servers/serverSession.tsx';
-import { addToJamQueue, trackIdFromPath } from '../server.ts';
 
 export interface QueueControls {
   /** Slot the track in immediately after whatever is playing. */
   playNext: (track: Track) => void;
   /** Add the track to the end of the queue. */
   addToQueue: (track: Track) => void;
-  /** True when the two verbs land on a shared jam queue rather than only this
-   *  device's - so a surface can say "Add to jam" and mean it. */
+  /** True when in a groove at all - hosting or following. */
   inJam: boolean;
+  /** True when the two verbs land on the ROOM rather than this device: in a
+   *  groove, not hosting. A surface then offers "Add to the groove" as the
+   *  one queue verb and says "sent to the groove" when it lands. */
+  following: boolean;
 }
 
 const QueueControlsContext = createContext<QueueControls | null>(null);
@@ -31,11 +36,12 @@ const QueueControlsProvider = QueueControlsContext.Provider;
 
 /**
  * Points the two verbs at the right queue for the moment. On your own deck (or
- * hosting a jam, where your deck IS the room's) they edit locally through the
- * handlers App hands down. Following someone else's jam, your own deck is
- * silent - so an add goes to the ROOM instead, and the host folds it in on its
- * next beat. Local-only files (no server id) cannot cross to the room and are
- * quietly skipped there.
+ * hosting a groove, where your deck IS the room's) they edit locally through
+ * the handlers App hands down. Following someone else's groove, your own deck
+ * is silent - so an add goes to the ROOM instead (jam.tsx's addToRoom, which
+ * shows it as pending at once), and the host folds it in on its next beat.
+ * Local-only files (no server id) cannot cross to the room and are quietly
+ * skipped there.
  */
 export function QueueControlsBridge({
   localPlayNext,
@@ -46,22 +52,27 @@ export function QueueControlsBridge({
   localAddToQueue: (track: Track) => void;
   children: ReactNode;
 }) {
-  const { session } = useServerSession();
   const jam = useJamOptional();
-  const room = jam?.current ?? null;
-  const following = room !== null && !jam?.hosting;
+  // Booleans, not the room itself: the room is a fresh object every poll,
+  // and this value rides into the menu on every row of the song table.
+  const inRoom = (jam?.current ?? null) !== null;
+  const following = inRoom && !jam?.hosting;
+  const addToRoom = jam?.addToRoom;
 
   const value = useMemo<QueueControls>(() => {
-    if (following && session && room) {
+    if (following && addToRoom) {
       const toRoom = (track: Track) => {
-        const id = trackIdFromPath(track.path);
-        if (id == null) return;
-        void addToJamQueue(session, room.id, id).catch(() => {});
+        void addToRoom(track);
       };
-      return { playNext: toRoom, addToQueue: toRoom, inJam: true };
+      return { playNext: toRoom, addToQueue: toRoom, inJam: true, following: true };
     }
-    return { playNext: localPlayNext, addToQueue: localAddToQueue, inJam: room !== null };
-  }, [following, session, room, localPlayNext, localAddToQueue]);
+    return {
+      playNext: localPlayNext,
+      addToQueue: localAddToQueue,
+      inJam: inRoom,
+      following: false,
+    };
+  }, [following, addToRoom, inRoom, localPlayNext, localAddToQueue]);
 
   return <QueueControlsProvider value={value}>{children}</QueueControlsProvider>;
 }
@@ -77,6 +88,7 @@ export function useQueueControls(): QueueControls {
       playNext: () => {},
       addToQueue: () => {},
       inJam: false,
+      following: false,
     }
   );
 }

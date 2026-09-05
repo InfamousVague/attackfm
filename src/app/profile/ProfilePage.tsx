@@ -78,7 +78,7 @@ function HoldMenu({
  * layers actually depend on each other:
  *
  *   who you are        - the registry identity (or creating one),
- *   what is live       - jams happening right now, joinable this second,
+ *   what is live       - grooves happening right now, joinable this second,
  *   where you listen   - every server this device has entered, one tap to
  *                        switch, plus the two doors: invite a friend IN, or
  *                        join somewhere new yourself,
@@ -96,8 +96,8 @@ function HoldMenu({
 /*
  * The code box and the nearby scan used to sit here.
  *
- * Both were doors INTO a jam, on the page about YOU, and both are answered
- * where a jam actually happens - the badge on the player, which is on screen
+ * Both were doors INTO a groove, on the page about YOU, and both are answered
+ * where a groove actually happens - the badge on the player, which is on screen
  * while the music is. A page about a person should not be a control panel for
  * a room.
  */
@@ -125,7 +125,7 @@ function LiveNow() {
           already happening. */}
       {jam.invites.length > 0 && (
         <section className="homeShelf">
-          <h2 className="homeShelfTitle">Asking to jam</h2>
+          <h2 className="homeShelfTitle">Asking to groove</h2>
           <div className="jamRooms">
             {jam.invites.map((inv) => {
               // 'jam' = they host and want you in; 'along' = they want to hear
@@ -138,7 +138,7 @@ function LiveNow() {
                   </span>
                   <span className="jamRoom__name">{inv.from}</span>
                   <span className="jamRoom__meta">
-                    {toJam ? 'invited you to jam' : 'wants to hear along with you'}
+                    {toJam ? 'invited you to groove' : 'wants to hear along with you'}
                   </span>
                   <span className="jamRoom__actions">
                     <Button variant="ghost" size="sm" onClick={() => void jam.declineInvite(inv.from)}>
@@ -181,7 +181,7 @@ function LiveNow() {
               </span>
               <span className="jamLive__body">
                 <span className="jamLive__title">
-                  {jam.hosting ? 'Your jam' : `${jam.current.hostName}'s jam`}
+                  {jam.hosting ? 'Your groove' : `${jam.current.hostName}'s groove`}
                 </span>
                 <span className="jamLive__song">
                   {currentTrack ? (
@@ -257,8 +257,8 @@ function LiveNow() {
       )}
 
       {/* No code box and no nearby scan below this any more. Both were doors
-          INTO a jam, parked on the page about YOU, and both are answered where
-          a jam actually happens - the badge on the player, which is on screen
+          INTO a groove, parked on the page about YOU, and both are answered where
+          a groove actually happens - the badge on the player, which is on screen
           while the music is. A page about a person should not be a control
           panel for a room. */}
     </>

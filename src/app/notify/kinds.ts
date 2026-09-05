@@ -52,6 +52,13 @@ export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
     label: 'Friend requests',
     hint: 'When somebody asks to be friends.',
   },
+  // Local-only, raised by GrooveNotices off the groove provider's own poll:
+  // a friend asking you into a groove, or to listen along with you. Addressed
+  // to you and waiting on an answer, so it rings like a friend request.
+  groove: {
+    label: 'Groove invites',
+    hint: 'When a friend invites you to groove, or asks to listen along.',
+  },
   // A local-only kind (not a server push kind, so it never appears in the
   // account's switch list), raised by the client's NewMusicNotices watcher and
   // gated by the device's "Discovery notifications" switch. Distinct from
@@ -141,6 +148,7 @@ export function noticeGlyph(kind: string): ComponentType<{ size?: number }> {
     case 'newmusic':
       return Compass;
     case 'friends':
+    case 'groove':
     case 'playlist-shared':
       return Users;
     case 'playlist-add':

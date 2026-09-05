@@ -2,8 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react';
 import { useToast } from '@glacier/react';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { trackIdFromPath } from '../server.ts';
+import type { Track } from '../core/tauri.ts';
 import {
   acceptJamInvite as acceptJamInviteApi,
+  addToJamQueue,
+  withdrawFromJamQueue,
   declineJamInvite as declineJamInviteApi,
   endJam as endJamApi,
   fetchJams,
@@ -13,10 +17,15 @@ import {
   startJam as startJamApi,
   type Jam,
   type JamInvite,
+  type JamPending,
 } from '../server.ts';
 
 /**
- * The jam a listener is in, if any: friends following one host's clock.
+ * The groove a listener is in, if any: friends following one host's clock.
+ *
+ * (Called a JAM in every identifier, route and storage key - the name people
+ * read changed to "groove"; the code's did not, because renaming a working
+ * wire protocol buys nobody anything and breaks older clients.)
  *
  * This holds the ROOM, not the audio. The host's Player posts where it is
  * (through `hostBeat`); a follower's Player reads `current` and steers itself
@@ -41,6 +50,24 @@ const POLL_IN_JAM_MS = 3000;
  *  that stops polling stops following. */
 const POLL_IN_JAM_HIDDEN_MS = 8000;
 const POLL_IDLE_MS = 30_000;
+/** How long a host's player may go unheard before the room says so. The
+ *  host beats every 2.5 s; forty-five seconds is a backgrounded phone or a
+ *  closed laptop, not a slow network. */
+const HOST_QUIET_MS = 45_000;
+/** How long a local pending row outlives its send when the hub never
+ *  reports it back (an older hub without `pending`). The host folds an add
+ *  in on its next beat, so by then it has shown up in the queue instead. */
+const LOCAL_PENDING_MS = 60_000;
+
+/** A member's add the host has not folded in yet, as the panel draws it:
+ *  the room's own row, or this device's until the hub reports it back. */
+export interface PendingAdd extends JamPending {
+  /** Asked for from this account - the row wears a withdraw. */
+  mine: boolean;
+  /** Known here before the hub has said so: the send's own Track, so the row
+   *  draws at once without a library lookup. */
+  track?: Track;
+}
 
 interface JamValue {
   /** The room, or null when not in one. */
@@ -55,8 +82,8 @@ interface JamValue {
   /** Ask a friend into a room. 'along' (default) asks a playing friend to let
    *  you listen along (they host); 'jam' asks them to join a room you host. */
   invite: (to: string, kind?: 'along' | 'jam') => Promise<boolean>;
-  /** Invite an online friend to jam WITH you: start a room if you have none,
-   *  then ask them to join it. The one-tap "come jam" verb. */
+  /** Invite an online friend to groove WITH you: start a room if you have
+   *  none, then ask them to join it. The one-tap "come groove" verb. */
   jamWith: (to: string) => Promise<boolean>;
   /** Say yes to an ask - for 'along' your player becomes the clock, for 'jam'
    *  you drop into their room. The server decides from the invite's kind. */
@@ -66,6 +93,16 @@ interface JamValue {
   /** Resolves true once in the room; false (having said why) otherwise. */
   join: (id: string) => Promise<boolean>;
   leave: () => Promise<void>;
+  /** A follower's add: the song goes to the ROOM for the host to fold in.
+   *  Shown as pending here at once; the hub's next poll takes over the row.
+   *  Resolves false (silently) for a song with no server id, or off a room. */
+  addToRoom: (track: Track) => Promise<boolean>;
+  /** Take back one of your own pending adds. Gone locally at once; an older
+   *  hub without the route is tolerated. */
+  withdraw: (trackId: number) => Promise<void>;
+  /** Adds the host has not folded in yet - the hub's list, with this device's
+   *  own unconfirmed sends ahead of the poll. Empty when hosting. */
+  pending: PendingAdd[];
   /** The host closes the room for everyone (leave hands it on). */
   end: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -104,6 +141,13 @@ export function JamProvider({ children }: { children: ReactNode }) {
   const lastRoom = useRef<Jam | null>(null);
   const lastEventAt = useRef(0);
   const leaving = useRef(false);
+  // Sends this device made that the hub has not reported back yet, so the
+  // queue panel shows a row the moment the tap lands rather than a poll
+  // later. Reconciled on every refresh - see `refresh`.
+  const [localPending, setLocalPending] = useState<(PendingAdd & { roomId: string })[]>([]);
+  // Withdrawn adds, hidden until a poll that ran AFTER the delete has been
+  // read - a poll in flight during the delete can still carry the row.
+  const withdrawn = useRef<Set<number>>(new Set());
 
   const refresh = useCallback(async () => {
     if (!session) {
@@ -127,9 +171,9 @@ export function JamProvider({ children }: { children: ReactNode }) {
             toast({
               message:
                 e.kind === 'joined'
-                  ? `${e.who} joined the jam`
+                  ? `${e.who} joined the groove`
                   : e.kind === 'left'
-                    ? `${e.who} left the jam`
+                    ? `${e.who} left the groove`
                     : e.kind === 'host'
                       ? `${e.who} has the clock now`
                       : `${e.who}: ${e.kind}`,
@@ -139,14 +183,32 @@ export function JamProvider({ children }: { children: ReactNode }) {
         lastEventAt.current = Math.max(lastEventAt.current, ...(room.events ?? []).map((e) => e.at));
         if (before && before.id === room.id && before.hostId !== room.hostId && room.hostId !== undefined) {
           const iAmHost = room.hostName.toLowerCase() === me;
-          if (iAmHost) toast({ message: 'The jam is yours now - your player sets the pace' });
+          if (iAmHost) toast({ message: 'The groove is yours now - your player sets the pace' });
         }
       } else if (before && !leaving.current) {
-        toast({ message: `${before.hostName}'s jam ended` });
+        toast({ message: `${before.hostName}'s groove ended` });
       }
       leaving.current = false;
       lastRoom.current = room;
       setCurrent(room);
+      // Reconcile this device's own sends against what the hub now says: a
+      // send the hub reports as pending is the hub's row from here on; one
+      // the host has folded into the queue is a queue row; one neither has
+      // heard of after a minute (an older hub) is let go. A room change
+      // drops them all.
+      setLocalPending((prev) => {
+        if (prev.length === 0) return prev;
+        const now = Date.now();
+        const next = prev.filter(
+          (p) =>
+            room !== null &&
+            p.roomId === room.id &&
+            !(room.pending ?? []).some((h) => h.trackId === p.trackId) &&
+            !room.queue.includes(p.trackId) &&
+            now - p.at < LOCAL_PENDING_MS,
+        );
+        return next.length === prev.length ? prev : next;
+      });
       setFriendJams(feed.friends);
       setInvites(feed.invites);
       // A new ask, said once: "Kayla wants to listen along". The card in Live
@@ -158,7 +220,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
         toast({
           message:
             inv.kind === 'jam'
-              ? `${inv.from} invited you to jam`
+              ? `${inv.from} invited you to groove`
               : `${inv.from} wants to listen along`,
         });
       }
@@ -214,7 +276,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
         // A dead code, an old hub, a moment offline - said out loud. The
         // bare `void jam.join()` this used to hang off left the tap doing
         // nothing at all.
-        toast({ message: e instanceof Error && e.message ? e.message : 'Could not join that jam.' });
+        toast({ message: e instanceof Error && e.message ? e.message : 'Could not join that groove.' });
         return false;
       }
     },
@@ -226,7 +288,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
       if (!session) return false;
       try {
         await inviteToJamApi(session, to, kind);
-        toast({ message: kind === 'jam' ? `Invited ${to} to jam` : `Asked ${to} to listen along` });
+        toast({ message: kind === 'jam' ? `Invited ${to} to groove` : `Asked ${to} to listen along` });
         // 'along' only: the room appears when THEY accept, so poll faster for a
         // beat rather than waiting out the idle interval. 'jam' needs none of
         // this - you are already the host, the room is already here.
@@ -352,6 +414,69 @@ export function JamProvider({ children }: { children: ReactNode }) {
     [session],
   );
 
+  // A follower's add, local-first. The row is on screen before the request
+  // has returned: the tap landed, and the panel should say so now rather
+  // than after a poll. The hub's own list takes over on the next refresh.
+  const addToRoom = useCallback(
+    async (track: Track): Promise<boolean> => {
+      const room = jamRef.current;
+      if (!session || !room || isHost(room, session.username)) return false;
+      const id = trackIdFromPath(track.path);
+      if (id == null) return false;
+      const me = session.username;
+      withdrawn.current.delete(id);
+      setLocalPending((prev) =>
+        prev.some((p) => p.trackId === id && p.roomId === room.id)
+          ? prev
+          : [...prev, { trackId: id, by: me, at: Date.now(), mine: true, track, roomId: room.id }],
+      );
+      try {
+        await addToJamQueue(session, room.id, id);
+        return true;
+      } catch {
+        // The room may have ended, or the hub is briefly away. The row goes
+        // again: a pending add that was never received is not pending.
+        setLocalPending((prev) => prev.filter((p) => !(p.trackId === id && p.roomId === room.id)));
+        return false;
+      }
+    },
+    [session],
+  );
+
+  const withdraw = useCallback(
+    async (trackId: number) => {
+      const room = jamRef.current;
+      if (!session || !room) return;
+      withdrawn.current.add(trackId);
+      setLocalPending((prev) => prev.filter((p) => p.trackId !== trackId));
+      try {
+        await withdrawFromJamQueue(session, room.id, trackId);
+      } catch {
+        // An older hub without the route: the host folds it in on its next
+        // beat as it always did. Nothing to say - the row is gone here.
+      } finally {
+        // Read the room once more AFTER the delete, so a poll that was in
+        // flight cannot bring the row back; then stop hiding it.
+        await refresh();
+        withdrawn.current.delete(trackId);
+      }
+    },
+    [session, refresh],
+  );
+
+  const pending = useMemo<PendingAdd[]>(() => {
+    if (!current || !session || hosting) return [];
+    const me = session.username.toLowerCase();
+    const hub: PendingAdd[] = (current.pending ?? [])
+      .filter((p) => !withdrawn.current.has(p.trackId))
+      .map((p) => ({ ...p, mine: p.by.toLowerCase() === me }));
+    const known = new Set(hub.map((p) => p.trackId));
+    const local = localPending
+      .filter((p) => p.roomId === current.id && !known.has(p.trackId))
+      .map(({ roomId: _roomId, ...p }) => p);
+    return [...hub, ...local];
+  }, [current, session, hosting, localPending]);
+
   const value = useMemo<JamValue>(
     () => ({
       current,
@@ -366,6 +491,9 @@ export function JamProvider({ children }: { children: ReactNode }) {
       join,
       leave,
       end,
+      addToRoom,
+      withdraw,
+      pending,
       refresh,
       hostBeat,
     }),
@@ -382,6 +510,9 @@ export function JamProvider({ children }: { children: ReactNode }) {
       join,
       leave,
       end,
+      addToRoom,
+      withdraw,
+      pending,
       refresh,
       hostBeat,
     ],
@@ -390,9 +521,21 @@ export function JamProvider({ children }: { children: ReactNode }) {
   return <JamContext.Provider value={value}>{children}</JamContext.Provider>;
 }
 
-/** The host is named on the jam; the session knows who this listener is. */
+/** The host is named on the room; the session knows who this listener is. */
 function isHost(jam: Jam, username: string): boolean {
   return jam.hostName.toLowerCase() === username.toLowerCase();
+}
+
+/**
+ * Whether the host's player has gone quiet: their last beat is older than
+ * the room tolerates, measured on the HUB's clock (`now` and `hostSeenAt`
+ * are both its), so two phones with different ideas of the time agree. An
+ * older hub reports neither, and is never said to be waiting.
+ */
+export function hostWaiting(room: Jam): boolean {
+  if (room.hostSeenAt === undefined) return false;
+  const now = room.now ?? room.receivedAt ?? Date.now();
+  return now - room.hostSeenAt > HOST_QUIET_MS;
 }
 
 export function useJam(): JamValue {

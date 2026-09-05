@@ -17,8 +17,8 @@ import type { Jam } from '../api/jams.ts';
  *
  * One card each, and each only when there is somebody behind the door -
  * friends who are listening right now (the registry's presence, read from
- * the poll the notification bell already runs), a jam a friend is hosting
- * (the jam provider's own poll), and Music Date, which is a room full of
+ * the poll the notification bell already runs), a groove a friend is hosting
+ * (the groove provider's own poll), and Music Date, which is a room full of
  * strangers' songs. A card onto an empty room is worse than no card, so the
  * shelf is as short as the evening is quiet, and absent when nobody is about.
  */
@@ -89,26 +89,48 @@ function FriendsLiveCard({ friends, onOpen }: { friends: RegistryFriend[]; onOpe
   );
 }
 
-/** A room a friend is hosting: who, what is on, how many are in. */
+/**
+ * A groove a friend is hosting: who is in it, by name, what is on, and one
+ * tap to join. The whole card is the Join - the pill on the face only says so.
+ * The names are what make it a room rather than a number: "3 listening" says
+ * it is busy; "Matt, Ana, Ben" says whose evening you would be walking into.
+ * All of it comes off the room poll the provider already runs.
+ */
 function JamCard({ jam, onJoin }: { jam: Jam; onJoin: () => void }) {
   const title = jam.trackTitle ? `${jam.trackTitle} — ${jam.trackArtist ?? ''}`.trim() : 'Nothing on yet';
+  const who = whoIsIn(jam);
   return (
-    <button type="button" className="peopleCard" onClick={onJoin}>
+    <button
+      type="button"
+      className="peopleCard peopleCard--groove"
+      onClick={onJoin}
+      aria-label={`Join ${jam.hostName}'s groove — ${who}`}
+    >
       <span className="peopleCard__face peopleCard__face--jam" aria-hidden>
         <FriendAvatar handle={jam.hostName} size="lg" />
         <span className="peopleCard__glyph peopleCard__glyph--live">
           <Radio size={16} />
         </span>
+        <span className="peopleCard__cta">Join</span>
       </span>
       <span className="peopleCard__text">
-        <span className="peopleCard__title">{jam.hostName} is hosting a jam</span>
-        <span className="peopleCard__blurb">
-          {title}
-          {jam.memberCount > 1 ? ` · ${jam.memberCount} listening` : ''}
-        </span>
+        <span className="peopleCard__title">{jam.hostName} is hosting a groove</span>
+        <span className="peopleCard__blurb peopleCard__who">{who}</span>
+        <span className="peopleCard__blurb">{title}</span>
       </span>
     </button>
   );
+}
+
+/** "Matt, Ana, Ben", or "Matt +3" once there are more names than a line
+ *  holds. The host leads either way. */
+function whoIsIn(jam: Jam): string {
+  const host = jam.hostName;
+  const others = (jam.members ?? []).filter((m) => m.toLowerCase() !== host.toLowerCase());
+  const names = [host, ...others];
+  const count = Math.max(names.length, jam.memberCount);
+  if (count <= 3 && names.length === count) return names.join(', ');
+  return `${host} +${count - 1}`;
 }
 
 /**

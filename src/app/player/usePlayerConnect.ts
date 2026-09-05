@@ -288,7 +288,11 @@ export function usePlayerConnect({
     const sinceRead = room.playing && room.receivedAt ? Math.min(15_000, Math.max(0, Date.now() - room.receivedAt)) : 0;
     const roomMs = room.positionMs + sinceRead;
 
-    if (currentId !== wanted) {
+    // A deck this device does not own yet (PlayerHost stood the strip up on
+    // the room's song for a guest with nothing playing) is taken over the
+    // same way a different song is: handed to App as ours, with the host's
+    // position applied once it has loaded.
+    if (currentId !== wanted || !live.deckOwned) {
       const t = live.allTracks.find((x) => trackIdFromPath(x.path) === wanted);
       // Not in this listener's library: nothing to play, so the room moves
       // on without them - and says so (the badge shows what is on by name).

@@ -8,17 +8,17 @@ import { ShareJamSheet } from './ShareJam.tsx';
 /**
  * Who else is hearing this, on the screen where you are hearing it.
  *
- * A jam was visible in exactly one place - the Live now shelf on your profile -
- * which is the page you are NOT on while a jam is happening. So the room existed
+ * A groove was visible in exactly one place - the Live now shelf on your profile -
+ * which is the page you are NOT on while a groove is happening. So the room existed
  * and the listening happened somewhere else, and the only way to check who was
  * in it, or to get out, was to leave the music and go and find the card.
  *
  * This is the same shape as DevicePicker beside it, deliberately: both answer
  * "where is this going" from the transport row, both are a glyph that carries
- * its state, and both open a small panel rather than navigating away. A jam and
+ * its state, and both open a small panel rather than navigating away. A groove and
  * a hand-off are the same kind of question asked about different things.
  *
- * THE GLYPH IS THE POINT. A jam has no artwork of its own - what is on the
+ * THE GLYPH IS THE POINT. A groove has no artwork of its own - what is on the
  * screen belongs to the song, not to the room - so the room needs a mark that
  * says "several people" at a glance. `Users` is that mark, and it is the one
  * this feature wears everywhere now, so the badge here and the card on the
@@ -33,8 +33,8 @@ export function JamBadge() {
   // component is in the transport row of every screen.
   const [sharing, setSharing] = useState(false);
 
-  // No provider (a build without jams) or nobody signed in: a jam is a thing
-  // that happens on a server, so without one there is nothing to offer.
+  // No provider (a build without grooves) or nobody signed in: a groove is a
+  // thing that happens on a server, so without one there is nothing to offer.
   if (!jam || !session) return null;
 
   const room = jam.current;
@@ -42,11 +42,11 @@ export function JamBadge() {
   const joinable = jam.friendJams.filter((r) => r.id !== room?.id);
 
   /*
-   * NOT in a jam, and the button is still here.
+   * NOT in a groove, and the button is still here.
    *
    * This used to render nothing until you were already in a room, which meant
    * the only way to START one was the Live now shelf on your profile - and that
-   * is the page you leave in order to listen to something. A jam is a thing you
+   * is the page you leave in order to listen to something. A groove is a thing you
    * decide to do while a song is playing, so the door belongs on the screen
    * where the song is.
    *
@@ -60,7 +60,7 @@ export function JamBadge() {
       try {
         await jam.start();
       } catch {
-        // An older server has no jams endpoint, and start() would otherwise
+        // An older server has no groove endpoint, and start() would otherwise
         // fail silently - a button that does nothing and says nothing is worse
         // than one that admits it.
         setFailed(true);
@@ -71,28 +71,28 @@ export function JamBadge() {
     return (
       <Popover
         placement="top-end"
-        aria-label="Start a jam"
+        aria-label="Start a groove"
         className="popoverSheet jamPanel"
         trigger={
-          <IconButton variant="ghost" size="sm" className="jamTrigger" aria-label="Start a jam">
+          <IconButton variant="ghost" size="sm" className="jamTrigger" aria-label="Start a groove">
             <Users size={16} />
           </IconButton>
         }
       >
         <div className="jamPanel__body">
-          <span className="jamPanel__title">Jam</span>
+          <span className="jamPanel__title">Groove</span>
           <Text tone="muted" size="xs">
             Play the same thing at the same time. Whoever starts it sets the pace;
             everyone else follows along, and anyone can add to the queue.
           </Text>
           {failed && (
             <Text tone="danger" size="xs">
-              This server could not start a jam. It may be running an older build.
+              This server could not start a groove. It may be running an older build.
             </Text>
           )}
           <div className="jamPanel__actions">
             <Button variant="solid" size="sm" disabled={busy} onClick={() => void startJam()}>
-              {busy ? 'Starting…' : 'Start a jam'}
+              {busy ? 'Starting…' : 'Start a groove'}
             </Button>
           </div>
 
@@ -135,8 +135,8 @@ export function JamBadge() {
       placement="top-end"
       aria-label={
         jam.hosting
-          ? `Your jam — ${room.memberCount} listening`
-          : `In ${room.hostName}'s jam — ${room.memberCount} listening`
+          ? `Your groove — ${room.memberCount} listening`
+          : `In ${room.hostName}'s groove — ${room.memberCount} listening`
       }
       className="popoverSheet jamPanel"
       trigger={
@@ -149,13 +149,13 @@ export function JamBadge() {
           data-hosting={jam.hosting || undefined}
           aria-label={
             jam.hosting
-              ? `Your jam — ${room.memberCount} listening`
-              : `In ${room.hostName}'s jam — ${room.memberCount} listening`
+              ? `Your groove — ${room.memberCount} listening`
+              : `In ${room.hostName}'s groove — ${room.memberCount} listening`
           }
         >
           <Users size={16} />
           {/* The count sits on the glyph rather than beside it, so the row's
-              rhythm is unchanged whether or not a jam is on. */}
+              rhythm is unchanged whether or not a groove is on. */}
           {room.memberCount > 1 && (
             <span className="jamTrigger__count" aria-hidden>
               {room.memberCount}
@@ -166,7 +166,7 @@ export function JamBadge() {
     >
       <div className="jamPanel__body">
         <span className="jamPanel__title">
-          {jam.hosting ? 'Your jam' : `${room.hostName}'s jam`}
+          {jam.hosting ? 'Your groove' : `${room.hostName}'s groove`}
         </span>
         <Text tone="muted" size="xs">
           {room.memberCount === 1
