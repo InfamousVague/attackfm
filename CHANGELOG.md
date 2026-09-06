@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.129
+
+- In a groove, the room's song plays and shows on your device even when your
+  own library never listed it: the server hands it over by id, so the sleeve,
+  the title and the position all follow the room. "Not in your library" only
+  appears when the server itself cannot find the song.
+
 ## 0.5.128
 
 - The desktop app has a proper side navigation now: a full-height rail with
