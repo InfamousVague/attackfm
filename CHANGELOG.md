@@ -15,6 +15,15 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.124
+
+- Every popover's arrow points straight at the button that opened it. On the
+  phone it sat a few pixels to the right of everything.
+- Joining a groove now lands you in it: a note saying whose room you are in,
+  the player bar and Now Playing up, and the groove panel open. If the room
+  is playing a song you do not have, the bar and Now Playing still show it by
+  name and follow along.
+
 ## 0.5.123
 
 - Sheets like Invite a friend and Add to playlist open as a panel on the
