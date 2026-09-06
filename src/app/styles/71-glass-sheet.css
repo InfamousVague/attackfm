@@ -86,3 +86,72 @@
     transition: none;
   }
 }
+
+/*
+ * ON A WIDE WINDOW A SHEET IS A PANEL, NOT A WALL.
+ *
+ * These are bottom sheets: full width is right on a phone, where the screen IS
+ * the sheet's width and anything narrower would be a card floating in a gutter.
+ * On a desktop window the same rule throws a 420px invite card into the middle
+ * of seventeen hundred pixels of glass, and the eye reads the empty half as the
+ * subject. It is also a lot of motion for a small thing - the whole window
+ * changes state to show one card.
+ *
+ * So the width is capped and the sheet centres. Everything else is deliberately
+ * unchanged: it still hangs from the header's line to the bottom edge, still
+ * wears the same glass, still drags down to dismiss. It is the same object,
+ * given a sensible width - not a different component for the desktop.
+ *
+ * THE NUMBER: 32rem is 512px, which leaves the 420px cards these sheets carry
+ * (the invite, the share cards - all `min(100%, 420px)`) about 26px of air each
+ * side after the body's own padding. Wider and the card is adrift again; much
+ * narrower and it starts to squeeze.
+ *
+ * THE GATE mirrors what the app itself uses to decide it is on a desktop
+ * (`useDesktopLayout`): the same media query, plus the platform stamp
+ * main.tsx writes for the packaged desktop build, which the query alone would
+ * miss on a touchscreen laptop. Two selectors for one condition, because CSS
+ * cannot OR a media query with an attribute - the value they set is the single
+ * number, so they cannot drift.
+ */
+:root {
+  --app-sheet-max: 100%;
+}
+
+@media (min-width: 60rem) and (pointer: fine) {
+  :root {
+    --app-sheet-max: 32rem;
+  }
+}
+
+:root[data-platform='desktop'] {
+  --app-sheet-max: 32rem;
+}
+
+/* The app's own sheet: a fixed element with both inline edges pinned centres
+   itself on `margin-inline: auto` once it has a definite width. */
+.glassSheet {
+  inline-size: min(100%, var(--app-sheet-max));
+  margin-inline: auto;
+}
+
+/*
+ * The two kit Drawers worn as bottom sheets - the same object to a reader, so
+ * the same width.
+ *
+ * THE DOUBLED CLASS IS NOT A TYPO. The kit sizes its panel with
+ * `._panel._bottom { width: 100% }`: two classes, which outranks one however
+ * late our stylesheet loads. Found by asking the element which rules actually
+ * matched it rather than by reading either sheet - the single-class version of
+ * this rule was in the cascade and losing silently, and the computed width
+ * said 1200px where it claimed 512.
+ *
+ * Naming the kit's own classes would fix it and break on the next kit build:
+ * they are content-hashed. Repeating ours costs nothing, says what it is for,
+ * and cannot go stale.
+ */
+.addPlaylistSheet.addPlaylistSheet,
+.djTraitSheet.djTraitSheet {
+  inline-size: min(100%, var(--app-sheet-max));
+  margin-inline: auto;
+}
