@@ -651,8 +651,9 @@ button.jamCard:disabled {
   font: inherit;
   text-align: start;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--glacier-space-2);
+  gap: var(--glacier-space-1) var(--glacier-space-2);
   min-block-size: max(2.75rem, 44px);
   max-inline-size: 100%;
   cursor: pointer;
@@ -660,7 +661,7 @@ button.jamCard:disabled {
 }
 
 .jamInvite__code:hover {
-  background: var(--glacier-surface-hover);
+  background: var(--glacier-surface-hover, var(--glacier-hover, rgba(128, 128, 128, 0.14)));
 }
 
 .jamInvite__code:focus-visible {
@@ -672,10 +673,11 @@ button.jamCard:disabled {
   font-family: var(--glacier-font-mono);
   font-size: var(--glacier-font-size-xl);
   font-weight: var(--glacier-font-weight-bold);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   line-height: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Never ellipsised: the code is the one string this card exists to show.
+     When the column is tight (360px phones, the desktop type scale) the
+     Copy chip wraps under it instead - see .jamInvite__code. */
   white-space: nowrap;
 }
 
@@ -738,13 +740,18 @@ button.jamCard:disabled {
    not reopen. Also the answer row on an ask, and the share button. */
 .jamActions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--glacier-space-2);
   inline-size: 100%;
   min-inline-size: 0;
 }
 
+/* Side by side only while each label keeps to one line. The basis is in em
+   of the button's own type, so it tracks the type scale: at 412px the pair
+   fits, at 360px and at the desktop scale a label would break in two, and
+   the two stack full-width instead - one line each, like the talk row. */
 .jamActions > * {
-  flex: 1 1 0;
+  flex: 1 1 13em;
   min-inline-size: 0;
 }
 
@@ -781,7 +788,7 @@ button.jamCard:disabled {
 
 .jamAction:hover:not(:disabled) {
   border-color: var(--glacier-accent-7);
-  background: var(--glacier-surface-hover);
+  background: var(--glacier-surface-hover, var(--glacier-hover, rgba(128, 128, 128, 0.14)));
 }
 
 .jamAction:active:not(:disabled) {

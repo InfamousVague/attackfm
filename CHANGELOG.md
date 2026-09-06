@@ -15,6 +15,20 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.117
+
+- The groove panel is a deck of cards now, like the DJ's. The room at the
+  top wears the song's sleeve with everyone's faces on it, says who is here
+  and how long it has been going, and tells you when the host's player has
+  gone quiet.
+- What is playing shows who added it. Up next is a row of sleeves, with the
+  songs guests have sent still waiting on the host counted ahead of it.
+- People show whether they are listening or have gone quiet, and how long
+  they have been in. The code is big, taps to copy, and has a QR beside it
+  for a phone to scan. Leaving and ending are a matched pair.
+- Outside a room: start one with the song that is on, answer a friend who
+  asked you to listen along, or step into a friend's room from its card.
+
 ## 0.5.116
 
 - The groove panel fills its own width on the phone. Its rows used to stop

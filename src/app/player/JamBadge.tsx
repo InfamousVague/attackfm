@@ -610,7 +610,7 @@ export function JamBadge() {
                 <div
                   className="jamCard jamPending"
                   role="group"
-                  aria-label={`${pend.length} waiting for the host: ${pendNames.join(', ')}`}
+                  aria-label={`${pend.length} waiting ${hosting ? 'on your player' : 'for the host'}: ${pendNames.join(', ')}`}
                 >
                   <span className="jamPending__head">
                     <Hourglass size={14} aria-hidden />
