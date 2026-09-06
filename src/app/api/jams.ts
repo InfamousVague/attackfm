@@ -100,11 +100,14 @@ export async function inviteToJam(
   session: ServerSession,
   to: string,
   kind: 'along' | 'jam' = 'along',
+  /** The registry session: with it the hub can verify a friendship it has
+   *  not mirrored yet and befriend the pair on the spot. */
+  registryToken?: string,
 ): Promise<void> {
   await request(session.url, '/api/jams/invite', {
     token: session.token,
     method: 'POST',
-    body: JSON.stringify({ to, kind }),
+    body: JSON.stringify(registryToken ? { to, kind, registryToken } : { to, kind }),
   });
 }
 

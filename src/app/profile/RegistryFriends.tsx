@@ -36,6 +36,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { artistImageKnown, cachedArtistImage, resolveArtistImage } from '../albumArtist/artistImage.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { syncRegistryFriendsToHub } from './friendMirror.ts';
 import {
   acceptFriendRequest,
   announce,
@@ -358,6 +359,9 @@ export function FriendsSection({
     try {
       await run();
       if (ok) setNote({ tone: 'ok', text: ok });
+      // The list just changed: hand it to the hub now, not on the timer, so a
+      // groove invite or a share a moment from now finds the friendship.
+      if (server && token) await syncRegistryFriendsToHub(server, token).catch(() => false);
       await refresh();
     } catch (error) {
       setNote({ tone: 'bad', text: error instanceof Error ? error.message : 'That did not work.' });

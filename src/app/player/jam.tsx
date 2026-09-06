@@ -2,6 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react';
 import { useToast } from '@glacier/react';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { useRegistryOptional } from '../servers/registrySession.tsx';
+import { ServerError } from '../api/http.ts';
+import { syncRegistryFriendsToHub } from '../profile/friendMirror.ts';
 import { trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 import {
@@ -125,6 +128,7 @@ const JamContext = createContext<JamValue | null>(null);
 export function JamProvider({ children }: { children: ReactNode }) {
   const { session } = useServerSession();
   const { toast } = useToast();
+  const registryToken = useRegistryOptional()?.session?.token ?? null;
   const [current, setCurrent] = useState<Jam | null>(null);
   const [friendJams, setFriendJams] = useState<Jam[]>([]);
   const [invites, setInvites] = useState<JamInvite[]>([]);
@@ -287,7 +291,17 @@ export function JamProvider({ children }: { children: ReactNode }) {
     async (to: string, kind: 'along' | 'jam' = 'along'): Promise<boolean> => {
       if (!session) return false;
       try {
-        await inviteToJamApi(session, to, kind);
+        try {
+          await inviteToJamApi(session, to, kind, registryToken ?? undefined);
+        } catch (e) {
+          // The hub knows the member but not the friendship yet - it mirrors
+          // registry friends on a timer. Hand it the list now and ask once
+          // more; only a second refusal is worth the listener's attention.
+          if (!(e instanceof ServerError && e.status === 403 && registryToken)) throw e;
+          const synced = await syncRegistryFriendsToHub(session, registryToken).catch(() => false);
+          if (!synced) throw e;
+          await inviteToJamApi(session, to, kind, registryToken);
+        }
         toast({ message: kind === 'jam' ? `Invited ${to} to groove` : `Asked ${to} to listen along` });
         // 'along' only: the room appears when THEY accept, so poll faster for a
         // beat rather than waiting out the idle interval. 'jam' needs none of
@@ -308,7 +322,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [session, toast, refresh],
+    [session, toast, refresh, registryToken],
   );
 
   const jamWith = useCallback(

@@ -1,8 +1,7 @@
 import { useEffect } from 'react';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { fetchFriends as fetchRegistryFriends } from '../servers/registry.ts';
-import { mirrorFriendsToHub } from '../api/friends.ts';
+import { syncRegistryFriendsToHub } from './friendMirror.ts';
 
 /**
  * Friends live on the registry; a hub needs its own copy to gate what is
@@ -29,10 +28,8 @@ export function FriendMirrorBridge() {
     const pass = async () => {
       if (document.visibilityState === 'hidden') return;
       try {
-        const feed = await fetchRegistryFriends(token);
         if (!live) return;
-        const handles = feed.friends.map((f) => f.handle).filter(Boolean);
-        if (handles.length) await mirrorFriendsToHub(session, handles, token);
+        await syncRegistryFriendsToHub(session, token);
       } catch {
         // Either side unreachable: the next pass tries again.
       }

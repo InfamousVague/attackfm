@@ -523,6 +523,54 @@ pub struct InviteBody {
     /// client sends none and means the listen-along it was built for.
     #[serde(default)]
     pub kind: Option<String>,
+    /// The caller's registry session, so a friendship the hub has not
+    /// mirrored yet can be verified with the registry on the spot. Optional:
+    /// an older client sends none and gets the honest refusal instead.
+    #[serde(default, rename = "registryToken")]
+    pub registry_token: Option<String>,
+}
+
+/// The friend the hub does not know YET.
+///
+/// Friendships live on the registry and reach a hub on the app's ten-minute
+/// mirror, so an invite sent a minute after befriending someone found a
+/// member the hub could see and a friendship it could not - and blamed the
+/// wrong thing ("that friend is not on this server", about a person on the
+/// members list). With the caller's registry token the hub asks the
+/// registry itself, now, and befriends the pair on the spot; without one,
+/// or when the registry does not list them, the words say what is true.
+async fn befriend_live(
+    state: &AppState,
+    caller_id: i64,
+    name: &str,
+    registry_token: Option<&str>,
+) -> Result<i64, (StatusCode, String)> {
+    let want = name.trim().trim_start_matches('@');
+    let by_name = |h: &str| -> Option<i64> {
+        state
+            .db
+            .user_by_name_ci(h)
+            .map(|u| u.id)
+            .or_else(|| state.db.member_by_handle(h).map(|(id, _, _, _)| id))
+    };
+    let Some(uid) = by_name(want) else {
+        return Err((StatusCode::FORBIDDEN, "that friend is not on this server".into()));
+    };
+    if uid == caller_id {
+        return Ok(uid);
+    }
+    if let Some(token) = registry_token.map(str::trim).filter(|t| !t.is_empty()) {
+        if let Some(handles) = crate::friends::verified_friend_handles(state, token).await {
+            let listed = handles.iter().any(|h| by_name(h.trim().trim_start_matches('@')) == Some(uid));
+            if listed && state.db.add_friendship(caller_id, uid).is_ok() {
+                return Ok(uid);
+            }
+        }
+    }
+    Err((
+        StatusCode::FORBIDDEN,
+        "Not friends here yet - the server is still catching up with your friends list. Try again in a moment.".into(),
+    ))
 }
 
 /// `POST /api/jams/invite {to, kind}` - ask a friend into a room. `along` (the
@@ -535,8 +583,9 @@ pub async fn invite(
     Json(body): Json<InviteBody>,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    let Some((to_id, _)) = resolve_friend(&state, caller.id, &body.to) else {
-        return Err((StatusCode::FORBIDDEN, "that friend is not on this server".into()));
+    let to_id = match resolve_friend(&state, caller.id, &body.to) {
+        Some((id, _)) => id,
+        None => befriend_live(&state, caller.id, &body.to, body.registry_token.as_deref()).await?,
     };
     if to_id == caller.id {
         return Err((StatusCode::BAD_REQUEST, "you cannot invite yourself".into()));

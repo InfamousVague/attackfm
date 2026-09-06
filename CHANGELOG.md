@@ -15,6 +15,15 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.121
+
+- Inviting a friend to a groove works the moment you become friends. The
+  server used to learn about new friends on a ten-minute timer and, in that
+  window, said your friend was "not on this server" even when they were on
+  the members list. Now adding or accepting a friend tells the server at
+  once, an invite carries proof so the server can check with attack.fm on
+  the spot, and if it still has to say no it says why.
+
 ## 0.5.120
 
 - The Profile button at the bottom of the screen is your own picture, once you

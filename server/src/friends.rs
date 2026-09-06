@@ -126,7 +126,7 @@ pub struct MirrorBody {
 
 /// The handles attack.fm says are the caller's friends, or None when the
 /// registry cannot be asked (no token, unreachable, token refused).
-async fn verified_friend_handles(state: &AppState, token: &str) -> Option<Vec<String>> {
+pub(crate) async fn verified_friend_handles(state: &AppState, token: &str) -> Option<Vec<String>> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
