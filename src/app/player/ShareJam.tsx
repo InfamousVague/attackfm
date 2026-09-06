@@ -85,12 +85,22 @@ function JamCard({
 }
 
 /** The address as people say it - the host, no scheme. */
-function hostOf(url: string): string {
+export function hostOf(url: string): string {
   try {
     return new URL(url).host;
   } catch {
     return url.replace(/^https?:\/\//, '');
   }
+}
+
+/**
+ * The room's link as a QR, drawn the same wherever it goes - the share card
+ * and the groove deck's invite card: dark modules on a white tile, because a
+ * scanner wants that contrast whatever the theme, and one quiet module of
+ * margin. `width` is the tile's pixel size.
+ */
+export function jamQrDataUrl(link: string, width: number): Promise<string> {
+  return QRCode.toDataURL(link, { margin: 1, width, color: { dark: '#101014', light: '#ffffff' } });
 }
 
 export function ShareJamSheet({
@@ -149,7 +159,7 @@ export function ShareJamSheet({
       return;
     }
     let live = true;
-    void QRCode.toDataURL(link, { margin: 1, width: 320, color: { dark: '#101014', light: '#ffffff' } })
+    void jamQrDataUrl(link, 320)
       .then((url) => {
         if (live) setQr(url);
       })

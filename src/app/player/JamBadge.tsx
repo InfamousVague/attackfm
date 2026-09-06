@@ -1,61 +1,270 @@
-import { useState } from 'react';
-import { Button, IconButton, Popover, Text } from '@glacier/react';
-import { Music, Share2, Users } from '@glacier/icons';
-import { useJamOptional } from './jam.tsx';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { IconButton, Popover, Text, useToast } from '@glacier/react';
+import {
+  Check,
+  Clock,
+  Copy,
+  Crown,
+  Hourglass,
+  LogOut,
+  Music,
+  Pause,
+  Power,
+  QrCode,
+  Radio,
+  Share2,
+  UserPlus,
+  Users,
+  Waves,
+  X,
+} from '@glacier/icons';
+import { hostWaiting, useJamOptional, type PendingAdd } from './jam.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { ShareJamSheet } from './ShareJam.tsx';
+import { useRegistryOptional } from '../servers/registrySession.tsx';
+import { publishJamShare } from '../servers/registry.ts';
+import { ShareJamSheet, hostOf, jamQrDataUrl } from './ShareJam.tsx';
 import { FriendAvatar } from '../profile/RegistryFriends.tsx';
+import { useLibrary } from '../library/library.tsx';
+import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
+import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
+import { artSized, trackIdFromPath, type Jam, type JamPerson } from '../server.ts';
+import type { ServerSession } from '../api/http.ts';
+import type { Track } from '../core/tauri.ts';
 
 /**
- * Who else is hearing this, on the screen where you are hearing it.
+ * The groove, at the decks.
  *
- * A groove was visible in exactly one place - the Live now shelf on your profile -
- * which is the page you are NOT on while a groove is happening. So the room existed
- * and the listening happened somewhere else, and the only way to check who was
- * in it, or to get out, was to leave the music and go and find the card.
+ * Who else is hearing this, on the screen where you are hearing it - and now
+ * the whole room at a glance, built the way the DJ's seat beside it is: a
+ * deck of cards at popover scale, art first. In a room the hero wears the
+ * song's sleeve with the members' faces stacked on it and a live pulse; the
+ * song on now, the room's queue with the guests' waiting adds ahead of it,
+ * the people with their standing, the code and a QR to hand the room on,
+ * and the way out. Out of a room: one tap to start, the asks waiting on you,
+ * and your friends' rooms as doors.
  *
- * This is the same shape as DevicePicker beside it, deliberately: both answer
- * "where is this going" from the transport row, both are a glyph that carries
- * its state, and both open a small panel rather than navigating away. A groove and
- * a hand-off are the same kind of question asked about different things.
+ * Nothing here fetches on its own beyond the link the room is shared by
+ * (minted once per room, the same link the share sheet mints, and only once
+ * the panel is open) - the provider polls the room, the library holds the
+ * sleeves, and the QR is drawn from the link in hand.
  *
  * THE GLYPH IS THE POINT. A groove has no artwork of its own - what is on the
- * screen belongs to the song, not to the room - so the room needs a mark that
- * says "several people" at a glance. `Users` is that mark, and it is the one
- * this feature wears everywhere now, so the badge here and the card on the
- * profile are recognisably the same thing.
+ * screen belongs to the song, not to the room - so the trigger keeps the
+ * `Users` mark this feature wears everywhere, with the count on it.
  */
+
+/** How recently a member's device must have polled to be "listening". The
+ *  poll runs every three seconds in a room, eight when hidden; ninety is a
+ *  phone left in a bag, not a slow network. */
+const FRESH_MS = 90_000;
+
+/** How many faces the hero stacks before it counts the rest. */
+const FACES = 4;
+
+// --- time, in words --------------------------------------------------------
+
+/** A span of hub time, coarse on purpose: nobody wants seconds here. `null`
+ *  under a minute so the caller can say "just now" its own way. */
+function spanWords(ms: number): string | null {
+  const m = Math.floor(Math.max(0, ms) / 60_000);
+  if (m < 1) return null;
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
+  return `${Math.floor(h / 24)} d`;
+}
+
+/** The hub's clock as of this read: `now` and every stamp on the room are
+ *  the hub's, so two phones with different ideas of the time agree. */
+function hubNow(room: Jam): number {
+  return room.now ?? room.receivedAt ?? Date.now();
+}
+
+/** Who is here, in words - the names when there are few enough to say. */
+function whoIsHere(names: string[], me: string, count: number): string {
+  const others = names.filter((n) => n.toLowerCase() !== me.toLowerCase());
+  if (count <= 1) return 'Just you so far';
+  if (count === 2 && others.length === 1) return `You and ${others[0]}`;
+  if (count === 3 && others.length === 2) return `You, ${others[0]} and ${others[1]}`;
+  return `${count} listening`;
+}
+
+/** The room's people with their standing, or - from an older hub that only
+ *  names them - the names alone, with no standing to show. */
+function peopleOf(room: Jam): JamPerson[] {
+  if (room.people && room.people.length > 0) return room.people;
+  return room.members.map((name, i) => ({
+    id: i,
+    name,
+    joinedAt: 0,
+    seenAt: 0,
+    host: name.toLowerCase() === room.hostName.toLowerCase(),
+  }));
+}
+
+// --- the link, once per room -----------------------------------------------
+
+const linkByRoom = new Map<string, string>();
+const qrByLink = new Map<string, string>();
+
+/**
+ * The room's link, as the share sheet mints it (the registry hands back the
+ * same code for a room this account has already shared, so the sheet and the
+ * deck agree). Asked for once per room, and only while the panel is open;
+ * without a registry account it stays null and the QR stays quiet.
+ */
+function useJamLink(
+  jamId: string | null,
+  token: string | null,
+  session: ServerSession | null,
+  open: boolean,
+): string | null {
+  const [link, setLink] = useState<string | null>(jamId ? (linkByRoom.get(jamId) ?? null) : null);
+  useEffect(() => {
+    if (!jamId) {
+      setLink(null);
+      return;
+    }
+    const hit = linkByRoom.get(jamId);
+    if (hit) {
+      setLink(hit);
+      return;
+    }
+    setLink(null);
+    if (!open || !token || !session) return;
+    let live = true;
+    void publishJamShare(token, { jamId, hubUrl: session.url, hubName: hostOf(session.url) })
+      .then((out) => {
+        linkByRoom.set(jamId, out.url);
+        if (live) setLink(out.url);
+      })
+      .catch(() => {
+        // No link is a card with a code on it, which still works; the share
+        // sheet says why when it is opened.
+      });
+    return () => {
+      live = false;
+    };
+  }, [jamId, token, session, open]);
+  return link;
+}
+
+/** The link as a QR, drawn from the link in hand; `null` until there is one. */
+function useQr(link: string | null): string | null {
+  const [qr, setQr] = useState<string | null>(link ? (qrByLink.get(link) ?? null) : null);
+  useEffect(() => {
+    if (!link) {
+      setQr(null);
+      return;
+    }
+    const hit = qrByLink.get(link);
+    if (hit) {
+      setQr(hit);
+      return;
+    }
+    let live = true;
+    void jamQrDataUrl(link, 192)
+      .then((url) => {
+        qrByLink.set(link, url);
+        if (live) setQr(url);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [link]);
+  return qr;
+}
+
+// --- pieces ----------------------------------------------------------------
+
+function Section({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="jamDeck__section" role="group" aria-label={label}>
+      <span className="jamDeck__label" aria-hidden>
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+/** A sleeve, or the disc that stands in when the library lacks the song. */
+function Sleeve({ src, className, glyph = 18 }: { src: string | null; className: string; glyph?: number }) {
+  if (src) return <img className={className} src={src} alt="" loading="lazy" decoding="async" />;
+  return (
+    <span className={`${className} ${className}--blank`} aria-hidden>
+      <Music size={glyph} />
+    </span>
+  );
+}
+
+/** The sleeve as a wash behind a card: blurred to a colour, under the text. */
+function Wash({ src }: { src: string | null }) {
+  if (!src) return null;
+  return (
+    <span className="jamCard__wash" aria-hidden>
+      <img src={src} alt="" loading="lazy" decoding="async" />
+    </span>
+  );
+}
+
+// --- the badge -------------------------------------------------------------
+
 export function JamBadge() {
   const jam = useJamOptional();
   const { session } = useServerSession();
+  const registry = useRegistryOptional();
+  const { tracks, forYou } = useLibrary();
+  const { track: playing } = useNowPlayingMotion();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [copied, setCopied] = useState(false);
   // Mounted on first use: the sheet mints a link and draws a card, and this
   // component is in the transport row of every screen.
   const [sharing, setSharing] = useState(false);
+
+  const room = jam?.current ?? null;
+  const hosting = !!jam?.hosting;
+  const token = registry?.session?.token ?? null;
+  const link = useJamLink(room?.id ?? null, token, session, open);
+  const qr = useQr(link);
+
+  // The library by server id, for the sleeves the room names.
+  const byId = useMemo(() => {
+    const m = new Map<number, Track>();
+    for (const t of [...tracks, ...forYou]) {
+      const id = trackIdFromPath(t.path);
+      if (id != null && !m.has(id)) m.set(id, t);
+    }
+    return m;
+  }, [tracks, forYou]);
 
   // No provider (a build without grooves) or nobody signed in: a groove is a
   // thing that happens on a server, so without one there is nothing to offer.
   if (!jam || !session) return null;
 
-  const room = jam.current;
-  const others = room ? Math.max(0, room.memberCount - 1) : 0;
-  const joinable = jam.friendJams.filter((r) => r.id !== room?.id);
+  const me = session.username;
+  const sleeveOf = (id: number | null, px: 160 | 640 = 160): string | null => {
+    if (id == null) return null;
+    const t = byId.get(id);
+    return t ? artSized(t.artwork, px) : null;
+  };
 
   /*
-   * NOT in a groove, and the button is still here.
+   * OUT of a room, and the button is still here.
    *
-   * This used to render nothing until you were already in a room, which meant
-   * the only way to START one was the Live now shelf on your profile - and that
-   * is the page you leave in order to listen to something. A groove is a thing you
-   * decide to do while a song is playing, so the door belongs on the screen
-   * where the song is.
-   *
-   * The panel does the two things you can do from outside a room: open one, or
-   * walk into a friend's. Both were profile-only before.
+   * The panel does the three things you can do from outside a room: open
+   * one, answer a friend who asked you in, or walk into a friend's.
    */
   if (!room) {
+    const joinable = jam.friendJams;
+    const invites = jam.invites;
+    const playingArt = playing && playing.kind !== 'book' ? artSized(playing.artwork, 160) : null;
     const startJam = async () => {
+      if (busy) return;
       setBusy(true);
       setFailed(false);
       try {
@@ -69,226 +278,557 @@ export function JamBadge() {
         setBusy(false);
       }
     };
+    const join = async (id: string) => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        await jam.join(id);
+      } finally {
+        setBusy(false);
+      }
+    };
+    const answer = async (from: string, yes: boolean) => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        if (yes) await jam.acceptInvite(from);
+        else await jam.declineInvite(from);
+      } finally {
+        setBusy(false);
+      }
+    };
+    const title = playing && playing.kind !== 'book' ? `Groove to ${playing.title}` : 'Listen together';
+    const blurb = 'Whoever starts it sets the pace; everyone follows; anyone can add.';
     return (
       <Popover
         placement="top-end"
         aria-label="Start a groove"
         className="popoverSheet jamPanel"
+        open={open}
+        onOpenChange={setOpen}
         trigger={
           <IconButton variant="ghost" size="sm" className="jamTrigger" aria-label="Start a groove">
             <Users size={16} />
           </IconButton>
         }
       >
-        <div className="jamPanel__body">
-          <div className="jamPanel__head">
-            <span className="jamPanel__glyph" aria-hidden>
-              <Users size={18} />
+        <div className="jamPanel__body jamDeck">
+          {/* 7. Start: art-first with what is playing, one tap to open the room. */}
+          <button
+            type="button"
+            className="jamCard jamHero jamHero--start"
+            aria-label={busy ? 'Starting a groove' : `Start a groove: ${title}. ${blurb}`}
+            aria-busy={busy || undefined}
+            disabled={busy}
+            onClick={() => void startJam()}
+          >
+            <Wash src={playingArt} />
+            <span className="jamHero__face" aria-hidden>
+              {playingArt ? (
+                <img className="jamHero__art" src={playingArt} alt="" />
+              ) : (
+                <span className="jamHero__art jamHero__art--blank">
+                  <Users size={26} />
+                </span>
+              )}
             </span>
-            <div className="jamPanel__heading">
-              <span className="jamPanel__title">Groove</span>
-              <Text tone="muted" size="xs" className="jamPanel__sub">
-                Play the same thing at the same time. Whoever starts it sets the
-                pace; everyone follows, and anyone can add to the queue.
-              </Text>
-            </div>
-          </div>
+            <span className="jamHero__text">
+              <span className="jamHero__eyebrow">
+                <Users size={12} aria-hidden />
+                Start a groove
+              </span>
+              <span className="jamHero__title">{title}</span>
+              <span className="jamHero__blurb" role={busy ? 'status' : undefined}>
+                {busy ? 'Opening the room…' : blurb}
+              </span>
+            </span>
+            <span className="jamHero__go" aria-hidden>
+              <Radio size={18} />
+            </span>
+          </button>
           {failed && (
             <Text tone="danger" size="xs">
               This server could not start a groove. It may be running an older build.
             </Text>
           )}
-          <div className="jamPanel__actions">
-            <Button variant="solid" size="sm" fullWidth disabled={busy} onClick={() => void startJam()}>
-              {busy ? 'Starting…' : 'Start a groove'}
-            </Button>
-          </div>
 
-          {/* Friends already listening together. Reachable here for the same
-              reason Start is: this is where you are when you would want it. */}
-          {joinable.length > 0 && (
-            <>
-              <div className="jamPanel__section">
-              <span className="jamPanel__label">Live now</span>
-              <ul className="jamPanel__who">
-                {joinable.map((r) => (
-                  <li key={r.id} className="jamPanel__member">
-                    <FriendAvatar handle={r.hostName} size="sm" />
-                    <span className="jamPanel__memberText">
-                      <span className="jamPanel__memberName">{r.hostName}</span>
-                      <span className="jamPanel__memberMeta">
-                        {r.memberCount > 1 ? `${r.memberCount} inside` : 'alone so far'}
-                        {r.trackTitle ? ` · ${r.trackTitle}` : ''}
+          {/* 8. Asks: friends waiting on an answer from you. */}
+          {invites.length > 0 && (
+            <Section label="Invites">
+              {invites.map((inv) => {
+                const line =
+                  inv.kind === 'jam'
+                    ? `${inv.from} is hosting — come in`
+                    : `${inv.from} asked you to listen along`;
+                // How long they have been waiting, on this device's clock
+                // against the hub's stamp - close enough for minutes, and
+                // left unsaid past a day, when the ask is stale anyway.
+                const waited = Date.now() - inv.at;
+                const ago = waited < 86_400_000 ? spanWords(waited) : null;
+                return (
+                  <div key={`${inv.from}-${inv.at}`} className="jamCard jamAsk" role="group" aria-label={line}>
+                    <span className="jamAsk__head">
+                      <FriendAvatar handle={inv.from} size="md" />
+                      <span className="jamAsk__text">
+                        <span className="jamAsk__line">{line}</span>
+                        <span className="jamAsk__when">
+                          {inv.kind === 'jam' ? 'their room, their pace' : 'your player sets the pace'}
+                          {ago ? ` · ${ago} ago` : waited < 60_000 ? ' · just now' : ''}
+                        </span>
                       </span>
                     </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="jamPanel__join"
-                      disabled={busy}
-                      onClick={() => void jam.join(r.id)}
-                    >
-                      Join
-                    </Button>
-                  </li>
+                    <span className="jamActions">
+                      <button
+                        type="button"
+                        className="jamAction jamAction--yes"
+                        aria-label={inv.kind === 'jam' ? `Accept — join ${inv.from}'s groove` : `Accept — let ${inv.from} listen along`}
+                        disabled={busy}
+                        onClick={() => void answer(inv.from, true)}
+                      >
+                        <Check size={16} aria-hidden />
+                        Accept
+                      </button>
+                      <button
+                        type="button"
+                        className="jamAction"
+                        aria-label={`Decline ${inv.from}'s invite`}
+                        disabled={busy}
+                        onClick={() => void answer(inv.from, false)}
+                      >
+                        <X size={16} aria-hidden />
+                        Decline
+                      </button>
+                    </span>
+                  </div>
+                );
+              })}
+            </Section>
+          )}
+
+          {/* 9. Live now: friends' rooms as doors, the whole card the Join. */}
+          {joinable.length > 0 && (
+            <Section label="Live now">
+              <EdgeScrollRow className="jamDoors">
+                {joinable.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    className="jamCard jamDoor"
+                    aria-label={`Join ${r.hostName}'s groove`}
+                    disabled={busy}
+                    onClick={() => void join(r.id)}
+                  >
+                    <span className="jamDoor__head" aria-hidden>
+                      <FriendAvatar handle={r.hostName} size="md" />
+                      <span className="jamPulse" />
+                    </span>
+                    <span className="jamDoor__name">{r.hostName}&rsquo;s groove</span>
+                    <span className="jamDoor__meta">
+                      {r.memberCount > 1 ? `${r.memberCount} inside` : 'alone so far'}
+                    </span>
+                    {r.trackTitle && (
+                      <span className="jamDoor__song">
+                        <Music size={11} aria-hidden />
+                        <span>{r.trackTitle}</span>
+                      </span>
+                    )}
+                  </button>
                 ))}
-              </ul>
-              </div>
-            </>
+              </EdgeScrollRow>
+            </Section>
           )}
         </div>
       </Popover>
     );
   }
 
+  // --- IN a room -----------------------------------------------------------
+
+  const now = hubNow(room);
+  const people = peopleOf(room);
+  const others = Math.max(0, room.memberCount - 1);
+  const quiet = !hosting && (room.hostQuiet === true || hostWaiting(room));
+  const code = room.id.toUpperCase();
+
+  // The song on: the hub's name for it, or the library's, or nothing.
+  const onTrack = room.trackId != null ? byId.get(room.trackId) : undefined;
+  const nowTitle = room.trackTitle ?? onTrack?.title ?? null;
+  const nowArtist = room.trackArtist ?? onTrack?.artist ?? null;
+  const nowArt = sleeveOf(room.trackId);
+  const nowBy = room.trackId != null ? room.addedBy?.[String(room.trackId)] : undefined;
+
+  // The queue, and the adds still waiting on the host's player. A host has
+  // no pending of its own (the provider's list is a follower's), so the
+  // room's own rows stand in, none of them withdrawable from here.
+  const queue = room.queue.slice(0, 6);
+  const pend: PendingAdd[] = hosting
+    ? (room.pending ?? []).map((p) => ({ ...p, mine: false }))
+    : jam.pending;
+  const pendNames = [...new Set(pend.map((p) => (p.mine ? 'you' : p.by)))];
+  const mine = pend.filter((p) => p.mine);
+
+  // The most recent thing that happened, said once under the people.
+  const events = [...(room.events ?? [])].sort((a, b) => b.at - a.at).slice(0, 2);
+  const eventsLine = events
+    .map((e) => {
+      const ago = spanWords(now - e.at);
+      const when = ago ? `${ago} ago` : 'just now';
+      return e.kind === 'joined'
+        ? `${e.who} joined ${when}`
+        : e.kind === 'left'
+          ? `${e.who} left ${when}`
+          : e.kind === 'host'
+            ? `${e.who} took the clock ${when}`
+            : `${e.who} ${e.kind} ${when}`;
+    })
+    .join(' · ');
+
+  // The hero's words.
+  const eyebrow = hosting ? 'Your groove' : `${room.hostName}'s groove`;
+  const title = whoIsHere(
+    people.map((p) => p.name),
+    me,
+    room.memberCount,
+  );
+  const going = room.createdAt ? spanWords(now - room.createdAt) : null;
+  const pace = hosting ? 'you set the pace' : `${room.hostName} sets the pace`;
+  const blurb = quiet
+    ? 'the host’s player has gone quiet — the room is about to change hands'
+    : going
+      ? `${pace} · going ${going}`
+      : `${pace} · just started`;
+  const faces = people.slice(0, FACES);
+  const extraFaces = Math.max(0, people.length - FACES);
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      toast({ message: `The code is ${code}` });
+    }
+  };
+  const share = () => {
+    // The sheet is a sibling of the popover (see below); shut the panel so
+    // the two are never stacked, then raise the sheet.
+    setOpen(false);
+    setSharing(true);
+  };
+
+  const trigName = hosting
+    ? `Your groove — ${room.memberCount} listening`
+    : `In ${room.hostName}'s groove — ${room.memberCount} listening`;
+
   return (
     <>
-    <Popover
-      placement="top-end"
-      aria-label={
-        jam.hosting
-          ? `Your groove — ${room.memberCount} listening`
-          : `In ${room.hostName}'s groove — ${room.memberCount} listening`
-      }
-      className="popoverSheet jamPanel"
-      trigger={
-        <IconButton
-          variant="ghost"
-          size="sm"
-          className="jamTrigger"
-          // Hosting reads differently from following: one is your room, the
-          // other is somebody else's. Same glyph, different weight.
-          data-hosting={jam.hosting || undefined}
-          aria-label={
-            jam.hosting
-              ? `Your groove — ${room.memberCount} listening`
-              : `In ${room.hostName}'s groove — ${room.memberCount} listening`
-          }
-        >
-          <Users size={16} />
-          {/* The count sits on the glyph rather than beside it, so the row's
-              rhythm is unchanged whether or not a groove is on. */}
-          {room.memberCount > 1 && (
-            <span className="jamTrigger__count" aria-hidden>
-              {room.memberCount}
+      <Popover
+        placement="top-end"
+        aria-label={trigName}
+        className="popoverSheet jamPanel"
+        open={open}
+        onOpenChange={setOpen}
+        trigger={
+          <IconButton
+            variant="ghost"
+            size="sm"
+            className="jamTrigger"
+            // Hosting reads differently from following: one is your room, the
+            // other is somebody else's. Same glyph, different weight.
+            data-hosting={hosting || undefined}
+            aria-label={trigName}
+          >
+            <Users size={16} />
+            {/* The count sits on the glyph rather than beside it, so the row's
+                rhythm is unchanged whether or not a groove is on. */}
+            {room.memberCount > 1 && (
+              <span className="jamTrigger__count" aria-hidden>
+                {room.memberCount}
+              </span>
+            )}
+          </IconButton>
+        }
+      >
+        <div className="jamPanel__body jamDeck" data-quiet={quiet || undefined}>
+          {/* 1. The room: the song's sleeve as its face, the people on it. */}
+          <div className="jamCard jamHero" role="group" aria-label={`${eyebrow}: ${title}. ${blurb}`}>
+            <Wash src={nowArt} />
+            <span className="jamHero__face" aria-hidden>
+              <Sleeve src={nowArt} className="jamHero__art" glyph={26} />
+              <span className="jamHero__faces">
+                {faces.map((p) => (
+                  <FriendAvatar key={p.id} handle={p.name} size="sm" className="jamHero__avatar" />
+                ))}
+                {extraFaces > 0 && <span className="jamHero__more">+{extraFaces}</span>}
+              </span>
+              <span className="jamPulse jamHero__pulse" data-quiet={quiet || undefined} />
             </span>
-          )}
-        </IconButton>
-      }
-    >
-      <div className="jamPanel__body">
-        <div className="jamPanel__head">
-          <span className="jamPanel__glyph" data-live aria-hidden>
-            <Users size={18} />
-          </span>
-          <div className="jamPanel__heading">
-            <span className="jamPanel__title">
-              {jam.hosting ? 'Your groove' : `${room.hostName}'s groove`}
-            </span>
-            <Text tone="muted" size="xs" className="jamPanel__sub">
-              {room.memberCount === 1
-                ? 'Just you so far'
-                : `${room.memberCount} listening${others === 1 ? ' — one other' : ''}`}
-              {jam.hosting ? ' · you set the pace' : ' · following along'}
-              {room.hostQuiet && !jam.hosting ? ' · the host has gone quiet' : ''}
-            </Text>
-          </div>
-        </div>
-
-        {/* What the room is hearing, by name - the one line a member whose
-            library lacks the song still gets, instead of silence. */}
-        {room.trackTitle && (
-          <div className="jamPanel__section">
-            <span className="jamPanel__label">{room.playing ? 'Playing' : 'Paused'}</span>
-            <span className="jamPanel__now">
-              <Music size={14} aria-hidden />
-              <span>
-                {room.trackTitle}
-                {room.trackArtist ? ` · ${room.trackArtist}` : ''}
+            <span className="jamHero__text">
+              <span className="jamHero__eyebrow">
+                {hosting ? <Crown size={12} aria-hidden /> : <Users size={12} aria-hidden />}
+                {eyebrow}
+              </span>
+              <span className="jamHero__title">{title}</span>
+              <span className="jamHero__blurb" data-quiet={quiet || undefined}>
+                {quiet && <Hourglass size={12} aria-hidden />}
+                {blurb}
               </span>
             </span>
           </div>
-        )}
 
-        {/* Named, not just counted. "3 listening" tells you the room is busy;
-            the names tell you whose evening you are in - and who has been
-            here longest, which is who the clock passes to. */}
-        {(room.people?.length ?? room.members.length) > 0 && (
-          <div className="jamPanel__section">
-            <span className="jamPanel__label">In the groove</span>
-            <ul className="jamPanel__who">
-              {(room.people ?? room.members.map((name, i) => ({ id: i, name, host: name === room.hostName, joinedAt: 0, seenAt: 0 }))).map((p) => (
-                <li key={p.id} className="jamPanel__member">
-                  {/* One person per row, with their face: the group glyph stays
-                      the ROOM's mark and never stands next to a single name. */}
-                  <FriendAvatar handle={p.name} size="sm" />
-                  <span className="jamPanel__memberText">
-                    <span className="jamPanel__memberName">{p.name}</span>
+          {/* 2. Now: what the room is hearing, by name - the one line a member
+              whose library lacks the song still gets. */}
+          {nowTitle && (
+            <Section label="Now">
+              <div
+                className="jamCard jamNow"
+                role="group"
+                aria-label={`${room.playing ? 'Playing' : 'Paused'}: ${nowTitle}${nowArtist ? ` by ${nowArtist}` : ''}${nowBy ? `, added by ${nowBy}` : ''}`}
+              >
+                <Wash src={nowArt} />
+                <Sleeve src={nowArt} className="jamNow__art" />
+                <span className="jamNow__text">
+                  <span className="jamNow__eyebrow">{room.playing ? 'Playing' : 'Paused'}</span>
+                  <span className="jamNow__title">{nowTitle}</span>
+                  <span className="jamNow__sub">
+                    {nowArtist}
+                    {nowArtist && nowBy ? ' · ' : ''}
+                    {nowBy ? `added by ${nowBy}` : ''}
                   </span>
-                  {p.host && <span className="jamPanel__host">Host</span>}
-                </li>
-              ))}
+                </span>
+                <span className="jamNow__state" data-playing={room.playing || undefined} aria-hidden>
+                  {room.playing ? <Waves size={16} /> : <Pause size={16} />}
+                </span>
+              </div>
+            </Section>
+          )}
+
+          {/* 3. Up next: the guests' waiting adds ahead of the room's line. */}
+          {(queue.length > 0 || pend.length > 0) && (
+            <Section label="Up next">
+              {pend.length > 0 && (
+                <div
+                  className="jamCard jamPending"
+                  role="group"
+                  aria-label={`${pend.length} waiting for the host: ${pendNames.join(', ')}`}
+                >
+                  <span className="jamPending__head">
+                    <Hourglass size={14} aria-hidden />
+                    <span>
+                      {pend.length} waiting {hosting ? 'on your player' : 'for the host'} — {pendNames.join(', ')}
+                    </span>
+                  </span>
+                  {mine.length > 0 && (
+                    <span className="jamPending__mine">
+                      {mine.map((p) => {
+                        const t = p.track ?? byId.get(p.trackId);
+                        const name = t?.title ?? 'your add';
+                        return (
+                          <button
+                            key={p.trackId}
+                            type="button"
+                            className="jamChip jamChip--withdraw"
+                            aria-label={`Withdraw ${name}`}
+                            onClick={() => void jam.withdraw(p.trackId)}
+                          >
+                            <span>{name}</span>
+                            <X size={14} aria-hidden />
+                          </button>
+                        );
+                      })}
+                    </span>
+                  )}
+                </div>
+              )}
+              {queue.length > 0 && (
+                <EdgeScrollRow className="jamNext" role="list" aria-label="The room's queue">
+                  {queue.map((id, i) => {
+                    const t = byId.get(id);
+                    const by = room.addedBy?.[String(id)];
+                    const name = t?.title ?? 'Not in your library';
+                    return (
+                      <div
+                        key={`${id}-${i}`}
+                        role="listitem"
+                        className="jamCard jamNext__card"
+                        aria-label={`${i + 1}. ${name}${t?.artist ? ` by ${t.artist}` : ''}${by ? `, added by ${by}` : ''}`}
+                      >
+                        <Sleeve src={t ? artSized(t.artwork, 160) : null} className="jamNext__art" glyph={20} />
+                        <span className="jamNext__title" aria-hidden>
+                          {name}
+                        </span>
+                        {by && (
+                          <span className="jamChip jamChip--by" aria-hidden>
+                            <UserPlus size={10} />
+                            <span>{by}</span>
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </EdgeScrollRow>
+              )}
+            </Section>
+          )}
+
+          {/* 4. People: named, with their standing - and who has the clock. */}
+          <Section label="People">
+            <ul className="jamCard jamPeople">
+              {people.map((p) => {
+                const isMe = p.name.toLowerCase() === me.toLowerCase();
+                const here = p.joinedAt > 0 ? spanWords(now - p.joinedAt) : null;
+                const fresh = isMe || (p.seenAt > 0 && now - p.seenAt < FRESH_MS);
+                const known = p.seenAt > 0 || isMe;
+                return (
+                  <li key={p.id} className="jamPerson">
+                    <FriendAvatar handle={p.name} size="md" />
+                    <span className="jamPerson__text">
+                      <span className="jamPerson__name">
+                        {p.name}
+                        {isMe && <span className="jamPerson__you"> · you</span>}
+                      </span>
+                      {(known || here !== null || p.joinedAt > 0) && (
+                        <span className="jamPerson__standing">
+                          {known && (
+                            <>
+                              <span className="jamPerson__dot" data-fresh={fresh || undefined} aria-hidden />
+                              {fresh ? 'listening' : 'quiet'}
+                            </>
+                          )}
+                          {known && p.joinedAt > 0 ? ' · ' : ''}
+                          {p.joinedAt > 0 ? (here ? `here ${here}` : 'just arrived') : ''}
+                        </span>
+                      )}
+                    </span>
+                    {p.host && (
+                      <span className="jamPill jamPill--host">
+                        <Crown size={10} aria-hidden />
+                        Host
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
+            {eventsLine && (
+              <span className="jamPeople__events">
+                <Clock size={12} aria-hidden />
+                <span>{eventsLine}</span>
+              </span>
+            )}
+          </Section>
+
+          {/* 5. Invite: the code for somebody already in the app on this
+              server, the QR and the link for everybody else. Anyone in the
+              room can pass it on; being in it is the permission, and the hub
+              still decides who gets through the door. */}
+          <Section label="Invite">
+            <div className="jamCard jamInvite">
+              <span className="jamInvite__main">
+                <span className="jamInvite__eyebrow">Code</span>
+                <button
+                  type="button"
+                  className="jamInvite__code"
+                  aria-label={copied ? 'Copied the code' : `Copy the code ${code}`}
+                  aria-live="polite"
+                  onClick={() => void copyCode()}
+                >
+                  <span className="jamInvite__mono">{code}</span>
+                  <span className="jamInvite__copy" data-done={copied || undefined}>
+                    {copied ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
+                    {copied ? 'Copied' : 'Copy'}
+                  </span>
+                </button>
+              </span>
+              <span className="jamInvite__qr" data-ready={qr ? '' : undefined}>
+                {qr ? (
+                  <img src={qr} alt="The room's link as a QR code" />
+                ) : (
+                  <span className="jamInvite__qrBlank" aria-hidden>
+                    <QrCode size={22} />
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                className="jamAction jamInvite__share"
+                aria-label="Share a link to this groove"
+                onClick={share}
+              >
+                <Share2 size={16} aria-hidden />
+                Share link
+              </button>
+            </div>
+          </Section>
+
+          {/* 6. The way out. A host has two: hand the room on, or close it.
+              Leaving used to end it for everyone, which is the one thing a
+              host stepping out for a moment never meant. */}
+          <div className="jamActions" role="group" aria-label="Leave or end">
+            {!hosting && (
+              <button
+                type="button"
+                className="jamAction"
+                aria-label="Leave the groove"
+                onClick={() => void jam.leave()}
+              >
+                <LogOut size={16} aria-hidden />
+                Leave
+              </button>
+            )}
+            {hosting && others === 0 && (
+              <button
+                type="button"
+                className="jamAction"
+                data-tone="danger"
+                aria-label="End the groove"
+                onClick={() => void jam.end()}
+              >
+                <Power size={16} aria-hidden />
+                End the groove
+              </button>
+            )}
+            {hosting && others > 0 && (
+              <>
+                <button
+                  type="button"
+                  className="jamAction"
+                  aria-label="Leave, and hand the groove on"
+                  onClick={() => void jam.leave()}
+                >
+                  <LogOut size={16} aria-hidden />
+                  Leave, hand it on
+                </button>
+                <button
+                  type="button"
+                  className="jamAction"
+                  data-tone="danger"
+                  aria-label="End the groove for everyone"
+                  onClick={() => void jam.end()}
+                >
+                  <Power size={16} aria-hidden />
+                  End for everyone
+                </button>
+              </>
+            )}
           </div>
-        )}
-
-        {/* Two ways to hand the room over, and they are for different people.
-
-            The CODE is for somebody already standing in the app on this
-            server: it is short, and typing it is faster than anything. The
-            LINK is for everybody else - it lands on a page that says whose
-            room this is and offers the app, which a bare code cannot do.
-            Anyone in the room can pass it on; being in it is the permission,
-            and the hub still decides who gets through the door. */}
-        <div className="jamPanel__pass">
-          {jam.hosting && (
-            <button
-              type="button"
-              className="jamLive__code"
-              title="Copy the code"
-              onClick={() => {
-                void navigator.clipboard?.writeText(room.id.toUpperCase()).catch(() => {});
-              }}
-            >
-              Code {room.id.toUpperCase()}
-            </button>
-          )}
-          <Button variant="outline" size="sm" onClick={() => setSharing(true)}>
-            <Share2 size={14} />
-            Share link
-          </Button>
         </div>
-
-        <div className="jamPanel__actions">
-          {/* A host has two exits: hand the room on, or close it. Leaving
-              used to end it for everyone, which is the one thing a host
-              stepping out for a moment never meant. */}
-          <Button variant="outline" size="sm" onClick={() => void jam.leave()}>
-            {jam.hosting && room.memberCount > 1 ? 'Leave, hand it on' : 'Leave'}
-          </Button>
-          {jam.hosting && room.memberCount > 1 && (
-            <Button variant="ghost" size="sm" onClick={() => void jam.end()}>
-              End for everyone
-            </Button>
-          )}
-        </div>
-      </div>
-    </Popover>
-    {/* HOISTED OUT of the popover, and that is the whole point. Tapping Share
-        dismisses the panel that carries the button, and a sheet rendered
-        inside that panel is unmounted by its own trigger closing - it appears
-        and vanishes in the same frame. Rendered as the popover's SIBLING it
-        outlives the dismissal, and the state that opens it lives out here
-        too. */}
-    {sharing && (
-      <ShareJamSheet
-        jamId={room.id}
-        hostName={room.hostName}
-        listening={room.memberCount}
-        open={sharing}
-        onClose={() => setSharing(false)}
-      />
-    )}
+      </Popover>
+      {/* HOISTED OUT of the popover, and that is the whole point. Tapping Share
+          dismisses the panel that carries the button, and a sheet rendered
+          inside that panel is unmounted by its own trigger closing - it appears
+          and vanishes in the same frame. Rendered as the popover's SIBLING it
+          outlives the dismissal, and the state that opens it lives out here
+          too. */}
+      {sharing && (
+        <ShareJamSheet
+          jamId={room.id}
+          hostName={room.hostName}
+          listening={room.memberCount}
+          open={sharing}
+          onClose={() => setSharing(false)}
+        />
+      )}
     </>
   );
 }

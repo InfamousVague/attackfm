@@ -1,0 +1,973 @@
+/* --- the groove deck -----------------------------------------------------
+ *
+ * The transport row's groove seat: the panel a tap opens, a small deck of
+ * cards at popover scale, built the way the DJ's deck beside it is (styles/69)
+ * and sharing its vocabulary - a hero that is art first, cards with a glyph
+ * in a tinted disc, a scrolling row of small sleeves, chips, one full-width
+ * action row. The room is app-level state (jam.tsx); nothing here owns it.
+ *
+ * Every colour is a token, and the accent ramp on this screen is the album's
+ * own tint, so the hero's wash, the discs and the pills take the record's
+ * colour without a rule here knowing it. The one picture that is not a token
+ * is the sleeve itself, blurred to a colour behind a card.
+ *
+ * Width belongs to the PANEL (.jamPanel, styles/35), the body fills it
+ * (.jamPanel__body, inline-size 100%, no min, no max) - that contract is not
+ * restated here. Height, scrolling and the gesture contract come from
+ * .popoverSheet.
+ */
+
+.jamDeck {
+  /* The body's own gap and column come from .jamPanel__body. */
+  min-inline-size: 0;
+}
+
+.jamDeck__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+.jamDeck__label {
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+/* ── One card, many faces ──────────────────────────────────────────────
+   Every surface in the deck is a .jamCard: raised, a hairline, a squircle.
+   The tappable ones are real <button>s (the name they carry says what a tap
+   does), take the accent on hover and give under a press; the others are
+   plain boxes that only look the same. 44px is the floor on every control. */
+.jamCard {
+  position: relative;
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  text-align: start;
+  color: var(--glacier-text);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  min-inline-size: 0;
+  /* A wash inside is clipped by the card's own corners, and Safari needs the
+     isolation to actually cut them. */
+  overflow: hidden;
+  isolation: isolate;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--glacier-duration-fast) var(--glacier-ease-out),
+    border-color var(--glacier-duration-fast) var(--glacier-ease-out),
+    opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+button.jamCard {
+  cursor: pointer;
+  /* 44px is the floor, in pixels: the app's root rem is under 16px, and a
+     card sized in rem alone came in two pixels short of a thumb. */
+  min-block-size: max(2.75rem, 44px);
+}
+
+button.jamCard:hover:not(:disabled) {
+  border-color: var(--glacier-accent-7);
+}
+
+button.jamCard:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+button.jamCard:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+button.jamCard:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* The sleeve as a wash: blurred to a colour and held well under the surface,
+   so the card takes the record's tint and the words stay the words. The
+   blur is static - a fixed kernel costs nothing after the first paint. */
+.jamCard__wash {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.jamCard__wash img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  transform: scale(1.4);
+  filter: blur(22px) saturate(1.3);
+  opacity: 0.38;
+}
+
+/* ── The live pulse ────────────────────────────────────────────────────
+   One dot, everywhere the deck says "happening now": on the hero's face,
+   on a friend's door. Quiet (the host's beat has stopped) it holds still in
+   the warning tone - an hourglass, not a heartbeat. */
+.jamPulse {
+  position: absolute;
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 50%;
+  background: var(--glacier-success-solid);
+  box-shadow: 0 0 0 2px var(--glacier-surface-raised);
+  animation: jamPulse 2s ease-in-out infinite;
+}
+
+.jamPulse[data-quiet] {
+  background: var(--glacier-warning-solid);
+  animation: none;
+}
+
+/* ── 1. The room ───────────────────────────────────────────────────────
+   Art first: the song's sleeve as the room's face, the members' faces
+   stacked on it and the pulse in its corner; then whose room it is, who is
+   here in words, and the pace with how long it has run. The wash behind it
+   is the sleeve, so the card sits in the record's own colour. */
+.jamHero {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-2);
+  background: linear-gradient(135deg, var(--glacier-accent-soft), var(--glacier-surface-raised) 72%);
+  border-color: var(--glacier-accent-border);
+}
+
+/* The start card carries a go disc at its end, like the DJ's play. */
+.jamHero--start {
+  grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+}
+
+.jamHero__face {
+  position: relative;
+  inline-size: 5.5rem;
+  block-size: 5.5rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  isolation: isolate;
+  flex: none;
+}
+
+.jamHero__art {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.jamHero__art--blank {
+  display: grid;
+  place-items: center;
+}
+
+/* The people, on the face: small marks, overlapping, each ringed in the
+   card's surface so the stack reads as a stack. */
+.jamHero__faces {
+  position: absolute;
+  inset-block-end: 4px;
+  inset-inline-start: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.jamHero__faces .jamHero__avatar {
+  box-shadow: 0 0 0 2px var(--glacier-surface-raised);
+}
+
+.jamHero__faces > * + * {
+  margin-inline-start: -0.45rem;
+}
+
+.jamHero__more {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--glacier-surface);
+  color: var(--glacier-text);
+  font-size: 0.62rem;
+  font-weight: var(--glacier-font-weight-bold);
+  box-shadow: 0 0 0 2px var(--glacier-surface-raised);
+}
+
+.jamHero__pulse {
+  inset-block-start: 5px;
+  inset-inline-end: 5px;
+}
+
+.jamHero__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.jamHero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--glacier-accent-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jamHero__title {
+  font-size: var(--glacier-font-size-md);
+  font-weight: var(--glacier-font-weight-bold);
+  line-height: 1.2;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.jamHero__blurb {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* The quiet line and the start card's promise are sentences: let them run
+   to three lines rather than lose "change hands" or "anyone can add" to an
+   ellipsis. */
+.jamHero__blurb[data-quiet],
+.jamHero--start .jamHero__blurb {
+  -webkit-line-clamp: 3;
+}
+
+.jamHero__blurb[data-quiet] {
+  color: var(--glacier-warning-text);
+}
+
+.jamHero__blurb[data-quiet] > svg {
+  display: inline-block;
+  vertical-align: -0.15em;
+  margin-inline-end: 0.35em;
+}
+
+.jamHero__go {
+  inline-size: max(2.75rem, 44px);
+  block-size: max(2.75rem, 44px);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-contrast);
+  display: grid;
+  place-items: center;
+  flex: none;
+  box-shadow: var(--glacier-shadow-1);
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.jamHero:hover:not(:disabled) .jamHero__go {
+  transform: scale(1.06);
+}
+
+/* ── 2. Now ────────────────────────────────────────────────────────────
+   A wide card wearing the sleeve: the state as its eyebrow, the song, the
+   artist, and who asked for it when the hub knows. */
+.jamNow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-2);
+}
+
+.jamNow__art {
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: var(--glacier-radius-md);
+  object-fit: cover;
+  flex: none;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  display: grid;
+  place-items: center;
+}
+
+.jamNow__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.jamNow__eyebrow {
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--glacier-accent-text);
+}
+
+.jamNow__title {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jamNow__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jamNow__state {
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.jamNow__state[data-playing] > svg {
+  animation: jamPulse 1.6s ease-in-out infinite;
+}
+
+/* ── 3. Up next ────────────────────────────────────────────────────────
+   The guests' waiting adds first - the newest thing in the room and the one
+   thing a guest is waiting on - then the room's line as sleeves run along
+   sideways. The row bleeds to the panel's edges (the negative margin undoes
+   the panel's padding, the padding puts it back inside the scroller) so the
+   edge fade lands where the panel ends. Its own touch-action: the panel is
+   pan-y, and a row that inherits that cannot be dragged along. */
+.jamPending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-style: dashed;
+  border-color: var(--glacier-accent-border);
+}
+
+.jamPending__head {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text);
+  min-inline-size: 0;
+}
+
+.jamPending__head > svg {
+  flex: none;
+  color: var(--glacier-accent-text);
+}
+
+.jamPending__head > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamPending__mine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.jamNext {
+  gap: var(--glacier-space-2);
+  margin-inline: calc(-1 * var(--glacier-space-3));
+  padding-inline: var(--glacier-space-3);
+  padding-block: 2px;
+  touch-action: pan-x pan-y;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: var(--glacier-space-3);
+  align-items: stretch;
+}
+
+.jamNext__card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  inline-size: 6.5rem;
+  padding: var(--glacier-space-2);
+  scroll-snap-align: start;
+}
+
+/* Explicit on both axes: a square from aspect-ratio alone collapses in a
+   WebKit flex column. */
+.jamNext__art {
+  inline-size: 5.5rem;
+  block-size: 5.5rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  flex: none;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  display: grid;
+  place-items: center;
+}
+
+.jamNext__title {
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.25;
+  max-inline-size: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ── Chips ─────────────────────────────────────────────────────────────
+   "added by" on a sleeve, and a guest's own waiting add with its withdraw.
+   The withdraw is the whole chip, so the small X has a thumb's worth of
+   pill around it. */
+.jamChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  max-inline-size: 100%;
+  padding: 2px 0.55rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-medium);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.jamChip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jamChip > svg {
+  flex: none;
+}
+
+.jamChip--withdraw {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  font: inherit;
+  font-size: var(--glacier-font-size-xs);
+  min-block-size: max(2.75rem, 44px);
+  padding-inline: 0.85rem 0.7rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.jamChip--withdraw:hover {
+  background: var(--glacier-accent-soft-hover);
+}
+
+.jamChip--withdraw:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+/* ── 4. People ─────────────────────────────────────────────────────────
+   One card, one row per person: their mark, their name, their standing
+   (a presence dot and how long they have been here), and the crown on
+   whoever has the clock. The latest comings and goings in one muted line
+   beneath. */
+.jamPeople {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--glacier-space-3);
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+}
+
+.jamPerson {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+  min-block-size: max(3.25rem, 52px);
+  padding-block: var(--glacier-space-1);
+}
+
+.jamPerson + .jamPerson {
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.jamPerson__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.jamPerson__name {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jamPerson__you {
+  font-weight: var(--glacier-font-weight-regular);
+  color: var(--glacier-text-muted);
+}
+
+.jamPerson__standing {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jamPerson__dot {
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--glacier-text-muted);
+  opacity: 0.6;
+  flex: none;
+}
+
+.jamPerson__dot[data-fresh] {
+  background: var(--glacier-success-solid);
+  opacity: 1;
+}
+
+.jamPill {
+  margin-inline-start: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 2px var(--glacier-space-2);
+  border-radius: var(--glacier-radius-full);
+  font-size: 0.62rem;
+  font-weight: var(--glacier-font-weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+}
+
+.jamPeople__events {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  min-inline-size: 0;
+  padding-inline: var(--glacier-space-1);
+}
+
+.jamPeople__events > svg {
+  flex: none;
+}
+
+.jamPeople__events > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 5. Invite ─────────────────────────────────────────────────────────
+   The code, big and monospaced, with its copy; the link as a QR beside it;
+   the share button across the foot. */
+.jamInvite {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'code qr'
+    'share share';
+  gap: var(--glacier-space-3);
+  align-items: center;
+  inline-size: 100%;
+  padding: var(--glacier-space-3);
+}
+
+.jamInvite__main {
+  grid-area: code;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+.jamInvite__eyebrow {
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+.jamInvite__code {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  margin-inline-start: calc(-1 * var(--glacier-space-2));
+  border: 0;
+  border-radius: var(--glacier-radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-block-size: max(2.75rem, 44px);
+  max-inline-size: 100%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.jamInvite__code:hover {
+  background: var(--glacier-surface-hover);
+}
+
+.jamInvite__code:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+.jamInvite__mono {
+  font-family: var(--glacier-font-mono);
+  font-size: var(--glacier-font-size-xl);
+  font-weight: var(--glacier-font-weight-bold);
+  letter-spacing: 0.12em;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamInvite__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 2px 0.55rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-semibold);
+  flex: none;
+  transition:
+    background var(--glacier-duration-fast) var(--glacier-ease-out),
+    color var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.jamInvite__copy[data-done] {
+  background: var(--glacier-success-soft);
+  color: var(--glacier-success-text);
+}
+
+/* The QR sits on its own white tile inside the image (a scanner wants it),
+   at a size a phone across the table can read. Quiet until there is a link:
+   a muted glyph on the sunken surface, same size, nothing jumps. */
+.jamInvite__qr {
+  grid-area: qr;
+  inline-size: 6rem;
+  block-size: 6rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.jamInvite__qr img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.jamInvite__qrBlank {
+  display: grid;
+  place-items: center;
+  opacity: 0.55;
+}
+
+.jamInvite__share {
+  grid-area: share;
+}
+
+/* ── Actions ───────────────────────────────────────────────────────────
+   One full-width row; when it holds two they are a pair, the same shape and
+   the same width, and only the tone says which one is the door that does
+   not reopen. Also the answer row on an ask, and the share button. */
+.jamActions {
+  display: flex;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.jamActions > * {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+.jamAction {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45em;
+  min-block-size: max(2.75rem, 44px);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--glacier-duration-fast) var(--glacier-ease-out),
+    border-color var(--glacier-duration-fast) var(--glacier-ease-out),
+    background var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.jamAction > svg {
+  flex: none;
+}
+
+.jamAction:hover:not(:disabled) {
+  border-color: var(--glacier-accent-7);
+  background: var(--glacier-surface-hover);
+}
+
+.jamAction:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.jamAction:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+.jamAction:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.jamAction[data-tone='danger'] {
+  background: var(--glacier-danger-soft);
+  border-color: var(--glacier-danger-border);
+  color: var(--glacier-danger-text);
+}
+
+.jamAction[data-tone='danger']:hover:not(:disabled) {
+  background: var(--glacier-danger-soft-hover);
+  border-color: var(--glacier-danger-border);
+}
+
+.jamAction--yes {
+  background: var(--glacier-accent-solid);
+  border-color: transparent;
+  color: var(--glacier-accent-contrast);
+}
+
+.jamAction--yes:hover:not(:disabled) {
+  background: var(--glacier-accent-solid-hover);
+  border-color: transparent;
+}
+
+/* ── 8. Asks ───────────────────────────────────────────────────────────
+   A friend waiting on an answer: their mark, what they asked, and the two
+   answers as a pair. Tinted in the accent, as a question waiting on you
+   should not read as just another card. */
+.jamAsk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  padding: var(--glacier-space-2) var(--glacier-space-3) var(--glacier-space-3);
+  background: linear-gradient(135deg, var(--glacier-accent-soft), var(--glacier-surface-raised) 80%);
+  border-color: var(--glacier-accent-border);
+}
+
+.jamAsk__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+  min-block-size: max(2.75rem, 44px);
+}
+
+.jamAsk__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+}
+
+.jamAsk__line {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.jamAsk__when {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 9. Live now ───────────────────────────────────────────────────────
+   Friends' rooms as doors, run along sideways: the host's mark with the
+   pulse on it, whose room, how many inside, and the song by name. The whole
+   card is the Join. Bled to the panel's edges as the queue row is. */
+.jamDoors {
+  gap: var(--glacier-space-2);
+  margin-inline: calc(-1 * var(--glacier-space-3));
+  padding-inline: var(--glacier-space-3);
+  padding-block: 2px;
+  touch-action: pan-x pan-y;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: var(--glacier-space-3);
+  align-items: stretch;
+}
+
+.jamDoor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  inline-size: 8.75rem;
+  padding: var(--glacier-space-2);
+  scroll-snap-align: start;
+}
+
+.jamDoor__head {
+  position: relative;
+  display: inline-flex;
+  margin-block-end: var(--glacier-space-1);
+}
+
+.jamDoor__head .jamPulse {
+  inset-block-end: -1px;
+  inset-inline-end: -1px;
+}
+
+.jamDoor__name {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.2;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamDoor__meta {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  line-height: 1.3;
+}
+
+.jamDoor__song {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  max-inline-size: 100%;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-accent-text);
+  line-height: 1.3;
+}
+
+.jamDoor__song > svg {
+  flex: none;
+}
+
+.jamDoor__song > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Light ─────────────────────────────────────────────────────────────
+   Dark-first, like the rest of the app: the "system" preset REMOVES
+   data-theme from the root (appearance.tsx), so a rule keyed on
+   [data-theme='dark'] never fires for most phones. Light is the override -
+   the media query for the un-stamped root, the attribute for the explicit
+   choice - the same recipe as .npDjMood__icon. A sleeve blurred to a colour
+   is loud on white where it was a tint on near-black. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .jamCard__wash img {
+    opacity: 0.2;
+    filter: blur(22px) saturate(1.1);
+  }
+}
+
+:root[data-theme='light'] .jamCard__wash img {
+  opacity: 0.2;
+  filter: blur(22px) saturate(1.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jamCard,
+  .jamAction,
+  .jamHero__go,
+  .jamInvite__copy {
+    transition: none;
+  }
+
+  .jamPulse,
+  .jamNow__state[data-playing] > svg {
+    animation: none;
+  }
+}
