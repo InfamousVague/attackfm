@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.120
+
+- The Profile button at the bottom of the screen is your own picture, once you
+  have chosen one.
+
 ## 0.5.119
 
 - Nothing changes on your phone. This one carries a small piece the staging
