@@ -492,8 +492,46 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
  */
 .appNavBarTab__icon svg,
 .appNavBarPlugins__itemIcon svg {
-  inline-size: 24px;
-  block-size: 24px;
+  inline-size: 28px;
+  block-size: 28px;
+}
+
+/*
+ * THE BAR'S TWO PARTS ARE PLACED, NOT STACKED.
+ *
+ * They were a centred flex column: icon, a 2px gap, label. That centres the
+ * PAIR, which is not the same as centring the glyph - measured, the icon's
+ * middle sat 5.5px above the tab's own middle, because the label hanging below
+ * it pushed the whole group up. Every seat therefore read as slightly high,
+ * and the bigger the glyph got the worse that would be.
+ *
+ * So the glyph is centred on the tab and the label is pinned near the foot.
+ * Both are taken out of the flow to do it, which is also what buys the room:
+ * a 28px glyph plus a gap plus a label no longer has to ADD UP to something
+ * that fits, so the tab keeps its 3.4rem square and the bar keeps its height
+ * exactly. Nothing above this touches the tab's own size, the bar's padding or
+ * the island's height - the dock contract is unchanged, which is the whole
+ * requirement.
+ *
+ * Scoped inside `.appNavBar` so this is the phone bar's arrangement only. The
+ * desktop rail draws the kit's own NavBarItem with the kit's own classes and
+ * is untouched.
+ */
+.appNavBar .appNavBarTab__icon {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  translate: -50% -50%;
+}
+
+.appNavBar .appNavBarTab__label {
+  position: absolute;
+  /* Off the foot rather than under the glyph: the label sits lower than the
+     stack ever put it, and its distance from the bottom edge is now a number
+     instead of whatever was left over. */
+  inset-block-end: 3px;
+  inset-inline: 2px;
+  text-align: center;
 }
 
 /*
@@ -574,8 +612,8 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
  * bar's own active state, which a glyph gets for free from its stroke.
  */
 .appNavBarTab__face {
-  inline-size: 24px;
-  block-size: 24px;
+  inline-size: 28px;
+  block-size: 28px;
   border-radius: 999px;
   object-fit: cover;
   display: block;

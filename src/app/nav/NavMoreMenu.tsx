@@ -104,7 +104,8 @@ export function NavMoreMenu({
         }}
       >
         <span className="appNavBarTab__icon">
-          <EllipsisVertical size={22} />
+          {/* 28, matching the bar's other glyphs and the stylesheet. */}
+          <EllipsisVertical size={28} />
           <CounterBadge
             className="appNavBadge--corner"
             count={pulling > 0 ? pulling : failed}
