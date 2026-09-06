@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.128
+
+- The desktop app has a proper side navigation now: a full-height rail with
+  every place the phone has, named rather than guessed at from an icon, and
+  Downloads and Settings at the foot.
+- What is playing sits in its own column down the right instead of taking over
+  the whole window when you start a song.
+
 ## 0.5.127
 
 - Joining someone's groove now asks where the music should play: on this
