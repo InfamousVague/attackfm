@@ -265,6 +265,36 @@ button.artistAlbum {
   opacity: 1;
 }
 
+/*
+ * READING: the clip goes soft across the WHOLE screen.
+ *
+ * `[data-reading]` (lyrics showing, or a book's chapters) already takes the
+ * blurred cover further down - blur 6, brightness 0.42 - so the words carry
+ * the screen and the art fills it. The clip never got that treatment, and it
+ * is drawn OVER the cover: so on a song with a Canvas the background stayed a
+ * sharp, moving video and the only thing softening it was a band of
+ * backdrop-filter behind the lyrics themselves. That band had edges, and a
+ * strip of blur across live footage reads as a caption bar rather than as the
+ * room going quiet.
+ *
+ * Same brightness as the cover's reading state, so the two layers agree
+ * whichever one is showing. A larger radius because a clip is moving and a
+ * cover is not - the eye chases motion, and 6px of blur does not stop it.
+ *
+ * The radius is a constant, which is the cheap way to do this: the expensive
+ * blur is one whose kernel changes per frame, and this one is set once and
+ * composited. The sheet already carries a full-width `backdrop-filter:
+ * blur(22px)` in `.npScreen__veil` over the bottom half, so this is not a new
+ * class of cost on the same screen.
+ */
+.npScreen[data-reading] .npScreen__canvas {
+  filter: blur(16px) brightness(0.42) saturate(1.05);
+  /* The blur samples from outside the element at the edges and would leave a
+     soft transparent rim around the screen; a nudge of scale pushes those
+     edges off-screen so the clip still reaches every corner. */
+  scale: 1.06;
+}
+
 /* The clip no longer uses this, but the lyrics scrim in the dock's stylesheet
    does - it is a plain fade-in and it is right for something that has nothing
    to wait for. Kept here, where it was defined. */

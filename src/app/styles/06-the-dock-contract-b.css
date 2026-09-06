@@ -271,44 +271,46 @@
 }
 
 /*
- * A soft gradient blur BEHIND the reading words.
+ * THE BAND BEHIND THE WORDS IS GONE, and what replaced it is the whole screen.
  *
- * Lyrics and a book's transcript sit over whatever the sheet is showing -
- * most testingly a Canvas clip, a moving video the eye keeps chasing. This
- * layer blurs what is behind the words (backdrop-filter reads the canvas
- * turning under this whole art layer) and lays a faint dark wash over it, so
- * a line reads as text and not as caption-over-footage. Masked to fade at the
- * top and bottom exactly as the words do, which turns a flat pane into the
- * gradient blur it should be - strongest through the middle where the reading
- * lives, gone at the edges where lines surface and sink. Decorative and inert:
- * it paints under the words (they carry z-index 1) and the thumb scrolls
- * straight through it.
+ * There used to be a `::before` on the reading slot: a backdrop-filter blur
+ * bled to the sheet edges, masked to fade top and bottom, sitting behind the
+ * words. It existed because lyrics over a Canvas clip read as
+ * caption-over-footage - and it half-worked, because a strip of blur across
+ * live footage is still a strip. It had edges. What it looked like was a
+ * caption bar, which is the thing it was drawn to avoid.
+ *
+ * The clip itself goes soft now (`.npScreen[data-reading] .npScreen__canvas`,
+ * styles/32), the way the blurred cover already did under the same attribute,
+ * so the room goes quiet everywhere at once and the words sit on it rather
+ * than in a lane cut through it.
+ *
+ * The contrast the band was adding locally is added below instead - and to the
+ * SHEET, not to the slot. A wash with edges is a band however faint it is;
+ * the first cut of this replaced the blur with a flat rectangle over the same
+ * slot and you could still see exactly where it started. Full-bleed has
+ * nowhere to show a seam, and it covers the plain-cover case too, which is
+ * what a book reading over its own artwork gets.
  */
-.npScreen__coverTarget--reading::before {
+/* On the clip's own wrapper, and that placement was measured rather than
+   reasoned. The first cut put this on `.npScreen::before` at z-index -1,
+   which is the same level the canvas wrapper sits at - and the wrapper comes
+   later in the document, so it painted straight over the wash. Probed by
+   turning the wash bright red for a frame: none of it reached the screen. It
+   was dead CSS that looked like it worked, because the blur beside it was
+   doing the visible half of the job.
+
+   Inside the wrapper it paints over the video and stays behind every control,
+   which is the whole reason the wrapper is at -1 to begin with. The plain
+   cover needs nothing here: `.npScreen[data-reading] .npScreen__bg::after`
+   above already darkens it, which is what a book reading over its own artwork
+   has always had. */
+.npScreen[data-reading] .npScreen__canvasWrap::after {
   content: '';
   position: absolute;
-  /* Edge to edge across the screen, not just the art column. The reading
-     surface is inline-size:100% of .npScreen__art, which stretches to the
-     sheet's CONTENT box - inside .npScreen's own padding-inline
-     (--glacier-space-6). `inset: 0` left the blur that far in from each side,
-     so it read as a centred pane with sharp footage down the margins. Bleeding
-     the two sides out by that exact padding carries the wash to the sheet
-     edges; the vertical fade (the mask below) is untouched. */
-  inset-block: 0;
-  inset-inline: calc(-1 * var(--glacier-space-6, 1.75rem));
-  z-index: 0;
+  inset: 0;
   pointer-events: none;
-  -webkit-backdrop-filter: blur(7px);
-  backdrop-filter: blur(7px);
-  background: linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.04),
-    rgba(0, 0, 0, 0.26) 42%,
-    rgba(0, 0, 0, 0.26) 58%,
-    rgba(0, 0, 0, 0.04)
-  );
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
+  background: rgba(0, 0, 0, 0.22);
 }
 
 /* Karaoke: the toggle that drops the vocal, floating at the top-right of the
