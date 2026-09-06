@@ -1,6 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useToast } from '@glacier/react';
+import { Users } from '@glacier/icons';
+import { fireNativeHaptic } from '../core/haptics.ts';
+import { openNowPlaying } from '../nav/nowPlayingDoor.ts';
+import { armGrooveDeck } from '../nav/grooveDoor.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { ServerError } from '../api/http.ts';
@@ -260,11 +264,49 @@ export function JamProvider({ children }: { children: ReactNode }) {
 
   const hosting = current !== null && session !== null && isHost(current, session.username);
 
+  /*
+   * LANDING in a room, from this device.
+   *
+   * A join used to be silent when it worked: `current` changed, the poll took
+   * over, and if the room's song was in the library the deck steered to it -
+   * and if it was not, nothing on screen moved at all. The owner's words:
+   * "there is no feedback showing that I've joined". So every way in that
+   * starts HERE - Join, Accept, Start, a link - lands the same way, once,
+   * from this one place: a word about where you are, the player up, and the
+   * groove deck open on it. Never from a poll (a reload restoring a room you
+   * were already in is not an arrival) and never from the host's beat.
+   *
+   * The sheet first, then the deck. The deck lives in the sheet's action row
+   * and takes the arm as it mounts - or at once, on a shape with no sheet to
+   * lift, where the strip's own deck is already standing (nav/grooveDoor).
+   */
+  const land = useCallback(
+    (room: Jam) => {
+      if (!session) return;
+      const mine = isHost(room, session.username);
+      const count = room.memberCount;
+      fireNativeHaptic('success');
+      toast({
+        icon: <Users size={16} />,
+        message: mine
+          ? count > 1
+            ? `Your groove is open — ${count} listening`
+            : 'Your groove is open'
+          : `You're in ${room.hostName}'s groove — ${count} listening`,
+      });
+      openNowPlaying();
+      armGrooveDeck();
+    },
+    [session, toast],
+  );
+
   const start = useCallback(async () => {
     if (!session) return;
-    setCurrent(await startJamApi(session));
+    const room = { ...(await startJamApi(session)), receivedAt: Date.now() };
+    setCurrent(room);
+    land(room);
     void refresh();
-  }, [session, refresh]);
+  }, [session, refresh, land]);
 
   const join = useCallback(
     async (id: string) => {
@@ -274,6 +316,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
         lastRoom.current = room;
         lastEventAt.current = Math.max(0, ...(room.events ?? []).map((e) => e.at));
         setCurrent(room);
+        land(room);
         void refresh();
         return true;
       } catch (e) {
@@ -284,7 +327,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [session, refresh, toast],
+    [session, refresh, toast, land],
   );
 
   const invite = useCallback(
@@ -348,6 +391,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
         lastEventAt.current = Math.max(0, ...(room.events ?? []).map((e) => e.at));
         setCurrent(room);
         setInvites((prev) => prev.filter((i) => i.from.toLowerCase() !== from.toLowerCase()));
+        land(room);
         void refresh();
         return true;
       } catch (e) {
@@ -358,7 +402,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [session, refresh, toast],
+    [session, refresh, toast, land],
   );
 
   const declineInvite = useCallback(

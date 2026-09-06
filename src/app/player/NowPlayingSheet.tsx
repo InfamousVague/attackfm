@@ -21,7 +21,7 @@ import type { ArtTint } from './artTint.ts';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Volume2 } from '@glacier/icons';
+import { AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Users, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { SMART_SHUFFLE_LABEL } from './smartShuffle.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
@@ -54,6 +54,7 @@ import {
   BOOK_SPEEDS,
   bookSpeedLabel,
   type ArtView,
+  type FollowingRoom,
 } from './deckShared.ts';
 import { formatTotal } from '../ux/format.ts';
 import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
@@ -731,6 +732,7 @@ export function NowPlayingSheet({
   onQueueChange,
   onTrackChange,
   setFiling,
+  following,
 }: {
   npOpen: boolean;
   npDocked: boolean;
@@ -811,6 +813,10 @@ export function NowPlayingSheet({
   onQueueChange?: (tracks: Track[]) => void;
   onTrackChange?: (track: Track) => void;
   setFiling: (track: Track | null) => void;
+  /** In a groove whose song this library lacks: the sheet reads the ROOM -
+   *  the Users mark where the sleeve goes, the song by name, a word on why
+   *  there is no transport - and keeps only the queue and the deck. */
+  following: FollowingRoom | null;
 }) {
   /*
    * The analyser, straight from the audio graph.
@@ -1471,6 +1477,7 @@ export function NowPlayingSheet({
       data-theme="dark"
       data-open={npOpen || undefined}
       data-docked={npDocked || undefined}
+      data-following={following ? '' : undefined}
       // Capture phase, so ANY touch on the sheet - a control, the art, the
       // veil itself - counts as activity: the dim lifts and its clock
       // restarts. The veil below swallows its own tap so a wake-up touch
@@ -1557,7 +1564,9 @@ export function NowPlayingSheet({
         >
           <ChevronDown size={22} />
         </IconButton>
-        <span className="npScreen__source">{track?.album || 'Now playing'}</span>
+        <span className="npScreen__source">
+          {following ? `${following.hostName}'s groove` : track?.album || 'Now playing'}
+        </span>
         {/* Where the close button's counterweight was: filing the song is
             the one action worth a permanent seat up here, and this sheet
             has the room the mini-strip's rail does not. */}
@@ -1608,6 +1617,13 @@ export function NowPlayingSheet({
         {/* The hero art follows the same artView the mini-strip does, so the
             choice is one setting in two places. A press (long-press on
             touch) opens the chooser. */}
+        {following ? (
+          /* A groove has no sleeve of its own: the room's mark, disc-sized,
+             where the record would turn. */
+          <div className="npScreen__room" aria-hidden="true">
+            <Users size={72} />
+          </div>
+        ) : (
         <ContextMenu
           aria-label="Artwork style"
           className={`npScreen__coverTarget${
@@ -1697,6 +1713,7 @@ export function NowPlayingSheet({
             />
           )}
         </ContextMenu>
+        )}
       </div>
       )}
 
@@ -1705,7 +1722,10 @@ export function NowPlayingSheet({
           {/* A single-file book's title IS its album, and the head already
               wears the album - saying it twice on one screen is noise. */}
           {!(track?.kind === 'book' && track.title === track.album) && (
-            <MarqueeText className="npScreen__title" text={track?.title ?? ''} />
+            <MarqueeText
+              className="npScreen__title"
+              text={following ? (following.trackTitle ?? 'Nothing playing yet') : (track?.title ?? '')}
+            />
           )}
           {/* A BOOK'S AUTHOR IS NOT A LINK.
               The artist line is a door to an artist page - a record's other
@@ -1713,7 +1733,7 @@ export function NowPlayingSheet({
               exists for an author: it would open a page built for a musician,
               holding one book. So for a book the name is a caption, the way it
               is for a track with nowhere to go. */}
-          {onOpenArtist && track && track.kind !== 'book' ? (
+          {onOpenArtist && track && !following && track.kind !== 'book' ? (
             <button
               type="button"
               className="npScreen__artist npScreen__artistLink"
@@ -1726,17 +1746,28 @@ export function NowPlayingSheet({
               {track.artist}
             </button>
           ) : (
-            <span className="npScreen__artist">{track?.artist ?? ''}</span>
+            <span className="npScreen__artist">
+              {following
+                ? (following.trackArtist ?? `${following.hostName} sets the pace`)
+                : (track?.artist ?? '')}
+            </span>
+          )}
+          {/* Why there is no transport under it. Said once, quietly, and only
+              when there is a song to be missing. */}
+          {following?.trackTitle && (
+            <span className="npScreen__notHere" role="status">
+              Not in your library
+            </span>
           )}
           {/* Which server this song lives on - shown only with more than one
               live, where it is the answer to a question a person has. */}
-          {originText && <span className="npScreen__origin">{originText}</span>}
+          {originText && !following && <span className="npScreen__origin">{originText}</span>}
           {/* Say whose speakers this is coming out of. The strip has carried
               this since Connect shipped; the full screen showed no sign at
               all, so a phone driving the desktop looked exactly like a phone
               playing to itself - right up until you wondered why the room
               was silent. */}
-          {activeElsewhere && (
+          {activeElsewhere && !following && (
             <span className="npScreen__codec">
               Playing on {activeDeviceName ?? 'another device'}
             </span>
@@ -1744,10 +1775,10 @@ export function NowPlayingSheet({
           {/* What the file IS - FLAC, MP3, ALAC - because on a self-hosted
               library the format is a fact about YOUR copy, not the service's
               tier. Absent when the tags never said (old scans). */}
-          {codecText && <span className="npScreen__codec">{codecText}</span>}
+          {codecText && !following && <span className="npScreen__codec">{codecText}</span>}
           {/* A caption now, not a door: chapter select moved into the
               transport, where the thumb already is. */}
-          {(doorLabel || chapterLabel) && (
+          {!following && (doorLabel || chapterLabel) && (
             <span className="npScreen__chapter">
               <span className="npScreen__chapterText">{doorLabel ?? chapterLabel}</span>
             </span>
@@ -1755,13 +1786,13 @@ export function NowPlayingSheet({
           {/* Its own line, because it is its own fact and because a phone has
               no room to hang it off the end of a chapter title - which clipped
               the title and then the number with it. */}
-          {(chapterLabel || bookFaces.length > 0) && bookRemaining != null && (
+          {!following && (chapterLabel || bookFaces.length > 0) && bookRemaining != null && (
             <span className="npScreen__left">{formatTotal(bookRemaining)} left in the book</span>
           )}
           {/* A downloading placeholder says so; otherwise only while the
               buffer is actually dry - silence with the transport still
               showing play is the mystery this whole path exists to end. */}
-          {(downloading || buffering) && (
+          {!following && (downloading || buffering) && (
             <span className="npScreen__buffering" role="status">
               {downloading ? 'Downloading…' : 'Buffering…'}
             </span>
@@ -1812,6 +1843,7 @@ export function NowPlayingSheet({
             </div>
           </Popover>
         )}
+        {!following && (
         <IconButton
           variant="ghost"
           aria-label={favorite ? 'Remove from favourites' : 'Add to favourites'}
@@ -1821,10 +1853,11 @@ export function NowPlayingSheet({
         >
           <Heart size={22} fill={favorite ? 'currentColor' : 'none'} />
         </IconButton>
+        )}
       </div>
 
       {/* No scrubber while downloading - there is no timeline yet. */}
-      {!downloading && (
+      {!downloading && !following && (
       <div className="npScreen__scrub">
         {/* The kit's live bar, not a plain slider: the same waveform the
             mini strip wears, driven by the same levels and beat, so the
@@ -1854,6 +1887,9 @@ export function NowPlayingSheet({
       </div>
       )}
 
+      {/* No transport for a room: play, skip and the rest would act on a
+          song this deck does not have. The pace is the host's. */}
+      {!following && (
       <div className="npScreen__transport">
         {/* A book's transport is not a song's. Shuffling a book is vandalism
             and repeating one is a niche of a niche - so their two seats go
@@ -1996,6 +2032,7 @@ export function NowPlayingSheet({
         </IconButton>
         )}
       </div>
+      )}
 
       <CatchMeUp
         track={track}
@@ -2014,7 +2051,18 @@ export function NowPlayingSheet({
           the transport now seats the two book verbs. Desktop keeps the row:
           the docked split hides the strip, so this row's volume popover is
           the only fader a desktop book listener has. */}
-      {(track?.kind !== 'book' || !isMobile) && (
+      {following ? (
+        /* A room with nothing of yours on: the queue (the room's line, and
+           where a guest adds to it) and the deck itself. The rest of the row
+           - lyrics, the equalizer, the fader - acts on a song, and there is
+           none here to act on. */
+        <div className="npScreen__actions edgeScroll" ref={actionsRef}>
+          <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
+            <ListMusic size={20} />
+          </IconButton>
+          <JamBadge seat="sheet" />
+        </div>
+      ) : (track?.kind !== 'book' || !isMobile) && (
       <div className="npScreen__actions edgeScroll" ref={actionsRef}>
         <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
           <ListMusic size={20} />
@@ -2068,7 +2116,7 @@ export function NowPlayingSheet({
         )}
         {/* Who else is hearing this. Renders nothing outside a jam, so the row
             is unchanged for anyone listening alone. */}
-        <JamBadge />
+        <JamBadge seat="sheet" />
         {/* Always here, unlike in the strip's overflow: on this screen "where is
             this playing" is part of the question the screen answers. */}
         <DevicePicker always />

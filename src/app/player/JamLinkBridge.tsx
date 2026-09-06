@@ -21,6 +21,9 @@ import { useJamOptional } from './jam.tsx';
  *    outlives the room by design), so the hub is what tells us, and the answer
  *    is a sentence rather than a dead button.
  *
+ * A join that WORKS closes this: the arrival is said by the provider's landing
+ * (the toast, the player, the deck), the same way every other door in lands.
+ *
  * Raised over whatever page is up, the way a playlist link is.
  */
 export function JamLinkBridge() {
@@ -28,7 +31,6 @@ export function JamLinkBridge() {
   const [share, setShare] = useState<JamShare | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
   const { session } = useServerSession();
   const jam = useJamOptional();
 
@@ -38,7 +40,6 @@ export function JamLinkBridge() {
         setCode(c);
         setShare(null);
         setError(null);
-        setDone(false);
       }),
     [],
   );
@@ -80,7 +81,11 @@ export function JamLinkBridge() {
     try {
       const ok = await jam.join(share.jamId);
       if (ok) {
-        setDone(true);
+        // "You are in" is the LANDING now, not a line on this card: the
+        // provider says where you are, lifts the player and opens the groove
+        // deck on it (jam.tsx). The card's work is done the moment the hub
+        // says yes, so it gets out of the way of what it started.
+        close();
       } else {
         // The registry row outlives the room; this is the hub saying the room
         // is not there any more, which is the one answer only it can give.
@@ -119,9 +124,7 @@ export function JamLinkBridge() {
               </div>
             </div>
 
-            {done ? (
-              <Text size="sm">You are in. Same song, same moment.</Text>
-            ) : here ? (
+            {here ? (
               <Text tone="muted" size="xs">
                 Joining follows along with whatever they are playing. Anyone in the room can add to
                 the queue.
@@ -139,7 +142,7 @@ export function JamLinkBridge() {
             )}
 
             <div className="sharedPlaylist__actions">
-              {done || !here ? (
+              {!here ? (
                 <Button variant="solid" size="sm" onClick={close}>
                   Done
                 </Button>

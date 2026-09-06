@@ -978,3 +978,82 @@ button.jamCard:disabled {
     animation: none;
   }
 }
+
+/* ── Following, with nothing to follow it with ────────────────────────
+   A guest whose library lacks the room's song (or whose host has nothing on
+   yet) has no deck to show - and used to have no strip at all, so a join
+   could succeed with nothing on screen. PlayerHost stands the strip up on
+   the ROOM instead (`following`, deckShared.ts): the Users mark where the
+   sleeve goes, whose groove it is, the song by name, and in the transport's
+   seat a quiet word on why there is no transport. Nothing here can be
+   played, so nothing here offers to. The sheet wears the same three. */
+.stripRoom {
+  display: grid;
+  place-items: center;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--glacier-accent-solid) 18%, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-text);
+}
+
+.stripRoom__note {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2rem;
+  padding-inline: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-full);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+}
+
+/* No clock, no seek, no play. The kit renders its play button ungated and
+   the scrubber always, so both are taken out of the layout here - the same
+   prefix-matched kit classes chapters 05 and 19 already hang off. */
+.playerBarShell[data-following] [class*="_scrubber_"],
+.playerBarShell[data-following] [class*="_transport_"] {
+  display: none;
+}
+
+/* The sheet's face for a room: the same mark, disc-sized, where the record
+   would turn. Same lift as the cover it stands in for. */
+.npScreen__room {
+  display: grid;
+  place-items: center;
+  inline-size: min(60vw, 16rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--glacier-accent-solid) 22%, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-text);
+  box-shadow: var(--glacier-shadow-lg);
+}
+
+.npScreen__notHere {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+/* The phone strip folds its title lines away (chapter 19: the cover and Now
+   Playing name the song) and gives the middle to the seek. A room has no
+   seek, and its NAME is the point - so following, the lines come back
+   beside the mark and the middle column, holding nothing now, gets out of
+   their way. Same query as the rules it answers. */
+@media (pointer: coarse), (max-width: 540px) {
+  .appPlayer .playerBarShell[data-following] [class*="_track_"] {
+    flex: 1;
+    min-inline-size: 0;
+  }
+
+  .appPlayer .playerBarShell[data-following] [class*="_lines_"] {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-inline-size: 0;
+  }
+
+  .appPlayer .playerBarShell[data-following] [class*="_center_"] {
+    display: none;
+  }
+}

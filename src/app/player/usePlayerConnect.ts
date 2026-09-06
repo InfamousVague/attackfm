@@ -298,6 +298,11 @@ export function usePlayerConnect({
       // on without them - and says so (the badge shows what is on by name).
       if (!t) {
         recordDiag('jam', `room is playing a song this library lacks: ${room.trackArtist ?? ''} - ${room.trackTitle ?? ''} (#${wanted})`);
+        // Whatever this deck was playing is not what the room is hearing, so
+        // it stops rather than carrying on under a room that moved without
+        // it. The strip shows the room by name from here (PlayerHost's
+        // following state) and offers no transport for a song it lacks.
+        if (live.deckOwned && live.playing) live.setPlayingState(false);
         return;
       }
       resumeRef.current = { trackId: wanted, positionMs: roomMs, play: room.playing };

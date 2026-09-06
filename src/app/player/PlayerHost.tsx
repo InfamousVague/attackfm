@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useConnect } from './playbackSync.tsx';
 import { useJamOptional } from './jam.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 import { Player } from './Player.tsx';
+import type { FollowingRoom } from './deckShared.ts';
 
 /**
  * Whether the strip exists, and what it holds.
@@ -24,6 +25,12 @@ import { Player } from './Player.tsx';
  * the way a remote's does; the Player then takes the song over as its own
  * (usePlayerConnect's follow, which treats a deck it does not own yet as a
  * different song and resumes at the host's position).
+ *
+ * And when the room's song is NOT in this library there is still a strip -
+ * a FOLLOWING one, reading the room by name (`following`, below). Before it
+ * a join into such a room succeeded with nothing on screen at all: no track
+ * to stand the strip on, so no strip, so no Now Playing and no groove deck
+ * to say you were in.
  *
  * Lives inside the Connect provider because only a child of it can read the
  * shared session.
@@ -79,6 +86,48 @@ export function PlayerHost({
   // A local track always wins: this device's own deck is what its transport
   // drives once it has one.
   const shown = current ?? remoteTrack ?? roomTrack;
+  /*
+   * FOLLOWING WITH NOTHING TO FOLLOW IT WITH.
+   *
+   * In a friend's room, and the song on is not in this library (or the host
+   * has nothing on yet): the deck has nothing for it, and the strip shows
+   * the ROOM instead - the Users mark, whose groove, the song by name, a
+   * quiet "not in your library" - with no transport it cannot honour. The
+   * moment the room moves to a song this library has, `roomTrack` lands,
+   * this goes null and the ordinary player takes over (the follow seam loads
+   * it); moving on to one it lacks brings this back over whatever the deck
+   * still holds - the seam pauses that. Leaving the room clears it.
+   *
+   * Not while this device mirrors another of its own: that strip belongs to
+   * the device holding the seat. And an idle host over a deck that IS
+   * playing something of its own is left alone - there is a song here and a
+   * transport for it, and nothing to follow yet.
+   */
+  const mirroring = current === null && remoteTrack !== null;
+  const following = useMemo<FollowingRoom | null>(() => {
+    if (!room || jam?.hosting || mirroring || roomTrack !== null) return null;
+    if (current !== null && room.trackId == null) return null;
+    return {
+      hostName: room.hostName,
+      memberCount: room.memberCount,
+      trackTitle: room.trackTitle ?? null,
+      trackArtist: room.trackArtist ?? null,
+      playing: room.playing,
+    };
+  }, [
+    room?.id,
+    room?.hostName,
+    room?.memberCount,
+    room?.trackId,
+    room?.trackTitle,
+    room?.trackArtist,
+    room?.playing,
+    jam?.hosting,
+    mirroring,
+    roomTrack,
+    current === null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the room's fields, not its identity: the poll hands over a fresh object every few seconds
+  ]);
   /**
    * Whether the strip's track is this device's OWN deck, or a mirror of one
    * elsewhere. `current` is the app's track - set only by something this
@@ -90,7 +139,7 @@ export function PlayerHost({
    * song rather than assume its deck already has it.
    */
   const deckOwned = current !== null;
-  if (!shown) return null;
+  if (!shown && !following) return null;
   return (
     <div className="appPlayer" data-hidden={hidden || undefined}>
       {/* The player walks the queue itself; it only reports where it
@@ -115,6 +164,7 @@ export function PlayerHost({
         // dock existed, and mounting it there showed a dead player beside a
         // live strip.
         deckOwned={deckOwned}
+        following={following}
       />
     </div>
   );

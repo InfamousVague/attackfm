@@ -594,6 +594,7 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
                 setNpQueue={noop}
                 setNpOpen={noop}
                 setFiling={noop}
+                following={null}
               />
             </div>
            </NowPlayingMotionProvider>

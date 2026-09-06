@@ -3,6 +3,7 @@ import { originFromPath } from '../server.ts';
 import { SMART_SHUFFLE_LABEL } from './smartShuffle.ts';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { ArtistLink } from '../ux/ArtistLink.tsx';
+import { JamBadge } from './JamBadge.tsx';
 import { useRef, useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from 'react';
 import {
   ContextMenu,
@@ -29,6 +30,7 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Users,
 } from '@glacier/icons';
 import { SoundConsole } from './SoundConsole.tsx';
 import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
@@ -49,6 +51,7 @@ import {
   beatIntensity,
   chapterIndexAt,
   type ArtView,
+  type FollowingRoom,
 } from './deckShared.ts';
 import type { Track } from '../core/tauri.ts';
 import { useOriginLabeler } from '../servers/serverNames.ts';
@@ -104,6 +107,7 @@ export function PlayerStrip({
   setNpQueue,
   setNpOpen,
   setFiling,
+  following,
 }: {
   shellRef: MutableRefObject<HTMLDivElement | null>;
   dismissed: boolean;
@@ -160,6 +164,10 @@ export function PlayerStrip({
   setNpQueue: (open: boolean) => void;
   setNpOpen: (open: boolean) => void;
   setFiling: (track: Track | null) => void;
+  /** In a groove whose song this library lacks: the strip reads the ROOM -
+   *  whose it is, the song by name - and drops every control that would act
+   *  on a song that is not here. See PlayerHost. */
+  following: FollowingRoom | null;
 }) {
   // The pulse and the waveform, subscribed HERE rather than handed down:
   // useBeat sets fresh state every animation frame while music is audible,
@@ -388,6 +396,26 @@ export function PlayerStrip({
         </ContextMenu>
   );
 
+  /*
+   * The strip as a ROOM. The Users mark stands where the sleeve does (a
+   * groove has no art of its own), the title is whose groove it is, and the
+   * second line is the song by the hub's name for it. The transport's seat
+   * carries the one thing worth saying in its place: why there is none.
+   */
+  const roomMark = (
+    <span className="stripRoom" aria-hidden="true">
+      <Users size={22} />
+    </span>
+  );
+  const roomLine = following
+    ? following.trackTitle
+      ? `${following.trackTitle}${following.trackArtist ? ` · ${following.trackArtist}` : ''}`
+      : 'Nothing playing yet'
+    : null;
+  const roomNote = following?.trackTitle ? (
+    <span className="stripRoom__note">Not in your library</span>
+  ) : undefined;
+
   return (
       /* On touch the strip's dead space is a handle: a tap lifts the
           full-screen Now Playing. display:contents keeps the wrapper out of
@@ -397,6 +425,7 @@ export function PlayerStrip({
         ref={shellRef}
         className="playerBarShell"
         data-dismissed={dismissed || undefined}
+        data-following={following ? '' : undefined}
         onClick={mobileControls ? openNowPlaying : undefined}
       >
       <PlayerBar
@@ -422,14 +451,16 @@ export function PlayerStrip({
         // without art gets the station mark instead, so the square never
         // stands empty. The art itself is decorative: the title beside it
         // already names what is playing.
-        artwork={playerArtwork}
+        artwork={following ? roomMark : playerArtwork}
         // disp* swap between local playback and mirroring the active device -
         // see the AttackFM Connect block in the core. Alone or active, these
         // are the local track and handlers; as a remote, the other device's
         // now-playing and controls that command it.
-        title={dispTrack?.title ?? 'Funky Chunk'}
+        title={following ? `${following.hostName}'s groove` : (dispTrack?.title ?? 'Funky Chunk')}
         subtitle={
-          activeElsewhere ? (
+          following ? (
+            roomLine
+          ) : activeElsewhere ? (
             <>
               <ArtistLink artist={dispTrack?.artist} />
               {activeDeviceName ? ` · on ${activeDeviceName}` : ''}
@@ -462,12 +493,12 @@ export function PlayerStrip({
         tone={mobileControls ? 'accent' : undefined}
         fill={mobileControls ? 'solid' : undefined}
         rail={mobileControls ? 'contrast' : undefined}
-        duration={barDuration}
-        value={barValue}
+        duration={following ? 0 : barDuration}
+        value={following ? 0 : barValue}
         onValueChange={barScrub}
         onSeekEnd={barSeekEnd}
-        playing={dispPlaying}
-        onPlayingChange={onPlayingChangeDisp}
+        playing={following ? false : dispPlaying}
+        onPlayingChange={following ? undefined : onPlayingChangeDisp}
         // Skip moves between tracks in the list, not within the current one.
         //
         // Withheld on the COMPACT strip, whose skips are rendered by this file
@@ -475,20 +506,20 @@ export function PlayerStrip({
         // the row under the seek. Each is gated on its own prop, so not passing
         // them is how they are dropped. The desktop bar is untouched and keeps
         // the kit's own.
-        onSkipBack={mobileControls ? undefined : onSkipBackDisp}
-        onSkipForward={mobileControls ? undefined : onSkipForwardDisp}
-        shuffle={shuffle}
-        onShuffleChange={setShuffle}
+        onSkipBack={mobileControls || following ? undefined : onSkipBackDisp}
+        onSkipForward={mobileControls || following ? undefined : onSkipForwardDisp}
+        shuffle={following ? undefined : shuffle}
+        onShuffleChange={following ? undefined : setShuffle}
         // Renaming the control is the honest way to badge it: a screen reader
         // announces the mode, and the CSS sparkle hangs off the same name
         // rather than off a hashed kit class that could change under us. The
         // touch strip's hide rule (chapter 19) matches this name too, so the
         // relabelled control stays off the phone's strip with the rest.
         labels={shuffle && smart ? { shuffle: SMART_SHUFFLE_LABEL } : undefined}
-        repeat={repeat}
-        onRepeatChange={setRepeat}
-        favorite={favorite}
-        onFavoriteChange={toggleFavoriteFelt}
+        repeat={following ? undefined : repeat}
+        onRepeatChange={following ? undefined : setRepeat}
+        favorite={following ? undefined : favorite}
+        onFavoriteChange={following ? undefined : toggleFavoriteFelt}
         // The mic sits just right of the heart, in the strip's leading rail:
         // the heart is how you feel about the song, the mic is the song's own
         // words. Synced lines light with playback and a press seeks to that
@@ -497,7 +528,7 @@ export function PlayerStrip({
         // On touch the mic folds into the overflow chooser with the rest of
         // the options; the heart the kit renders keeps the leading rail.
         leading={
-          mobileControls ? undefined : (
+          mobileControls || following ? undefined : (
           <Popover
             placement="top"
             aria-label="Lyrics"
@@ -525,7 +556,7 @@ export function PlayerStrip({
         }
         // The vacant trailing column, finally spent: the kit renders whatever
         // this holds into `_output_`, out past the seek and the icons.
-        actions={mobileControls ? compactTransport : undefined}
+        actions={following ? roomNote : mobileControls ? compactTransport : undefined}
         levels={levels}
         beat={beat}
         // The equalizer and the custom volume fader share the trailing rail; the
@@ -607,6 +638,11 @@ export function PlayerStrip({
                   already renders it and a second copy would be a duplicate
                   button rather than a second home. */}
               <PluginSlot id="now-playing-actions" />
+              {/* The groove's seat on the wide strip, which has no sheet to
+                  carry it: the same deck the phone's action row holds. Its
+                  own component renders nothing without a server, so the rail
+                  is unchanged for anyone listening alone. */}
+              <JamBadge seat="strip" />
               {/* The equalizer, playlist filing, and device hand-off fold
                   behind one overflow: five trailing buttons were crowding the
                   bar, and none of the three is a moment-to-moment reach.

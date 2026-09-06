@@ -45,6 +45,7 @@ import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useJamOptional } from './jam.tsx';
 import { useSystemBack } from '../nav/systemBack.ts';
+import { setNowPlayingDoor } from '../nav/nowPlayingDoor.ts';
 import { usePlayerDismiss } from './playerDismiss.ts';
 import { subscribeDeckHold } from './deckHold.ts';
 import { stemDropOnTrack, useStemDrop } from './stemDrop.ts';
@@ -76,6 +77,7 @@ import {
   timelineDuration,
   writeDeckPref,
   type ArtView,
+  type FollowingRoom,
 } from './deckShared.ts';
 import { usePlugins } from '../../plugins/pluginsContext.ts';
 import { useSystemNowPlaying } from './useSystemNowPlaying.ts';
@@ -115,6 +117,7 @@ export function Player({
   deckOwned = true,
   deckEngaged = false,
   chromeHidden = false,
+  following = null,
 }: {
   track: Track | null;
   /** The tracks around the current one, in played order. Empty means no list. */
@@ -144,6 +147,13 @@ export function Player({
   /** A full-screen surface (Date, the DJ) owns the display. The strip is
    *  hidden by the host, but the sheet portals out of it and must be told. */
   chromeHidden?: boolean;
+  /**
+   * A groove this device follows with nothing to follow it with - the room's
+   * song is not in this library. The strip and the sheet show the room by
+   * name instead of the deck (which may be empty, or holding the song the
+   * room moved on from), and offer no transport. See PlayerHost.
+   */
+  following?: FollowingRoom | null;
   /**
    * Whether a newly handed track starts playing once loaded. Off for the
    * launch seed - the app opens with a song on the deck, not blaring - and
@@ -688,6 +698,20 @@ export function Player({
   useSystemBack(npQueue, () => setNpQueue(false));
   useSystemBack(npLyrics, () => setNpLyrics(false));
   useSystemBack(npOpen, () => closeNowPlaying(false));
+  /*
+   * The door from outside - a groove landing (jam.tsx) lifts the sheet
+   * through it. Only on the shapes where the sheet is a thing you LIFT: the
+   * phone, and the big upright screen where it is the screen. Sideways with
+   * room, Now Playing is the dock or nothing, and a tap on the strip there
+   * opens nothing either - so the door stays shut and the landing keeps to
+   * the strip, where its own groove seat is.
+   */
+  const liftable = sheetShape && !npWide;
+  useEffect(() => {
+    if (!liftable) return;
+    setNowPlayingDoor(() => setNpOpen(true));
+    return () => setNowPlayingDoor(null);
+  }, [liftable]);
   // The dim veil, the return-to-app move and the Canvas fetch live in
   // useNpChrome, called below once `audible` and the play session exist.
   // Bumped on every seek so the Connect report effect refires (a seek moves the
@@ -3255,7 +3279,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // the strip is small and the big surface earns its keep; the desktop strip
   // stays a strip.
   const openNowPlaying = (event: React.MouseEvent) => {
-    if (!track || npDocked) return;
+    // A following strip has no track and is still a handle: the sheet reads
+    // the room the same way the strip does.
+    if ((!track && !following) || npDocked) return;
     // A swipe ends in a click too; the gesture already had its meaning.
     if (draggedRecently()) return;
     const el = event.target as HTMLElement;
@@ -4063,6 +4089,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         dismissed={dismissed}
         mobileControls={mobileControls}
         openNowPlaying={openNowPlaying}
+        following={following}
         listLoading={listLoading}
         npArtMenu={npArtMenu}
         artView={wornArtView}
@@ -4131,9 +4158,13 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           bookSpeed={bookSpeed}
           chooseBookSpeed={chooseBookSpeed}
           track={dispTrack}
-          artwork={dispArtwork}
+          // Following, the sleeve is the room's mark: whatever the deck still
+          // holds is the song the room moved on from, and its cover would say
+          // the wrong thing behind the room's name.
+          artwork={following ? null : dispArtwork}
           tint={songTint}
-          dispArtwork={dispArtwork}
+          dispArtwork={following ? null : dispArtwork}
+          following={following}
           activeElsewhere={activeElsewhere}
           activeDeviceName={activeDeviceName}
           dispPlaying={dispPlaying}

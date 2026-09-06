@@ -58,6 +58,23 @@ export const IDLE_TRACK: Track = {
   lyrics: '',
 };
 
+/**
+ * A groove this device is following with nothing of its own to follow it
+ * with: the room's song is not in this library (or the host has nothing on
+ * yet), so the deck holds nothing for it - and the strip and the Now Playing
+ * sheet show the ROOM instead, by name. Built by PlayerHost from the jam.
+ * Deliberately not a Track: nothing here is playable, and nothing downstream
+ * may try to stream, waveform or lyric it.
+ */
+export interface FollowingRoom {
+  hostName: string;
+  memberCount: number;
+  /** What the room is hearing, by the hub's name for it; null between songs. */
+  trackTitle: string | null;
+  trackArtist: string | null;
+  playing: boolean;
+}
+
 /** Where the fader starts. The element opens at full, so it is told this too. */
 /** Where a fresh install opens: unity, the same place the phone sits. Nothing
  *  is quieter than the file it is playing until somebody says so. */

@@ -19,6 +19,8 @@ import {
   X,
 } from '@glacier/icons';
 import { hostWaiting, useJamOptional, type PendingAdd } from './jam.tsx';
+import { onGrooveArm, takeGrooveArm } from '../nav/grooveDoor.ts';
+import { nowPlayingDoorOpen } from '../nav/nowPlayingDoor.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { publishJamShare } from '../servers/registry.ts';
@@ -51,6 +53,12 @@ import type { Track } from '../core/tauri.ts';
  * THE GLYPH IS THE POINT. A groove has no artwork of its own - what is on the
  * screen belongs to the song, not to the room - so the trigger keeps the
  * `Users` mark this feature wears everywhere, with the count on it.
+ *
+ * Two seats. The sheet's action row is the one the phone has; the wide strip
+ * carries its own, since it has no sheet to lift. A landing (jam.tsx) opens
+ * whichever is the right one through nav/grooveDoor: the sheet's takes the
+ * arm as it mounts, the strip's only on a shape with no sheet coming - so
+ * one join opens one deck, on the surface that was raised for it.
  */
 
 /** How recently a member's device must have polled to be "listening". The
@@ -211,7 +219,7 @@ function Wash({ src }: { src: string | null }) {
 
 // --- the badge -------------------------------------------------------------
 
-export function JamBadge() {
+export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) {
   const jam = useJamOptional();
   const { session } = useServerSession();
   const registry = useRegistryOptional();
@@ -225,6 +233,31 @@ export function JamBadge() {
   // Mounted on first use: the sheet mints a link and draws a card, and this
   // component is in the transport row of every screen.
   const [sharing, setSharing] = useState(false);
+
+  /*
+   * The landing's arm. Taken on mount (the sheet was lifted for exactly
+   * this, and this deck mounted with it) and again if it is armed while
+   * already standing. The strip's seat waits a beat and stands down when a
+   * sheet is there to lift, so a sheet mounting a frame later gets its turn
+   * first. Taking clears the arm; a stale one (five seconds) is nothing.
+   */
+  useEffect(() => {
+    let timer = 0;
+    const take = () => {
+      if (seat === 'strip' && nowPlayingDoorOpen()) return;
+      if (takeGrooveArm()) setOpen(true);
+    };
+    const claim = () => {
+      if (seat === 'sheet') take();
+      else timer = window.setTimeout(take, 120);
+    };
+    claim();
+    const off = onGrooveArm(claim);
+    return () => {
+      off();
+      window.clearTimeout(timer);
+    };
+  }, [seat]);
 
   const room = jam?.current ?? null;
   const hosting = !!jam?.hosting;
