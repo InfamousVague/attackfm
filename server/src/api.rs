@@ -216,6 +216,33 @@ pub async fn library(
     })))
 }
 
+/// `GET /api/tracks/{id}` - one library row, by id, for any signed-in member.
+///
+/// The same JSON `GET /api/library` emits for that row (one serializer,
+/// `db::Track`), but WITHOUT the listing's curator scope: a member gets the
+/// row whether or not it is on their own shelf. A groove is why. The room
+/// names its song by hub id, and a follower whose library never listed that
+/// id - a collector pull the host adopted, promoted for the host alone - had
+/// no way to learn what the song IS, so its deck showed a music-note disc by
+/// name and played nothing, while `/api/stream/{id}` would have served the
+/// bytes to that same follower all along (stream.rs gates on the token, not
+/// on whose shelf the row sits). A listing row reveals no more than the
+/// stream does, so it is handed over on the same terms.
+///
+/// 404 for an id the library has never held or has since tombstoned.
+pub async fn track(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let track = state
+        .db
+        .track(id)
+        .ok_or_else(|| bad(StatusCode::NOT_FOUND, "no such track"))?;
+    Ok(Json(serde_json::to_value(track).unwrap_or_else(|_| json!({}))))
+}
+
 /// One side of the sync handshake: how a track is recognised across devices.
 /// Normalised tags, because paths differ per machine and hashes differ per rip.
 fn sync_key(title: &str, artist: &str, album: &str) -> String {
@@ -1379,5 +1406,134 @@ mod host_readings {
             available <= total,
             "available ({available}) cannot exceed total ({total})",
         );
+    }
+}
+
+#[cfg(test)]
+mod room_track {
+    //! `GET /api/tracks/{id}` hands a member the row the listing withholds.
+    //!
+    //! The handler is one line over `db.track(id)`, so the promise is pinned
+    //! at the database: the row the listing hides from B is the row `track`
+    //! answers for B, and it serialises byte-for-byte as A's listing row does
+    //! (one struct, one serializer - there is no second shape to drift).
+
+    use crate::db::{Db, ScannedTrack};
+
+    fn temp_db(name: &str) -> Db {
+        let dir = std::env::temp_dir().join(format!("afm-room-track-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        Db::open(&dir.join("t.sqlite")).unwrap()
+    }
+
+    fn plant(db: &Db, rel: &str, title: &str) -> i64 {
+        let t = ScannedTrack {
+            rel_path: rel.into(),
+            title: title.into(),
+            artist: "Nadia Reid".into(),
+            album_artist: "Nadia Reid".into(),
+            album: "Enter Now Brightness".into(),
+            track_no: Some(3),
+            disc_no: Some(1),
+            year: Some(2025),
+            genre: "folk".into(),
+            lyrics: String::new(),
+            duration_ms: Some(214_000),
+            codec: "flac".into(),
+            lossless: true,
+            sample_rate: Some(44_100),
+            bit_depth: Some(16),
+            channels: Some(2),
+            bitrate: Some(900),
+            size_bytes: 24_000_000,
+            mtime: 1,
+            art_id: Some("abc123".into()),
+            chapters: String::new(),
+        };
+        db.upsert_track(&t, 7).unwrap();
+        db.track_id_by_path(rel).unwrap()
+    }
+
+    /// The listing's hidden case, exactly as `tracks_since` spells it: a
+    /// collector pull that belongs to one listener and is not yet promoted.
+    fn audition_for(db: &Db, id: i64, user: i64) {
+        db.lock_for_test()
+            .execute(
+                "UPDATE tracks SET curator_user_id = ?2, curator_promoted = 0 WHERE id = ?1",
+                rusqlite::params![id, user],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn a_row_the_listing_hides_from_b_is_answered_by_id_with_the_listing_shape() {
+        let db = temp_db("hidden");
+        let a = db.create_user("host", "x", true).unwrap();
+        let b = db.create_user("follower", "x", false).unwrap();
+        let id = plant(&db, "Music/Nadia Reid/03 Glass Houses.flac", "Glass Houses");
+        audition_for(&db, id, a);
+
+        let (for_a, _, _) = db.tracks_since(a, 0, 100);
+        let (for_b, _, _) = db.tracks_since(b, 0, 100);
+        assert!(for_a.iter().any(|t| t.id == id), "the listing shows A their own pull");
+        assert!(!for_b.iter().any(|t| t.id == id), "the listing withholds A's pull from B");
+
+        let by_id = db.track(id).expect("GET /api/tracks/{id} answers for anyone signed in");
+        let listing_row = for_a.iter().find(|t| t.id == id).unwrap();
+        assert_eq!(
+            serde_json::to_value(&by_id).unwrap(),
+            serde_json::to_value(listing_row).unwrap(),
+            "the by-id row must be the listing row, field for field",
+        );
+        // And it really is the listing's wire shape: the client keys on these.
+        let v = serde_json::to_value(&by_id).unwrap();
+        assert_eq!(v["id"], id);
+        assert_eq!(v["title"], "Glass Houses");
+        assert_eq!(v["artist"], "Nadia Reid");
+        assert_eq!(v["artId"], "abc123");
+        assert_eq!(v["duration"], 214.0);
+        assert_eq!(v["curatorUserId"], a);
+        assert_eq!(v["curatorPromoted"], false);
+        assert_eq!(v["kind"], "music");
+    }
+
+    #[test]
+    fn a_promoted_pull_is_already_on_everyones_listing() {
+        // The rule the fix leans on: promotion makes a pull public. This is
+        // what "promoted for the host only" turns out to mean in the schema -
+        // the row is on every member's listing once adopted; it is the
+        // UNADOPTED pull the listing scopes. Pinned so a later change to the
+        // listing's scope cannot silently widen or narrow the by-id door.
+        let db = temp_db("promoted");
+        let a = db.create_user("host", "x", true).unwrap();
+        let b = db.create_user("follower", "x", false).unwrap();
+        let id = plant(&db, "Music/Nadia Reid/04 Second Nature.flac", "Second Nature");
+        db.lock_for_test()
+            .execute(
+                "UPDATE tracks SET curator_user_id = ?2, curator_promoted = 1 WHERE id = ?1",
+                rusqlite::params![id, a],
+            )
+            .unwrap();
+        let (for_b, _, _) = db.tracks_since(b, 0, 100);
+        assert!(for_b.iter().any(|t| t.id == id));
+        assert_eq!(
+            serde_json::to_value(db.track(id).unwrap()).unwrap(),
+            serde_json::to_value(for_b.iter().find(|t| t.id == id).unwrap()).unwrap(),
+        );
+    }
+
+    #[test]
+    fn unknown_and_tombstoned_ids_are_not_found() {
+        let db = temp_db("gone");
+        let a = db.create_user("host", "x", true).unwrap();
+        assert!(db.track(424242).is_none(), "an id the library never held");
+        let id = plant(&db, "Music/Nadia Reid/05 Oxen.flac", "Oxen");
+        audition_for(&db, id, a);
+        assert!(db.track(id).is_some());
+        db.lock_for_test()
+            .execute("UPDATE tracks SET deleted = 1 WHERE id = ?1", rusqlite::params![id])
+            .unwrap();
+        assert!(db.track(id).is_none(), "a tombstone is not a track");
     }
 }

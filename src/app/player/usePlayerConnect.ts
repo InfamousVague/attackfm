@@ -7,6 +7,8 @@ import { useJamOptional } from './jam.tsx';
 import { usePlayback } from './playback.tsx';
 import { recordDiag } from '../diag/diagLog.ts';
 import { setNowPlayingBeat } from '../profile/presence.ts';
+import { useServerSession } from '../servers/serverSession.tsx';
+import { peekRoomTrack, roomTrack } from './roomTrack.ts';
 import { deviceId } from './connect.ts';
 import type { Track } from '../core/tauri.ts';
 import type { JamCommand } from '../server.ts';
@@ -356,6 +358,7 @@ export function usePlayerConnect({
   // song, because the silent deck unloaded it and only a change of track
   // makes the load effect run (the same clone the Connect hand-off makes).
   const wasSilent = useRef(silent);
+  const { session } = useServerSession();
   useEffect(() => {
     const room = jam?.current;
     const live = liveRef.current;
@@ -376,21 +379,68 @@ export function usePlayerConnect({
     // same way a different song is: handed to App as ours, with the host's
     // position applied once it has loaded.
     if (currentId !== wanted || !live.deckOwned || wakingUp) {
-      const t = live.allTracks.find((x) => trackIdFromPath(x.path) === wanted);
-      // Not in this listener's library: nothing to play, so the room moves
-      // on without them - and says so (the badge shows what is on by name).
-      if (!t) {
-        recordDiag('jam', `room is playing a song this library lacks: ${room.trackArtist ?? ''} - ${room.trackTitle ?? ''} (#${wanted})`);
+      // The song, wherever its row came from: the library's own, or the
+      // hub's (roomTrack.ts). Both load the same way - `afm://<id>` is the
+      // path either way, and the hub streams the id to any member - so the
+      // hand-off below does not know which it was given. The room's clock
+      // is re-read at the moment of the hand-off, since a fetched row may
+      // arrive a beat after this effect ran.
+      const takeOver = (t: Track) => {
+        const now = liveRef.current;
+        const since = room.playing && room.receivedAt ? Math.min(15_000, Math.max(0, Date.now() - room.receivedAt)) : 0;
+        resumeRef.current = { trackId: wanted, positionMs: room.positionMs + since, play: room.playing };
+        now.onTrackChange?.(wakingUp ? { ...t } : t);
+      };
+      const own = live.allTracks.find((x) => trackIdFromPath(x.path) === wanted);
+      if (own) {
+        takeOver(own);
+        return;
+      }
+      // Not in this listener's library. That used to be the end of it - a
+      // disc by name, no sound - but the listing is scoped per member while
+      // the stream is not: a song promoted for the host alone is on this
+      // hub and plays for this member the moment its row is known. So the
+      // hub is asked for the row (once; the strip and the deck share the
+      // answer), and only "the hub does not have it either" is the end.
+      const lacks = (why: string) => {
+        recordDiag('jam', `room is playing a song ${why}: ${room.trackArtist ?? ''} - ${room.trackTitle ?? ''} (#${wanted})`);
         // Whatever this deck was playing is not what the room is hearing, so
         // it stops rather than carrying on under a room that moved without
         // it. The strip shows the room by name from here (PlayerHost's
         // following state) and offers no transport for a song it lacks.
-        if (live.deckOwned && live.playing) live.setPlayingState(false);
+        const now = liveRef.current;
+        if (now.deckOwned && now.playing) now.setPlayingState(false);
+      };
+      if (!session) {
+        lacks('this library lacks (no hub to ask)');
         return;
       }
-      resumeRef.current = { trackId: wanted, positionMs: roomMs, play: room.playing };
-      live.onTrackChange?.(wakingUp ? { ...t } : t);
-      return;
+      const known = peekRoomTrack(session, wanted);
+      if (known) {
+        takeOver(known);
+        return;
+      }
+      if (known === null) {
+        lacks('neither this library nor the hub has');
+        return;
+      }
+      // Only the latest run of this effect may act on the answer: a poll
+      // that lands while the ask is in flight re-runs this and takes over
+      // itself, and two hand-offs of one song would reload it.
+      let current = true;
+      roomTrack(session, wanted).then(
+        (t) => {
+          if (!current) return;
+          if (t) takeOver(t);
+          else lacks('neither this library nor the hub has');
+        },
+        () => {
+          if (current) lacks('this library lacks, and the hub could not be asked');
+        },
+      );
+      return () => {
+        current = false;
+      };
     }
 
     // A second and a half is the line: under it a nudge is more audible than

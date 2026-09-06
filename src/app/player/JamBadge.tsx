@@ -32,6 +32,7 @@ import { publishJamShare } from '../servers/registry.ts';
 import { ShareJamSheet, hostOf, jamQrDataUrl } from './ShareJam.tsx';
 import { FriendAvatar } from '../profile/RegistryFriends.tsx';
 import { useLibrary } from '../library/library.tsx';
+import { useRoomTrack, useRoomTracks } from './roomTrack.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
 import { artSized, trackIdFromPath, type Jam, type JamPerson } from '../server.ts';
@@ -73,6 +74,9 @@ const FRESH_MS = 90_000;
 
 /** How many faces the hero stacks before it counts the rest. */
 const FACES = 4;
+
+/** A stable empty line-up, so a room with no queue keys the same each render. */
+const NO_IDS: number[] = [];
 
 // --- time, in words --------------------------------------------------------
 
@@ -284,17 +288,20 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
     }
     return m;
   }, [tracks, forYou]);
+  // The room's song and its line-up where this library lacks them: asked of
+  // the hub, once, and shared with the strip and the follow seam
+  // (roomTrack.ts). A song promoted for the host alone is on this hub, just
+  // not on this shelf - so the hero and NOW wear its sleeve rather than a
+  // disc by name. Hooks, so they stand above the returns below; a room the
+  // library lists costs nothing here.
+  const roomNow = useRoomTrack(jam?.current?.trackId ?? null);
+  const roomLine = useRoomTracks(jam?.current?.queue ?? NO_IDS);
 
   // No provider (a build without grooves) or nobody signed in: a groove is a
   // thing that happens on a server, so without one there is nothing to offer.
   if (!jam || !session) return null;
 
   const me = session.username;
-  const sleeveOf = (id: number | null, px: 160 | 640 = 160): string | null => {
-    if (id == null) return null;
-    const t = byId.get(id);
-    return t ? artSized(t.artwork, px) : null;
-  };
 
   /*
    * OUT of a room, and the button is still here.
@@ -515,11 +522,12 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
   const quiet = !hosting && (room.hostQuiet === true || hostWaiting(room));
   const code = room.id.toUpperCase();
 
-  // The song on: the hub's name for it, or the library's, or nothing.
-  const onTrack = room.trackId != null ? byId.get(room.trackId) : undefined;
+  // The song on: the hub's name for it, or the row's - this library's, or
+  // the one the hub handed over for the room - or nothing.
+  const onTrack = room.trackId != null ? (byId.get(room.trackId) ?? roomNow ?? undefined) : undefined;
   const nowTitle = room.trackTitle ?? onTrack?.title ?? null;
   const nowArtist = room.trackArtist ?? onTrack?.artist ?? null;
-  const nowArt = sleeveOf(room.trackId);
+  const nowArt = onTrack ? artSized(onTrack.artwork, 160) : null;
   const nowBy = room.trackId != null ? room.addedBy?.[String(room.trackId)] : undefined;
 
   // The queue, and the adds still waiting on the host's player. A host has
@@ -754,9 +762,13 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
               {queue.length > 0 && (
                 <EdgeScrollRow className="jamNext" role="list" aria-label="The room's queue">
                   {queue.map((id, i) => {
-                    const t = byId.get(id);
+                    // The library's row, or the hub's; "not in your library"
+                    // only once the hub has said it has no such track, and
+                    // an ellipsis while it is still being asked.
+                    const answer = roomLine.get(id);
+                    const t = byId.get(id) ?? answer ?? undefined;
                     const by = room.addedBy?.[String(id)];
-                    const name = t?.title ?? 'Not in your library';
+                    const name = t?.title ?? (answer === null ? 'Not in your library' : '…');
                     return (
                       <div
                         key={`${id}-${i}`}

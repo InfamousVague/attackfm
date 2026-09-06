@@ -138,6 +138,30 @@ export async function fetchLibraryDelta(
   });
 }
 
+/**
+ * One row by id, as the library listing would have handed it over - or null
+ * when the hub has no such track (404).
+ *
+ * The listing is scoped to the caller: a collector pull the host adopted is
+ * on the HOST's shelf and never arrives on a follower's delta, so a groove
+ * naming that id by number left the follower with nothing to play. The hub
+ * streams any id to any member; this is the matching door for the row, so
+ * the follower can learn what the song is and then play it. Built through
+ * `toTrack`, so the path is the same `afm://<id>` the listing produces and
+ * everything keyed on it (favourites, the queue, the audio resolver) lines
+ * up. A hub from before the route also answers 404, which reads the same:
+ * nothing to play here.
+ */
+export async function fetchTrack(session: ServerSession, id: number): Promise<Track | null> {
+  try {
+    const row = await request<RemoteTrack>(session.url, `/api/tracks/${id}`, { token: session.token });
+    return toTrack(session, row);
+  } catch (err) {
+    if (err instanceof ServerError && err.status === 404) return null;
+    throw err;
+  }
+}
+
 /** The URL an `<audio>` element plays: the original file, byte-ranged. */
 export function streamUrl(session: ServerSession, trackId: number): string {
   return `${session.url}/api/stream/${trackId}?t=${encodeURIComponent(session.streamToken)}`;

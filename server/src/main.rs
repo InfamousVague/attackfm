@@ -668,6 +668,9 @@ async fn main() {
         .route("/api/library/search", get(library_search::search))
         // Library housekeeping (tools.rs): tag editing, cover replacement,
         // duplicate handling, disk accounting, portable exports.
+        // One row by id, on the stream's terms rather than the listing's: a
+        // groove follower resolving the room's song (api::track).
+        .route("/api/tracks/{id}", get(api::track))
         .route("/api/tracks/{id}/tags", post(tools::write_tags))
         .route("/api/art/candidates", get(tools::art_candidates))
         .route("/api/album-art", post(tools::set_album_art))

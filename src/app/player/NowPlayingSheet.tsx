@@ -1790,7 +1790,7 @@ export function NowPlayingSheet({
           {/* A song the library lacks: the transport still speaks to the
               room, but there is no bar to draw and no sleeve to show. Said
               once, quietly, and only when there is a song to be missing. */}
-          {following && !following.hosting && following.trackTitle && following.track === null && (
+          {following && !following.hosting && following.trackTitle && following.trackMissing && (
             <span className="npScreen__notHere" role="status">
               Not in your library
             </span>

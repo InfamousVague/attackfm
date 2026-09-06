@@ -93,8 +93,13 @@ export interface FollowingRoom {
   /** What the room is hearing, by the hub's name for it; null between songs. */
   trackTitle: string | null;
   trackArtist: string | null;
-  /** The library's own row for the song, when it has it - sleeve and length. */
+  /** The song's row - the library's own, or the hub's fetched for the room
+   *  (roomTrack.ts) - for its sleeve and length. Null while the hub is still
+   *  being asked, and null once it has said it has no such track. */
   track: Track | null;
+  /** The hub has said it has no such track: the one state that earns a "not
+   *  in your library" note. False while an answer is still on its way. */
+  trackMissing: boolean;
   playing: boolean;
   /** The room's clock as last read (hub ms into the song, already carried
    *  forward to the read), and this device's clock at that read, so the

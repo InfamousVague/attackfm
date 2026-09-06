@@ -421,7 +421,10 @@ export function PlayerStrip({
       ? `${following.trackTitle}${following.trackArtist ? ` · ${following.trackArtist}` : ''}`
       : 'Nothing playing yet'
     : null;
-  const roomMissing = !!following && !following.hosting && !!following.trackTitle && following.track === null;
+  // Said only once the hub has answered that it has no such track - not
+  // while the row is still on its way (roomTrack.ts), when a note would be
+  // a guess that the next frame retracts.
+  const roomMissing = !!following && !following.hosting && !!following.trackTitle && following.trackMissing;
   const roomNote = roomMissing ? <span className="stripRoom__note">Not in your library</span> : undefined;
   // No length to draw a bar against: a host with nothing on, or a song the
   // library lacks. The transport can still speak to the room; the bar cannot.

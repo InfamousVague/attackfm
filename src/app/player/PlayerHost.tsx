@@ -5,6 +5,7 @@ import { useLibrary } from '../library/library.tsx';
 import { trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 import { Player } from './Player.tsx';
+import { useRoomTrack } from './roomTrack.ts';
 import type { FollowingRoom } from './deckShared.ts';
 
 /**
@@ -82,8 +83,14 @@ export function PlayerHost({
   const room = jam?.current ?? null;
   const hosting = !!jam?.hosting;
   const roomId = room !== null && !hosting ? room.trackId : null;
-  const roomTrack =
-    roomId != null ? (allTracks.find((t) => trackIdFromPath(t.path) === roomId) ?? null) : null;
+  // The room's song: this library's own row, or the hub's (roomTrack.ts). A
+  // song promoted for the host alone is on this hub and streams to this
+  // member - it just never made this library's listing, and looking it up
+  // here alone left the follower a disc by name and no sound. `undefined`
+  // while the hub is being asked; `null` once it has said no such row.
+  const roomAnswer = useRoomTrack(roomId);
+  const roomTrack = roomAnswer ?? null;
+  const roomMissing = roomAnswer === null;
   // Hearing the room on the host's speaker: this deck is SILENT. The room's
   // song must not stand the strip up as a track of this deck's - the Player
   // would load it - so it is kept out of `shown` and carried on `following`.
@@ -135,6 +142,7 @@ export function PlayerHost({
         trackTitle: null,
         trackArtist: null,
         track: null,
+        trackMissing: false,
         playing: false,
         positionMs: 0,
         receivedAt,
@@ -153,6 +161,7 @@ export function PlayerHost({
       trackTitle: room.trackTitle ?? roomTrack?.title ?? null,
       trackArtist: room.trackArtist ?? roomTrack?.artist ?? null,
       track: roomTrack,
+      trackMissing: roomMissing,
       playing: room.playing,
       positionMs: room.positionMs,
       receivedAt,
@@ -173,6 +182,7 @@ export function PlayerHost({
     silent,
     mirroring,
     roomTrack,
+    roomMissing,
     current === null,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the room's fields, not its identity: the poll hands over a fresh object every few seconds
   ]);
