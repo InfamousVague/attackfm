@@ -2,9 +2,10 @@ import { Button, Modal, Text } from '@glacier/react';
 import { Users } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { clearJamLink, onJamLink } from '../servers/deepLink.ts';
-import { fetchJamShare, type JamShare } from '../servers/registry.ts';
+import type { JamShare } from '../servers/registry.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useJamOptional } from './jam.tsx';
+import { hubHost, lookupGroove, sameHub, walkIn } from './grooveEntry.ts';
 
 /**
  * A groove LINK, opened in the app.
@@ -24,7 +25,9 @@ import { useJamOptional } from './jam.tsx';
  * A join that WORKS closes this: the arrival is said by the provider's landing
  * (the toast, the player, the deck), the same way every other door in lands.
  *
- * Raised over whatever page is up, the way a playlist link is.
+ * Raised over whatever page is up, the way a playlist link is. The typed
+ * door (JoinGrooveSheet, "Have a code?") walks the same road: the lookup,
+ * the same-server test and the join live in grooveEntry, shared by both.
  */
 export function JamLinkBridge() {
   const [code, setCode] = useState<string | null>(null);
@@ -47,12 +50,16 @@ export function JamLinkBridge() {
   useEffect(() => {
     if (!code) return;
     let live = true;
-    fetchJamShare(code)
+    lookupGroove(code)
       .then((s) => {
-        if (live) setShare(s);
+        if (!live) return;
+        if (s) setShare(s);
+        // The registry knows no link by that name - a mistyped code, or one
+        // it never minted. Said in words rather than the API's own.
+        else setError('That groove is not one we know about. The link may have been mistyped.');
       })
-      .catch((e: unknown) => {
-        if (live) setError(e instanceof Error ? e.message : 'Could not open that groove.');
+      .catch(() => {
+        if (live) setError('Could not look that up just now. Try again in a moment.');
       });
     return () => {
       live = false;
@@ -66,21 +73,14 @@ export function JamLinkBridge() {
     clearJamLink();
   };
 
-  // Same box, ignoring the trailing slash and the scheme a link might carry
-  // differently from the one the app signed in with.
-  const same = (a: string, b: string) => {
-    const bare = (u: string) => u.trim().replace(/\/+$/, '').replace(/^https?:\/\//, '').toLowerCase();
-    return bare(a) === bare(b);
-  };
-  const here = !!session && !!share && same(session.url, share.hubUrl);
+  const here = !!session && !!share && sameHub(session.url, share.hubUrl);
 
   const join = async () => {
     if (!share || !jam || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const ok = await jam.join(share.jamId);
-      if (ok) {
+      if (await walkIn(jam, share.jamId)) {
         // "You are in" is the LANDING now, not a line on this card: the
         // provider says where you are, lifts the player and opens the groove
         // deck on it (jam.tsx). The card's work is done the moment the hub
@@ -91,8 +91,6 @@ export function JamLinkBridge() {
         // is not there any more, which is the one answer only it can give.
         setError('That groove has ended. Ask whoever sent this to start another.');
       }
-    } catch {
-      setError('Could not walk into that groove just now.');
     } finally {
       setBusy(false);
     }
@@ -135,9 +133,8 @@ export function JamLinkBridge() {
                  and "this one is on AttackFM" reads as a statement about the
                  app rather than about which box the room is on. */
               <Text tone="muted" size="xs">
-                A groove is a room on one server, and this one is on{' '}
-                {share.hubUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '')}. You would need to
-                be signed in there to walk into it - ask @{share.by} for an invite.
+                A groove is a room on one server, and this one is on {hubHost(share.hubUrl)}. You
+                would need to be signed in there to walk into it - ask @{share.by} for an invite.
               </Text>
             )}
 

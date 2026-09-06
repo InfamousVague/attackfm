@@ -434,6 +434,19 @@ h1 {
   word-break: break-all;
 }
 
+/* A groove's code is the whole point of its box - the page's one string a
+   person has to carry to the app by hand - so it is set at a size that can
+   be read off somebody else's screen. */
+.codeBox__code--groove {
+  font-size: 1.85rem;
+  line-height: 1.25;
+  letter-spacing: 0.16em;
+}
+
+.codeBox__row + * {
+  margin-top: var(--glacier-space-2);
+}
+
 .carry {
   display: block;
   text-align: center;

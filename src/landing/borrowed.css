@@ -307,6 +307,23 @@ body:has(.appNavBar) .playerBarShell > * {
   height: var(--app-dock-card-height) !important;
 }
 
+.appPlayer [aria-label^='Smart shuffle'] {
+  position: relative;
+  color: var(--glacier-accent-text);
+}
+
+.appPlayer [aria-label^='Smart shuffle']::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: 50%;
+  background: var(--glacier-accent-solid);
+  box-shadow: 0 0 6px var(--glacier-accent-solid);
+}
+
 .soundConsole {
   display: flex;
   flex-direction: column;
@@ -614,6 +631,7 @@ body:has(.appNavBar) .playerBarShell > * {
 
   
   .appPlayer [aria-label="Shuffle"],
+  .appPlayer [aria-label^="Smart shuffle"],
   .appPlayer [aria-label^="Repeat"] {
     display: none;
   }
@@ -748,6 +766,7 @@ body:has(.appNavBar) .playerBarShell > * {
 }
 
 .songPageHead:has(.coverWall),
+.discoverHead:has(.discoverHead__face),
 .playlistPage .playlistHead:has(.coverWall) {
   
   min-block-size: 17rem;
@@ -764,13 +783,13 @@ body:has(.appNavBar) .playerBarShell > * {
   padding-block-start: calc(var(--spot-bar) + var(--glacier-space-4));
 }
 
-.appContent:has(.coverWall) {
+.appWindow:has(.mobileHeader) .appContent:has(.coverWall, .discoverHead__face) {
   margin-block-start: calc(
     -1 * var(--app-header-height, calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem))
   );
 }
 
-.appWindow:has(.coverWall) .mobileHeader {
+.appWindow:has(.coverWall, .discoverHead__face) .mobileHeader {
   background:
     linear-gradient(
       to bottom,
@@ -780,7 +799,7 @@ body:has(.appNavBar) .playerBarShell > * {
     color-mix(in srgb, var(--glacier-bg) calc(var(--app-top-scroll, 0) * 100%), transparent);
 }
 
-.appContent:has(.coverWall) .appTopScrim {
+.appWindow:has(.mobileHeader) .appContent:has(.coverWall, .discoverHead__face) .appTopScrim {
   inset-block-start: var(
     --app-header-height,
     calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem)
@@ -938,4 +957,27 @@ body:has(.appNavBar) .playerBarShell > * {
 
 body:has(.npScreen[data-docked]) .appPlayer {
   display: none;
+}
+
+.playerBarShell[data-following] [class*="_scrubber_"],
+.playerBarShell[data-following] [class*="_transport_"] {
+  display: none;
+}
+
+@media all {
+  .appPlayer .playerBarShell[data-following] [class*="_track_"] {
+    flex: 1;
+    min-inline-size: 0;
+  }
+
+  .appPlayer .playerBarShell[data-following] [class*="_lines_"] {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-inline-size: 0;
+  }
+
+  .appPlayer .playerBarShell[data-following] [class*="_center_"] {
+    display: none;
+  }
 }

@@ -1,5 +1,5 @@
-import { Text } from '@glacier/react';
-import { Music, Users } from '@glacier/icons';
+import { Button, Text } from '@glacier/react';
+import { Check, Copy, Music, Users } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { ArtWall } from '../app/servers/ArtWall.tsx';
 import { LiveWall } from './LiveWall.tsx';
@@ -42,6 +42,14 @@ const WALL_MINIMUM = 8;
 export function JamLanding({ jam }: { jam: JamDoc }) {
   const [wall, setWall] = useState<{ covers: string[]; canvases: string[] } | null>(null);
   const [where, setWhere] = useState<string>(jam.hubName);
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    void navigator.clipboard?.writeText(jam.code).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    });
+  };
 
   useEffect(() => {
     if (jam.state !== 'ok' || !jam.hubUrl) return undefined;
@@ -102,6 +110,25 @@ export function JamLanding({ jam }: { jam: JamDoc }) {
             </div>
 
             <AppDoors scheme={`j/${encodeURIComponent(jam.code)}`} label="Join in AttackFM" />
+
+            {/* The code, big, for the phone the button cannot help: two
+                installs claiming one scheme, a build the app-link file does
+                not name, a chooser that picked the wrong one. The app's
+                groove deck has a "Have a code?" row that takes exactly this. */}
+            <div className="codeBox">
+              <Text tone="muted" size="xs">
+                Or open AttackFM and enter this code
+              </Text>
+              <div className="codeBox__row">
+                <code className="codeBox__code codeBox__code--groove">{jam.code}</code>
+                <Button variant="ghost" size="sm" onClick={copy} aria-label="Copy the groove code">
+                  {copied ? <Check size={16} /> : <Copy size={16} />} {copied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+              <Text tone="muted" size="xs">
+                Now Playing → the groove deck → Have a code?
+              </Text>
+            </div>
 
             {/* The limit, on the page rather than discovered after the tap.
                 A groove is rows on one server; being on that server is what lets

@@ -231,9 +231,35 @@ export function playlistCodeFromText(text: string): { code: string; bare: boolea
 let pendingJam: string | null = null;
 const jamSubscribers = new Set<(code: string) => void>();
 
-function jamCodeFromUrl(url: string): string | null {
+export function jamCodeFromUrl(url: string): string | null {
   const m = url.match(/\/j\/([^/?#\s]+)/i);
   return m?.[1]?.trim() || null;
+}
+
+/**
+ * A groove code in whatever a person might type or paste: a share link
+ * (`…/j/CODE` on any host, with or without a scheme - "attack.fm/j/CODE" is
+ * how it reads off a card), the app's own scheme, or a bare code.
+ *
+ * Wider than a playlist's bare code on purpose. Two different codes reach a
+ * person: the registry's share code (six from the same alphabet as invites,
+ * behind the link) and the ROOM's own id, which the deck prints as "Code"
+ * and the hub mints from its own alphabet. Both are short and alphanumeric;
+ * which one it is gets settled by asking the registry, then the hub
+ * (player/grooveEntry). `bare` says it was typed rather than linked, so the
+ * caller knows the hub fallback is worth a try. Uppercased: the registry
+ * matches codes exactly, and the hub lowercases the id for itself.
+ */
+const GROOVE_CODE = /^[A-Z0-9]{4,8}$/;
+
+export function jamCodeFromText(text: string): { code: string; bare: boolean } | null {
+  const t = text.trim();
+  if (!t) return null;
+  const linked = jamCodeFromUrl(t);
+  if (linked) return { code: linked.toUpperCase(), bare: false };
+  const up = t.toUpperCase();
+  if (GROOVE_CODE.test(up)) return { code: up, bare: true };
+  return null;
 }
 
 export function onJamLink(handler: (code: string) => void): () => void {

@@ -6,6 +6,7 @@ import {
   Copy,
   Crown,
   Hourglass,
+  KeyRound,
   LogOut,
   Music,
   Pause,
@@ -20,6 +21,7 @@ import {
 } from '@glacier/icons';
 import { hostWaiting, useJamOptional, type PendingAdd } from './jam.tsx';
 import { onGrooveArm, takeGrooveArm } from '../nav/grooveDoor.ts';
+import { openGrooveCode } from './grooveEntry.ts';
 import { nowPlayingDoorOpen } from '../nav/nowPlayingDoor.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
@@ -384,6 +386,28 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
               This server could not start a groove. It may be running an older build.
             </Text>
           )}
+
+          {/* 7b. Have a code? A friend's deck prints one and a link's page
+              prints one; this is where either gets typed. The sheet itself is
+              hoisted to app level (JoinGrooveSheet): the panel dismisses on
+              this tap, and a sheet rendered inside it would go with it. */}
+          <button
+            type="button"
+            className="jamCard jamCodeDoor"
+            aria-label="Have a code? Join a groove by its code or link"
+            onClick={() => {
+              setOpen(false);
+              openGrooveCode();
+            }}
+          >
+            <span className="jamCodeDoor__glyph" aria-hidden>
+              <KeyRound size={16} />
+            </span>
+            <span className="jamCodeDoor__text">
+              <span className="jamCodeDoor__title">Have a code?</span>
+              <span className="jamCodeDoor__sub">Join a friend&rsquo;s groove by its code or link</span>
+            </span>
+          </button>
 
           {/* 8. Asks: friends waiting on an answer from you. */}
           {invites.length > 0 && (

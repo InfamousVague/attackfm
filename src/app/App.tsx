@@ -42,6 +42,7 @@ import { NewMusicNotices } from './notify/NewMusicNotices.tsx';
 import { MusicDateNotices } from './notify/MusicDateNotices.tsx';
 import { SharedPlaylistBridge } from './playlists/SharedPlaylistBridge.tsx';
 import { JamLinkBridge } from './player/JamLinkBridge.tsx';
+import { JoinGrooveSheet } from './player/JoinGrooveSheet.tsx';
 import { ProfileLinkBridge } from './profile/ProfileLinkBridge.tsx';
 import { NotifyBell } from './notify/NotifyBell.tsx';
 import { ShareServer } from './library/ShareServer.tsx';
@@ -959,6 +960,10 @@ export function App() {
                 one because they are the same kind of thing: a URL arrives, a
                 modal answers it over whatever page is up. */}
             <JamLinkBridge />
+            {/* The groove's typed door - "Have a code?" in the deck. Up here
+                rather than in the deck because a sheet inside that popover is
+                unmounted by the tap that opens it. */}
+            <JoinGrooveSheet />
             <ProfileLinkBridge />
             {/* Music Date, fullscreen: over everything, chrome gone - no nav
                 bar, no player strip, just the introductions. A floating

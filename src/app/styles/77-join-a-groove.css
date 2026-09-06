@@ -1,0 +1,146 @@
+/* --- join a groove: "Have a code?" -----------------------------------------
+ *
+ * The groove's typed door, in two parts: the row in the deck's out-of-room
+ * state that opens it (player/JamBadge), and the sheet it opens
+ * (player/JoinGrooveSheet - a bottom sheet on a phone, a small dialog wider,
+ * hoisted to app level). Both wear the deck's vocabulary from styles/76 - a
+ * .jamCard for the row, a .jamAction for Paste - and every colour is a token,
+ * so the album's accent tints the glyph disc here as it tints the deck's, and
+ * the light theme needs no rule of its own: nothing below is a literal colour.
+ * 44px is the floor on every control.
+ */
+
+/* ── The row ─────────────────────────────────────────────────────────── */
+
+.jamCodeDoor {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-3);
+  min-block-size: max(3.25rem, 52px);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--glacier-duration-fast) var(--glacier-ease-out),
+    border-color var(--glacier-duration-fast) var(--glacier-ease-out),
+    background var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.jamCodeDoor:hover {
+  border-color: var(--glacier-accent-7);
+  background: var(--glacier-surface-hover, var(--glacier-hover, rgba(128, 128, 128, 0.14)));
+}
+
+.jamCodeDoor:active {
+  transform: scale(0.985);
+}
+
+.jamCodeDoor:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+/* The key in a tinted disc: the same disc the deck's cards wear their glyph in. */
+.jamCodeDoor__glyph {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  flex: none;
+}
+
+.jamCodeDoor__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.jamCodeDoor__title {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.2;
+}
+
+.jamCodeDoor__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  line-height: 1.3;
+}
+
+/* ── The sheet ───────────────────────────────────────────────────────── */
+
+.joinGroove {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+
+.joinGroove__form {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+.joinGroove__field {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.joinGroove__label {
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+/* A code is read letter by letter, so the field is set in the mono face at
+   a size a thumb can check; a pasted link reads fine in it too. Never
+   uppercased visually - a link would lie about itself - the parser does that. */
+.joinGroove__field input {
+  min-block-size: max(2.75rem, 44px);
+  font-family: var(--glacier-font-mono);
+  font-size: var(--glacier-font-size-md);
+  letter-spacing: 0.04em;
+}
+
+.joinGroove__paste {
+  flex: none;
+}
+
+/* Room for one line held open, so Join does not jump when a sentence lands. */
+.joinGroove__status {
+  min-block-size: 1.25rem;
+}
+
+.joinGroove__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--glacier-space-2);
+}
+
+.joinGroove__actions > * {
+  min-block-size: max(2.75rem, 44px);
+}
+
+/* On the phone's sheet the two buttons share the width, thumbs first. */
+.joinGrooveSheet .joinGroove__actions > * {
+  flex: 1 1 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jamCodeDoor {
+    transition: none;
+  }
+}

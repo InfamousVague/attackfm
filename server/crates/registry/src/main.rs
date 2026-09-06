@@ -1504,8 +1504,14 @@ async fn jam_landing(
         }
     };
     let base = public_base();
+    // The code and both links in the plain fallback too: the page's one job on
+    // a phone the button cannot help is to hand over the code, and this is the
+    // page a curl - or a browser with scripts off - sees.
     let noscript = format!(
-        "<h1>{title}</h1><p>{summary}</p><a href=\"attackfm://j/{safe}\">Open in AttackFM</a>",
+        "<h1>{title}</h1><p>{summary}</p>\
+         <p><a href=\"attackfm://j/{safe}\">Open in AttackFM</a></p>\
+         <p>Or open AttackFM and enter this code: <code style=\"font-size:1.5em;letter-spacing:.12em\">{safe}</code></p>\
+         <p><a href=\"{base}/j/{safe}\">{base}/j/{safe}</a></p>",
         title = esc(&title),
         summary = esc(&summary),
     );
