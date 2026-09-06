@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.122
+
+- Bigger icons in the bar at the bottom, sitting straight in their seats, with
+  the names a little lower. The bar itself is the same size it was.
+
 ## 0.5.121
 
 - Inviting a friend to a groove works the moment you become friends. The
