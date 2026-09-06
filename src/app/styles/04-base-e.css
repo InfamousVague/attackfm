@@ -557,3 +557,30 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
 .edgeScroll > * {
   flex: none;
 }
+
+/*
+ * The Profile seat wearing a real face.
+ *
+ * Sized from the same number as the glyphs beside it (the rule above sizes the
+ * svg; this sizes the photo), so the row's rhythm does not change when a
+ * picture is chosen - which is the whole risk of putting a photograph in a row
+ * of line icons.
+ *
+ * The ring is what makes it read as a portrait rather than as a sticker: at 24
+ * pixels a cropped face against a dark bar has no edge of its own. It takes
+ * `currentColor` at a low alpha, so it lights with the seat - the active tab's
+ * accent runs round the picture the way it fills a glyph, and the inactive
+ * one's muted grey does the same. That is the only way a photo can answer the
+ * bar's own active state, which a glyph gets for free from its stroke.
+ */
+.appNavBarTab__face {
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: 999px;
+  object-fit: cover;
+  display: block;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, currentColor 55%, transparent);
+  /* Matches the glyph's own colour transition, so a tap lights both the same
+     way rather than snapping the ring while the label fades. */
+  transition: box-shadow 0.16s ease;
+}

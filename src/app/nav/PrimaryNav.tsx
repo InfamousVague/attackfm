@@ -1,6 +1,6 @@
 import { NavBar, NavBarItem } from '@glacier/react';
 import { useNavPill } from './useNavPill.ts';
-import { CircleUserRound, Disc3, LibraryBig, Search, Telescope } from '@glacier/icons';
+import { Disc3, LibraryBig, Search, Telescope } from '@glacier/icons';
 import { useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { atSize, useNavSeats, type NavDest } from './navSeats.ts';
@@ -9,6 +9,7 @@ import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { NavMoreMenu } from './NavMoreMenu.tsx';
 import { openSearchPage } from '../search/SearchEntry.tsx';
 import { useDeveloperMode } from '../settings/developerMode.ts';
+import { NavProfileIcon } from './NavProfileIcon.tsx';
 
 /**
  * The primary navigation, in the shape each platform holds: a vertical icon
@@ -146,7 +147,7 @@ export function PrimaryNav({
     list.push({
       key: 'profile',
       label: 'Profile',
-      icon: <CircleUserRound size={24} />,
+      icon: <NavProfileIcon />,
       active: tab === 'profile' || tab === 'friends',
       go: () => onTab('profile'),
     });
@@ -231,7 +232,7 @@ export function PrimaryNav({
         />
       )}
       <NavBarItem
-        icon={<CircleUserRound size={24} />}
+        icon={<NavProfileIcon />}
         label="Profile"
         active={tab === 'profile'}
         onClick={() => onTab('profile')}
