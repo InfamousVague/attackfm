@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.118
+
+- Showing lyrics over a song's Canvas now softens the whole screen behind them,
+  instead of a band of blur behind the words.
+
 ## 0.5.117
 
 - The groove panel is a deck of cards now, like the DJ's. The room at the
