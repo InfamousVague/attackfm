@@ -164,9 +164,12 @@ export function PlayerStrip({
   setNpQueue: (open: boolean) => void;
   setNpOpen: (open: boolean) => void;
   setFiling: (track: Track | null) => void;
-  /** In a groove whose song this library lacks: the strip reads the ROOM -
-   *  whose it is, the song by name - and drops every control that would act
-   *  on a song that is not here. See PlayerHost. */
+  /** Standing in a groove the deck is not carrying - hearing it on the
+   *  host's speaker, or the song is not in this library, or hosting with
+   *  nothing on yet: the strip reads the ROOM (whose it is, the song by its
+   *  sleeve or its name) on the room's own clock, and its transport, when
+   *  there is one, speaks to the room. The disp* props already carry the
+   *  room's values and handlers; see PlayerHost and the Player's disp layer. */
   following: FollowingRoom | null;
 }) {
   // The pulse and the waveform, subscribed HERE rather than handed down:
@@ -365,7 +368,9 @@ export function PlayerStrip({
           {artView === 'cd' ? (
             <SpinningDisc
               art={dispArtwork}
-              spinning={activeElsewhere ? dispPlaying : audible}
+              // Mirroring or following, the platter turns with the sound
+              // that is playing ELSEWHERE - this deck is quiet either way.
+              spinning={activeElsewhere || following ? dispPlaying : audible}
               // A dry buffer spins the platter up rather than stalling it.
               spooling={buffering || downloading}
               beat={beat}
@@ -388,8 +393,8 @@ export function PlayerStrip({
                     : 0
               }
             />
-          ) : artwork ? (
-            <img className="artViewCover" src={artwork} alt="" />
+          ) : (following ? dispArtwork : artwork) ? (
+            <img className="artViewCover" src={(following ? dispArtwork : artwork) ?? undefined} alt="" />
           ) : (
             <BeatWave className="artViewCover" beat={beat} />
           )}
@@ -397,24 +402,33 @@ export function PlayerStrip({
   );
 
   /*
-   * The strip as a ROOM. The Users mark stands where the sleeve does (a
-   * groove has no art of its own), the title is whose groove it is, and the
-   * second line is the song by the hub's name for it. The transport's seat
-   * carries the one thing worth saying in its place: why there is none.
+   * The strip as a ROOM. The song's sleeve where the library has it, the
+   * Users mark where it does not (a groove has no art of its own); the title
+   * is whose groove it is, the second line the song by name. With a clock -
+   * a song whose length this library knows - the bar and the transport stand
+   * as they do for any song, speaking to the room; without one there is
+   * nothing to seek in, so the lines take the middle and the transport keeps
+   * only play and the skips. A song the library lacks says so, quietly.
    */
   const roomMark = (
     <span className="stripRoom" aria-hidden="true">
       <Users size={22} />
     </span>
   );
+  const roomHasArt = !!following && !!dispArtwork;
   const roomLine = following
     ? following.trackTitle
       ? `${following.trackTitle}${following.trackArtist ? ` · ${following.trackArtist}` : ''}`
       : 'Nothing playing yet'
     : null;
-  const roomNote = following?.trackTitle ? (
-    <span className="stripRoom__note">Not in your library</span>
-  ) : undefined;
+  const roomMissing = !!following && !following.hosting && !!following.trackTitle && following.track === null;
+  const roomNote = roomMissing ? <span className="stripRoom__note">Not in your library</span> : undefined;
+  // No length to draw a bar against: a host with nothing on, or a song the
+  // library lacks. The transport can still speak to the room; the bar cannot.
+  const roomNoClock = !!following && dispDuration <= 0;
+  // A host's idle room has nothing to press: the deck itself is the transport,
+  // and it is empty.
+  const roomTransport = !!following && !following.hosting;
 
   return (
       /* On touch the strip's dead space is a handle: a tap lifts the
@@ -426,6 +440,9 @@ export function PlayerStrip({
         className="playerBarShell"
         data-dismissed={dismissed || undefined}
         data-following={following ? '' : undefined}
+        data-noclock={roomNoClock || undefined}
+        data-idle={following?.hosting || undefined}
+        data-sent={following && following.controls > 0 ? '' : undefined}
         onClick={mobileControls ? openNowPlaying : undefined}
       >
       <PlayerBar
@@ -451,15 +468,30 @@ export function PlayerStrip({
         // without art gets the station mark instead, so the square never
         // stands empty. The art itself is decorative: the title beside it
         // already names what is playing.
-        artwork={following ? roomMark : playerArtwork}
+        artwork={following && !roomHasArt ? roomMark : playerArtwork}
         // disp* swap between local playback and mirroring the active device -
         // see the AttackFM Connect block in the core. Alone or active, these
         // are the local track and handlers; as a remote, the other device's
         // now-playing and controls that command it.
-        title={following ? `${following.hostName}'s groove` : (dispTrack?.title ?? 'Funky Chunk')}
+        title={
+          following
+            ? following.hosting
+              ? 'Your groove'
+              : `${following.hostName}'s groove`
+            : (dispTrack?.title ?? 'Funky Chunk')
+        }
         subtitle={
           following ? (
-            roomLine
+            // The phone's strip has no trailing seat for the note; it rides
+            // the line instead. The wide strip seats it past the seek.
+            mobileControls && roomNote ? (
+              <>
+                {roomLine}
+                {roomNote}
+              </>
+            ) : (
+              roomLine
+            )
           ) : activeElsewhere ? (
             <>
               <ArtistLink artist={dispTrack?.artist} />
@@ -493,12 +525,12 @@ export function PlayerStrip({
         tone={mobileControls ? 'accent' : undefined}
         fill={mobileControls ? 'solid' : undefined}
         rail={mobileControls ? 'contrast' : undefined}
-        duration={following ? 0 : barDuration}
-        value={following ? 0 : barValue}
+        duration={roomNoClock ? 0 : barDuration}
+        value={roomNoClock ? 0 : barValue}
         onValueChange={barScrub}
         onSeekEnd={barSeekEnd}
-        playing={following ? false : dispPlaying}
-        onPlayingChange={following ? undefined : onPlayingChangeDisp}
+        playing={dispPlaying}
+        onPlayingChange={roomTransport || !following ? onPlayingChangeDisp : undefined}
         // Skip moves between tracks in the list, not within the current one.
         //
         // Withheld on the COMPACT strip, whose skips are rendered by this file
@@ -506,8 +538,8 @@ export function PlayerStrip({
         // the row under the seek. Each is gated on its own prop, so not passing
         // them is how they are dropped. The desktop bar is untouched and keeps
         // the kit's own.
-        onSkipBack={mobileControls || following ? undefined : onSkipBackDisp}
-        onSkipForward={mobileControls || following ? undefined : onSkipForwardDisp}
+        onSkipBack={mobileControls || (following && !roomTransport) ? undefined : onSkipBackDisp}
+        onSkipForward={mobileControls || (following && !roomTransport) ? undefined : onSkipForwardDisp}
         shuffle={following ? undefined : shuffle}
         onShuffleChange={following ? undefined : setShuffle}
         // Renaming the control is the honest way to badge it: a screen reader
@@ -556,7 +588,17 @@ export function PlayerStrip({
         }
         // The vacant trailing column, finally spent: the kit renders whatever
         // this holds into `_output_`, out past the seek and the icons.
-        actions={following ? roomNote : mobileControls ? compactTransport : undefined}
+        actions={
+          following
+            ? mobileControls
+              ? roomTransport
+                ? compactTransport
+                : undefined
+              : roomNote
+            : mobileControls
+              ? compactTransport
+              : undefined
+        }
         levels={levels}
         beat={beat}
         // The equalizer and the custom volume fader share the trailing rail; the

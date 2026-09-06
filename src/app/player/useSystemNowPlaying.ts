@@ -31,6 +31,14 @@ export interface SystemTransportControls {
   /** The heart on Android's home-screen widget. Absent everywhere else: no
    *  other system transport offers one. */
   favourite?: () => void;
+  /**
+   * THIS deck's own play/pause, for the system taking the speaker back - a
+   * call, another app - which is about this device's sound and nothing
+   * else. Absent, `setPlaying` is used: the two differ only while this
+   * device follows a groove, where `setPlaying` is a word to the ROOM and a
+   * phone call here must not pause the room for everyone.
+   */
+  local?: { setPlaying: (next: boolean) => void };
 }
 
 /**
@@ -318,8 +326,8 @@ export function useSystemNowPlaying({
   useEffect(
     () =>
       bindAudioFocus({
-        pause: () => carPlayControls.current?.setPlaying(false),
-        resume: () => carPlayControls.current?.setPlaying(true),
+        pause: () => (carPlayControls.current?.local ?? carPlayControls.current)?.setPlaying(false),
+        resume: () => (carPlayControls.current?.local ?? carPlayControls.current)?.setPlaying(true),
       }),
     [],
   );

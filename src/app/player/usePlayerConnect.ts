@@ -1,4 +1,4 @@
-import { useEffect, useState, type MutableRefObject } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { PlayerRepeat } from '@glacier/react';
 import { trackIdFromPath } from '../server.ts';
 import { VOLUME_MAX, VOLUME_UNITY } from './VolumeControl.tsx';
@@ -9,6 +9,13 @@ import { recordDiag } from '../diag/diagLog.ts';
 import { setNowPlayingBeat } from '../profile/presence.ts';
 import { deviceId } from './connect.ts';
 import type { Track } from '../core/tauri.ts';
+import type { JamCommand } from '../server.ts';
+
+/** A member's command older than this is stale - the hub drops them at the
+ *  same age, and a slow reply must not land a fifteen-second-old pause. */
+const COMMAND_STALE_MS = 15_000;
+/** How many applied commands are remembered, to refuse a second delivery. */
+const COMMANDS_REMEMBERED = 64;
 
 type ConnectValue = ReturnType<typeof useConnect>;
 type JamValue = ReturnType<typeof useJamOptional>;
@@ -76,6 +83,7 @@ export function usePlayerConnect({
   duration,
   commitSeek,
   setPlayingState,
+  silent = false,
 }: {
   connect: ConnectValue;
   jam: JamValue;
@@ -93,6 +101,9 @@ export function usePlayerConnect({
   duration: number;
   commitSeek: (to: number) => void;
   setPlayingState: (next: boolean) => void;
+  /** Following a groove on the host's SPEAKER: this deck stays silent, so the
+   *  follow below must never take the room's song over. See PlayerHost. */
+  silent?: boolean;
 }): void {
   useEffect(() => {
     const findByConnectId = (id: number) =>
@@ -234,8 +245,56 @@ export function usePlayerConnect({
   // Hosting: report where this deck is, on the room's own rhythm. The context
   // throttles the write, so this can afford to run on a plain interval and
   // stay ignorant of what has changed.
+  //
+  // The reply carries the members' presses on the room's transport - a
+  // follower's pause, next, seek - which this deck applies in order, as if
+  // pressed here: the next beat carries the new state back out to everyone.
+  // Each is remembered by its stamp so a second delivery (an interval that
+  // overlapped a slow reply) cannot apply the same press twice, and one
+  // older than the hub's own cut-off is let go.
+  const applied = useRef<string[]>([]);
   useEffect(() => {
     if (!jam?.current || !jam.hosting) return;
+    const apply = (commands: JamCommand[]) => {
+      const live = liveRef.current;
+      const now = Date.now();
+      const hubNow = jam.current?.now ?? null;
+      for (const c of commands) {
+        const key = `${c.at}\n${c.by}\n${c.action}\n${c.positionMs ?? ''}`;
+        if (applied.current.includes(key)) continue;
+        applied.current.push(key);
+        if (applied.current.length > COMMANDS_REMEMBERED) applied.current.shift();
+        // `at` is the hub's clock; measured against the hub's own `now` when
+        // the room knows it, and against this device's otherwise (a skewed
+        // phone can only make the cut-off looser, never drop a fresh one).
+        const age = hubNow != null ? Math.max(hubNow, now) - c.at : now - c.at;
+        if (age > COMMAND_STALE_MS && c.at > 0) continue;
+        switch (c.action) {
+          case 'play':
+            live.setPlayingState(true);
+            break;
+          case 'pause':
+            live.setPlayingState(false);
+            break;
+          case 'toggle':
+            live.setPlayingState(!live.playing);
+            break;
+          case 'next':
+            live.skipForward();
+            break;
+          case 'prev':
+            live.skipBack();
+            break;
+          case 'seek':
+            if (typeof c.positionMs === 'number' && Number.isFinite(c.positionMs)) {
+              live.commitSeek(Math.max(0, c.positionMs) / 1000);
+            }
+            break;
+          default:
+            break;
+        }
+      }
+    };
     const beat = () => {
       const live = liveRef.current;
       const id = live.track ? trackIdFromPath(live.track.path) : null;
@@ -251,18 +310,22 @@ export function usePlayerConnect({
             .map((t: Track) => trackIdFromPath(t.path))
             .filter((n): n is number => n != null),
         })
-        .then((additions) => {
+        .then(({ additions, commands }) => {
           // Fold in what the room asked for. Resolve each id against this
           // library (host and members share the server's, so they land), drop
           // anything already queued, and append - the next beat carries the
           // grown queue back out to everyone.
-          if (!additions.length) return;
-          const now = liveRef.current;
-          const have = new Set(now.queue.map((t: Track) => t.path));
-          const add = additions
-            .map((aid) => now.allTracks.find((t: Track) => trackIdFromPath(t.path) === aid))
-            .filter((t): t is Track => !!t && !have.has(t.path));
-          if (add.length) now.onQueueChange?.([...now.queue, ...add]);
+          if (additions.length) {
+            const now = liveRef.current;
+            const have = new Set(now.queue.map((t: Track) => t.path));
+            const add = additions
+              .map((aid) => now.allTracks.find((t: Track) => trackIdFromPath(t.path) === aid))
+              .filter((t): t is Track => !!t && !have.has(t.path));
+            if (add.length) now.onQueueChange?.([...now.queue, ...add]);
+          }
+          // Then the presses, in the order they were made - after the adds,
+          // so a "next" sent right behind an add can land on it.
+          if (commands.length) apply(commands);
         });
     };
     beat();
@@ -279,10 +342,25 @@ export function usePlayerConnect({
   // was READ; the time since then - the poll's flight plus however long the
   // frame sat before this ran - is added here, from this device's own clock
   // (receivedAt is stamped on arrival, so no cross-machine skew is involved).
+  //
+  // Hearing the room on the host's SPEAKER, none of this: the deck is silent
+  // and stays silent, whatever the room moves to. The one thing the seam does
+  // there is make sure of that. Keyed on `silent` as well, so the switch back
+  // to hearing it HERE starts the audible follow from the room's clock at
+  // once - and hands App a fresh object even when the deck already holds the
+  // song, because the silent deck unloaded it and only a change of track
+  // makes the load effect run (the same clone the Connect hand-off makes).
+  const wasSilent = useRef(silent);
   useEffect(() => {
     const room = jam?.current;
-    if (!room || jam.hosting || room.trackId == null) return;
     const live = liveRef.current;
+    const wakingUp = wasSilent.current && !silent;
+    wasSilent.current = silent;
+    if (silent) {
+      if (live.deckOwned && live.playing) live.setPlayingState(false);
+      return;
+    }
+    if (!room || jam.hosting || room.trackId == null) return;
     const wanted = room.trackId;
     const currentId = live.track ? trackIdFromPath(live.track.path) : null;
     const sinceRead = room.playing && room.receivedAt ? Math.min(15_000, Math.max(0, Date.now() - room.receivedAt)) : 0;
@@ -292,7 +370,7 @@ export function usePlayerConnect({
     // the room's song for a guest with nothing playing) is taken over the
     // same way a different song is: handed to App as ours, with the host's
     // position applied once it has loaded.
-    if (currentId !== wanted || !live.deckOwned) {
+    if (currentId !== wanted || !live.deckOwned || wakingUp) {
       const t = live.allTracks.find((x) => trackIdFromPath(x.path) === wanted);
       // Not in this listener's library: nothing to play, so the room moves
       // on without them - and says so (the badge shows what is on by name).
@@ -306,7 +384,7 @@ export function usePlayerConnect({
         return;
       }
       resumeRef.current = { trackId: wanted, positionMs: roomMs, play: room.playing };
-      live.onTrackChange?.(t);
+      live.onTrackChange?.(wakingUp ? { ...t } : t);
       return;
     }
 
@@ -318,11 +396,14 @@ export function usePlayerConnect({
     // Keyed on updatedAt so this runs once per report from the host rather
     // than on every render of this component.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jam?.current?.updatedAt, jam?.current?.trackId, jam?.hosting]);
+  }, [jam?.current?.updatedAt, jam?.current?.trackId, jam?.hosting, silent]);
 
   // Apply a pending cross-track resume once the handed track has loaded.
+  // Never on a silent deck: a resume left over from before the switch would
+  // start the very sound the switch was made to stop.
   useEffect(() => {
     const r = resumeRef.current;
+    if (silent) return;
     if (!r || !track || duration <= 0) return;
     if (trackIdFromPath(track.path) !== r.trackId) return;
     commitSeek(r.positionMs / 1000);

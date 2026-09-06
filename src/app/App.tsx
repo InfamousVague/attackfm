@@ -43,6 +43,7 @@ import { MusicDateNotices } from './notify/MusicDateNotices.tsx';
 import { SharedPlaylistBridge } from './playlists/SharedPlaylistBridge.tsx';
 import { JamLinkBridge } from './player/JamLinkBridge.tsx';
 import { JoinGrooveSheet } from './player/JoinGrooveSheet.tsx';
+import { GrooveHearSheet } from './player/GrooveHearSheet.tsx';
 import { ProfileLinkBridge } from './profile/ProfileLinkBridge.tsx';
 import { NotifyBell } from './notify/NotifyBell.tsx';
 import { ShareServer } from './library/ShareServer.tsx';
@@ -964,6 +965,10 @@ export function App() {
                 rather than in the deck because a sheet inside that popover is
                 unmounted by the tap that opens it. */}
             <JoinGrooveSheet />
+            {/* A follower's first question on arrival - where the music
+                plays - hoisted here for the same reason: the join that asks
+                it can come from anywhere, and the landing waits on the answer. */}
+            <GrooveHearSheet />
             <ProfileLinkBridge />
             {/* Music Date, fullscreen: over everything, chrome gone - no nav
                 bar, no player strip, just the introductions. A floating

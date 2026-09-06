@@ -14,6 +14,7 @@ import type { Track } from '../core/tauri.ts';
 import {
   acceptJamInvite as acceptJamInviteApi,
   addToJamQueue,
+  controlJam as controlJamApi,
   withdrawFromJamQueue,
   declineJamInvite as declineJamInviteApi,
   endJam as endJamApi,
@@ -23,9 +24,13 @@ import {
   leaveJam as leaveJamApi,
   startJam as startJamApi,
   type Jam,
+  type JamBeatReply,
+  type JamCommand,
+  type JamControlAction,
   type JamInvite,
   type JamPending,
 } from '../server.ts';
+import type { HearMode } from './deckShared.ts';
 
 /**
  * The groove a listener is in, if any: friends following one host's clock.
@@ -65,6 +70,53 @@ const HOST_QUIET_MS = 45_000;
  *  reports it back (an older hub without `pending`). The host folds an add
  *  in on its next beat, so by then it has shown up in the queue instead. */
 const LOCAL_PENDING_MS = 60_000;
+/** How long a follower's own press on the transport is believed over the
+ *  hub's word. The host's beat drains the command (up to 2.5 s), the host
+ *  applies it, the NEXT beat carries the new state (2.5 s more), and the
+ *  poll reads it (3 s): a poll that still disagrees inside this window is
+ *  simply one that has not caught up, and is overlaid rather than believed.
+ *  Past it, the room is right and the press was not honoured. */
+const CONTROL_HOLD_MS = 8000;
+/** A seek that landed within this of where it was asked counts as honoured. */
+const SEEK_AGREE_MS = 3000;
+
+/** Where a follower hears each room, remembered on this device. Client-only:
+ *  never posted, never on the room. `{[roomId]: 'device' | 'speaker'}`. */
+const HEAR_KEY = 'attackfm-groove-hear';
+
+function readHearMap(): Record<string, HearMode> {
+  try {
+    const raw = localStorage.getItem(HEAR_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out: Record<string, HearMode> = {};
+    for (const [id, mode] of Object.entries(parsed as Record<string, unknown>)) {
+      if (mode === 'device' || mode === 'speaker') out[id] = mode;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function writeHearMap(map: Record<string, HearMode>): void {
+  try {
+    localStorage.setItem(HEAR_KEY, JSON.stringify(map));
+  } catch {
+    // Storage refused: the choice lasts the session, and the room asks again
+    // next time - which is the worst this can cost.
+  }
+}
+
+/** A follower's own press, held over the hub's word until the room has had
+ *  time to honour it. See CONTROL_HOLD_MS. */
+interface HeldControl {
+  roomId: string;
+  at: number;
+  playing: boolean | null;
+  /** Where the song was put (or was, at `at`), in ms. */
+  positionMs: number | null;
+}
 
 /** A member's add the host has not folded in yet, as the panel draws it:
  *  the room's own row, or this device's until the hub reports it back. */
@@ -110,12 +162,39 @@ interface JamValue {
   /** Adds the host has not folded in yet - the hub's list, with this device's
    *  own unconfirmed sends ahead of the poll. Empty when hosting. */
   pending: PendingAdd[];
+  /**
+   * Where this device hears the room it follows: on its own deck, in time
+   * with the host, or on the host's speaker with this deck silent. Null when
+   * hosting or out of a room. A room never chosen for is heard here.
+   */
+  hear: HearMode | null;
+  /** Switch at once, and remember it for this room. */
+  setHear: (mode: HearMode) => void;
+  /**
+   * The room waiting on its first "where should the music play?" - set the
+   * moment a join or an accept lands a follower in a room this device has
+   * never chosen for, and the LANDING waits on the answer. Null otherwise.
+   */
+  choosing: Jam | null;
+  /** Answer it. Null is the sheet being put down without a word, which is
+   *  today's behaviour: heard here. Either way the room lands. */
+  choose: (mode: HearMode | null) => void;
+  /**
+   * A follower's hand on the room's transport. The command goes to the hub,
+   * the host's player applies it on its next beat, and until the room's own
+   * word catches up the press is believed here: a pause looks paused at once,
+   * a seek moves the clock at once. Resolves false (having said why) when the
+   * hub refused. A host's deck answers its own presses and never calls this.
+   */
+  control: (action: JamControlAction, positionMs?: number) => Promise<boolean>;
   /** The host closes the room for everyone (leave hands it on). */
   end: () => Promise<void>;
   refresh: () => Promise<void>;
   /** The host's Player calls this as it plays; a follower's never does.
    *  Resolves with any track ids the room has asked to add since the last
-   *  beat, for the host to fold into its queue (empty when throttled). */
+   *  beat, for the host to fold into its queue, and the members' transport
+   *  commands since, oldest first, for the host's deck to apply (both empty
+   *  when throttled). */
   hostBeat: (state: {
     trackId: number | null;
     trackTitle?: string;
@@ -124,7 +203,7 @@ interface JamValue {
     playing: boolean;
     queue?: number[];
     deviceId?: string;
-  }) => Promise<number[]>;
+  }) => Promise<JamBeatReply>;
 }
 
 const JamContext = createContext<JamValue | null>(null);
@@ -156,6 +235,17 @@ export function JamProvider({ children }: { children: ReactNode }) {
   // Withdrawn adds, hidden until a poll that ran AFTER the delete has been
   // read - a poll in flight during the delete can still carry the row.
   const withdrawn = useRef<Set<number>>(new Set());
+  // Where each room is heard, mirrored from storage so the choice survives a
+  // relaunch and a room asked once is never asked again.
+  const [hearMap, setHearMap] = useState<Record<string, HearMode>>(readHearMap);
+  // The room waiting on its first choice; the landing waits with it.
+  const [choosing, setChoosing] = useState<Jam | null>(null);
+  // A follower's last press on the transport, believed over the poll until
+  // the room has had time to honour it (or has plainly not).
+  const held = useRef<HeldControl | null>(null);
+  // Commands the host's own POLL carried (the hub drains them there only when
+  // the host's clock has gone quiet); handed to the next beat to apply.
+  const polledCommands = useRef<JamCommand[]>([]);
 
   const refresh = useCallback(async () => {
     if (!session) {
@@ -167,8 +257,35 @@ export function JamProvider({ children }: { children: ReactNode }) {
     }
     try {
       const feed = await fetchJams(session);
-      const room = feed.current ? { ...feed.current, receivedAt: Date.now() } : null;
+      const read = Date.now();
+      let room: Jam | null = feed.current ? { ...feed.current, receivedAt: read } : null;
       const before = lastRoom.current;
+      // A press of ours the poll has not caught up with yet is overlaid on
+      // what it says; one it agrees with, or one it has had every chance to
+      // honour, is let go - from here the room's word is the only word.
+      const h = held.current;
+      if (h && (!room || room.id !== h.roomId || read - h.at > CONTROL_HOLD_MS)) held.current = null;
+      else if (h && room) {
+        const roomPos = room.positionMs;
+        const heldPos =
+          h.positionMs == null ? null : h.positionMs + ((h.playing ?? room.playing) ? read - h.at : 0);
+        const playAgrees = h.playing == null || room.playing === h.playing;
+        const seekAgrees = heldPos == null || Math.abs(roomPos - heldPos) < SEEK_AGREE_MS;
+        if (playAgrees && seekAgrees) held.current = null;
+        else {
+          room = {
+            ...room,
+            playing: h.playing ?? room.playing,
+            positionMs: heldPos ?? room.positionMs,
+            receivedAt: read,
+          };
+        }
+      }
+      // The host's poll may carry the members' commands (only while its
+      // player has gone quiet); the next beat applies them.
+      if (room && room.commands && room.commands.length > 0 && isHost(room, session.username)) {
+        polledCommands.current.push(...room.commands);
+      }
       if (room) {
         const me = session.username.toLowerCase();
         for (const e of room.events ?? []) {
@@ -264,6 +381,26 @@ export function JamProvider({ children }: { children: ReactNode }) {
 
   const hosting = current !== null && session !== null && isHost(current, session.username);
 
+  // Where this room is heard. A room never chosen for (restored by a poll, an
+  // older install) is heard here - today's behaviour - and never asked from
+  // a poll: a reload is not an arrival.
+  const hear: HearMode | null = current !== null && !hosting ? (hearMap[current.id] ?? 'device') : null;
+  const setHear = useCallback((mode: HearMode) => {
+    const room = jamRef.current;
+    if (!room) return;
+    setHearMap((prev) => {
+      if (prev[room.id] === mode) return prev;
+      const next = { ...prev, [room.id]: mode };
+      writeHearMap(next);
+      return next;
+    });
+  }, []);
+
+  // The choice cannot outlive the room it asks about.
+  useEffect(() => {
+    if (choosing && (!current || current.id !== choosing.id)) setChoosing(null);
+  }, [choosing, current]);
+
   /*
    * LANDING in a room, from this device.
    *
@@ -300,6 +437,45 @@ export function JamProvider({ children }: { children: ReactNode }) {
     [session, toast],
   );
 
+  /*
+   * THE CHOICE, before the landing - a follower's first time in a room.
+   *
+   * Two installs of the app on one phone trade the system's audio focus, so a
+   * follower whose deck plays the song pauses the host's, and back again. The
+   * follower has to be able to say "not here - on their speaker", and the
+   * moment to ask is on arrival, once per room: a room chosen for is never
+   * asked about again. A host is never asked; the room is theirs to play. The
+   * landing (toast, player, deck) waits on the answer, and putting the sheet
+   * down without one is today's behaviour: heard here.
+   */
+  const arrive = useCallback(
+    (room: Jam) => {
+      if (!session) return;
+      if (isHost(room, session.username) || readHearMap()[room.id]) {
+        land(room);
+        return;
+      }
+      setChoosing(room);
+    },
+    [session, land],
+  );
+
+  const choose = useCallback(
+    (mode: HearMode | null) => {
+      const room = choosing;
+      setChoosing(null);
+      if (!room) return;
+      const picked: HearMode = mode ?? 'device';
+      setHearMap((prev) => {
+        const next = { ...prev, [room.id]: picked };
+        writeHearMap(next);
+        return next;
+      });
+      land(jamRef.current && jamRef.current.id === room.id ? jamRef.current : room);
+    },
+    [choosing, land],
+  );
+
   const start = useCallback(async () => {
     if (!session) return;
     const room = { ...(await startJamApi(session)), receivedAt: Date.now() };
@@ -316,7 +492,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
         lastRoom.current = room;
         lastEventAt.current = Math.max(0, ...(room.events ?? []).map((e) => e.at));
         setCurrent(room);
-        land(room);
+        arrive(room);
         void refresh();
         return true;
       } catch (e) {
@@ -327,7 +503,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [session, refresh, toast, land],
+    [session, refresh, toast, arrive],
   );
 
   const invite = useCallback(
@@ -391,7 +567,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
         lastEventAt.current = Math.max(0, ...(room.events ?? []).map((e) => e.at));
         setCurrent(room);
         setInvites((prev) => prev.filter((i) => i.from.toLowerCase() !== from.toLowerCase()));
-        land(room);
+        arrive(room);
         void refresh();
         return true;
       } catch (e) {
@@ -402,7 +578,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [session, refresh, toast, land],
+    [session, refresh, toast, arrive],
   );
 
   const declineInvite = useCallback(
@@ -418,6 +594,8 @@ export function JamProvider({ children }: { children: ReactNode }) {
     const id = current.id;
     leaving.current = true;
     lastRoom.current = null;
+    held.current = null;
+    setChoosing(null);
     setCurrent(null);
     try {
       await leaveJamApi(session, id);
@@ -431,6 +609,8 @@ export function JamProvider({ children }: { children: ReactNode }) {
     const id = current.id;
     leaving.current = true;
     lastRoom.current = null;
+    held.current = null;
+    setChoosing(null);
     setCurrent(null);
     try {
       await endJamApi(session, id);
@@ -455,21 +635,75 @@ export function JamProvider({ children }: { children: ReactNode }) {
       playing: boolean;
       queue?: number[];
       deviceId?: string;
-    }): Promise<number[]> => {
+    }): Promise<JamBeatReply> => {
       const jam = jamRef.current;
-      if (!session || !jam || !isHost(jam, session.username)) return [];
+      const none: JamBeatReply = { additions: [], commands: [] };
+      if (!session || !jam || !isHost(jam, session.username)) return none;
       const now = Date.now();
-      if (now - lastPost.current < 2500) return [];
+      if (now - lastPost.current < 2500) return none;
       lastPost.current = now;
+      // Whatever the poll carried while the player was quiet goes first: it
+      // was asked for earlier than anything this beat brings back.
+      const carried = polledCommands.current.splice(0);
       try {
         const { pushJamState } = await import('../server.ts');
-        return await pushJamState(session, jam.id, state);
+        const reply = await pushJamState(session, jam.id, state);
+        return { additions: reply.additions, commands: [...carried, ...reply.commands] };
       } catch {
         // The room may have ended under us; the next poll notices.
-        return [];
+        return { additions: [], commands: carried };
       }
     },
     [session],
+  );
+
+  /*
+   * A follower's press, local-first. The room on screen wears the press the
+   * moment it lands - paused, or moved to the asked-for spot - and the poll
+   * keeps wearing it until the hub's word has caught up (see `refresh`). The
+   * hub's refusal takes it back and says why.
+   */
+  const control = useCallback(
+    async (action: JamControlAction, positionMs?: number): Promise<boolean> => {
+      const room = jamRef.current;
+      if (!session || !room) return false;
+      const now = Date.now();
+      const sinceRead = room.playing && room.receivedAt ? Math.min(15_000, Math.max(0, now - room.receivedAt)) : 0;
+      const carried = room.positionMs + sinceRead;
+      const playing =
+        action === 'play' ? true : action === 'pause' ? false : action === 'toggle' ? !room.playing : null;
+      const at = action === 'seek' ? Math.max(0, Math.round(positionMs ?? 0)) : null;
+      if (playing !== null || at !== null) {
+        held.current = { roomId: room.id, at: now, playing, positionMs: at ?? carried };
+      }
+      setCurrent((prev) => {
+        if (!prev || prev.id !== room.id) return prev;
+        return {
+          ...prev,
+          playing: playing ?? prev.playing,
+          positionMs: at ?? (playing !== null ? carried : prev.positionMs),
+          receivedAt: playing !== null || at !== null ? now : prev.receivedAt,
+          controls: (prev.controls ?? 0) + 1,
+        };
+      });
+      try {
+        await controlJamApi(session, room.id, action, at ?? undefined);
+        return true;
+      } catch (e) {
+        held.current = null;
+        toast({
+          message:
+            e instanceof ServerError && e.status === 403
+              ? 'You are not in that groove any more.'
+              : e instanceof Error && e.message
+                ? e.message
+                : 'The groove did not get that.',
+        });
+        void refresh();
+        return false;
+      }
+    },
+    [session, toast, refresh],
   );
 
   // A follower's add, local-first. The row is on screen before the request
@@ -552,6 +786,11 @@ export function JamProvider({ children }: { children: ReactNode }) {
       addToRoom,
       withdraw,
       pending,
+      hear,
+      setHear,
+      choosing,
+      choose,
+      control,
       refresh,
       hostBeat,
     }),
@@ -571,6 +810,11 @@ export function JamProvider({ children }: { children: ReactNode }) {
       addToRoom,
       withdraw,
       pending,
+      hear,
+      setHear,
+      choosing,
+      choose,
+      control,
       refresh,
       hostBeat,
     ],

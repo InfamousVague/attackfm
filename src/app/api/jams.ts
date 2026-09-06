@@ -19,6 +19,21 @@ export interface JamEvent {
   who: string;
 }
 
+/** A member's word on the room's transport, waiting for the host's player
+ *  to pick it up. Queued on the hub by any member (see `controlJam`), drained
+ *  into the host's beat reply oldest first. */
+export type JamControlAction = 'play' | 'pause' | 'toggle' | 'next' | 'prev' | 'seek';
+
+export interface JamCommand {
+  action: JamControlAction;
+  /** Only for 'seek': where to, in ms. */
+  positionMs?: number;
+  /** Who asked, by name. */
+  by: string;
+  /** Hub ms. */
+  at: number;
+}
+
 /** A member's add the host has not folded in yet. */
 export interface JamPending {
   trackId: number;
@@ -53,6 +68,13 @@ export interface Jam {
    *  older hub. Compared against `now` (the same clock) to say "waiting for
    *  the host's player" when it has been quiet too long. */
   hostSeenAt?: number;
+  /** Transport commands members have sent that the host's player has not
+   *  drained yet - a follower shows "sent" until the next beat clears it.
+   *  Absent from an older hub, which is read as none. */
+  controls?: number;
+  /** The host's own poll drains the queued commands when its player has
+   *  gone quiet (exactly like additions); they ride here for it. */
+  commands?: JamCommand[];
   updatedAt: number;
   /** The host's beat has stopped arriving; the room is about to change hands. */
   hostQuiet?: boolean;
@@ -149,9 +171,17 @@ export async function endJam(session: ServerSession, id: string): Promise<void> 
   await request(session.url, `/api/jams/${id}/end`, { token: session.token, method: 'POST' });
 }
 
+/** What the host's beat brings back: the adds to fold in, and the members'
+ *  transport commands to apply, oldest first. */
+export interface JamBeatReply {
+  additions: number[];
+  commands: JamCommand[];
+}
+
 /** The host's clock, posted as it plays. Members read it and follow. The reply
  *  hands back any track ids members have asked to add since the last beat, for
- *  the host to fold into its own queue. */
+ *  the host to fold into its own queue - and the transport commands members
+ *  have sent since, drained, for the host's player to apply in order. */
 export async function pushJamState(
   session: ServerSession,
   id: string,
@@ -164,13 +194,41 @@ export async function pushJamState(
     queue?: number[];
     deviceId?: string;
   },
-): Promise<number[]> {
-  const out = await request<{ additions?: number[] }>(session.url, `/api/jams/${id}/state`, {
+): Promise<JamBeatReply> {
+  const out = await request<{ additions?: number[]; commands?: JamCommand[] }>(
+    session.url,
+    `/api/jams/${id}/state`,
+    {
+      token: session.token,
+      method: 'POST',
+      body: JSON.stringify(state),
+    },
+  );
+  return { additions: out.additions ?? [], commands: out.commands ?? [] };
+}
+
+/**
+ * A member's hand on the room's transport. Any member may (the host too,
+ * though its own deck answers directly and never needs to post): the hub
+ * queues the command on the room - at most twenty, anything older than
+ * fifteen seconds dropped - and the host's next beat drains it. Resolves
+ * with how many are waiting, this one included. 403 for a non-member, 404
+ * for a room that has ended, 400 for a seek without a position.
+ */
+export async function controlJam(
+  session: ServerSession,
+  id: string,
+  action: JamControlAction,
+  positionMs?: number,
+): Promise<number> {
+  const out = await request<{ ok?: boolean; queued?: number }>(session.url, `/api/jams/${id}/control`, {
     token: session.token,
     method: 'POST',
-    body: JSON.stringify(state),
+    body: JSON.stringify(
+      action === 'seek' ? { action, positionMs: Math.max(0, Math.round(positionMs ?? 0)) } : { action },
+    ),
   });
-  return out.additions ?? [];
+  return out.queued ?? 1;
 }
 
 /** A member drops a track into the groove's queue; the host folds it in on

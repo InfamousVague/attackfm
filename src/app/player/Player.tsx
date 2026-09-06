@@ -291,6 +291,26 @@ export function Player({
   // The listening room this device is in, if any. Optional: the Player also
   // renders in trees without the provider.
   const jam = useJamOptional();
+  /*
+   * A FOLLOWER's presses are words to the room.
+   *
+   * In a groove somebody else hosts, this deck steers to their clock - so a
+   * press on play, a skip, a seek here has no local meaning that survives
+   * the next beat: the deck used to pause, play over the room, and get
+   * yanked back three seconds later. What a follower means by the press is
+   * "pause it for everyone", and that is a command to the hub (jam.control),
+   * which the host's player applies on its next beat. Every transport this
+   * deck answers - the strip, the sheet, the lock screen, the car - goes
+   * through the disp* handlers below, so the swap is made once, there.
+   */
+  const roomBound = !!jam?.current && !jam.hosting;
+  /** Hearing the room on the host's speaker: this deck loads and plays
+   *  NOTHING. The room's song is shown from `following`, never from the
+   *  deck. Read through a ref by the load effect, which is keyed on the
+   *  track alone. */
+  const silent = following !== null && !following.hosting && following.mode === 'speaker';
+  const silentRef = useRef(silent);
+  silentRef.current = silent;
   const connect = useConnect();
   // True when the music is on ANOTHER device: this one is a remote. Read up
   // here because the audio loader below has to consult it - a remote must
@@ -453,11 +473,47 @@ export function Player({
     return len > 0 ? Math.min(ticked, len) : ticked;
   })();
 
-  const dispTrack = activeElsewhere ? (remoteTrack ?? track) : track;
-  const dispPlaying = activeElsewhere ? !!connect.session?.playing : playing;
-  const dispPosition = activeElsewhere ? remotePosition : position;
-  const dispDuration = activeElsewhere ? (remoteTrack?.duration ?? 0) : duration;
-  const dispArtwork = activeElsewhere ? (remoteTrack?.artwork ?? TRACK_ART) : artwork;
+  /*
+   * THE ROOM'S CLOCK, for a strip standing in a groove the deck is not
+   * carrying (`following`, see PlayerHost). The hub's last word on where the
+   * song is, carried forward on this device's own clock while the room
+   * plays - the same sum the follow seam makes - and ticked a few times a
+   * second so the bar moves. Against the song's length when the library
+   * knows it; without one there is no bar to draw, and the surfaces say so.
+   * A finger on the bar shows where it is going until it lets go, when the
+   * seek is sent to the room and the room's own clock takes over again.
+   */
+  const [, setRoomTick] = useState(0);
+  const roomLive = following !== null && following.playing;
+  useEffect(() => {
+    if (!roomLive) return;
+    const timer = window.setInterval(() => setRoomTick((n) => (n + 1) % 1_000_000), 250);
+    return () => window.clearInterval(timer);
+  }, [roomLive]);
+  const [roomScrub, setRoomScrub] = useState<number | null>(null);
+  const roomDuration = following?.track?.duration ?? 0;
+  const roomPosition = (() => {
+    if (!following) return 0;
+    const carried = following.playing
+      ? Math.min(15_000, Math.max(0, Date.now() - following.receivedAt))
+      : 0;
+    const secs = (following.positionMs + carried) / 1000;
+    return roomDuration > 0 ? Math.min(secs, roomDuration) : secs;
+  })();
+  const roomArt = following?.track?.artwork ?? null;
+
+  // disp* is what the surfaces show: the room's song and clock while standing
+  // in a groove the deck is not carrying, the active device's while mirroring
+  // one, and this deck's otherwise.
+  const dispTrack = following ? following.track : activeElsewhere ? (remoteTrack ?? track) : track;
+  const dispPlaying = following ? following.playing : activeElsewhere ? !!connect.session?.playing : playing;
+  const dispPosition = following
+    ? (roomScrub ?? roomPosition)
+    : activeElsewhere
+      ? remotePosition
+      : position;
+  const dispDuration = following ? roomDuration : activeElsewhere ? (remoteTrack?.duration ?? 0) : duration;
+  const dispArtwork = following ? roomArt : activeElsewhere ? (remoteTrack?.artwork ?? TRACK_ART) : artwork;
   /** The heart, over the song on screen rather than the one in this deck. */
   const dispFavorite = dispTrack ? isFavorite(dispTrack.path) : false;
   const dispToggleFavoriteFelt = toggleFavoriteFor(dispTrack);
@@ -1732,8 +1788,11 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     duration: dispDuration,
     artwork: dispArtwork,
     // "Is sound coming out" - which for a remote is the other device's answer,
-    // not this silent one's.
-    audible: activeElsewhere ? dispPlaying : audible,
+    // not this silent one's. Standing in a groove the deck is not carrying,
+    // nothing comes out of this device at all, whatever the room is doing -
+    // and saying otherwise would raise Android's foreground service and its
+    // claim on the speaker, the very fight speaker mode exists to end.
+    audible: following ? false : activeElsewhere ? dispPlaying : audible,
     line: widgetLine,
     favourite: dispFavorite,
   });
@@ -2124,6 +2183,11 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       setPlaying(false);
       return;
     }
+    // Hearing a groove on the host's speaker: this deck loads nothing, full
+    // stop. Not even for a pending resume - the resume effect stands down
+    // too (usePlayerConnect) - so the only way a file reaches this element
+    // is the switch back to hearing it here, which hands a fresh track down.
+    if (silentRef.current) return;
     // Mirroring another device: show its song, fetch nothing. The strip exists
     // here to display progress and send commands, and buffering a file this
     // device will not play is pure cost.
@@ -3785,8 +3849,43 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     duration,
     commitSeek,
     setPlayingState,
+    silent,
   });
 
+  /*
+   * GOING SILENT: the room moves to the host's speaker.
+   *
+   * The deck is paused with its usual manners and then UNLOADED - both
+   * elements dropped to no source at all, and the element told to forget
+   * what it held - so a silent follower is not a paused follower with a
+   * warm file waiting for a stray play. The load effect above refuses to
+   * refill it while `silent` holds; a pending resume is voided for the same
+   * reason. Coming back (hearing it here) is the follow seam's takeover,
+   * which hands App a fresh track and lets the load effect run again.
+   */
+  useEffect(() => {
+    if (!silent) return;
+    abortCrossfadeRef.current();
+    clearStall();
+    resumeRef.current = null;
+    pendingPlay.current = false;
+    prefetched.current = null;
+    if (wantPlaying.current || playing) setPlayingState(false);
+    setBuffering(false);
+    setSrc('');
+    setSrcB(undefined);
+    for (const el of [audioRef.current, audioBRef.current]) {
+      if (!el) continue;
+      try {
+        el.pause();
+        el.removeAttribute('src');
+        el.load();
+      } catch {
+        // An element that refuses to unload still has no source to play.
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to the mode flip; everything else is read through refs
+  }, [silent]);
 
   // Becoming a remote pauses local audio, even if the explicit release did not
   // arrive (a seat claimed out from under this device).
@@ -3994,31 +4093,81 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * enabled-and-inert; the alternative that caused this bug was worse than
    * both, because it made the controls drive local audio instead.
    */
-  const onPlayingChangeDisp = activeElsewhere
-    ? remoteAdrift
-      ? undefined
-      : (p: boolean) => connect.sendCommand({ action: p ? 'play' : 'pause' })
-    : setPlayingState;
-  const onSkipBackDisp = activeElsewhere
-    ? remoteAdrift
-      ? undefined
-      : () => connect.sendCommand({ action: 'prev' })
-    : canSkip
-      ? skipBack
-      : undefined;
-  const onSkipForwardDisp = activeElsewhere
-    ? remoteAdrift
-      ? undefined
-      : () => connect.sendCommand({ action: 'next' })
-    : canSkip
-      ? skipForward
-      : undefined;
-  const onSeekEndDisp = activeElsewhere
-    ? remoteAdrift
-      ? () => {}
-      : (s: number) => connect.sendCommand({ action: 'seek', positionMs: Math.round(s * 1000) })
-    : commitSeek;
-  const onScrubDisp = activeElsewhere ? () => {} : onScrub;
+  /*
+   * A follower's transport, as words to the room (see `roomBound` above).
+   * Each press is felt the way the local one is, then sent; the provider
+   * wears the press at once (a pause looks paused, a seek moves the clock)
+   * and the room's own word takes over as it catches up. A drag on the bar
+   * shows where it is going and sends one seek on release - on a deck
+   * carrying the song (hearing it here) the bar previews locally the way it
+   * always did, but the release goes to the room and the deck's clock is
+   * let go rather than moved: the host moves it, and the follow seam brings
+   * this deck along.
+   */
+  const roomSetPlaying = (p: boolean) => {
+    fireFelt('light');
+    void jam?.control(p ? 'play' : 'pause');
+  };
+  const roomNext = () => {
+    fireFelt('medium');
+    void jam?.control('next');
+  };
+  const roomPrev = () => {
+    fireFelt('medium');
+    void jam?.control('prev');
+  };
+  const roomSeekEnd = (s: number) => {
+    setRoomScrub(null);
+    // The local preview is over; the clock goes back to the deck's own.
+    scrubbing.current = false;
+    void jam?.control('seek', Math.round(Math.max(0, s) * 1000));
+  };
+  const roomScrubTo = (s: number) => {
+    if (following) setRoomScrub(s);
+    else onScrub(s);
+  };
+  // A host with nothing on yet, or a follower standing in a room whose song
+  // has no length here: nothing to seek in, nothing to press. The room's own
+  // transport is only offered where it can act.
+  const roomTransport = roomBound && !(following?.hosting ?? false);
+
+  const onPlayingChangeDisp = roomTransport
+    ? roomSetPlaying
+    : activeElsewhere
+      ? remoteAdrift
+        ? undefined
+        : (p: boolean) => connect.sendCommand({ action: p ? 'play' : 'pause' })
+      : following
+        ? undefined
+        : setPlayingState;
+  const onSkipBackDisp = roomTransport
+    ? roomPrev
+    : activeElsewhere
+      ? remoteAdrift
+        ? undefined
+        : () => connect.sendCommand({ action: 'prev' })
+      : canSkip && !following
+        ? skipBack
+        : undefined;
+  const onSkipForwardDisp = roomTransport
+    ? roomNext
+    : activeElsewhere
+      ? remoteAdrift
+        ? undefined
+        : () => connect.sendCommand({ action: 'next' })
+      : canSkip && !following
+        ? skipForward
+        : undefined;
+  const onSeekEndDisp = roomTransport
+    ? roomSeekEnd
+    : activeElsewhere
+      ? remoteAdrift
+        ? () => {}
+        : (s: number) => connect.sendCommand({ action: 'seek', positionMs: Math.round(s * 1000) })
+      : following
+        ? () => {}
+        : commitSeek;
+  const onScrubDisp = roomTransport ? roomScrubTo : activeElsewhere || following ? () => {} : onScrub;
 
   /*
    * The same swap, for the Now Playing SCREEN.
@@ -4040,7 +4189,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   /** A remote can always skip: the queue that matters is the active device's,
    *  not this one's. `canSkip` asks about the LOCAL queue, which on a phone
    *  that is only watching is empty - that is why the buttons were dead. */
-  const dispCanSkip = activeElsewhere ? !remoteAdrift : canSkip;
+  const dispCanSkip = roomTransport ? true : activeElsewhere ? !remoteAdrift : canSkip && !following;
   const noRemote = () => {};
   const dispSkipBack = onSkipBackDisp ?? noRemote;
   const dispSkipForward = onSkipForwardDisp ?? noRemote;
@@ -4067,6 +4216,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // The widget's heart presses the app's own, haptics and undo included -
     // the same handler the sheet's heart calls, over the same song.
     favourite: dispToggleFavoriteFelt,
+    // The speaker being taken by the system is about THIS deck's sound: a
+    // call on a follower's phone pauses its own deck, not the whole room.
+    local: { setPlaying: setPlayingState },
   };
 
   return (
@@ -4158,12 +4310,14 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           bookSpeed={bookSpeed}
           chooseBookSpeed={chooseBookSpeed}
           track={dispTrack}
-          // Following, the sleeve is the room's mark: whatever the deck still
-          // holds is the song the room moved on from, and its cover would say
-          // the wrong thing behind the room's name.
-          artwork={following ? null : dispArtwork}
+          // Following, the sleeve is the ROOM's song's (dispArtwork already
+          // is, see the disp layer) - the library's cover when it has the
+          // song, nothing when it does not. Never the deck's: whatever it
+          // still holds is the song the room moved on from, and its cover
+          // would say the wrong thing behind the room's name.
+          artwork={dispArtwork}
           tint={songTint}
-          dispArtwork={following ? null : dispArtwork}
+          dispArtwork={dispArtwork}
           following={following}
           activeElsewhere={activeElsewhere}
           activeDeviceName={activeDeviceName}

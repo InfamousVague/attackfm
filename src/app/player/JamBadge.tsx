@@ -14,12 +14,15 @@ import {
   QrCode,
   Radio,
   Share2,
+  Smartphone,
+  Speaker,
   UserPlus,
   Users,
   Waves,
   X,
 } from '@glacier/icons';
 import { hostWaiting, useJamOptional, type PendingAdd } from './jam.tsx';
+import type { HearMode } from './deckShared.ts';
 import { onGrooveArm, takeGrooveArm } from '../nav/grooveDoor.ts';
 import { openGrooveCode } from './grooveEntry.ts';
 import { nowPlayingDoorOpen } from '../nav/nowPlayingDoor.ts';
@@ -242,6 +245,11 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
    * already standing. The strip's seat waits a beat and stands down when a
    * sheet is there to lift, so a sheet mounting a frame later gets its turn
    * first. Taking clears the arm; a stale one (five seconds) is nothing.
+   *
+   * The sheet's seat waits out the sheet's own rise (npRise, 0.28 s) before
+   * opening. The popover positions itself against its trigger ONCE, as it
+   * opens, and a trigger still riding up from below the screen put the
+   * panel a whole screen too low - open, and nowhere to be seen.
    */
   useEffect(() => {
     let timer = 0;
@@ -250,8 +258,8 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
       if (takeGrooveArm()) setOpen(true);
     };
     const claim = () => {
-      if (seat === 'sheet') take();
-      else timer = window.setTimeout(take, 120);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(take, seat === 'sheet' ? 340 : 120);
     };
     claim();
     const off = onGrooveArm(claim);
@@ -548,12 +556,13 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
     room.memberCount,
   );
   const going = room.createdAt ? spanWords(now - room.createdAt) : null;
+  // Where a follower hears it, on the hero's line and on its own card below.
+  const hear: HearMode | null = hosting ? null : (jam.hear ?? 'device');
+  const hearWords = hear === 'speaker' ? `on ${room.hostName}'s speaker` : 'on this device';
   const pace = hosting ? 'you set the pace' : `${room.hostName} sets the pace`;
   const blurb = quiet
     ? 'the host’s player has gone quiet — the room is about to change hands'
-    : going
-      ? `${pace} · going ${going}`
-      : `${pace} · just started`;
+    : `${pace}${hear ? ` · ${hearWords}` : ''} · ${going ? `going ${going}` : 'just started'}`;
   const faces = people.slice(0, FACES);
   const extraFaces = Math.max(0, people.length - FACES);
 
@@ -656,6 +665,51 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                 <span className="jamNow__state" data-playing={room.playing || undefined} aria-hidden>
                   {room.playing ? <Waves size={16} /> : <Pause size={16} />}
                 </span>
+              </div>
+            </Section>
+          )}
+
+          {/* 2b. Hearing it on: a follower's seat - this deck, in time with
+              the room, or the host's speaker with this phone quiet. Switches
+              at once (PlayerHost reads the choice) and is remembered for
+              this room. A host hears their own deck and sees no card. */}
+          {hear && (
+            <Section label="Hearing it on">
+              <div className="jamHear" role="radiogroup" aria-label="Where the music plays">
+                <button
+                  type="button"
+                  role="radio"
+                  className="jamCard jamHear__option"
+                  aria-checked={hear === 'device'}
+                  data-on={hear === 'device' || undefined}
+                  onClick={() => jam.setHear('device')}
+                >
+                  <span className="jamHear__disc" aria-hidden>
+                    <Smartphone size={18} />
+                  </span>
+                  <span className="jamHear__text">
+                    <span className="jamHear__name">This device</span>
+                    <span className="jamHear__sub">Plays here, in time with the room</span>
+                  </span>
+                  {hear === 'device' && <Check className="jamHear__check" size={16} aria-hidden />}
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  className="jamCard jamHear__option"
+                  aria-checked={hear === 'speaker'}
+                  data-on={hear === 'speaker' || undefined}
+                  onClick={() => jam.setHear('speaker')}
+                >
+                  <span className="jamHear__disc" aria-hidden>
+                    <Speaker size={18} />
+                  </span>
+                  <span className="jamHear__text">
+                    <span className="jamHear__name">{room.hostName}&rsquo;s speaker</span>
+                    <span className="jamHear__sub">This phone stays quiet; your controls steer the room</span>
+                  </span>
+                  {hear === 'speaker' && <Check className="jamHear__check" size={16} aria-hidden />}
+                </button>
               </div>
             </Section>
           )}

@@ -813,9 +813,11 @@ export function NowPlayingSheet({
   onQueueChange?: (tracks: Track[]) => void;
   onTrackChange?: (track: Track) => void;
   setFiling: (track: Track | null) => void;
-  /** In a groove whose song this library lacks: the sheet reads the ROOM -
-   *  the Users mark where the sleeve goes, the song by name, a word on why
-   *  there is no transport - and keeps only the queue and the deck. */
+  /** Standing in a groove the deck is not carrying (hearing it on the host's
+   *  speaker; the song not in this library; hosting with nothing on): the
+   *  sheet reads the ROOM - its sleeve or the Users mark, the song by name,
+   *  the room's clock on the bar - and its transport speaks to the room. The
+   *  track, clock and handler props already carry the room's; see Player. */
   following: FollowingRoom | null;
 }) {
   /*
@@ -1565,7 +1567,11 @@ export function NowPlayingSheet({
           <ChevronDown size={22} />
         </IconButton>
         <span className="npScreen__source">
-          {following ? `${following.hostName}'s groove` : track?.album || 'Now playing'}
+          {following
+            ? following.hosting
+              ? 'Your groove'
+              : `${following.hostName}'s groove`
+            : track?.album || 'Now playing'}
         </span>
         {/* Where the close button's counterweight was: filing the song is
             the one action worth a permanent seat up here, and this sheet
@@ -1618,11 +1624,31 @@ export function NowPlayingSheet({
             choice is one setting in two places. A press (long-press on
             touch) opens the chooser. */}
         {following ? (
-          /* A groove has no sleeve of its own: the room's mark, disc-sized,
-             where the record would turn. */
-          <div className="npScreen__room" aria-hidden="true">
-            <Users size={72} />
-          </div>
+          dispArtwork ? (
+            /* The room's song, by its own sleeve - turning with the room's
+               clock when the disc face is on, since this deck has no sound
+               of its own to turn it. */
+            <div className="npScreen__coverTarget" aria-hidden="true">
+              {artView === 'cd' ? (
+                <SpinningDisc
+                  art={dispArtwork}
+                  spinning={dispPlaying}
+                  spooling={false}
+                  beat={beat}
+                  spinUpMs={pauseStyle === 'turntable' ? SPIN_UP_MS : pauseStyle === 'fade' ? FADE_UP_MS : 0}
+                  spinDownMs={pauseStyle === 'turntable' ? SPIN_DOWN_MS : pauseStyle === 'fade' ? FADE_DOWN_MS : 0}
+                />
+              ) : (
+                <img className="npScreen__cover" src={dispArtwork} alt="" />
+              )}
+            </div>
+          ) : (
+            /* A groove has no sleeve of its own: the room's mark, disc-sized,
+               where the record would turn. */
+            <div className="npScreen__room" aria-hidden="true">
+              <Users size={72} />
+            </div>
+          )
         ) : (
         <ContextMenu
           aria-label="Artwork style"
@@ -1748,13 +1774,23 @@ export function NowPlayingSheet({
           ) : (
             <span className="npScreen__artist">
               {following
-                ? (following.trackArtist ?? `${following.hostName} sets the pace`)
+                ? (following.trackArtist ??
+                  (following.hosting ? 'Your player sets the pace' : `${following.hostName} sets the pace`))
                 : (track?.artist ?? '')}
             </span>
           )}
-          {/* Why there is no transport under it. Said once, quietly, and only
-              when there is a song to be missing. */}
-          {following?.trackTitle && (
+          {/* Where the room is heard from this seat - the choice made on
+              arrival, changeable in the deck. A host hears their own deck. */}
+          {following && !following.hosting && (
+            <span className="npScreen__codec" data-hear={following.mode}>
+              {following.mode === 'speaker' ? `On ${following.hostName}'s speaker` : 'On this device'}
+              {following.controls > 0 ? ' · sent' : ''}
+            </span>
+          )}
+          {/* A song the library lacks: the transport still speaks to the
+              room, but there is no bar to draw and no sleeve to show. Said
+              once, quietly, and only when there is a song to be missing. */}
+          {following && !following.hosting && following.trackTitle && following.track === null && (
             <span className="npScreen__notHere" role="status">
               Not in your library
             </span>
@@ -1856,8 +1892,10 @@ export function NowPlayingSheet({
         )}
       </div>
 
-      {/* No scrubber while downloading - there is no timeline yet. */}
-      {!downloading && !following && (
+      {/* No scrubber while downloading - there is no timeline yet. Nor for a
+          room whose song has no length here (the library lacks it, or the
+          host has nothing on): there is nothing to seek in. */}
+      {!downloading && (!following || duration > 0) && (
       <div className="npScreen__scrub">
         {/* The kit's live bar, not a plain slider: the same waveform the
             mini strip wears, driven by the same levels and beat, so the
@@ -1887,16 +1925,20 @@ export function NowPlayingSheet({
       </div>
       )}
 
-      {/* No transport for a room: play, skip and the rest would act on a
-          song this deck does not have. The pace is the host's. */}
-      {!following && (
-      <div className="npScreen__transport">
+      {/* A follower's transport speaks to the room - every handler here is
+          the Player's disp* one, which is a command to the hub in a groove.
+          Shuffle and repeat are the host's deck's to set, so a follower gets
+          neither seat. A host with nothing on yet has nothing to press. */}
+      {(!following || !following.hosting) && (
+      <div className="npScreen__transport" data-following={following ? '' : undefined}>
         {/* A book's transport is not a song's. Shuffling a book is vandalism
             and repeating one is a niche of a niche - so their two seats go
             to what a listener mid-book actually reaches for: where it plays,
             and the words. Everything else on the actions row below is song
             furniture, and the row itself stands down for books. */}
-        {track?.kind === 'book' ? (
+        {following ? (
+          <span className="npScreen__transportSeat" aria-hidden />
+        ) : track?.kind === 'book' ? (
           <DevicePicker always size="md" />
         ) : (
         /* Three states in one control: off, shuffle, smart shuffle. The
@@ -1939,7 +1981,9 @@ export function NowPlayingSheet({
         <IconButton variant="ghost" aria-label="Next" disabled={!canSkip} onClick={skipForward}>
           <SkipForward size={26} fill="currentColor" />
         </IconButton>
-        {track?.kind === 'book' ? (
+        {following ? (
+          <span className="npScreen__transportSeat" aria-hidden />
+        ) : track?.kind === 'book' ? (
           /* Chapter select, in the hand's own row - by request: the door
              under the title was a small target a thumb's length from where
              thumbs live. The list is the same faces the door offered:
@@ -2051,22 +2095,23 @@ export function NowPlayingSheet({
           the transport now seats the two book verbs. Desktop keeps the row:
           the docked split hides the strip, so this row's volume popover is
           the only fader a desktop book listener has. */}
-      {following ? (
-        /* A room with nothing of yours on: the queue (the room's line, and
-           where a guest adds to it) and the deck itself. The rest of the row
-           - lyrics, the equalizer, the fader - acts on a song, and there is
-           none here to act on. */
-        <div className="npScreen__actions edgeScroll" ref={actionsRef}>
-          <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
-            <ListMusic size={20} />
-          </IconButton>
-          <JamBadge seat="sheet" />
-        </div>
-      ) : (track?.kind !== 'book' || !isMobile) && (
+      {/* ONE row, whatever the deck is carrying. A room the deck is not
+          carrying keeps the queue (the room's line, and where a guest adds
+          to it) and the groove deck; the rest - lyrics, the DJ, the device
+          hand-off, the fader - acts on a song, and there is none here to act
+          on, so those seats simply do not render. Deliberately not two rows
+          forked on `following`: the groove deck is a controlled popover that
+          takes the landing's arm as it mounts, and two rows meant two
+          INSTANCES - a join from inside the deck flipped the fork, the deck
+          that had the arm was torn down mid-open, and the new one mounted
+          with nothing left to take. Same slots, same instance, every time. */}
+      {(following || track?.kind !== 'book' || !isMobile) && (
       <div className="npScreen__actions edgeScroll" ref={actionsRef}>
         <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
           <ListMusic size={20} />
         </IconButton>
+        {!following && (
+        <>
         {/* Words, not a microphone. The mic used to open this, which left
             nothing obvious for singing along to - and a microphone is a strange
             glyph for "show me the words" once something else on the row
@@ -2114,9 +2159,14 @@ export function NowPlayingSheet({
             className="npScreen__thumbs"
           />
         )}
+        </>
+        )}
         {/* Who else is hearing this. Renders nothing outside a jam, so the row
-            is unchanged for anyone listening alone. */}
+            is unchanged for anyone listening alone. ONE instance, at one
+            slot - see the row's note. */}
         <JamBadge seat="sheet" />
+        {!following && (
+        <>
         {/* Always here, unlike in the strip's overflow: on this screen "where is
             this playing" is part of the question the screen answers. */}
         <DevicePicker always />
@@ -2181,6 +2231,8 @@ export function NowPlayingSheet({
               onMutedChange={setMutedState}
             />
           </Popover>
+        )}
+        </>
         )}
       </div>
       )}

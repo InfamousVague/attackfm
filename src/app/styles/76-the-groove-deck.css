@@ -1009,12 +1009,45 @@ button.jamCard:disabled {
   white-space: nowrap;
 }
 
-/* No clock, no seek, no play. The kit renders its play button ungated and
-   the scrubber always, so both are taken out of the layout here - the same
-   prefix-matched kit classes chapters 05 and 19 already hang off. */
-.playerBarShell[data-following] [class*="_scrubber_"],
-.playerBarShell[data-following] [class*="_transport_"] {
+/* The room's strip WITH a clock - the library knows the song's length - is
+   the ordinary strip: sleeve, bar, transport, every press a word to the
+   room. Without one (`data-noclock`: the song is not here, or the host has
+   nothing on) there is nothing to seek in, so the kit's ever-present
+   scrubber is taken out of the layout - the same prefix-matched kit classes
+   chapters 05 and 19 already hang off. A host's idle room has nothing to
+   press either; the kit's ungated play button goes with it. */
+.playerBarShell[data-noclock] [class*="_scrubber_"],
+.playerBarShell[data-idle] [class*="_transport_"] {
   display: none;
+}
+
+/* The note on the phone rides the subtitle line, since the compact strip's
+   trailing seat is the transport's - and that line may wrap once for it,
+   the song's name first and the note under it, rather than clipping the
+   artist to make room. Two lines of small type under a one-line title still
+   stand inside the plate's height. */
+.playerBarShell[data-following] [class*="_lines_"] .stripRoom__note {
+  margin-inline-start: var(--glacier-space-1);
+  min-block-size: 1.25rem;
+  padding-inline: var(--glacier-space-2);
+  vertical-align: middle;
+}
+
+.playerBarShell[data-noclock] [class*="_lines_"] [class*="_line_"] {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.3;
+}
+
+/* A press sent to the room and not yet answered by the host's beat: the
+   play button wears a thin ring until the next beat clears it. Subtle on
+   purpose - the button already reads the press optimistically. */
+.playerBarShell[data-sent] .stripTransport__play,
+.playerBarShell[data-sent] [class*="_transport_"] button[aria-label="Play"],
+.playerBarShell[data-sent] [class*="_transport_"] button[aria-label="Pause"] {
+  box-shadow: 0 0 0 2px var(--glacier-surface-raised), 0 0 0 3.5px var(--glacier-accent-7);
 }
 
 /* The sheet's face for a room: the same mark, disc-sized, where the record
@@ -1036,24 +1069,207 @@ button.jamCard:disabled {
 }
 
 /* The phone strip folds its title lines away (chapter 19: the cover and Now
-   Playing name the song) and gives the middle to the seek. A room has no
-   seek, and its NAME is the point - so following, the lines come back
-   beside the mark and the middle column, holding nothing now, gets out of
-   their way. Same query as the rules it answers. */
+   Playing name the song) and gives the middle to the seek. A room WITHOUT a
+   clock has no seek, and its NAME is the point - so there the lines come
+   back beside the mark and the middle column, holding nothing now, gets out
+   of their way. A room with one keeps the phone's ordinary strip. Same
+   query as the rules it answers. */
 @media (pointer: coarse), (max-width: 540px) {
-  .appPlayer .playerBarShell[data-following] [class*="_track_"] {
+  .appPlayer .playerBarShell[data-noclock] [class*="_track_"] {
     flex: 1;
     min-inline-size: 0;
   }
 
-  .appPlayer .playerBarShell[data-following] [class*="_lines_"] {
+  .appPlayer .playerBarShell[data-noclock] [class*="_lines_"] {
     display: flex;
     flex-direction: column;
     justify-content: center;
     min-inline-size: 0;
   }
 
-  .appPlayer .playerBarShell[data-following] [class*="_center_"] {
+  .appPlayer .playerBarShell[data-noclock] [class*="_center_"] {
     display: none;
   }
+}
+
+/* ── Hearing it on ─────────────────────────────────────────────────────
+   A follower's seat in the deck: two option cards, this device or the
+   host's speaker, the current one marked and taking the accent. Radios by
+   role, buttons by nature; 44px is the floor. */
+.jamHear {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+.jamHear__option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  min-block-size: max(3.5rem, 56px);
+}
+
+.jamHear__option[data-on] {
+  border-color: var(--glacier-accent-7);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 12%, var(--glacier-surface-raised));
+}
+
+.jamHear__disc {
+  display: grid;
+  place-items: center;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+}
+
+.jamHear__option[data-on] .jamHear__disc {
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-on-accent, #fff);
+}
+
+.jamHear__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+}
+
+.jamHear__name {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamHear__sub {
+  font-size: var(--glacier-font-size-xs);
+  line-height: 1.3;
+  color: var(--glacier-text-muted);
+}
+
+.jamHear__check {
+  color: var(--glacier-accent-text);
+  flex: none;
+}
+
+/* Stacked on every shape, on purpose: side by side, the desktop panel's
+   nineteen rems clipped both names to "This devi…" and "Kayla's spe…". */
+
+/* ── Where should the music play? ──────────────────────────────────────
+   The arrival sheet (player/GrooveHearSheet): a line about the room, then
+   the same two options as the deck's card, at a size a thumb answers
+   without aiming. Raised cards with the deck's own manners - accent on
+   hover, give on press - and the whole card is the target. */
+.hearSheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+  padding-block-end: var(--glacier-space-2);
+}
+
+.hearSheet__lead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--glacier-space-2);
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.45;
+  color: var(--glacier-text-muted);
+}
+
+.hearSheet__lead svg {
+  flex: none;
+  margin-block-start: 0.2em;
+  color: var(--glacier-accent-text);
+}
+
+.hearSheet__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.hearCard {
+  appearance: none;
+  -webkit-appearance: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--glacier-space-3);
+  margin: 0;
+  padding: var(--glacier-space-3) var(--glacier-space-4);
+  min-block-size: max(4.5rem, 72px);
+  font: inherit;
+  text-align: start;
+  color: var(--glacier-text);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--glacier-duration-fast) var(--glacier-ease-out),
+    border-color var(--glacier-duration-fast) var(--glacier-ease-out),
+    background-color var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.hearCard:hover {
+  border-color: var(--glacier-accent-7);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 8%, var(--glacier-surface-raised));
+}
+
+.hearCard:active {
+  transform: scale(0.985);
+}
+
+.hearCard:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+.hearCard__disc {
+  display: grid;
+  place-items: center;
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: 50%;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+}
+
+.hearCard__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.hearCard__name {
+  font-size: var(--glacier-font-size-md);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.25;
+}
+
+.hearCard__sub {
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.35;
+  color: var(--glacier-text-muted);
+}
+
+/* The sheet's transport for a room: shuffle and repeat are the host's, so
+   their two seats stand empty at the width of the buttons they replace,
+   and play stays centred. Same size as the kit's icon button. */
+.npScreen__transportSeat {
+  display: inline-block;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  flex: none;
 }

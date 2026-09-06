@@ -80,39 +80,83 @@ export function PlayerHost({
   // Following a groove with nothing of our own on: the room's song.
   const jam = useJamOptional();
   const room = jam?.current ?? null;
-  const roomId = room !== null && !jam?.hosting ? room.trackId : null;
+  const hosting = !!jam?.hosting;
+  const roomId = room !== null && !hosting ? room.trackId : null;
   const roomTrack =
     roomId != null ? (allTracks.find((t) => trackIdFromPath(t.path) === roomId) ?? null) : null;
+  // Hearing the room on the host's speaker: this deck is SILENT. The room's
+  // song must not stand the strip up as a track of this deck's - the Player
+  // would load it - so it is kept out of `shown` and carried on `following`.
+  const silent = room !== null && !hosting && jam?.hear === 'speaker';
   // A local track always wins: this device's own deck is what its transport
   // drives once it has one.
-  const shown = current ?? remoteTrack ?? roomTrack;
+  const shown = current ?? remoteTrack ?? (silent ? null : roomTrack);
   /*
-   * FOLLOWING WITH NOTHING TO FOLLOW IT WITH.
+   * STANDING IN A ROOM WITHOUT THE DECK CARRYING IT.
    *
-   * In a friend's room, and the song on is not in this library (or the host
-   * has nothing on yet): the deck has nothing for it, and the strip shows
-   * the ROOM instead - the Users mark, whose groove, the song by name, a
-   * quiet "not in your library" - with no transport it cannot honour. The
-   * moment the room moves to a song this library has, `roomTrack` lands,
-   * this goes null and the ordinary player takes over (the follow seam loads
-   * it); moving on to one it lacks brings this back over whatever the deck
-   * still holds - the seam pauses that. Leaving the room clears it.
+   * Three cases, one state (`FollowingRoom`, deckShared.ts):
    *
-   * Not while this device mirrors another of its own: that strip belongs to
-   * the device holding the seat. And an idle host over a deck that IS
-   * playing something of its own is left alone - there is a song here and a
-   * transport for it, and nothing to follow yet.
+   *  - Hearing the room on the host's SPEAKER: the deck loads nothing, and
+   *    the strip reads the room - the sleeve when the library has the song,
+   *    the Users mark by name when it does not - with the room's own clock
+   *    and a transport whose presses go to the room.
+   *  - Hearing it HERE, and the song on is not in this library (or the host
+   *    has nothing on yet): the deck has nothing for it, so the same strip
+   *    stands, room mark and "not in your library". The moment the room
+   *    moves to a song this library has, `roomTrack` lands, this goes null
+   *    and the ordinary player takes over (the follow seam loads it); moving
+   *    on to one it lacks brings this back over whatever the deck still
+   *    holds - the seam pauses that.
+   *  - HOSTING with nothing on: a host who invited first and plays second is
+   *    standing in their room - "Your groove · nothing playing yet", the deck
+   *    seat, Now Playing openable - instead of a page with no strip at all
+   *    (a start() from a profile with an idle deck used to land only a
+   *    toast, because no Player mounted to answer the door).
+   *
+   * Leaving the room clears it. Not while this device mirrors another of
+   * its own: that strip belongs to the device holding the seat. And a
+   * follower hearing it here, over a deck that IS playing something of its
+   * own, is left alone while the host has nothing on yet - there is a song
+   * here and a transport for it, and nothing to follow.
    */
   const mirroring = current === null && remoteTrack !== null;
   const following = useMemo<FollowingRoom | null>(() => {
-    if (!room || jam?.hosting || mirroring || roomTrack !== null) return null;
-    if (current !== null && room.trackId == null) return null;
+    if (!room || mirroring) return null;
+    const receivedAt = room.receivedAt ?? Date.now();
+    if (hosting) {
+      if (current !== null) return null;
+      return {
+        id: room.id,
+        hostName: room.hostName,
+        memberCount: room.memberCount,
+        hosting: true,
+        mode: 'device',
+        trackId: null,
+        trackTitle: null,
+        trackArtist: null,
+        track: null,
+        playing: false,
+        positionMs: 0,
+        receivedAt,
+        controls: 0,
+      };
+    }
+    if (!silent && roomTrack !== null) return null;
+    if (!silent && current !== null && room.trackId == null) return null;
     return {
+      id: room.id,
       hostName: room.hostName,
       memberCount: room.memberCount,
-      trackTitle: room.trackTitle ?? null,
-      trackArtist: room.trackArtist ?? null,
+      hosting: false,
+      mode: silent ? 'speaker' : 'device',
+      trackId: room.trackId,
+      trackTitle: room.trackTitle ?? roomTrack?.title ?? null,
+      trackArtist: room.trackArtist ?? roomTrack?.artist ?? null,
+      track: roomTrack,
       playing: room.playing,
+      positionMs: room.positionMs,
+      receivedAt,
+      controls: room.controls ?? 0,
     };
   }, [
     room?.id,
@@ -122,7 +166,11 @@ export function PlayerHost({
     room?.trackTitle,
     room?.trackArtist,
     room?.playing,
-    jam?.hosting,
+    room?.positionMs,
+    room?.receivedAt,
+    room?.controls,
+    hosting,
+    silent,
     mirroring,
     roomTrack,
     current === null,

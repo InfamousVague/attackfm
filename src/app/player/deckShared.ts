@@ -58,21 +58,51 @@ export const IDLE_TRACK: Track = {
   lyrics: '',
 };
 
+/** Where a follower hears the room: on this device's own deck, in time with
+ *  the host, or on the host's speaker - this phone silent, showing what is
+ *  on. Client-only: remembered per room, never posted. */
+export type HearMode = 'device' | 'speaker';
+
 /**
- * A groove this device is following with nothing of its own to follow it
- * with: the room's song is not in this library (or the host has nothing on
- * yet), so the deck holds nothing for it - and the strip and the Now Playing
- * sheet show the ROOM instead, by name. Built by PlayerHost from the jam.
- * Deliberately not a Track: nothing here is playable, and nothing downstream
- * may try to stream, waveform or lyric it.
+ * A groove this device stands in WITHOUT its own deck carrying the sound.
+ *
+ * Three ways in, one shape. A follower hearing the room on the host's
+ * speaker (`mode: 'speaker'`): the deck loads nothing and plays nothing, and
+ * the strip and the sheet read the ROOM - the sleeve when the library has
+ * the song, the room's mark by name when it does not, a live clock carried
+ * forward from the hub's last word, and a transport whose every press is a
+ * command sent to the room. A follower hearing it here whose library lacks
+ * the song (`mode: 'device'`): the same surfaces, since there is nothing to
+ * play. And a host with nothing on yet (`hosting`): the room's strip stands
+ * so an invite sent before the first song is sent from inside the room.
+ *
+ * Built by PlayerHost from the jam. Deliberately not a Track: nothing here
+ * is playable, and nothing downstream may try to stream, waveform or lyric
+ * it - `track` is the library's row for what the room names, for its sleeve
+ * and its length, and nothing else.
  */
 export interface FollowingRoom {
+  id: string;
   hostName: string;
   memberCount: number;
+  /** Whether this device is the room's host, standing here with an idle deck. */
+  hosting: boolean;
+  /** Where a follower hears it. Meaningless for a host. */
+  mode: HearMode;
+  trackId: number | null;
   /** What the room is hearing, by the hub's name for it; null between songs. */
   trackTitle: string | null;
   trackArtist: string | null;
+  /** The library's own row for the song, when it has it - sleeve and length. */
+  track: Track | null;
   playing: boolean;
+  /** The room's clock as last read (hub ms into the song, already carried
+   *  forward to the read), and this device's clock at that read, so the
+   *  surfaces can carry it forward themselves between polls. */
+  positionMs: number;
+  receivedAt: number;
+  /** Commands the hub is still holding for the host - a "sent" mark. */
+  controls: number;
 }
 
 /** Where the fader starts. The element opens at full, so it is told this too. */
