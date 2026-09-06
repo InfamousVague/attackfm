@@ -6,7 +6,10 @@
 //!
 //! An invite is shared as `https://registry.attack.fm/i/<code>`. The registry's
 //! landing page offers an "Open in AttackFM" button pointing at the app's own
-//! scheme, `attackfm://i/<code>` (registered in the iOS Info.plist). iOS hands
+//! scheme, `attackfm://i/<code>` (registered in the iOS Info.plist, and for
+//! Android in tauri.conf.json's deep-link `mobile` list - the plugin's Android
+//! half forwards ONLY the schemes and hosts named there, so a scheme the
+//! manifest alone declares opens the app and then goes nowhere). The OS hands
 //! that URL to the app; the deep-link plugin passes it here, and this pulls the
 //! code out and hands it to whoever is showing Join a server.
 //!

@@ -49,6 +49,11 @@
       },
       "mobile": [
         {
+          "scheme": [
+            "attackfm"
+          ]
+        },
+        {
           "host": "attack.fm",
           "pathPrefix": [
             "/i",
