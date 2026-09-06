@@ -140,6 +140,19 @@ function browserName(): string | null {
  * on iPhone" reads as what it is; one listing "iPhone" beside "This browser"
  * reads as one device shown twice.
  */
+/** True in the side-by-side staging install (Android only; the native side
+ *  answers, because the frontend bundle is identical in both). */
+function staging(): boolean {
+  try {
+    return (
+      (window as unknown as { AFMNative?: { appFlavor?: () => string } }).AFMNative?.appFlavor?.() ===
+      'staging'
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function deviceName(): string {
   try {
     const saved = localStorage.getItem(DEVICE_NAME_KEY);
@@ -148,8 +161,10 @@ export function deviceName(): string {
     // fall through to the default
   }
   const platform = platformName();
-  // The app speaks for the machine itself, so it wears the machine's name.
-  if (isTauri()) return platform;
+  // The app speaks for the machine itself, so it wears the machine's name -
+  // except where two of this app are installed on one machine. The staging
+  // build says so, or the picker it exists to test lists "Android" twice.
+  if (isTauri()) return staging() ? `${platform} (Staging)` : platform;
   const browser = browserName();
   return browser ? `${browser} on ${platform}` : `Browser on ${platform}`;
 }

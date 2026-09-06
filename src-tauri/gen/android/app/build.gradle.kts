@@ -26,12 +26,59 @@ val keystoreProperties = Properties().apply {
     }
 }
 
+/*
+ * The staging build: a SECOND AttackFM, installable beside the real one.
+ *
+ * Jams, friends, presence and Connect all need two people, and testing them
+ * meant a second phone or signing out of your own account and back in. This is
+ * a separate applicationId, so Android gives it its own sandbox - its own
+ * WebView storage, so its own session, its own signed-in account, and its own
+ * `attackfm-device-id`, which is what makes the hub see two devices rather
+ * than one. Two accounts, one phone, both live.
+ *
+ * Set through ORG_GRADLE_PROJECT_afmStaging, not `-PafmStaging`: `tauri
+ * android build` forwards its `-- args` to CARGO, not gradle - they arrive as
+ * `cargo build ... -PafmStaging=true` and the build dies there. Gradle's
+ * launcher turns ORG_GRADLE_PROJECT_<name> in its own environment into a
+ * project property, so it reaches the build whatever CLI is in front.
+ *
+ * Deliberately NOT System.getenv: a build script runs in the DAEMON, which
+ * keeps the environment it was started with. A daemon that once saw
+ * AFM_STAGING=true would go on stamping staging ids onto ordinary release
+ * builds, days later, with nothing on screen to say so.
+ *
+ * A property rather than a build type or product flavour, and that is not a
+ * style choice. The Rust plugin wires the native library to exactly two
+ * profiles - `for (profile in listOf("debug", "release"))` in buildSrc's
+ * RustPlugin.kt, hanging off `mergeUniversal<Profile>JniLibFolders`. A build
+ * type named `staging` gets a merge task the plugin never attaches a rustBuild
+ * to, so the APK assembles happily WITHOUT libapp_lib.so and dies on launch.
+ * Flipping a property on the release type keeps every task name the plugin
+ * already knows.
+ *
+ *   npm run android:build:staging
+ *
+ * Same signing key and the same server: it must reach the real hub, or the two
+ * accounts cannot see each other and the exercise is pointless.
+ */
+val afmStaging = project.findProperty("afmStaging")?.toString() == "true"
+
 android {
     compileSdk = 36
     namespace = "com.mattssoftware.attackfm"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "com.mattssoftware.attackfm"
+        // Staging may point at a local test hub over plain http; the real
+        // release must not. (A release APK cannot sign into an http:// server
+        // otherwise - by design, and easy to mistake for a bug.)
+        manifestPlaceholders["usesCleartextTraffic"] = if (afmStaging) "true" else "false"
+        // The suffix is the whole trick: a different applicationId is a
+        // different app to Android, with its own data. `namespace` above is
+        // unchanged, so no Kotlin moves.
+        applicationId =
+            if (afmStaging) "com.mattssoftware.attackfm.staging" else "com.mattssoftware.attackfm"
+        // Told apart on the home screen and in the app switcher, where two
+        // identical icons would otherwise be a coin flip.
+        manifestPlaceholders["appLabel"] = if (afmStaging) "AttackFM Staging" else "AttackFM"
         minSdk = 24
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()

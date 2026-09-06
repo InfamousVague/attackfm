@@ -260,14 +260,34 @@ class MainActivity : TauriActivity() {
      * there needs the all-files grant below. Null until that grant exists -
      * the web layer falls back to the private vault and nothing changes.
      */
+    /**
+     * Which install this is - "staging" for the side-by-side test build, ""
+     * for the real one.
+     *
+     * The frontend is the SAME bundle in both, so it cannot tell on its own,
+     * and one thing genuinely needs it: Connect names a device after its
+     * platform, so two installs on one phone both announce themselves as
+     * "Android" and the device picker - the thing the second install exists to
+     * test - lists the same word twice.
+     */
+    @JavascriptInterface
+    fun appFlavor(): String = if (packageName.endsWith(".staging")) "staging" else ""
+
     @JavascriptInterface
     fun vaultDir(): String? =
       try {
         if (!android.os.Environment.isExternalStorageManager()) null
         else {
+          // Per app, not per name. The staging build is a second install with
+          // its own everything; pointing both at one shared folder would let
+          // it serve - and prune - the real app's downloaded music, which is
+          // the opposite of "a clean slate to test with". Keyed on the
+          // package so the real app's path is unchanged to the byte.
+          val folder =
+            if (packageName.endsWith(".staging")) "AttackFM Staging/Music" else "AttackFM/Music"
           val dir = java.io.File(
             android.os.Environment.getExternalStorageDirectory(),
-            "AttackFM/Music",
+            folder,
           )
           if (!dir.exists() && !dir.mkdirs()) null else dir.absolutePath
         }
