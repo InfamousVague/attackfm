@@ -87,6 +87,26 @@ async fn ensure_verifier(state: &AppState) -> Option<Verifier2> {
 
 /// Fetch the registry's public key at boot. Failure is not fatal: local
 /// username/password auth still works, and the key is fetched on demand later.
+/// Whether a registry token names the CALLER - the account whose friends it
+/// would list. The friend mirror and a groove invite befriend people on the
+/// strength of a token's friend list; without this check a member could hand
+/// over a borrowed token and inherit that account's friends here. A bound
+/// member must be the token's subject; an unbound one (signed in directly,
+/// under the same name as their handle - the rule `admit` uses) must be the
+/// handle's owner. A token this hub cannot verify names nobody.
+pub async fn token_names_caller(state: &AppState, token: &str, caller_id: i64) -> bool {
+    let Some(verifier) = ensure_verifier(state).await else {
+        return false;
+    };
+    let Ok(claims) = verifier.verify(token.trim(), now_secs()) else {
+        return false;
+    };
+    match state.db.registry_member(claims.sub) {
+        Some((user_id, _)) => user_id == caller_id,
+        None => state.db.user_by_name_ci(&claims.handle).map(|u| u.id) == Some(caller_id),
+    }
+}
+
 pub async fn prime_verifier(state: Arc<AppState>) {
     if ensure_verifier(&state).await.is_some() {
         println!("[attackfm] registry identity verified against {}", state.registry_url);

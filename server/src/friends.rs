@@ -171,12 +171,16 @@ pub async fn mirror(
     // Verified by the registry where it can be: then the list is the truth
     // and every match becomes a friendship now. Otherwise the app's claim,
     // settled the slow way.
+    // ... and only when the token is the CALLER's: a borrowed token lists
+    // somebody else's friends, and that is the app's claim, not the registry's.
     let (handles, verified) = match body.registry_token.as_deref() {
-        Some(token) => match verified_friend_handles(&state, token).await {
-            Some(list) => (list, true),
-            None => (body.handles.clone(), false),
-        },
-        None => (body.handles.clone(), false),
+        Some(token) if crate::registry_auth::token_names_caller(&state, token, caller.id).await => {
+            match verified_friend_handles(&state, token).await {
+                Some(list) => (list, true),
+                None => (body.handles.clone(), false),
+            }
+        }
+        _ => (body.handles.clone(), false),
     };
     for handle in handles.iter().take(500) {
         let handle = handle.trim().trim_start_matches('@');

@@ -559,7 +559,15 @@ async fn befriend_live(
     if uid == caller_id {
         return Ok(uid);
     }
+    // Only the caller's own token counts: a borrowed one lists somebody
+    // else's friends (registry_auth::token_names_caller).
     if let Some(token) = registry_token.map(str::trim).filter(|t| !t.is_empty()) {
+        if !crate::registry_auth::token_names_caller(state, token, caller_id).await {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "Not friends here yet - the server is still catching up with your friends list. Try again in a moment.".into(),
+            ));
+        }
         if let Some(handles) = crate::friends::verified_friend_handles(state, token).await {
             let listed = handles.iter().any(|h| by_name(h.trim().trim_start_matches('@')) == Some(uid));
             if listed && state.db.add_friendship(caller_id, uid).is_ok() {
