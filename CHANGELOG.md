@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.125
+
+- The profile's cover band is taller, so a picture you chose is a picture
+  and not a strip.
+
 ## 0.5.124
 
 - Every popover's arrow points straight at the button that opened it. On the

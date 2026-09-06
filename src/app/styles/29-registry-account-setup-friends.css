@@ -461,13 +461,15 @@
 .profileHero__cover {
   /* The band wears the kit's ContextMenu (press-and-hold for reposition and
      remove), and that target is `display: contents` until told otherwise - so
-     without this the box below vanishes, taking the 8rem height, the gradient
+     without this the box below vanishes, taking the band's height, the gradient
      and the positioning context for the banner with it. Same trap, same fix,
      as .npScreen__canvasWrap. */
   display: block;
   position: relative;
   margin-inline: calc(-1 * var(--glacier-space-4));
-  block-size: 8rem;
+  /* 13.2rem: the 8rem band made 65% taller (Matt, 2026-09-06) - the cover is
+     the picture, and it was a strip. */
+  block-size: 13.2rem;
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--glacier-accent-solid) 38%, var(--glacier-surface-raised)),
