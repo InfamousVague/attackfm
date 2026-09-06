@@ -104,6 +104,11 @@ export interface JamsFeed {
   friends: Jam[];
   /** People asking to listen along with you, waiting to be answered. */
   invites: JamInvite[];
+  /** The members' transport presses the hub handed THIS poll - only to the
+   *  host, and only while the host's clock has gone quiet (a beating host
+   *  gets them in its beat reply instead). Top-level on the wire, beside
+   *  `additions`; absent from an older hub. */
+  commands: JamCommand[];
 }
 
 export async function fetchJams(session: ServerSession): Promise<JamsFeed> {
@@ -112,6 +117,7 @@ export async function fetchJams(session: ServerSession): Promise<JamsFeed> {
     current: out.current ?? null,
     friends: out.friends ?? [],
     invites: (out.invites ?? []).map((i) => ({ ...i, kind: i.kind === 'jam' ? 'jam' : 'along' })),
+    commands: Array.isArray(out.commands) ? out.commands : [],
   };
 }
 

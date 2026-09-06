@@ -283,8 +283,11 @@ export function JamProvider({ children }: { children: ReactNode }) {
       }
       // The host's poll may carry the members' commands (only while its
       // player has gone quiet); the next beat applies them.
-      if (room && room.commands && room.commands.length > 0 && isHost(room, session.username)) {
-        polledCommands.current.push(...room.commands);
+      // The hub hands them at the TOP of the feed (beside additions), not on
+      // the room - read both, so an older shape is not silently dropped.
+      const handed = [...feed.commands, ...(room?.commands ?? [])];
+      if (room && handed.length > 0 && isHost(room, session.username)) {
+        polledCommands.current.push(...handed);
       }
       if (room) {
         const me = session.username.toLowerCase();

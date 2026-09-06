@@ -267,7 +267,12 @@ export function usePlayerConnect({
         // `at` is the hub's clock; measured against the hub's own `now` when
         // the room knows it, and against this device's otherwise (a skewed
         // phone can only make the cut-off looser, never drop a fresh one).
-        const age = hubNow != null ? Math.max(hubNow, now) - c.at : now - c.at;
+        // `at` is the hub's clock, so age it by the hub's clock when the room
+        // carried one (read a poll earlier than now, which can only make the
+        // cut-off looser, never drop a fresh press); the device's own clock is
+        // the fallback, not a competitor - a phone running half a minute ahead
+        // must not drop every press as stale.
+        const age = hubNow != null ? hubNow - c.at : now - c.at;
         if (age > COMMAND_STALE_MS && c.at > 0) continue;
         switch (c.action) {
           case 'play':

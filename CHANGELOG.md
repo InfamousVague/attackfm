@@ -15,6 +15,19 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.127
+
+- Joining someone's groove now asks where the music should play: on this
+  device, or on their speaker. On their speaker your phone stays quiet, shows
+  what is on with a live position, and your play, pause, skip and scrub steer
+  the room for everyone. On this device it plays in time as before, and your
+  controls steer the room too, so two phones never fight. A "Hearing it on"
+  card in the groove panel switches either way; the choice is remembered per
+  groove.
+- The host's player takes those presses in its stride, once each, and a host
+  who opens a groove before playing anything now has a bar and Now Playing to
+  stand in. The groove panel no longer closes when you join from inside it.
+
 ## 0.5.126
 
 - Have a groove code? The groove panel has a "Have a code?" door now: type
