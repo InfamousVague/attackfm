@@ -504,7 +504,10 @@ pub async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Api
 /// A listen-along is between friends who share a server, and nothing wider: the
 /// same-server gate the whole feature is asked to honour lives here.
 fn resolve_friend(state: &AppState, caller_id: i64, name: &str) -> Option<(i64, String)> {
-    let want = name.trim();
+    // The same spelling rules as the live check: a registry handle may arrive
+    // with its @, and an existing friend must never fall through to
+    // "catching up" over one character.
+    let want = name.trim().trim_start_matches('@');
     if want.is_empty() {
         return None;
     }
