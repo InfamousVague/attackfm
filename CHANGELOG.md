@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.119
+
+- Nothing changes on your phone. This one carries a small piece the staging
+  test build needs, so it can tell itself apart from the real app.
+
 ## 0.5.118
 
 - Showing lyrics over a song's Canvas now softens the whole screen behind them,
