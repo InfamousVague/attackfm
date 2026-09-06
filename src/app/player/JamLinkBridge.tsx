@@ -80,7 +80,8 @@ export function JamLinkBridge() {
     setBusy(true);
     setError(null);
     try {
-      if (await walkIn(jam, share.jamId)) {
+      const walked = await walkIn(jam, share.jamId);
+      if (walked === 'joined') {
         // "You are in" is the LANDING now, not a line on this card: the
         // provider says where you are, lifts the player and opens the groove
         // deck on it (jam.tsx). The card's work is done the moment the hub
@@ -89,7 +90,11 @@ export function JamLinkBridge() {
       } else {
         // The registry row outlives the room; this is the hub saying the room
         // is not there any more, which is the one answer only it can give.
-        setError('That groove has ended. Ask whoever sent this to start another.');
+        setError(
+          walked === 'failed'
+            ? 'Could not walk into that groove just now.'
+            : 'That groove has ended. Ask whoever sent this to start another.',
+        );
       }
     } finally {
       setBusy(false);

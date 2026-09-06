@@ -54,11 +54,14 @@ export async function lookupGroove(code: string): Promise<JamShare | null> {
  * a false here is the hub saying the room is not there any more, which is
  * the one answer only it can give.
  */
-export async function walkIn(jam: JamValue, id: string): Promise<boolean> {
+/** 'ended' is the hub's answer (the room is gone); 'failed' is no answer at
+ *  all (offline, a timeout) - and those must not read the same, or a dropped
+ *  connection tells somebody their friend's groove is over. */
+export async function walkIn(jam: JamValue, id: string): Promise<'joined' | 'ended' | 'failed'> {
   try {
-    return await jam.join(id);
+    return (await jam.join(id)) ? 'joined' : 'ended';
   } catch {
-    return false;
+    return 'failed';
   }
 }
 
@@ -100,12 +103,15 @@ export async function enterGroove(
   }
   if (share) {
     if (!sameHub(hubUrl, share.hubUrl)) return { kind: 'elsewhere', share };
-    return (await walkIn(jam, share.jamId)) ? { kind: 'joined' } : { kind: 'ended', share };
+    const walked = await walkIn(jam, share.jamId);
+    return walked === 'joined' ? { kind: 'joined' } : walked === 'failed' ? { kind: 'failed' } : { kind: 'ended', share };
   }
   if (!ref.bare) return unreachable ? { kind: 'failed' } : { kind: 'missing', bare: false };
   // A typed code the registry does not know - or could not be asked about -
   // may still be a room on this hub. The hub is the only thing that can say.
-  if (await walkIn(jam, ref.code)) return { kind: 'joined' };
+  const walked = await walkIn(jam, ref.code);
+  if (walked === 'joined') return { kind: 'joined' };
+  if (walked === 'failed') return { kind: 'failed' };
   return unreachable ? { kind: 'failed' } : { kind: 'missing', bare: true };
 }
 

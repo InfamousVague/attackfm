@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.126
+
+- Have a groove code? The groove panel has a "Have a code?" door now: type
+  or paste the code, or any spelling of the link, and you walk in. The share
+  page shows the code too, for when the link opens the wrong app.
+- A groove link that could not be answered because you were offline now
+  says so, instead of saying the groove has ended.
+
 ## 0.5.125
 
 - The profile's cover band is taller, so a picture you chose is a picture

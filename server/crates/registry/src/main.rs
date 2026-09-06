@@ -2249,14 +2249,26 @@ async fn assetlinks() -> impl IntoResponse {
         .filter(|v| !v.trim().is_empty())
         .map(|v| v.split(',').map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect())
         .unwrap_or_else(|| vec![ANDROID_CERT_SHA256.to_string()]);
-    let body = json!([{
-        "relation": ["delegate_permission/common.handle_all_urls"],
-        "target": {
-            "namespace": "android_app",
-            "package_name": ANDROID_PACKAGE,
-            "sha256_cert_fingerprints": certs,
-        }
-    }]);
+    // The staging build is a second install with its own package name and
+    // the SAME signing key (build.gradle.kts adds the suffix); without its
+    // own entry here Android leaves every attack.fm link unverified for it
+    // and hands them to the browser. Same key, so the same fingerprints.
+    let packages = [ANDROID_PACKAGE.to_string(), format!("{ANDROID_PACKAGE}.staging")];
+    let body = serde_json::Value::Array(
+        packages
+            .iter()
+            .map(|package| {
+                json!({
+                    "relation": ["delegate_permission/common.handle_all_urls"],
+                    "target": {
+                        "namespace": "android_app",
+                        "package_name": package,
+                        "sha256_cert_fingerprints": certs,
+                    }
+                })
+            })
+            .collect(),
+    );
     ([(axum::http::header::CONTENT_TYPE, "application/json")], body.to_string())
 }
 
