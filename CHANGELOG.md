@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.123
+
+- Sheets like Invite a friend and Add to playlist open as a panel on the
+  desktop instead of taking the whole window.
+
 ## 0.5.122
 
 - Bigger icons in the bar at the bottom, sitting straight in their seats, with
