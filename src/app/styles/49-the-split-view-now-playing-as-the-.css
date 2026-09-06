@@ -8,7 +8,11 @@
    build a ballroom - and so the percentage, not the cap, is what decides on
    a phone or a fold. */
 :root {
-  --np-dock-width: min(48vw, 38rem);
+  /* 48vw was the whole window's half when nothing else held a column. The
+     rail holds one now, so a share of the VIEWPORT overspends: at 60rem the
+     old number left the content pane narrower than the dock beside it.
+     Measured against what is left after the rail instead. */
+  --np-dock-width: min(38vw, 32rem);
   /* The island grew from 3.5rem so the lit tab's plate can be an actual
      SQUARE around glyph + name - the third try at "not stretched" and the
      one that holds, because at 3.5rem a square that fits a name cannot fit

@@ -1,6 +1,6 @@
-import { NavBar, NavBarItem } from '@glacier/react';
+import { NavBarItem } from '@glacier/react';
 import { useNavPill } from './useNavPill.ts';
-import { Disc3, LibraryBig, Search, Telescope } from '@glacier/icons';
+import { ArrowDownToLine, Disc3, LibraryBig, Search, Settings, Telescope } from '@glacier/icons';
 import { useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { atSize, useNavSeats, type NavDest } from './navSeats.ts';
@@ -105,8 +105,10 @@ export function PrimaryNav({
    */
   const barRef = useRef<HTMLElement | null>(null);
   // The lit plate slides between tabs rather than blinking from one to the
-  // next - see useNavPill. Bar only; the desktop rail is a kit NavBar and
-  // already has the kit's own sliding indicator.
+  // next - see useNavPill. Bar only: the rail marks its active row with a
+  // border and a wash rather than a travelling plate, because a column's rows
+  // are far enough apart that a plate sliding between them reads as a lift
+  // rather than a move.
   useNavPill(barRef);
   const dests = useMemo<NavDest[]>(() => {
     const list: NavDest[] = [
@@ -192,87 +194,78 @@ export function PrimaryNav({
   const inBar = dests.slice(0, shown);
   const inMenu = dests.slice(shown);
 
-  const primaryItems = (
-    <>
-      {/* Discover, Search, Library - the order the phone bar keeps too, by
-          request: what the machine has for you, the way to look, then what you
-          kept. Search opens the overlay rather than routing anywhere. */}
-      <NavBarItem
-        icon={<Telescope size={24} />}
-        label="Discover"
-        active={tab === 'discover'}
-        onClick={() => onTab('discover')}
-      />
-      <NavBarItem
-        icon={<Search size={24} />}
-        label="Search"
-        active={false}
-        onClick={() => openSearchPage()}
-      />
-      {/* Library: the music you saved or made, and - behind its own Music/Books
-          toggle - your audiobook shelf. Books no longer holds a rail seat. */}
-      <NavBarItem
-        icon={<LibraryBig size={24} />}
-        label="Library"
-        active={libraryActive}
-        onClick={() => onTab('library')}
-      />
-      {/* Downloads is NOT a nav destination. On the phone it is an icon on the
-          library page (where the music it is fetching ends up); on the desktop
-          it is the chip above the player strip, and only while something is
-          actually in flight. A queue you visit occasionally does not deserve a
-          permanent seat in a bar of four. */}
-      {/* Developer mode only, on the rail as in the bar. */}
-      {showBooth && (
-        <NavBarItem
-          icon={<Disc3 size={24} />}
-          label="Booth"
-          active={tab === 'booth'}
-          onClick={() => onTab('booth')}
-        />
-      )}
-      <NavBarItem
-        icon={<NavProfileIcon />}
-        label="Profile"
-        active={tab === 'profile'}
-        onClick={() => onTab('profile')}
-      />
-      {/* Plugin pages ride the rail as their own items on the desktop, which
-          has the vertical room; the phone bar folds them into its Plugins
-          button (cascading up out of the bar) instead. Books is not among them
-          - it lives in the Library's toggle. */}
-      {pages
-        .filter((pg) => pg.pluginId !== 'books')
-        .map((pg) => (
-          <NavBarItem
-            key={pg.key}
-            icon={pg.icon}
-            label={pg.label}
-            active={tab === pg.key}
-            onClick={() => onTab(pg.key)}
-          />
-        ))}
-    </>
-  );
 
   if (variant === 'rail') {
-    // No foot on the rail. Settings sits in the window's own title bar on
-    // desktop (App.tsx, in the same DESKTOP block that renders this rail), and
-    // a rail cog beside it was the same door twice - the sort of duplicate that
-    // makes people wonder whether the two lead somewhere different. Downloads
-    // has no seat here either: while anything is in flight the chip above the
-    // strip is its door, and an idle queue offers no door at all.
+    /*
+     * The desktop rail: a full-height column of named destinations.
+     *
+     * It was a slim icon plate lying along the bottom, and before that a
+     * floating pill halfway up the leading edge. The pill was moved because it
+     * sat "in the one place nothing else on the screen lives"; the plate that
+     * replaced it answered that but kept the rail a strip of unlabelled icons
+     * with no room to grow, so every new destination made the icons harder to
+     * tell apart. A column that owns the whole side answers both: it is not
+     * stranded mid-edge, and it has room for the word next to the glyph.
+     *
+     * Hand-rolled rather than the kit's <NavBar orientation="vertical">, and
+     * that is forced: the kit drops labels entirely when vertical (showLabels
+     * "renders it beside HORIZONTAL icons" - the vertical item is a fixed
+     * square with no label span at all). An icon-only rail is what the kit
+     * offers and is not what this is.
+     *
+     * Built from `dests` - the SAME list the phone bar renders. Two hand-kept
+     * lists had already drifted: the bar lit Profile for the friends route and
+     * the rail did not. That one is latent (goTab redirects friends to
+     * profile) but it is exactly the kind of divergence a second list
+     * guarantees eventually, and there is no reason for the desktop to know a
+     * different set of places than the phone.
+     */
     return (
-      <NavBar
-        /* Horizontal, because it lies along the bottom now rather than running
-           up the side. The kit lays a vertical bar out as a column and would
-           fight the CSS that turns it. */
-        orientation="horizontal"
-        aria-label="Primary"
-        className="appNavRail"
-      >
-        {primaryItems}
-      </NavBar>
+      <nav className="appNavRail" aria-label="Primary" ref={barRef}>
+        <div className="appNavRail__dests">
+          {dests.map((d) => (
+            <button
+              key={d.key}
+              type="button"
+              className="appNavRail__item"
+              data-active={d.active || undefined}
+              aria-current={d.active ? 'page' : undefined}
+              onClick={d.go}
+            >
+              <span className="appNavRail__icon" aria-hidden>
+                {d.icon}
+              </span>
+              <span className="appNavRail__label">{d.label}</span>
+            </button>
+          ))}
+        </div>
+        {/*
+          The foot: the two doors the phone keeps in its overflow.
+
+          They were left off the rail on purpose when it was a strip - Settings
+          because the window's title bar already has a cog, Downloads because
+          the chip above the player strip is its door while anything is in
+          flight. A full-height column changes the argument for both: there is
+          room, the phone shows them, and "the same routes as mobile" is the
+          whole point of this shape. The title-bar cog stays; two doors to
+          Settings on a desktop is ordinary, and a rail without one reads as
+          incomplete next to a phone that has it.
+        */}
+        <div className="appNavRail__foot">
+          <button type="button" className="appNavRail__item" onClick={onOpenDownloads}>
+            <span className="appNavRail__icon" aria-hidden>
+              <ArrowDownToLine size={22} />
+            </span>
+            <span className="appNavRail__label">Downloads</span>
+          </button>
+          <button type="button" className="appNavRail__item" onClick={onSettings}>
+            <span className="appNavRail__icon" aria-hidden>
+              <Settings size={22} />
+            </span>
+            <span className="appNavRail__label">Settings</span>
+          </button>
+        </div>
+      </nav>
     );
   }
 

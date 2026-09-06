@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "AttackFM",
-        "width": 680,
-        "height": 680,
+        "width": 1180,
+        "height": 820,
         "minWidth": 560,
         "minHeight": 560,
         "decorations": true,

@@ -648,7 +648,20 @@ export function Player({
    * and it keeps the desktop and a sideways fold while letting anything held
    * upright have the whole width back.
    */
-  const npWide = useMediaQuery('(min-width: 700px) and (min-aspect-ratio: 1/1)');
+  /*
+   * Wide enough for the split, which is now a question about THREE columns.
+   *
+   * 700px was the floor when the split was content + dock. The desktop nav is
+   * a full-height rail holding 12.5rem of that, so the old floor left a
+   * content pane narrower than the dock beside it. 60rem is the app's own
+   * desktop threshold (DESKTOP_SHAPE) - the same line everything else calls
+   * "past a phone" - and it leaves rail, content and dock each a workable
+   * share.
+   *
+   * The aspect clause stays: a tall narrow window is not a desktop shape
+   * however wide it says it is, and a side pane in one is a column of nothing.
+   */
+  const npWide = useMediaQuery('(min-width: 60rem) and (min-aspect-ratio: 1/1)');
   /**
    * The desktop wears the same split as an unfolded foldable.
    *
@@ -722,9 +735,24 @@ export function Player({
    * flags would be two ways to be dismissed and four states to reason about.
    */
   useEffect(() => {
-    // `!npWide` is the tie-break for a square window, where both queries match.
+    /*
+     * Never on a desktop shape.
+     *
+     * This is for a big upright touch window - a tablet held portrait, where
+     * there is no room beside the content for a pane. On the desktop app it
+     * was firing at the DEFAULT window size and replacing the whole app with
+     * the Now Playing screen the moment anything played: the window opens
+     * square, `npBig` wants `max-aspect-ratio: 1/1` and a square window
+     * matches it exactly, and `npWide` did not save it because the window was
+     * a few pixels under the old 700px floor. A desktop with a nav rail and a
+     * player strip has somewhere for the song to live already.
+     *
+     * `!npWide` stays as the tie-break for a square TOUCH window, where both
+     * queries can still match.
+     */
+    if (deskShape) return;
     if (npBig && !npWide && deckEngaged && !chromeHidden && !dockDismissed) setNpOpen(true);
-  }, [npBig, npWide, deckEngaged, chromeHidden, dockDismissed]);
+  }, [npBig, npWide, deckEngaged, chromeHidden, dockDismissed, deskShape]);
   /**
    * Closing it. On the big upright shape that is a dismissal to be remembered
    * for the quiet spell, or the effect above would reopen it on the next

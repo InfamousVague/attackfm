@@ -285,79 +285,152 @@
   position: relative;
   z-index: 1;
 }
-
-/* Room for the floating rail. Only where the rail exists.
-   It used to be an inline gutter, because the plate rode the leading edge and
-   held a column the content could not use. The plate lies along the BOTTOM
-   now, so what it occupies is a band - and every page in the app already pads
-   for one of those, because the phone has had a bottom bar all along. Setting
-   the same token is the whole change: no page needs to learn a second rule. */
+/*
+ * The rail is a COLUMN now, not a band.
+ *
+ * `--app-nav-height` is the height of a bottom nav bar, and thirteen
+ * stylesheets pad a page's foot by it. The rail used to set it because it lay
+ * along the bottom like the phone's does. Standing it up on the side makes
+ * that a lie in the most tedious way possible - a strip of dead space at the
+ * bottom of every desktop page - so the rail zeroes it and publishes an
+ * INLINE measure instead. Nothing else has to learn a new rule: the rail is a
+ * flex item of `.appBody`, so the content column simply gets what is left.
+ */
 .appBody:has(> .appNavRail) {
-  --app-nav-height: calc(var(--app-nav-rail-height) + var(--glacier-space-3));
+  --app-nav-height: 0px;
 }
 
-/* Desktop primary navigation: a slim icon-only rail, the same floating pill
-   as the phone's turned on its side - a lifted, rounded, frosted plate riding
-   the leading edge. */
+/*
+ * Desktop primary navigation: a full-height column of named destinations.
+ *
+ * Its two previous shapes are worth knowing, because this is not a revert to
+ * either. It began as a slim floating pill riding the leading edge, and was
+ * moved to a plate along the bottom for a good reason recorded at the time -
+ * a pill halfway up the left "put the app's primary navigation in the one
+ * place nothing else on the screen lives". The plate answered that and
+ * introduced its own problem: an unlabelled strip with no room to grow, so
+ * every plugin page made the icons harder to tell apart.
+ *
+ * A column that owns the whole side is neither. It is not stranded mid-edge,
+ * and it has room for the word beside the glyph - which is what lets it carry
+ * every destination the phone has instead of a chosen few.
+ *
+ * In FLOW, as a flex item, rather than absolutely positioned: `.appBody` is
+ * already `display: flex`, so a column here costs one child and the content
+ * takes the rest by itself. An absolute rail would have needed the content to
+ * be told its own inset, which is the arrangement that drifts.
+ */
 .appNavRail {
-  /* FLOATING, and lying down. It rode the leading edge, vertically centred -
-     which put the app's primary navigation in the one place nothing else on
-     the screen lives, halfway up the left of a window whose content, player
-     and header are all arranged around the bottom and the top. A bar along the
-     bottom is where the hand already is on every other surface of this app,
-     and left-aligned rather than centred so it reads as an anchor rather than
-     as a second, competing player. */
-  position: absolute;
-  inset-inline-start: var(--glacier-space-3);
-  /* Clear of the player's band - which is zero in split view, so this one line
-     lands correctly in both layouts instead of needing a rule per layout. */
-  inset-block-end: calc(var(--app-player-height) + var(--glacier-space-3));
-  z-index: 3;
-  /* Hug the items in BOTH directions now. The kit stretches a bar to its
-     container, which lying down would mean a plate the width of the window. */
-  block-size: fit-content;
-  inline-size: fit-content;
-  max-inline-size: calc(100% - var(--glacier-space-3) * 2);
+  flex: none;
+  inline-size: var(--app-nav-inline);
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-2);
+  /* The safe inset is on the INLINE axis for a rail. Every inset the chrome
+     spends elsewhere is block-axis, because everything else is a bottom bar.
+     Zero on a desktop, so it costs nothing there. */
+  padding-inline-start: max(var(--glacier-space-2), env(safe-area-inset-left));
+  border-inline-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-raised);
+  /* The destinations scroll if a window is short enough or the plugins many
+     enough; the foot does not, so Settings never scrolls out of reach. */
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+/* Only this half scrolls - see above. */
+.appNavRail__dests {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.appNavRail__foot {
   flex: none;
   display: flex;
-  flex-direction: row;
-  gap: var(--glacier-space-1);
-  padding: var(--glacier-space-1);
-  /* A rounded rectangle, not a capsule and not a squircle - a plate with a
-     modest corner. The items keep the kit's own radius, which the sliding
-     active fill reads too (--glacier-navbar-item-radius), so tap target and
-     active plate share one shape instead of the circle-vs-box mismatch the
-     old radius-full button override caused. */
-  border-radius: var(--glacier-radius-lg);
-  background: var(--glacier-glass-thin);
-  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
-  border: var(--glacier-hairline) solid var(--glacier-border);
-  box-shadow: var(--glacier-shadow-md), inset 0 var(--glacier-hairline) 0 var(--glacier-glass-highlight);
-  /* A window too narrow for every item scrolls the plate rather than letting
-     the last ones fall off the end - the same reasoning as the tall case it
-     replaces, turned through ninety degrees. */
-  overflow-x: auto;
-  scrollbar-width: none;
+  flex-direction: column;
+  gap: 2px;
+  padding-block-start: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-1);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
 }
 
-/* One number the rail and the body both read, so the island's footprint and
-   the content's inset can never drift apart. */
-:root {
-  --app-nav-rail-item: 2.375rem;
-  /* item + the plate's own padding above and below. The body adds the margin
-     the plate floats by; keeping that out of here means the height is the
-     plate's real height and nothing else, which is what the bottom inset
-     wants to reason about. */
-  --app-nav-rail-height: calc(var(--app-nav-rail-item) + var(--glacier-space-1) * 2);
+.appNavRail__item {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  padding: var(--glacier-space-2);
+  border: 0;
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: var(--glacier-text-sm);
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
+  /* The row is the target, and a row is wide: nothing here should wrap to a
+     second line and make one destination twice the height of its neighbours. */
+  white-space: nowrap;
+  overflow: hidden;
 }
 
-.appNavRail button,
-.appNavRail a {
+.appNavRail__item:hover {
+  background: var(--glacier-surface-hover, rgb(255 255 255 / 0.06));
+  color: var(--glacier-text);
+}
+
+/* Marked with a wash and the accent rather than the phone bar's travelling
+   plate. A plate sliding between rows this far apart reads as a lift across
+   the screen rather than a move between neighbours - see useNavPill, which is
+   deliberately left to the bar. */
+.appNavRail__item[data-active] {
+  background: var(--glacier-surface-hover, rgb(255 255 255 / 0.08));
+  color: var(--glacier-text);
+}
+
+.appNavRail__item[data-active] .appNavRail__icon {
+  color: var(--glacier-accent-solid);
+}
+
+.appNavRail__icon {
   flex: none;
-  /* Smaller than the old 3rem: a cursor does not need a thumb's target, and
-     the island reads as a tool rather than a wall at this size. */
-  inline-size: var(--app-nav-rail-item, 2.375rem);
-  block-size: var(--app-nav-rail-item, 2.375rem);
+  display: inline-flex;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  align-items: center;
+  justify-content: center;
 }
 
+.appNavRail__label {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * The player strip starts where the rail ends.
+ *
+ * `.appPlayer` is `position: absolute; inset-inline: 0` on `.appWindow`, so it
+ * spans the whole window and paints over anything beneath it - and
+ * `.appBody { z-index: 1 }` traps the rail below the strip's `z-index: 2`, so
+ * no number on the rail can win that fight. Insetting the strip is the honest
+ * fix: the two tile instead of overlapping, and the strip reads as the bottom
+ * of the CONTENT rather than a bar laid across the whole app.
+ */
+.appWindow:has(.appNavRail) .appPlayer {
+  inset-inline-start: var(--app-nav-inline);
+}
+
+:root {
+  /* One number the rail's width and the player's inset both read, so they
+     cannot drift. Wide enough for the longest label a plugin page is likely
+     to carry without the ellipsis doing the work. */
+  --app-nav-inline: 12.5rem;
+}
