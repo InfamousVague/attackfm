@@ -60,6 +60,15 @@ const EVENTS_KEPT: usize = 12;
 /// has been silent this long; before that a paused second phone would clobber
 /// the room with its own idle state.
 const CLOCK_HANDOVER_MS: i64 = 10_000;
+/// How many transport commands a room holds for the host; past this the
+/// oldest goes. Twenty is a member mashing skip for a while, not a backlog
+/// worth replaying.
+const CONTROLS_CAP: usize = 20;
+/// A command the host has not taken in this long is not worth delivering:
+/// the person who pressed pause has long since seen nothing happen and
+/// pressed it again, and a pause arriving a minute late would stop a song
+/// nobody asked to stop.
+const CONTROL_TTL_MS: i64 = 15_000;
 
 #[derive(Clone)]
 pub struct Member {
@@ -112,6 +121,39 @@ pub struct Addition {
     pub at: i64,
 }
 
+/// One press of the transport by a member - play, pause, skip, seek - waiting
+/// for the host's deck to act on it. The room has ONE player (the host's); a
+/// member who listens on the host's speaker has no deck of their own to press,
+/// so their press travels here and the host's client applies it. `toggle`
+/// passes through as pressed: the host's deck knows whether it is playing.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Control {
+    /// "play" | "pause" | "toggle" | "next" | "prev" | "seek".
+    pub action: String,
+    /// Where to, for a seek. Nothing for the rest.
+    pub position_ms: Option<i64>,
+    pub by: String,
+    pub at: i64,
+}
+
+impl Control {
+    fn to_json(&self) -> serde_json::Value {
+        let mut v = json!({ "action": self.action, "by": self.by, "at": self.at });
+        if let Some(p) = self.position_ms {
+            v["positionMs"] = json!(p);
+        }
+        v
+    }
+}
+
+/// What the host's poll hands its client: the room's asks and its presses,
+/// both drained, both only once the clock has gone quiet.
+#[derive(Default, Debug, PartialEq)]
+pub struct Polled {
+    pub additions: Vec<i64>,
+    pub commands: Vec<serde_json::Value>,
+}
+
 #[derive(Clone)]
 pub struct Jam {
     pub id: String,
@@ -138,6 +180,12 @@ pub struct Jam {
     pub additions: Vec<Addition>,
     /// Who asked for each track, by track id, for as long as the jam lives.
     pub added_by: HashMap<i64, String>,
+    /// Transport presses from members, oldest first, waiting for the host's
+    /// deck. Drained on the host's beat, or on its poll once the beat has
+    /// gone quiet - the same two doors as `additions`, so a paused player
+    /// still hears "play". Anything older than CONTROL_TTL_MS is dropped
+    /// when read rather than delivered late.
+    pub controls: VecDeque<Control>,
     /// When position_ms was true. Members extrapolate forward from here.
     pub updated_at: i64,
     /// Which of the host's devices is the clock, and when it last beat.
@@ -220,14 +268,59 @@ impl Jam {
         std::mem::take(&mut self.additions).into_iter().map(|a| a.track_id).collect()
     }
 
+    /// A member presses the transport. Refused for anyone not in the room
+    /// (403) and for a press that makes no sense (400: an action nobody
+    /// knows, or a seek with nowhere to go); the host's own press is taken
+    /// like anyone's, since its deck may not be the one that pressed. Returns
+    /// how many presses are waiting, this one included. Past CONTROLS_CAP the
+    /// oldest is let go - it was a skip somebody has already pressed again.
+    fn command(&mut self, caller_id: i64, action: &str, position_ms: Option<i64>, now: i64) -> Result<usize, ApiError> {
+        let Some(who) = self.member(caller_id).cloned() else {
+            return Err((StatusCode::FORBIDDEN, "not in that groove".into()));
+        };
+        validate_control(action, position_ms)?;
+        self.touch(caller_id, now);
+        self.controls.retain(|c| now - c.at < CONTROL_TTL_MS);
+        self.controls.push_back(Control {
+            action: action.to_string(),
+            position_ms: if action == "seek" { position_ms } else { None },
+            by: who.name,
+            at: now,
+        });
+        while self.controls.len() > CONTROLS_CAP {
+            self.controls.pop_front();
+        }
+        Ok(self.controls.len())
+    }
+
+    /// Hand the host every press still worth acting on, oldest first, and
+    /// clear them all - the stale ones included, since a pause from twenty
+    /// seconds ago is not what anybody wants now. Exactly once, on whichever
+    /// of the host's reads got here first.
+    fn drain_controls(&mut self, now: i64) -> Vec<serde_json::Value> {
+        std::mem::take(&mut self.controls)
+            .into_iter()
+            .filter(|c| now - c.at < CONTROL_TTL_MS)
+            .map(|c| c.to_json())
+            .collect()
+    }
+
+    /// How many presses are waiting for the host, as the room shows it: a
+    /// member reads this to keep "sent" up until the host's next beat takes
+    /// theirs. Stale ones are not waiting, they are gone.
+    fn controls_waiting(&self, now: i64) -> usize {
+        self.controls.iter().filter(|c| now - c.at < CONTROL_TTL_MS).count()
+    }
+
     /// A member's poll. Their heartbeat, and - for a host whose clock has gone
-    /// quiet - the room's asks, so a paused player still takes them.
-    fn poll(&mut self, caller_id: i64, now: i64) -> Vec<i64> {
+    /// quiet - the room's asks and presses, so a paused player still takes
+    /// them.
+    fn poll(&mut self, caller_id: i64, now: i64) -> Polled {
         self.touch(caller_id, now);
         if self.host_id == caller_id && self.clock_quiet(now) {
-            self.drain()
+            Polled { additions: self.drain(), commands: self.drain_controls(now) }
         } else {
-            Vec::new()
+            Polled::default()
         }
     }
 
@@ -242,7 +335,7 @@ impl Jam {
         // while the clock device reports nothing of the sort.
         let other_device = !self.clock_device.is_empty() && self.clock_device != body.device_id;
         if other_device && now - self.clock_at < CLOCK_HANDOVER_MS && !(body.playing && !self.playing) {
-            return json!({ "ok": true, "additions": [], "clock": false });
+            return json!({ "ok": true, "additions": [], "commands": [], "clock": false });
         }
         self.clock_device = body.device_id;
         self.clock_at = now;
@@ -255,7 +348,9 @@ impl Jam {
             self.queue = queue;
         }
         self.updated_at = now;
-        json!({ "ok": true, "additions": self.drain(), "clock": true })
+        // The presses ride the same beat as the asks: this device is the
+        // deck they were meant for.
+        json!({ "ok": true, "additions": self.drain(), "commands": self.drain_controls(now), "clock": true })
     }
 
     fn note(&mut self, kind: &'static str, who: &str) {
@@ -323,6 +418,10 @@ impl Jam {
             "pending": self.additions.iter().map(|a| json!({
                 "trackId": a.track_id, "by": a.by, "at": a.at,
             })).collect::<Vec<_>>(),
+            // Presses the host's deck has not taken yet. A count, not the
+            // presses: a member wants to know their "pause" is still on its
+            // way, not to replay the room's.
+            "controls": self.controls_waiting(now),
             "hostSeenAt": self.host_seen_at(),
             "updatedAt": self.updated_at,
             "hostQuiet": now - self.updated_at > HOST_QUIET_MS,
@@ -409,6 +508,19 @@ impl JamState {
     }
 }
 
+/// The transport the room understands, and nothing else. A seek says where
+/// to; the rest carry nothing. `toggle` is let through as pressed - only the
+/// host's deck knows whether it is playing, and a member's guess would be
+/// stale by the time it arrived.
+fn validate_control(action: &str, position_ms: Option<i64>) -> Result<(), ApiError> {
+    match action {
+        "play" | "pause" | "toggle" | "next" | "prev" => Ok(()),
+        "seek" if position_ms.is_some() => Ok(()),
+        "seek" => Err((StatusCode::BAD_REQUEST, "a seek needs positionMs".into())),
+        _ => Err((StatusCode::BAD_REQUEST, "unknown action".into())),
+    }
+}
+
 /// A short, sayable id from an unambiguous alphabet - a jam gets shared out
 /// loud. Random, and never one already live: the id is also the invitation,
 /// so it must be neither guessable nor a door into somebody else's room.
@@ -448,6 +560,7 @@ pub async fn create(State(state): State<Arc<AppState>>, headers: HeaderMap) -> A
         queue: Vec::new(),
         additions: Vec::new(),
         added_by: HashMap::new(),
+        controls: VecDeque::new(),
         updated_at: now,
         clock_device: String::new(),
         clock_at: 0,
@@ -464,9 +577,9 @@ pub async fn create(State(state): State<Arc<AppState>>, headers: HeaderMap) -> A
 /// hosting. Only friends': a jam is not a public room, and the friend list is
 /// the whole guest list. Reading is also the member's heartbeat, and for a
 /// host whose player has stopped beating it carries the room's pending asks
-/// as `additions`, exactly as the clock post does - whichever of the host's
-/// reads gets there first folds them, and nobody's song is lost to a paused
-/// player.
+/// as `additions` and its transport presses as `commands`, exactly as the
+/// clock post does - whichever of the host's reads gets there first takes
+/// them, and nobody's song (or pause) is lost to a paused player.
 pub async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let friend_ids: Vec<i64> = state.db.friends_of(caller.id).into_iter().map(|(id, _)| id).collect();
@@ -479,7 +592,7 @@ pub async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Api
     // The host's poll takes the room's asks once its clock has gone quiet -
     // a paused player must not leave a friend's song waiting - and `current`
     // is read AFTER, so what the host folds in is no longer shown pending.
-    let additions = jams.values_mut().find(|j| j.has(caller.id)).map(|j| j.poll(caller.id, now)).unwrap_or_default();
+    let polled = jams.values_mut().find(|j| j.has(caller.id)).map(|j| j.poll(caller.id, now)).unwrap_or_default();
     let mine = jams.values().find(|j| j.has(caller.id)).map(|j| j.to_json());
     let friends: Vec<_> = jams
         .values()
@@ -496,7 +609,13 @@ pub async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Api
             .map(|i| json!({ "from": i.from_name, "kind": i.kind, "at": i.at }))
             .collect()
     };
-    Ok(Json(json!({ "current": mine, "friends": friends, "invites": invites, "additions": additions })))
+    Ok(Json(json!({
+        "current": mine,
+        "friends": friends,
+        "invites": invites,
+        "additions": polled.additions,
+        "commands": polled.commands,
+    })))
 }
 
 /// Resolve a name the client sent - a registry handle or a hub username - to a
@@ -694,6 +813,7 @@ pub async fn accept_invite(
         queue: Vec::new(),
         additions: Vec::new(),
         added_by: HashMap::new(),
+        controls: VecDeque::new(),
         updated_at: now,
         clock_device: String::new(),
         clock_at: 0,
@@ -900,6 +1020,37 @@ pub async fn withdraw_from_queue(
     Ok(Json(out))
 }
 
+#[derive(Deserialize)]
+pub struct ControlBody {
+    pub action: String,
+    #[serde(default, rename = "positionMs")]
+    pub position_ms: Option<i64>,
+}
+
+/// `POST /api/jams/{id}/control {action, positionMs?}` - a member presses the
+/// transport. The room has one player, the host's; a member listening on the
+/// host's speaker has no deck of their own to press, so the press travels
+/// here and the host's client takes it on its next beat (or its next poll,
+/// once the beat has gone quiet). Anyone in the room may, the host included -
+/// its client applies its own presses directly and need not post. Answers
+/// with how many presses are waiting, so the presser's screen can say "sent".
+pub async fn control(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(body): Json<ControlBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let id = id.trim().to_lowercase();
+    let mut jams = state.jams.lock();
+    state.jams.sweep(&mut jams);
+    let Some(jam) = jams.get_mut(&id) else {
+        return Err((StatusCode::NOT_FOUND, "no such groove".into()));
+    };
+    let queued = jam.command(caller.id, body.action.trim(), body.position_ms, now_ms())?;
+    Ok(Json(json!({ "ok": true, "queued": queued })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -925,6 +1076,7 @@ mod tests {
             queue: vec![100],
             additions: Vec::new(),
             added_by: HashMap::new(),
+            controls: VecDeque::new(),
             updated_at: 0,
             clock_device: String::new(),
             clock_at: 0,
@@ -1019,14 +1171,14 @@ mod tests {
         jam.ask(&person(3, "kayla"), 300, 2_000).unwrap();
 
         // A guest's poll hands nothing over: the asks are the host's to fold.
-        assert!(jam.poll(2, 3_000).is_empty());
+        assert!(jam.poll(2, 3_000).additions.is_empty());
         assert_eq!(jam.additions.len(), 2);
 
         // The host's player has never beaten: its poll takes them, in order.
-        assert_eq!(jam.poll(1, 4_000), vec![200, 300]);
+        assert_eq!(jam.poll(1, 4_000).additions, vec![200, 300]);
         assert!(jam.to_json()["pending"].as_array().unwrap().is_empty());
         // Once only.
-        assert!(jam.poll(1, 5_000).is_empty());
+        assert!(jam.poll(1, 5_000).additions.is_empty());
         // And a beat after a drained poll has nothing to hand over either.
         let out = jam.beat(clock(true, Some(vec![100, 200, 300])), 6_000);
         assert_eq!(out["additions"], json!([]));
@@ -1041,7 +1193,7 @@ mod tests {
         let mut jam = room();
         jam.beat(clock(true, None), 10_000);
         jam.ask(&person(2, "ana"), 200, 11_000).unwrap();
-        assert!(jam.poll(1, 12_000).is_empty());
+        assert!(jam.poll(1, 12_000).additions.is_empty());
         assert_eq!(jam.additions.len(), 1);
         let out = jam.beat(clock(true, None), 13_000);
         assert_eq!(out["additions"], json!([200]));
@@ -1050,8 +1202,8 @@ mod tests {
         // The beat stops (paused, backgrounded): after the handover window the
         // poll takes over so the song is not left waiting.
         jam.ask(&person(2, "ana"), 400, 14_000).unwrap();
-        assert!(jam.poll(1, 20_000).is_empty());
-        assert_eq!(jam.poll(1, 13_000 + CLOCK_HANDOVER_MS), vec![400]);
+        assert!(jam.poll(1, 20_000).additions.is_empty());
+        assert_eq!(jam.poll(1, 13_000 + CLOCK_HANDOVER_MS).additions, vec![400]);
     }
 
     #[test]
@@ -1064,5 +1216,131 @@ mod tests {
         let err = jam.ask(&ana, 5_000, 99).unwrap_err();
         assert_eq!(err.0, StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(err.1, "the groove's queue is full for now");
+    }
+
+    #[test]
+    fn a_members_press_waits_and_the_hosts_beat_takes_them_oldest_first() {
+        let mut jam = room();
+        // A play is a play; a seek carries where to.
+        assert_eq!(jam.command(2, "pause", None, 1_000).unwrap(), 1);
+        assert_eq!(jam.command(3, "seek", Some(42_000), 2_000).unwrap(), 2);
+        assert_eq!(jam.command(2, "toggle", Some(7), 3_000).unwrap(), 3);
+        // A press is the presser's heartbeat too.
+        assert_eq!(jam.member(2).unwrap().seen_at, 3_000);
+        assert_eq!(jam.to_json()["controls"], json!(0), "stale by the wall clock: tests press in the past");
+
+        let out = jam.beat(clock(true, None), 4_000);
+        assert_eq!(out["clock"], json!(true));
+        assert_eq!(
+            out["commands"],
+            json!([
+                { "action": "pause", "by": "ana", "at": 1_000 },
+                { "action": "seek", "positionMs": 42_000, "by": "kayla", "at": 2_000 },
+                // A toggle carries no position, whatever was sent with it.
+                { "action": "toggle", "by": "ana", "at": 3_000 },
+            ])
+        );
+        assert!(jam.controls.is_empty());
+        // A second beat has nothing to hand over.
+        assert_eq!(jam.beat(clock(true, None), 5_000)["commands"], json!([]));
+    }
+
+    #[test]
+    fn controls_counts_what_is_waiting_now() {
+        let mut jam = room();
+        let now = now_ms();
+        jam.command(2, "next", None, now).unwrap();
+        jam.command(3, "prev", None, now).unwrap();
+        assert_eq!(jam.to_json()["controls"], json!(2));
+        jam.beat(clock(true, None), now);
+        assert_eq!(jam.to_json()["controls"], json!(0));
+    }
+
+    #[test]
+    fn a_stranger_cannot_press_the_rooms_transport() {
+        let mut jam = room();
+        let err = jam.command(9, "pause", None, 1_000).unwrap_err();
+        assert_eq!(err.0, StatusCode::FORBIDDEN);
+        assert_eq!(err.1, "not in that groove");
+        assert!(jam.controls.is_empty());
+        // The host may, like anyone in the room.
+        assert_eq!(jam.command(1, "play", None, 2_000).unwrap(), 1);
+    }
+
+    #[test]
+    fn a_press_the_host_never_took_in_time_is_dropped_not_delivered() {
+        let mut jam = room();
+        jam.command(2, "pause", None, 1_000).unwrap();
+        // Just inside the window it still arrives...
+        let mut fresh = room();
+        fresh.command(2, "pause", None, 1_000).unwrap();
+        assert_eq!(fresh.beat(clock(true, None), 1_000 + CONTROL_TTL_MS - 1)["commands"].as_array().unwrap().len(), 1);
+        // ...at the window it is gone, and gone for good.
+        assert_eq!(jam.beat(clock(true, None), 1_000 + CONTROL_TTL_MS)["commands"], json!([]));
+        assert!(jam.controls.is_empty());
+
+        // The host's quiet-clock poll drops it the same way.
+        let mut quiet = room();
+        quiet.command(2, "next", None, 1_000).unwrap();
+        let polled = quiet.poll(1, 1_000 + CONTROL_TTL_MS);
+        assert_eq!(polled, Polled::default());
+        assert!(quiet.controls.is_empty());
+    }
+
+    #[test]
+    fn the_hosts_quiet_poll_takes_the_presses_exactly_once() {
+        let mut jam = room();
+        jam.command(2, "next", None, 1_000).unwrap();
+        jam.ask(&person(3, "kayla"), 300, 1_500).unwrap();
+        // A guest's poll hands nothing over.
+        assert_eq!(jam.poll(2, 2_000), Polled::default());
+        assert_eq!(jam.controls.len(), 1);
+        // The clock has never beaten: the host's poll takes asks and presses.
+        let polled = jam.poll(1, 3_000);
+        assert_eq!(polled.additions, vec![300]);
+        assert_eq!(polled.commands, vec![json!({ "action": "next", "by": "ana", "at": 1_000 })]);
+        assert_eq!(jam.poll(1, 4_000), Polled::default());
+
+        // While the clock beats, the poll leaves them for the beat.
+        jam.beat(clock(true, None), 10_000);
+        jam.command(2, "pause", None, 11_000).unwrap();
+        assert_eq!(jam.poll(1, 12_000), Polled::default());
+        assert_eq!(jam.controls.len(), 1);
+        assert_eq!(jam.beat(clock(true, None), 13_000)["commands"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_twenty_first_press_lets_the_oldest_go() {
+        let mut jam = room();
+        for i in 0..CONTROLS_CAP as i64 {
+            assert_eq!(jam.command(2, "next", None, 1_000 + i).unwrap(), i as usize + 1);
+        }
+        assert_eq!(jam.command(3, "pause", None, 2_000).unwrap(), CONTROLS_CAP);
+        assert_eq!(jam.controls.len(), CONTROLS_CAP);
+        assert_eq!(jam.controls.front().unwrap().at, 1_001, "the first press is gone");
+        assert_eq!(jam.controls.back().unwrap().action, "pause");
+        let out = jam.beat(clock(true, None), 2_500);
+        let cmds = out["commands"].as_array().unwrap();
+        assert_eq!(cmds.len(), CONTROLS_CAP);
+        assert_eq!(cmds[0]["at"], json!(1_001));
+        assert_eq!(cmds[CONTROLS_CAP - 1]["action"], json!("pause"));
+    }
+
+    #[test]
+    fn a_seek_without_a_position_and_an_unknown_action_are_refused() {
+        let mut jam = room();
+        let err = jam.command(2, "seek", None, 1_000).unwrap_err();
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert_eq!(err.1, "a seek needs positionMs");
+        let err = jam.command(2, "rewind", None, 1_000).unwrap_err();
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert_eq!(err.1, "unknown action");
+        assert!(jam.controls.is_empty());
+        // The validator on its own, for the record.
+        assert!(validate_control("seek", Some(0)).is_ok());
+        assert!(validate_control("", None).is_err());
+        for a in ["play", "pause", "toggle", "next", "prev"] {
+            assert!(validate_control(a, None).is_ok(), "{a}");
+        }
     }
 }
