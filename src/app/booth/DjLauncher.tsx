@@ -73,34 +73,11 @@ export function DjLauncher({
   const busy = busySeed !== null;
   // The mic's state lives up here with the other hooks - the early return
   // below fires while the library is still loading, and a hook declared after
-  // it would change the hook order the moment tracks arrive.
-
-  // The DJ reads a server library and a listening history; without either there
-  // is nothing for it to spin.
-  if (!session || tracks.length === 0) return null;
-
-  const start = async (seed = '') => {
-    setBusySeed(seed);
-    setToast(null);
-    try {
-      // Auditions ride along: a Charts set may deal the collector's
-      // pre-downloaded hits, which live outside `tracks` on purpose.
-      const { queue, ai } = await startDjRun(session, [...tracks, ...forYou], seed);
-      setAiSet(ai);
-      const opener = queue[0];
-      if (!opener) {
-        setToast('The DJ came up empty. Play a few things first so it learns your taste.');
-        return;
-      }
-      // The run is already published; the bridge toasts the opener's line and
-      // speaks its beats the moment this lands as the playing track.
-      onPlay(opener, queue);
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : 'The DJ could not start.');
-    } finally {
-      setBusySeed(null);
-    }
-  };
+  // it would change the hook order the moment tracks arrive. It said that
+  // before the hook actually moved: `useTalkToDj` sat under the bail, so the
+  // render in which a library arrived called one more hook than the one
+  // before it and React tore the app down. `useTalkToDj` takes a null session
+  // by design and guards every path with it, so asking early costs nothing.
 
   /*
    * THE LAST OPTION IN THE ROW: your own sentence.
@@ -136,6 +113,42 @@ export function DjLauncher({
     },
     (message) => setToast(message),
   );
+
+  // The DJ reads a server library and a listening history; without either there
+  // is nothing for it to spin.
+  if (!session || tracks.length === 0) return null;
+
+  // A function DECLARATION, not a const arrow, and deliberately: the
+  // recorder's callback above (useTalkToDj) closes over `start` and can fire
+  // on a render that bailed at the guard, where a `const` would still sit in
+  // its temporal dead zone and throw. A declaration hoists.
+  async function start(seed = '') {
+    // Hoisting cost the guard's narrowing, so the guard is restated here -
+    // and it is not ceremony: this is exactly the render where the recorder's
+    // callback can still reach `start` after the session has gone.
+    if (!session) return;
+    setBusySeed(seed);
+    setToast(null);
+    try {
+      // Auditions ride along: a Charts set may deal the collector's
+      // pre-downloaded hits, which live outside `tracks` on purpose.
+      const { queue, ai } = await startDjRun(session, [...tracks, ...forYou], seed);
+      setAiSet(ai);
+      const opener = queue[0];
+      if (!opener) {
+        setToast('The DJ came up empty. Play a few things first so it learns your taste.');
+        return;
+      }
+      // The run is already published; the bridge toasts the opener's line and
+      // speaks its beats the moment this lands as the playing track.
+      onPlay(opener, queue);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'The DJ could not start.');
+    } finally {
+      setBusySeed(null);
+    }
+  }
+
 
   // The Booth's face: one hero that IS the brief, and a row of moods that
   // steer it - every chip a whole request, no field to fill first.

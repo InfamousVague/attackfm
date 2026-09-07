@@ -182,7 +182,7 @@ export async function sweepCache(
   // it is ours. Reconciling here is what survives a restore or a wipe.
   const onDisk = await offlineEntries();
   const diskKeys = new Set(onDisk.map((e) => e.key));
-  let ledger = readLedger();
+  const ledger = readLedger();
   for (const key of Object.keys(ledger)) {
     if (!diskKeys.has(key)) delete ledger[key];
   }

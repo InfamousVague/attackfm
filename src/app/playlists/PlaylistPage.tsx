@@ -366,8 +366,6 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     // eslint-disable-next-line react-hooks/exhaustive-deps -- memberKey stands in for the fresh-every-render playlist object
   }, [memberKey, suggested, byPath]);
 
-  if (!playlist) return null;
-
   const playAll = () => {
     notePlaylistPlayed(id);
     const first = listTracks[0];
@@ -391,15 +389,15 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     event.preventDefault();
     if (renaming === null) return;
     const next = renaming.trim();
-    if (next) rename(playlist.id, next);
+    if (next && playlist) rename(playlist.id, next);
     setRenaming(null);
   };
 
   // What this listener may do here. Undefined role means a local list or a
   // server from before sharing - yours, either way. An editor adds and
   // removes songs; the running order and the decoration stay the owner's.
-  const isOwner = !playlist.role || playlist.role === 'owner';
-  const canEdit = isOwner || playlist.role === 'editor';
+  const isOwner = !playlist?.role || playlist.role === 'owner';
+  const canEdit = isOwner || playlist?.role === 'editor';
 
   /*
    * Songs filed to acquire that are not here yet - rows of this same table
@@ -453,6 +451,11 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                 onClick={(e) => {
                   // Or the row plays the song it is removing.
                   e.stopPropagation();
+                  // A row only exists on a page that has a playlist; the check
+                  // is here because the bail below now sits under the hooks,
+                  // not over them, so the closure has to say what the render
+                  // already knows.
+                  if (!playlist) return;
                   // The whole order, captured before the cut: undo restores
                   // through reorder, so the song lands back in ITS seat rather
                   // than at the end like a re-add would put it. The order is
@@ -477,8 +480,22 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
         : undefined,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the mutators are stable from the store
-    [canEdit, isOwner, playlist.id, playlist.name, playlist.paths],
+    [canEdit, isOwner, playlist?.id, playlist?.name, playlist?.paths],
   );
+
+  /*
+   * A list that is not there - deleted from another device, or dropped by a
+   * sync delta while it was open. Step back; the door above heard `onGone`.
+   *
+   * This bail sits UNDER every hook, which is the whole point. Line 243 of
+   * this file already says "Both hooks sit above the early return, as hooks
+   * must" - and then two later memos slipped below it anyway, so deleting the
+   * open playlist called two fewer hooks on the next render and React tore
+   * the app down. Everything between here and the bail's old seat is empty-
+   * safe: the handlers are closures nobody calls on a null render, and the
+   * two memos build from `arriving` and the hoisted id/name/paths.
+   */
+  if (!playlist) return null;
 
   return (
     <div className="homePage libraryPage playlistPage" ref={pageRef}>

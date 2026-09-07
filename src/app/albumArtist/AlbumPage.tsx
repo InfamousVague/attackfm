@@ -168,9 +168,6 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the transition, not on onGone changing
   }, [list.length, tracks.length]);
 
-  // Still arriving: hold the page rather than flash an empty one on the way.
-  if (list.length === 0) return null;
-
   const credit = albumCredit(list);
   // The server's `owned` is a snapshot from when the reply was built; the
   // local check is what makes a song stop being offered the moment it
@@ -366,6 +363,23 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
     }),
     [credit],
   );
+
+  /*
+   * Still arriving: hold the page rather than flash an empty one on the way.
+   *
+   * This sits HERE, under the last hook, and not up beside the comment that
+   * declares the rule. It used to sit above the three memos below it, which
+   * is the same mistake this file's own header warns about: the empty first
+   * render is the EXPECTED case here, so the render in which the tracks land
+   * would call three more hooks than the one before it and React would tear
+   * the app down with "Rendered more hooks than during the previous render".
+   *
+   * Everything between the bail's old seat and this one is derivation over
+   * `list`, and all of it is empty-safe - `albumCredit([])` answers "Various
+   * artists", the reduces start at zero, and the memos build empty lists.
+   * They simply run one extra time, on the render that returns nothing.
+   */
+  if (list.length === 0) return null;
 
   const playAll = () => onPlay(list[0]!, list);
   const shuffleAll = () => {

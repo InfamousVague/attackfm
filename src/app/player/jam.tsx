@@ -10,7 +10,7 @@ import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { ServerError } from '../api/http.ts';
 import { syncRegistryFriendsToHub } from '../profile/friendMirror.ts';
 import { sayNames } from '../nav/friendPickerDoor.ts';
-import { trackIdFromPath } from '../server.ts';
+import { pushJamState, trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 import {
   acceptJamInvite as acceptJamInviteApi,
@@ -874,7 +874,10 @@ export function JamProvider({ children }: { children: ReactNode }) {
       const carriedAdds = polledAdditions.current.splice(0);
       const carriedNext = polledNext.current.splice(0);
       try {
-        const { pushJamState } = await import('../server.ts');
+        // Statically imported, like the rest of this file's use of that
+        // module: the dynamic form here bought nothing (`trackIdFromPath`
+        // above already pulls `server.ts` into the entry chunk) and cost a
+        // Rollup warning on every build, which is how a real one hides.
         const reply = await pushJamState(session, jam.id, state);
         return {
           additions: [...carriedAdds, ...reply.additions],

@@ -166,6 +166,7 @@ const WORD_WAYS = ['scatter', 'typewriter', 'poster', 'stack'] as const;
 type WordWay = (typeof WORD_WAYS)[number];
 
 /** Trailing and leading punctuation, shed so a word floats as a word. */
+// eslint-disable-next-line no-useless-escape -- the `\[` mirrors the `\]` opposite it, which a character class genuinely does need; unescaping only one half of a matched pair reads as a typo
 const TRIM = /^["'“”‘’(\[]+|["'“”‘’)\],.!?;:]+$/g;
 
 /** A line's text as the words the ways render, trimmed and capped. */

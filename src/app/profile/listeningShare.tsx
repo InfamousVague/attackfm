@@ -6,6 +6,7 @@ import { useLibrary } from '../library/library.tsx';
 import { usePlaylists } from '../playlists/playlists.tsx';
 import { tracksOfHub } from '../server.ts';
 import { fold } from '../core/fold.ts';
+import { setProfileSharing } from '../api/profile.ts';
 import { fetchStatsSummary, type StatsSummary } from './stats.ts';
 import { onNowPlayingBeat, readNowPlayingBeat } from './presence.ts';
 
@@ -89,9 +90,11 @@ export function ListeningShareBridge() {
      swallowed like any other miss). */
   useEffect(() => {
     if (!server) return;
-    void import('../api/profile.ts')
-      .then((m) => m.setProfileSharing(server, sharing))
-      .catch(() => {});
+    // Statically imported: `FriendProfilePage` already pulls this module in
+    // statically, so the dynamic form here deferred nothing and only cost a
+    // Rollup warning on every build - and a build that always warns is a
+    // build whose warnings nobody reads.
+    void setProfileSharing(server, sharing).catch(() => {});
   }, [sharing, server]);
 
   // The registry's copy of the switch. Off shuts the door on the published

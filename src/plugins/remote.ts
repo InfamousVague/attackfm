@@ -464,6 +464,9 @@ function writeInstalled(all: InstalledRemotePlugin[]): void {
     // better to say so than to pretend the install stuck.
     throw new Error(
       `could not persist the plugin: ${err instanceof Error ? err.message : 'storage refused it'}`,
+      // The quota error itself, kept on the cause so a console reading this
+      // still reaches the original rather than only this sentence about it.
+      { cause: err },
     );
   }
 }

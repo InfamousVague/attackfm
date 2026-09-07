@@ -1269,6 +1269,75 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
    *  sheet so closing the sheet does not take the recap with it. */
   const [recap, setRecap] = useState<{ track: Track; ms: number } | null>(null);
 
+  // The hero's figures and its one verb: how much shelf there is, and the
+  // book most recently touched - the one "pick up where you left off" means.
+  const totalSeconds = useMemo(
+    () => shelf.reduce((n, b) => n + b.tracks.reduce((m, t) => m + (t.duration ?? 0), 0), 0),
+    [shelf],
+  );
+  /** "Ch 2 of 50" - the book's OWN number for the chapter, the same one the
+   *  transport and the chapter list show. Front matter claims no number, so it
+   *  is placed rather than numbered. */
+  const chapterFigure = useCallback((book: ShelfBook, index: number) => {
+    const n = chapterNumbers(book.chapters.map((c) => c.title ?? ''))[index] ?? null;
+    if (n !== null) return `Ch ${n} of ${book.chapters.length}`;
+    // Front matter is placed rather than numbered - and the opening section
+    // says what it is, rather than which seat it happens to sit in.
+    const named = frontMatterTitle(book.chapters[index]?.title ?? '', index);
+    return index === 0 && named ? named : `${index + 1} of ${book.chapters.length}`;
+  }, []);
+
+  /**
+   * Every book with a place kept, most recently read first.
+   *
+   * A bookmark per book has always been what the ledger holds - a mark is
+   * written against the SECTION being read, so two books never shared a
+   * position. What was missing was anywhere to see that: the hero offers one
+   * verb, "Resume", pointing at the single most recent book, and the shelves
+   * below are sorted by title, so a second and third book in progress were
+   * scattered among everything else and reading more than one at a time felt
+   * like something the app did not do.
+   *
+   * This is that shelf. It is derived, not stored - `standing()` already knows
+   * where each book stands, so nothing new is written and a book leaves the
+   * shelf by being finished, not by being tidied away.
+   */
+  const reading = useMemo(() => {
+    const touched = (b: ShelfBook) => {
+      let at = 0;
+      for (const t of b.tracks) {
+        const id = serverId(t.path);
+        const mark = id != null ? marks.get(id) : undefined;
+        if (mark && mark.updatedAt > at) at = mark.updatedAt;
+      }
+      return at;
+    };
+    return shelf
+      .filter((b) => standing(b).started)
+      .map((b) => ({ book: b, at: touched(b) }))
+      .sort((x, y) => y.at - x.at)
+      .map((r) => r.book);
+  }, [shelf, marks, standing]);
+
+  const resumeBook = useMemo(() => {
+    let best: { book: ShelfBook; at: number } | null = null;
+    for (const b of shelf) {
+      for (const t of b.tracks) {
+        const id = serverId(t.path);
+        const mark = id != null ? marks.get(id) : undefined;
+        if (mark && (!best || mark.updatedAt > best.at)) best = { book: b, at: mark.updatedAt };
+      }
+    }
+    return best?.book ?? null;
+  }, [shelf, marks]);
+
+  /* An empty shelf is a whole page of its own, and every hook this component
+     calls sits ABOVE it - the four immediately overhead used to sit below.
+     An empty shelf is the ordinary first render (the books arrive from the
+     hub after the mount), so the render in which the first book landed called
+     four more hooks than the one before it and React tore the app down with
+     "Rendered more hooks than during the previous render". They read from
+     `shelf` and answer 0/empty/null over an empty one. */
   if (shelf.length === 0) {
     return (
       <div ref={pageRef} className="discoverPage booksPage">
@@ -1371,68 +1440,6 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
       </BookMenu>
     );
   };
-
-  // The hero's figures and its one verb: how much shelf there is, and the
-  // book most recently touched - the one "pick up where you left off" means.
-  const totalSeconds = useMemo(
-    () => shelf.reduce((n, b) => n + b.tracks.reduce((m, t) => m + (t.duration ?? 0), 0), 0),
-    [shelf],
-  );
-  /** "Ch 2 of 50" - the book's OWN number for the chapter, the same one the
-   *  transport and the chapter list show. Front matter claims no number, so it
-   *  is placed rather than numbered. */
-  const chapterFigure = useCallback((book: ShelfBook, index: number) => {
-    const n = chapterNumbers(book.chapters.map((c) => c.title ?? ''))[index] ?? null;
-    if (n !== null) return `Ch ${n} of ${book.chapters.length}`;
-    // Front matter is placed rather than numbered - and the opening section
-    // says what it is, rather than which seat it happens to sit in.
-    const named = frontMatterTitle(book.chapters[index]?.title ?? '', index);
-    return index === 0 && named ? named : `${index + 1} of ${book.chapters.length}`;
-  }, []);
-
-  /**
-   * Every book with a place kept, most recently read first.
-   *
-   * A bookmark per book has always been what the ledger holds - a mark is
-   * written against the SECTION being read, so two books never shared a
-   * position. What was missing was anywhere to see that: the hero offers one
-   * verb, "Resume", pointing at the single most recent book, and the shelves
-   * below are sorted by title, so a second and third book in progress were
-   * scattered among everything else and reading more than one at a time felt
-   * like something the app did not do.
-   *
-   * This is that shelf. It is derived, not stored - `standing()` already knows
-   * where each book stands, so nothing new is written and a book leaves the
-   * shelf by being finished, not by being tidied away.
-   */
-  const reading = useMemo(() => {
-    const touched = (b: ShelfBook) => {
-      let at = 0;
-      for (const t of b.tracks) {
-        const id = serverId(t.path);
-        const mark = id != null ? marks.get(id) : undefined;
-        if (mark && mark.updatedAt > at) at = mark.updatedAt;
-      }
-      return at;
-    };
-    return shelf
-      .filter((b) => standing(b).started)
-      .map((b) => ({ book: b, at: touched(b) }))
-      .sort((x, y) => y.at - x.at)
-      .map((r) => r.book);
-  }, [shelf, marks, standing]);
-
-  const resumeBook = useMemo(() => {
-    let best: { book: ShelfBook; at: number } | null = null;
-    for (const b of shelf) {
-      for (const t of b.tracks) {
-        const id = serverId(t.path);
-        const mark = id != null ? marks.get(id) : undefined;
-        if (mark && (!best || mark.updatedAt > best.at)) best = { book: b, at: mark.updatedAt };
-      }
-    }
-    return best?.book ?? null;
-  }, [shelf, marks]);
 
   return (
     <div ref={pageRef} className="discoverPage booksPage">

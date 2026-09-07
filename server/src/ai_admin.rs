@@ -430,7 +430,7 @@ pub async fn save_settings(
 ) -> Reply {
     require_admin(&state.db, &headers)?;
 
-    let mut apply = |name: &str, value: Option<String>| {
+    let apply = |name: &str, value: Option<String>| {
         let key = format!("{}{}", crate::ai::PREF_PREFIX, name);
         match value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
             Some(v) => {
