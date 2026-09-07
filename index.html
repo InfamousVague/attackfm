@@ -17,6 +17,32 @@
       html { background: #0f0f10; }
       html[data-theme='light'] { background: #ffffff; }
     </style>
+    <!--
+      Which way the page runs, before anything is drawn.
+
+      LocaleShell stamps `dir` and `lang` too, and does it during its first
+      render - which is early, but it is still after this document has been
+      parsed and after several hundred KB of app.js has been evaluated. On a
+      phone that is long enough to see: the entire app laid out left-to-right,
+      then flipping. So the stored choice is read HERE, in the same breath as
+      the background colour above and for the same reason.
+
+      This duplicates two things from src/app/i18n/index.ts - the storage key
+      and the fact that Arabic is the only RTL language in `locales`. It has to:
+      nothing has loaded yet. Keep them in step; if a second RTL language is
+      ever added to the kit's list, this line is the other place it goes.
+    -->
+    <script>
+      try {
+        var afmLocale = localStorage.getItem('attackfm-locale');
+        if (afmLocale) {
+          document.documentElement.lang = afmLocale;
+          document.documentElement.dir = afmLocale === 'ar' ? 'rtl' : 'ltr';
+        }
+      } catch (e) {
+        /* Private mode, or storage off. The shell settles it a moment later. */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

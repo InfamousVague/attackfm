@@ -179,10 +179,12 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 /* Unity, upright against a horizontal travel - same half-thumb correction as
-   the vertical tick, worked from the left. */
+   the vertical tick, worked from the start of the travel. Logical, not
+   `left`: the kit fills its slider with inline-size, so in RTL the track
+   grows from the right and a tick pinned to the left would mark 33%. */
 .volRowUnityTick {
   position: absolute;
-  left: calc(var(--vol-thumb) / 2 + (100% - var(--vol-thumb)) * 0.6667);
+  inset-inline-start: calc(var(--vol-thumb) / 2 + (100% - var(--vol-thumb)) * 0.6667);
   top: 50%;
   block-size: 1.25rem;
   inline-size: var(--glacier-hairline);

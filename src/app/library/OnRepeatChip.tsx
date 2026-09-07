@@ -6,10 +6,7 @@ import { readFeedCache } from './feedCache.ts';
 import { trackIdFromPath, tracksOfHub, type HomeFeed } from '../server.ts';
 import { LibChipMosaic, LibChipStat } from './LibChipFace.tsx';
 import type { SongCollection } from './SongPage.tsx';
-
-function songCount(n: number): string {
-  return `${n} ${n === 1 ? 'song' : 'songs'}`;
-}
+import { useSongCount, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The songs you keep coming back to, as a door. Green, wearing the repeat
@@ -22,6 +19,8 @@ function songCount(n: number): string {
  * it is the machine's reading of you, which is what Discover is for.
  */
 export function OnRepeatChip({ onOpenSongs }: { onOpenSongs: (view: SongCollection) => void }) {
+  const t = useT();
+  const songCount = useSongCount();
   const { tracks } = useLibrary();
   const { session } = useServerSession();
 
@@ -61,9 +60,9 @@ export function OnRepeatChip({ onOpenSongs }: { onOpenSongs: (view: SongCollecti
       <img className="libChip__art" src={onRepeatChip} alt="" loading="lazy" />
       <LibChipMosaic covers={covers} />
       <LibChipStat value={onRepeatCount === null ? undefined : String(onRepeatCount)} />
-      <span className="libChip__name">On repeat</span>
+      <span className="libChip__name">{t('library.onRepeat')}</span>
       <span className="libChip__count">
-        {onRepeatCount === null ? 'Your most played' : songCount(onRepeatCount)}
+        {onRepeatCount === null ? t('library.yourMostPlayed') : songCount(onRepeatCount)}
       </span>
     </button>
   );

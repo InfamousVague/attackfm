@@ -1,0 +1,70 @@
+{
+  "nav": {
+    "discover": "Discover",
+    "search": "Search",
+    "library": "Library",
+    "profile": "Profile",
+    "booth": "Booth",
+    "downloads": "Downloads",
+    "settings": "Settings",
+    "primary": "Primary",
+    "back": "Back",
+    "forward": "Forward"
+  },
+  "library": {
+    "yourLibrary": "Your library",
+    "music": "Music",
+    "books": "Books",
+    "liked": "Liked",
+    "likedSongs": "Liked songs",
+    "onRepeat": "On repeat",
+    "mostPlayed": "Your most played",
+    "allSongs": "All songs",
+    "recentlyAdded": "Recently added",
+    "playlists": "Playlists",
+    "recent": "Recent",
+    "newPlaylist": "New Playlist",
+    "artists": "Artists",
+    "albums": "Albums",
+    "songCount_one": "{{count}} song",
+    "songCount_other": "{{count}} songs",
+    "librarySection": "Library section",
+    "booksYouLove": "Books you love",
+    "yourMostPlayed": "Your most played",
+    "empty": "No music in your library yet. Sign in to your server or import songs to fill it."
+  },
+  "player": {
+    "play": "Play",
+    "pause": "Pause",
+    "shuffle": "Shuffle",
+    "next": "Next",
+    "previous": "Previous",
+    "seek": "Seek",
+    "addAll": "Add all",
+    "lyrics": "Lyrics",
+    "queue": "Queue",
+    "startDjSet": "Start a DJ set",
+    "playingOn": "Playing on {{device}}",
+    "anotherDevice": "another device"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "done": "Done",
+    "remove": "Remove",
+    "undo": "Undo",
+    "reorder": "Reorder",
+    "nothingHere": "Nothing here yet."
+  },
+  "notices": {
+    "sharedPlaylist": "{{actor}} shared a playlist with you",
+    "stoppedSharing": "{{actor}} stopped sharing {{playlist}}",
+    "noLongerYours": "It is no longer among your playlists.",
+    "addedTo": "{{actor}} added to {{playlist}}",
+    "aSong": "A song",
+    "removedFrom": "{{actor}} removed from {{playlist}}",
+    "left": "{{actor}} left {{playlist}}",
+    "noLongerSees": "They no longer see the list.",
+    "addedSongs_one": "{{actor}} added {{count}} song to {{playlist}}",
+    "addedSongs_other": "{{actor}} added {{count}} songs to {{playlist}}"
+  }
+}

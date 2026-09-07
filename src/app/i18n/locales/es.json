@@ -1,0 +1,70 @@
+{
+  "nav": {
+    "discover": "Descubrir",
+    "search": "Buscar",
+    "library": "Biblioteca",
+    "profile": "Perfil",
+    "booth": "Cabina",
+    "downloads": "Descargas",
+    "settings": "Ajustes",
+    "primary": "Principal",
+    "back": "Atrás",
+    "forward": "Adelante"
+  },
+  "library": {
+    "yourLibrary": "Tu biblioteca",
+    "music": "Música",
+    "books": "Libros",
+    "liked": "Me gusta",
+    "likedSongs": "Canciones que te gustan",
+    "onRepeat": "En bucle",
+    "mostPlayed": "Lo más escuchado",
+    "allSongs": "Todas las canciones",
+    "recentlyAdded": "Añadido recientemente",
+    "playlists": "Listas",
+    "recent": "Reciente",
+    "newPlaylist": "Nueva lista",
+    "artists": "Artistas",
+    "albums": "Álbumes",
+    "songCount_one": "{{count}} canción",
+    "songCount_other": "{{count}} canciones",
+    "librarySection": "Sección de la biblioteca",
+    "booksYouLove": "Libros que te encantan",
+    "yourMostPlayed": "Lo que más escuchas",
+    "empty": "Todavía no hay música en tu biblioteca. Inicia sesión en tu servidor o importa canciones para llenarla."
+  },
+  "player": {
+    "play": "Reproducir",
+    "pause": "Pausa",
+    "shuffle": "Aleatorio",
+    "next": "Siguiente",
+    "previous": "Anterior",
+    "seek": "Buscar",
+    "addAll": "Añadir todo",
+    "lyrics": "Letra",
+    "queue": "Cola",
+    "startDjSet": "Empezar sesión de DJ",
+    "playingOn": "Sonando en {{device}}",
+    "anotherDevice": "otro dispositivo"
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "done": "Hecho",
+    "remove": "Quitar",
+    "undo": "Deshacer",
+    "reorder": "Reordenar",
+    "nothingHere": "Aquí no hay nada todavía."
+  },
+  "notices": {
+    "sharedPlaylist": "{{actor}} ha compartido una lista contigo",
+    "stoppedSharing": "{{actor}} dejó de compartir {{playlist}}",
+    "noLongerYours": "Ya no está entre tus listas.",
+    "addedTo": "{{actor}} añadió a {{playlist}}",
+    "aSong": "Una canción",
+    "removedFrom": "{{actor}} quitó de {{playlist}}",
+    "left": "{{actor}} salió de {{playlist}}",
+    "noLongerSees": "Ya no ve la lista.",
+    "addedSongs_one": "{{actor}} añadió {{count}} canción a {{playlist}}",
+    "addedSongs_other": "{{actor}} añadió {{count}} canciones a {{playlist}}"
+  }
+}

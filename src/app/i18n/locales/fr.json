@@ -1,0 +1,70 @@
+{
+  "nav": {
+    "discover": "Découvrir",
+    "search": "Rechercher",
+    "library": "Bibliothèque",
+    "profile": "Profil",
+    "booth": "Cabine",
+    "downloads": "Téléchargements",
+    "settings": "Réglages",
+    "primary": "Principal",
+    "back": "Retour",
+    "forward": "Suivant"
+  },
+  "library": {
+    "yourLibrary": "Votre bibliothèque",
+    "music": "Musique",
+    "books": "Livres",
+    "liked": "Aimés",
+    "likedSongs": "Titres aimés",
+    "onRepeat": "En boucle",
+    "mostPlayed": "Les plus écoutés",
+    "allSongs": "Tous les titres",
+    "recentlyAdded": "Ajouté récemment",
+    "playlists": "Playlists",
+    "recent": "Récent",
+    "newPlaylist": "Nouvelle playlist",
+    "artists": "Artistes",
+    "albums": "Albums",
+    "songCount_one": "{{count}} titre",
+    "songCount_other": "{{count}} titres",
+    "librarySection": "Section de la bibliothèque",
+    "booksYouLove": "Les livres que vous aimez",
+    "yourMostPlayed": "Vos plus écoutés",
+    "empty": "Aucune musique dans votre bibliothèque. Connectez-vous à votre serveur ou importez des titres pour la remplir."
+  },
+  "player": {
+    "play": "Lecture",
+    "pause": "Pause",
+    "shuffle": "Aléatoire",
+    "next": "Suivant",
+    "previous": "Précédent",
+    "seek": "Parcourir",
+    "addAll": "Tout ajouter",
+    "lyrics": "Paroles",
+    "queue": "File d’attente",
+    "startDjSet": "Lancer un set DJ",
+    "playingOn": "Lecture sur {{device}}",
+    "anotherDevice": "un autre appareil"
+  },
+  "common": {
+    "cancel": "Annuler",
+    "done": "Terminé",
+    "remove": "Retirer",
+    "undo": "Annuler",
+    "reorder": "Réorganiser",
+    "nothingHere": "Rien ici pour l’instant."
+  },
+  "notices": {
+    "sharedPlaylist": "{{actor}} a partagé une playlist avec vous",
+    "stoppedSharing": "{{actor}} ne partage plus {{playlist}}",
+    "noLongerYours": "Elle ne fait plus partie de vos playlists.",
+    "addedTo": "{{actor}} a ajouté à {{playlist}}",
+    "aSong": "Un titre",
+    "removedFrom": "{{actor}} a retiré de {{playlist}}",
+    "left": "{{actor}} a quitté {{playlist}}",
+    "noLongerSees": "Cette personne ne voit plus la liste.",
+    "addedSongs_one": "{{actor}} a ajouté {{count}} titre à {{playlist}}",
+    "addedSongs_other": "{{actor}} a ajouté {{count}} titres à {{playlist}}"
+  }
+}

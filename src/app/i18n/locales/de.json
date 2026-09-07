@@ -1,0 +1,70 @@
+{
+  "nav": {
+    "discover": "Entdecken",
+    "search": "Suche",
+    "library": "Bibliothek",
+    "profile": "Profil",
+    "booth": "Studio",
+    "downloads": "Downloads",
+    "settings": "Einstellungen",
+    "primary": "Hauptnavigation",
+    "back": "Zurück",
+    "forward": "Vorwärts"
+  },
+  "library": {
+    "yourLibrary": "Deine Bibliothek",
+    "music": "Musik",
+    "books": "Bücher",
+    "liked": "Gefällt mir",
+    "likedSongs": "Lieblingssongs",
+    "onRepeat": "In Dauerschleife",
+    "mostPlayed": "Am häufigsten gehört",
+    "allSongs": "Alle Songs",
+    "recentlyAdded": "Kürzlich hinzugefügt",
+    "playlists": "Playlists",
+    "recent": "Zuletzt",
+    "newPlaylist": "Neue Playlist",
+    "artists": "Künstler",
+    "albums": "Alben",
+    "songCount_one": "{{count}} Song",
+    "songCount_other": "{{count}} Songs",
+    "librarySection": "Bibliotheksbereich",
+    "booksYouLove": "Bücher, die du liebst",
+    "yourMostPlayed": "Am häufigsten gehört",
+    "empty": "Noch keine Musik in deiner Bibliothek. Melde dich bei deinem Server an oder importiere Songs, um sie zu füllen."
+  },
+  "player": {
+    "play": "Abspielen",
+    "pause": "Pause",
+    "shuffle": "Zufall",
+    "next": "Weiter",
+    "previous": "Zurück",
+    "seek": "Spulen",
+    "addAll": "Alle hinzufügen",
+    "lyrics": "Songtext",
+    "queue": "Warteschlange",
+    "startDjSet": "DJ-Set starten",
+    "playingOn": "Läuft auf {{device}}",
+    "anotherDevice": "einem anderen Gerät"
+  },
+  "common": {
+    "cancel": "Abbrechen",
+    "done": "Fertig",
+    "remove": "Entfernen",
+    "undo": "Rückgängig",
+    "reorder": "Neu ordnen",
+    "nothingHere": "Hier ist noch nichts."
+  },
+  "notices": {
+    "sharedPlaylist": "{{actor}} hat eine Playlist mit dir geteilt",
+    "stoppedSharing": "{{actor}} teilt {{playlist}} nicht mehr",
+    "noLongerYours": "Sie ist nicht mehr unter deinen Playlists.",
+    "addedTo": "{{actor}} hat zu {{playlist}} hinzugefügt",
+    "aSong": "Ein Song",
+    "removedFrom": "{{actor}} hat aus {{playlist}} entfernt",
+    "left": "{{actor}} hat {{playlist}} verlassen",
+    "noLongerSees": "Die Liste ist für sie nicht mehr sichtbar.",
+    "addedSongs_one": "{{actor}} hat {{count}} Song zu {{playlist}} hinzugefügt",
+    "addedSongs_other": "{{actor}} hat {{count}} Songs zu {{playlist}} hinzugefügt"
+  }
+}

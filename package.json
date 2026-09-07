@@ -8,6 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "i18n:scan": "node scripts/i18n-scan.mjs",
+    "i18n:check": "node scripts/i18n-scan.mjs --catalogues",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
@@ -49,13 +51,15 @@
     "@tauri-apps/plugin-haptics": "^2.3.2",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2",
+    "i18next": "^26.4.2",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.23.0",
     "music-metadata": "^11.14.0",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-easy-crop": "^6.2.3"
+    "react-easy-crop": "^6.2.3",
+    "react-i18next": "^17.0.13"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

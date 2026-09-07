@@ -22,6 +22,7 @@ import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { SongTable } from './SongTable.tsx';
 import type { Track } from '../core/tauri.ts';
 import placeholderArt from '../../assets/attack-wave.png';
+import { useSongCount, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The Library tab - the app's home, and ONLY what you saved or made: your
@@ -162,6 +163,8 @@ function MusicHead({
   tracks: Track[];
   onPlay: (track: Track, context?: Track[]) => void;
 }) {
+  const t = useT();
+  const songCount = useSongCount();
   const { session } = useServerSession();
   const clips = useWallClips(session);
   // 640 for the tile you look at, 160 for the wall that is blurred past detail
@@ -188,12 +191,10 @@ function MusicHead({
       </div>
       <div className="playlistHead__body">
         <Text tone="muted" size="xs" className="playlistHead__kicker">
-          Your library
+          {t('library.yourLibrary')}
         </Text>
-        <h2 className="playlistHead__name">Music</h2>
-        <Text tone="muted" size="sm">
-          {tracks.length} {tracks.length === 1 ? 'song' : 'songs'}
-        </Text>
+        <h2 className="playlistHead__name">{t('library.music')}</h2>
+        <Text tone="muted" size="sm">{songCount(tracks.length)}</Text>
         <EdgeScrollRow className="playlistHead__actions">
           <Button
             variant="solid"
@@ -204,7 +205,7 @@ function MusicHead({
             }}
           >
             <Play size={15} fill="currentColor" />
-            Play
+            {t('player.play')}
           </Button>
           <Button
             variant="ghost"
@@ -217,7 +218,7 @@ function MusicHead({
             }}
           >
             <Shuffle size={15} />
-            Shuffle
+            {t('player.shuffle')}
           </Button>
         </EdgeScrollRow>
       </div>
@@ -248,6 +249,7 @@ export function LibraryView({
    *  icon goes with it - there is nothing to queue without one. */
   onOpenDownloads?: () => void;
 }) {
+  const t = useT();
   const { tracks, favoriteTracks, scanning, books, isFavorite } = useLibrary();
   /*
    * The books you have hearted, as a shelf of their own.
@@ -339,11 +341,11 @@ export function LibraryView({
   const toggle = booksPage ? (
     <div className="libraryToggle">
       <SegmentedControl
-        aria-label="Library section"
+        aria-label={t('library.librarySection')}
         fullWidth
         options={[
-          { value: 'music', label: 'Music' },
-          { value: 'books', label: 'Books' },
+          { value: 'music', label: t('library.music') },
+          { value: 'books', label: t('library.books') },
         ]}
         value={active}
         onValueChange={(v) => setSection(v === 'books' ? 'books' : 'music')}
@@ -381,8 +383,8 @@ export function LibraryView({
             <IconButton
               variant="ghost"
               size="sm"
-              aria-label="Downloads"
-              title="Downloads"
+              aria-label={t('nav.downloads')}
+              title={t('nav.downloads')}
               onClick={onOpenDownloads}
             >
               <Download size={18} />
@@ -394,9 +396,9 @@ export function LibraryView({
         <>
           {/* The first-launch skeleton pass: every surface the page will hold,
               at its real size, for a beat - so the library assembles once. */}
-          <ShelfSkeleton title="Playlists" kind="tile" count={8} />
-          <ShelfSkeleton title="Recently added" kind="track" />
-          <ShelfSkeleton title="Liked songs" kind="track" />
+          <ShelfSkeleton title={t('library.playlists')} kind="tile" count={8} />
+          <ShelfSkeleton title={t('library.recentlyAdded')} kind="track" />
+          <ShelfSkeleton title={t('library.likedSongs')} kind="track" />
         </>
       ) : view === 'summary' ? (
         <>
@@ -415,7 +417,7 @@ export function LibraryView({
               hearted. (The curator's mixes, the collector's auditions and the
               new-music shelf used to sit between the two; they are Discover's
               now - this page is what you chose, and nothing the machine did.) */}
-          <Shelf title="Books you love" count={lovedBooks.length}>
+          <Shelf title={t('library.booksYouLove')} count={lovedBooks.length}>
             {lovedBooks.map((book) => (
               <button
                 key={book.key}
@@ -442,19 +444,17 @@ export function LibraryView({
           {recentlyAdded.length === 0 && favoriteTracks.length === 0 && (
             <div className="emptyState emptyState--tall">
               <EmptyArt name="library" />
-              <p className="emptyState__text">
-                No music in your library yet. Sign in to your server or import songs to fill it.
-              </p>
+              <p className="emptyState__text">{t('library.empty')}</p>
             </div>
           )}
 
-          <Shelf title="Recently added" count={recentlyAdded.length}>
+          <Shelf title={t('library.recentlyAdded')} count={recentlyAdded.length}>
             {recentlyAdded.map((t) => (
               <AlbumCard key={t.path} track={t} onOpen={() => onPlay(t, recentlyAdded)} onOpenArtist={onOpenArtist} />
             ))}
           </Shelf>
 
-          <Shelf title="Liked songs" count={favoriteTracks.length}>
+          <Shelf title={t('library.likedSongs')} count={favoriteTracks.length}>
             {favoriteTracks.slice(0, 20).map((t) => (
               <TrackCard key={t.path} track={t} onOpen={() => onPlay(t, favoriteTracks)} onOpenArtist={onOpenArtist} />
             ))}

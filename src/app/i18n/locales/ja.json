@@ -1,0 +1,68 @@
+{
+  "nav": {
+    "discover": "見つける",
+    "search": "検索",
+    "library": "ライブラリ",
+    "profile": "プロフィール",
+    "booth": "ブース",
+    "downloads": "ダウンロード",
+    "settings": "設定",
+    "primary": "メインナビゲーション",
+    "back": "戻る",
+    "forward": "進む"
+  },
+  "library": {
+    "yourLibrary": "ライブラリ",
+    "music": "ミュージック",
+    "books": "ブック",
+    "liked": "お気に入り",
+    "likedSongs": "お気に入りの曲",
+    "onRepeat": "リピート中",
+    "mostPlayed": "よく聴く曲",
+    "allSongs": "すべての曲",
+    "recentlyAdded": "最近追加した項目",
+    "playlists": "プレイリスト",
+    "recent": "最近",
+    "newPlaylist": "新規プレイリスト",
+    "artists": "アーティスト",
+    "albums": "アルバム",
+    "songCount_other": "{{count}} 曲",
+    "librarySection": "ライブラリの区分",
+    "booksYouLove": "お気に入りのブック",
+    "yourMostPlayed": "よく聴く曲",
+    "empty": "ライブラリにはまだ音楽がありません。サーバーにサインインするか、曲をインポートしてください。"
+  },
+  "player": {
+    "play": "再生",
+    "pause": "一時停止",
+    "shuffle": "シャッフル",
+    "next": "次へ",
+    "previous": "前へ",
+    "seek": "シーク",
+    "addAll": "すべて追加",
+    "lyrics": "歌詞",
+    "queue": "再生キュー",
+    "startDjSet": "DJセットを始める",
+    "playingOn": "{{device}} で再生中",
+    "anotherDevice": "別のデバイス"
+  },
+  "common": {
+    "cancel": "キャンセル",
+    "done": "完了",
+    "remove": "削除",
+    "undo": "取り消す",
+    "reorder": "並べ替え",
+    "nothingHere": "まだ何もありません。"
+  },
+  "notices": {
+    "sharedPlaylist": "{{actor}} がプレイリストを共有しました",
+    "stoppedSharing": "{{actor}} が {{playlist}} の共有をやめました",
+    "noLongerYours": "あなたのプレイリストからなくなりました。",
+    "addedTo": "{{actor}} が {{playlist}} に追加しました",
+    "aSong": "1曲",
+    "removedFrom": "{{actor}} が {{playlist}} から削除しました",
+    "left": "{{actor}} が {{playlist}} から退出しました",
+    "noLongerSees": "このリストは相手に表示されなくなりました。",
+    "addedSongs_other": "{{actor}} が {{playlist}} に {{count}} 曲を追加しました"
+  }
+}

@@ -18,6 +18,8 @@ import {
 } from './behaviourPrefs.ts';
 import { askMotionAccess, motionAvailable } from '../player/deviceMotion.ts';
 import { PaneSection, SettingRow } from './kit/settingsKit.tsx';
+import { LOCALES, LOCALE_NAMES } from '../i18n/index.ts';
+import { useAppLocale } from '../i18n/LocaleShell.tsx';
 
 /**
  * The appearance controls: the theme, accent, and spacing pulled from the
@@ -33,6 +35,7 @@ import { PaneSection, SettingRow } from './kit/settingsKit.tsx';
  */
 export function Appearance() {
   const { theme, accent, density, dynamicAccent, scale, update } = useAppearance();
+  const { locale, setLocale } = useAppLocale();
   // Only for the preview's count line, so the sample card says something true.
   const { tracks } = useLibrary();
   // Now Playing's dress and the app's feel, moved in from Playback: the lyric
@@ -66,6 +69,28 @@ export function Appearance() {
 
   return (
     <div className="prefsBody">
+      {/* FIRST, above the theme. Everything below this is a preference about
+          how the app looks; this one decides whether it can be read at all,
+          and somebody who opened Settings because the app is in the wrong
+          language should not have to scroll past six pickers to fix it.
+
+          Each language is written IN that language, so the row you need is
+          the one you can read. */}
+      <PaneSection
+        title="Language"
+        footer="Arabic lays the whole app out right-to-left."
+      >
+        <div className="setk-row">
+          <Select
+            aria-label="Language"
+            fullWidth
+            value={locale}
+            onValueChange={(next) => void setLocale(next as typeof locale)}
+            options={LOCALES.map((code) => ({ value: code, label: LOCALE_NAMES[code] }))}
+          />
+        </div>
+      </PaneSection>
+
       <PaneSection title="Theme">
         <div className="setk-row">
           <ThemeSelector

@@ -10,6 +10,7 @@ import { NavMoreMenu } from './NavMoreMenu.tsx';
 import { openSearchPage } from '../search/SearchEntry.tsx';
 import { useDeveloperMode } from '../settings/developerMode.ts';
 import { NavProfileIcon } from './NavProfileIcon.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The primary navigation, in the shape each platform holds: a vertical icon
@@ -41,6 +42,7 @@ export function PrimaryNav({
   /** Opens the full-screen search. Never a tab - it is an overlay over
    *  whatever you were doing, and it gives that page back when it closes. */
 }) {
+  const t = useT();
   const pages = usePluginPages();
   // Books no longer holds a nav seat: it is a Music/Books toggle at the top of
   // the Library page now. The books plugin still owns the shelf; the Library
@@ -115,7 +117,7 @@ export function PrimaryNav({
       // Discover FIRST, by request: what the machine has for you leads the bar.
       {
         key: 'discover',
-        label: 'Discover',
+        label: t('nav.discover'),
         icon: <Telescope size={24} />,
         active: tab === 'discover',
         go: () => onTab('discover'),
@@ -128,7 +130,7 @@ export function PrimaryNav({
        */
       {
         key: 'search',
-        label: 'Search',
+        label: t('nav.search'),
         icon: <Search size={24} />,
         active: false,
         go: () => openSearchPage(),
@@ -138,7 +140,7 @@ export function PrimaryNav({
       // Library now, so the shelf and the songs share one destination.
       {
         key: 'library',
-        label: 'Library',
+        label: t('nav.library'),
         icon: <LibraryBig size={24} />,
         active: libraryActive,
         go: () => onTab('library'),
@@ -148,7 +150,7 @@ export function PrimaryNav({
     // the two "people" seats became one.
     list.push({
       key: 'profile',
-      label: 'Profile',
+      label: t('nav.profile'),
       icon: <NavProfileIcon />,
       active: tab === 'profile' || tab === 'friends',
       go: () => onTab('profile'),
@@ -169,14 +171,17 @@ export function PrimaryNav({
     if (showBooth) {
       list.push({
         key: 'booth',
-        label: 'Booth',
+        label: t('nav.booth'),
         icon: <Disc3 size={24} />,
         active: tab === 'booth',
         go: () => onTab('booth'),
       });
     }
     return list;
-  }, [pages, libraryActive, tab, onTab, showBooth]);
+    // `t` is in here on purpose: react-i18next hands back a NEW t when the
+    // language changes, and without it the memo would hold the old labels -
+    // a nav bar still in English under an app that is not.
+  }, [pages, libraryActive, tab, onTab, showBooth, t]);
 
   const seats = useNavSeats(barRef, dests.length);
   /*
@@ -221,7 +226,7 @@ export function PrimaryNav({
      * different set of places than the phone.
      */
     return (
-      <nav className="appNavRail" aria-label="Primary" ref={barRef}>
+      <nav className="appNavRail" aria-label={t('nav.primary')} ref={barRef}>
         <div className="appNavRail__dests">
           {dests.map((d) => (
             <button
@@ -256,13 +261,13 @@ export function PrimaryNav({
             <span className="appNavRail__icon" aria-hidden>
               <ArrowDownToLine size={22} />
             </span>
-            <span className="appNavRail__label">Downloads</span>
+            <span className="appNavRail__label">{t('nav.downloads')}</span>
           </button>
           <button type="button" className="appNavRail__item" onClick={onSettings}>
             <span className="appNavRail__icon" aria-hidden>
               <Settings size={22} />
             </span>
-            <span className="appNavRail__label">Settings</span>
+            <span className="appNavRail__label">{t('nav.settings')}</span>
           </button>
         </div>
       </nav>
@@ -285,7 +290,7 @@ export function PrimaryNav({
   // Plugins button in the right group (PluginsBarButton), which cascades them
   // up out of the bar - so the core tabs stay put however many plugins are on.
   return (
-    <nav className="appNavBar" aria-label="Primary" ref={barRef}>
+    <nav className="appNavBar" aria-label={t('nav.primary')} ref={barRef}>
       {/* The lit plate. One element for the whole bar, parked over the current
           tab and slid when it changes - decoration only, so it is hidden from
           assistive tech, which reads aria-current on the tab itself. */}

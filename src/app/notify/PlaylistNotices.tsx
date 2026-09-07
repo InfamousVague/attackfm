@@ -8,6 +8,7 @@ import { fetchPlaylistActivity, type PlaylistActivityItem } from '../api/playlis
 import { artUrl } from '../api/library.ts';
 import type { ServerSession } from '../api/http.ts';
 import { dismissNotice, noteNotice, notices } from './notices.ts';
+import { translate } from '../i18n/LocaleShell.tsx';
 
 /**
  * Shared playlists, in the bell.
@@ -83,9 +84,10 @@ function writeCursor(key: string, at: number): void {
   }
 }
 
-function songCount(n: number): string {
-  return n === 1 ? '1 song' : `${n} songs`;
-}
+/** Not a hook: everything in this file builds notification rows from plain
+ *  functions, outside any render. See `translate` on why that is fine here
+ *  and would not be on screen. */
+const songCount = (n: number) => translate('library.songCount', { count: n });
 
 /** "Dreams, Everywhere and 3 more" - the burst row's body. */
 function burstBody(titles: readonly string[]): string {
@@ -125,7 +127,7 @@ function sharedNotice(pid: string, who: Undressed, list: Playlist | undefined, a
   return {
     id: `playlist-shared:${pid}`,
     kind: 'playlist-shared',
-    title: `${who.actorName} shared a playlist with you`,
+    title: translate('notices.sharedPlaylist', { actor: who.actorName }),
     body: list ? `${who.playlistName} · ${songCount(list.paths.length)}` : who.playlistName,
     art,
     door: 'playlist' as const,
@@ -232,8 +234,8 @@ export function PlaylistNotices(): null {
           noteNotice({
             id: `playlist-unshared:${it.id}`,
             kind: 'playlist-unshared',
-            title: `${it.actorName} stopped sharing ${it.playlistName}`,
-            body: 'It is no longer among your playlists.',
+            title: translate('notices.stoppedSharing', { actor: it.actorName, playlist: it.playlistName }),
+            body: translate('notices.noLongerYours'),
             art: null,
             door: null,
             at: it.at,
@@ -261,8 +263,8 @@ export function PlaylistNotices(): null {
             noteNotice({
               id: burst.id,
               kind: 'playlist-add',
-              title: `${it.actorName} added to ${it.playlistName}`,
-              body: song ? `${song.title} — ${song.artist}` : 'A song',
+              title: translate('notices.addedTo', { actor: it.actorName, playlist: it.playlistName }),
+              body: song ? `${song.title} — ${song.artist}` : translate('notices.aSong'),
               art: burst.art,
               door: 'playlist',
               playlist: pid,
@@ -274,7 +276,9 @@ export function PlaylistNotices(): null {
             noteNotice({
               id: burst.id,
               kind: 'playlist-add',
-              title: `${it.actorName} added ${n} songs to ${it.playlistName}`,
+              // Plural-selected, not `${n} songs`: in Arabic this picks one
+              // of six forms, and three of them do not print the number.
+              title: translate('notices.addedSongs', { actor: it.actorName, count: n, playlist: it.playlistName }),
               body: burstBody(burst.titles),
               art: burst.art,
               door: 'playlist',
@@ -289,8 +293,8 @@ export function PlaylistNotices(): null {
           noteNotice({
             id: `playlist-removed:${it.id}`,
             kind: 'playlist-removed',
-            title: `${it.actorName} removed from ${it.playlistName}`,
-            body: it.track ? `${it.track.title} — ${it.track.artist}` : 'A song',
+            title: translate('notices.removedFrom', { actor: it.actorName, playlist: it.playlistName }),
+            body: it.track ? `${it.track.title} — ${it.track.artist}` : translate('notices.aSong'),
             art: null,
             door: 'playlist',
             playlist: pid,
@@ -303,8 +307,8 @@ export function PlaylistNotices(): null {
           noteNotice({
             id: `playlist-left:${it.id}`,
             kind: 'playlist-left',
-            title: `${it.actorName} left ${it.playlistName}`,
-            body: 'They no longer see the list.',
+            title: translate('notices.left', { actor: it.actorName, playlist: it.playlistName }),
+            body: translate('notices.noLongerSees'),
             art: null,
             door: 'playlist',
             playlist: pid,

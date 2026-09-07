@@ -1,0 +1,40 @@
+/* OTHER ALPHABETS.
+ *
+ * The kit bundles Inter, Noto Sans (Latin), IBM Plex Sans and two monos. Not
+ * one of them has an Arabic glyph or a kanji in it, so `--glacier-font-sans`
+ * in Arabic, Japanese or Chinese is a family that cannot draw the text and the
+ * browser falls through to whatever the platform has. That mostly looks fine
+ * and is never quite right: the Latin in a line (a number, a track's English
+ * title) comes from Inter while the script around it comes from the fallback,
+ * at a different weight and a different x-height.
+ *
+ * So the whole line is moved to one family that can draw all of it, chosen
+ * from what the platform already has.
+ *
+ * WHY NOT BUNDLE A WEBFONT. The OTA build sets `assetsInlineLimit: 1 << 30`
+ * (vite.config.ts), which base64s every asset into app.css - the bundle is two
+ * files or it does not reach a device. A CJK face is megabytes before base64
+ * and about a third worse after, paid by every device on every update whether
+ * or not anybody on it reads Chinese. Arabic alone would be affordable
+ * (~300KB) if the fallback ever proves not good enough; CJK never is.
+ *
+ * Keyed on `lang`, which LocaleShell stamps on <html> next to `dir`.
+ */
+
+html[lang='ar'] {
+  /* SF Arabic on Apple, Noto Naskh on Android, the old Geeza Pro for anything
+     ancient. Inter stays in the stack after them: it has the Latin, and by
+     then the Arabic has already been claimed by a family that can draw it. */
+  --glacier-font-sans: 'SF Arabic', 'Geeza Pro', 'Noto Naskh Arabic', 'Noto Sans Arabic',
+    'Segoe UI', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+}
+
+html[lang='ja'] {
+  --glacier-font-sans: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP',
+    'Yu Gothic UI', Meiryo, 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+}
+
+html[lang='zh'] {
+  --glacier-font-sans: 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC',
+    'Microsoft YaHei', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+}

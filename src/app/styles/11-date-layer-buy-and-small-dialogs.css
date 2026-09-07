@@ -458,7 +458,7 @@ img.artPop:not([data-loading]) {
 .dateCard__preview {
   position: absolute;
   top: var(--glacier-space-2);
-  right: var(--glacier-space-2);
+  inset-inline-end: var(--glacier-space-2);
   z-index: 3;
   padding: 0.15rem 0.55rem;
   border-radius: 999px;

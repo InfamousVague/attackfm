@@ -35,6 +35,7 @@ import { serverLabelFor } from '../servers/serverNames.ts';
 // four photographs that happen to sit together.
 import likedChip from '../../assets/chip-liked.webp';
 import type { Track } from '../core/tauri.ts';
+import { useSongCount, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The collection's cover, seeded from its own songs: a 2x2 split of the first
@@ -206,12 +207,6 @@ function PluginTile({ tile }: { tile: PluginPlaylistTile }) {
   return <Tile name={name} cover={cover} onOpen={() => openMix(name, [...tracks], emptyLabel)} />;
 }
 
-/** "1 song" / "12 songs" - the line the Browse tiles use, so a chip built to
- *  look like one also counts like one. */
-function songCount(n: number): string {
-  return n === 1 ? '1 song' : `${n} songs`;
-}
-
 /**
  * The playlist strip above the library table: Liked and Recent, then the
  * user's own playlists, then the New Playlist tile that creates one, then
@@ -264,6 +259,11 @@ export function PlaylistShowcase({
    */
   show?: 'personal' | 'generated';
 }) {
+  const t = useT();
+  // Was a local `songCount` in this file, and two more just like it in
+  // OnRepeatChip and PlaylistNotices. One now, and it counts in whatever
+  // language the app is in.
+  const songCount = useSongCount();
   const { tracks, favoriteTracks } = useLibrary();
   // On repeat is its own chip now (OnRepeatChip), which computes its own
   // count from the cached feed; that read used to live here and went with it.
@@ -529,7 +529,7 @@ export function PlaylistShowcase({
               <img className="libChip__art" src={likedChip} alt="" loading="lazy" />
               <LibChipMosaic covers={likedCovers} />
               <LibChipStat value={String(favoriteTracks.length)} />
-              <span className="libChip__name">Liked</span>
+              <span className="libChip__name">{t('library.liked')}</span>
               <span className="libChip__count">{songCount(favoriteTracks.length)}</span>
             </button>
           </MaybeMenu>
@@ -585,14 +585,14 @@ export function PlaylistShowcase({
 
       {show === 'personal' && (
       <section className="homeShelf">
-        <h2 className="homeShelfTitle">Playlists</h2>
+        <h2 className="homeShelfTitle">{t('library.playlists')}</h2>
         {/* A grid, not a rail: every playlist on screen at once, wrapping
             into as many columns as the width holds. Only past five rows'
             worth does it scroll - the cap keeps a hundred playlists from
             burying the shelves below. */}
         <div className="showcaseGrid" {...hold}>
             <Tile
-              name="Recent"
+              name={t('library.recent')}
               cover={
                 <div className="tileSquircle tileRecent" aria-hidden>
                   <History size={24} />
@@ -627,7 +627,7 @@ export function PlaylistShowcase({
               />
             ))}
             <Tile
-              name="New Playlist"
+              name={t('library.newPlaylist')}
               cover={
                 <div className="tileSquircle tileAdd" aria-hidden>
                   <Plus size={24} />

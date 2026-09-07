@@ -43,7 +43,7 @@
   color: inherit;
   display: grid;
   gap: 1px;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
 }

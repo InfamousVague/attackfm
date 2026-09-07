@@ -213,7 +213,7 @@
   background: var(--glacier-surface-sunken);
   color: var(--glacier-text);
   cursor: pointer;
-  text-align: left;
+  text-align: start;
   font-size: var(--glacier-font-size-sm);
 }
 .handbook__tocRow:hover {

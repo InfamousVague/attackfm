@@ -1,4 +1,5 @@
-import { HapticsProvider, LocaleProvider, ToastProvider } from '@glacier/react';
+import { HapticsProvider, ToastProvider } from '@glacier/react';
+import { LocaleShell } from '../i18n/LocaleShell.tsx';
 import type { ReactNode } from 'react';
 import { AppearanceProvider } from '../settings/appearance.tsx';
 import { LibraryProvider } from '../library/library.tsx';
@@ -50,8 +51,10 @@ export function AppProviders({
   playNow: (track: Track, context?: Track[]) => void;
   children: ReactNode;
 }) {
+  // Was `<LocaleProvider locale="en">`. The shell owns the choice now and
+  // hands the kit whatever the app is in - see i18n/LocaleShell.tsx.
   return (
-    <LocaleProvider locale="en">
+    <LocaleShell>
       {/* The provider's delegated per-press tick is OFF: a buzz on every tap
           and on cards rippling in read as force feedback, not feel. The
           semantic moments that stay (favourite, transport, disc physics,
@@ -164,6 +167,6 @@ export function AppProviders({
           </AppearanceProvider>
         </ToastProvider>
       </HapticsProvider>
-    </LocaleProvider>
+    </LocaleShell>
   );
 }
