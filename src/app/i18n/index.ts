@@ -61,19 +61,20 @@ export function directionOf(locale: Locale): 'ltr' | 'rtl' {
 /**
  * SHOULD A SPANISH PHONE GET A SPANISH APP WITHOUT BEING ASKED?
  *
- * Eventually yes, and right now no, and the difference is coverage. The
- * catalogue holds a few dozen of the app's strings; the rest are still English
- * literals in the JSX (`node scripts/i18n-scan.mjs` prints the score). Adopting
- * the device's language today would hand somebody an app that is English
- * everywhere except the nav and one shelf heading - which is not a translated
- * app, it is a broken-looking one, and worse than the honest English it
- * replaced. Somebody who goes to Settings and CHOOSES a language has said they
- * want the half that exists; a phone's regional setting has not said that.
+ * Yes, now. This was `false` while the catalogue held a few dozen strings and
+ * the rest were still English in the JSX - adopting the device's language then
+ * would have handed somebody an app that was English everywhere except the nav
+ * and one shelf heading, which is not a translated app but a broken-looking
+ * one, and worse than the honest English it replaced.
  *
- * Flip this to `true` when the scanner is reporting somewhere north of 95%.
- * Nothing else needs to change: the matching below is already written.
+ * The condition for turning it on was the scanner reaching ~95%. It reports
+ * zero hard-coded strings and all seven catalogues complete, so a phone set to
+ * Spanish now gets a Spanish app without being asked, which is what somebody
+ * who set their phone to Spanish was asking for.
+ *
+ * `npm run i18n:gate` is what keeps that true.
  */
-const ADOPT_DEVICE_LANGUAGE = false;
+const ADOPT_DEVICE_LANGUAGE = true;
 
 /**
  * The locale to start in: what was chosen last, else (see above) what the
