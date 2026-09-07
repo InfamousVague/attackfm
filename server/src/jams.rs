@@ -129,6 +129,10 @@ pub struct Addition {
     pub by_id: i64,
     pub by: String,
     pub at: i64,
+    /// "Play next": the host slots it right after the song on, ahead of the
+    /// rest of the line, instead of at the end. Remembered here so the host's
+    /// deck gets it as asked and the room can read "playing next" meanwhile.
+    pub next: bool,
 }
 
 /// One press of the transport by a member - play, pause, skip, seek - waiting
@@ -161,6 +165,8 @@ impl Control {
 #[derive(Default, Debug, PartialEq)]
 pub struct Polled {
     pub additions: Vec<i64>,
+    /// The play-next asks, oldest first; never also in `additions`.
+    pub additions_next: Vec<i64>,
     pub commands: Vec<serde_json::Value>,
 }
 
@@ -273,16 +279,18 @@ impl Jam {
         self.clock_at == 0 || now - self.clock_at >= CLOCK_HANDOVER_MS
     }
 
-    /// A member asks the room to play `track_id`. Deduped against what is
-    /// already queued or pending so a double-tap does not stack the same song
-    /// twice; the credit goes to whoever asked either way, so the room reads
-    /// "Kayla wanted this" even when the host already had it lined up.
-    fn ask(&mut self, who: &Member, track_id: i64, now: i64) -> Result<(), ApiError> {
+    /// A member asks the room to play `track_id` - at the end of the line, or
+    /// `next`: right after the song on. Deduped against what is already queued
+    /// or pending so a double-tap does not stack the same song twice (the
+    /// first ask stands, its place included); the credit goes to whoever
+    /// asked either way, so the room reads "Kayla wanted this" even when the
+    /// host already had it lined up.
+    fn ask(&mut self, who: &Member, track_id: i64, next: bool, now: i64) -> Result<(), ApiError> {
         if !self.queue.contains(&track_id) && !self.additions.iter().any(|a| a.track_id == track_id) {
             if self.additions.len() >= ADDITIONS_CAP {
                 return Err((StatusCode::TOO_MANY_REQUESTS, "the groove's queue is full for now".into()));
             }
-            self.additions.push(Addition { track_id, by_id: who.id, by: who.name.clone(), at: now });
+            self.additions.push(Addition { track_id, by_id: who.id, by: who.name.clone(), at: now, next });
         }
         self.added_by.insert(track_id, who.name.clone());
         Ok(())
@@ -306,9 +314,16 @@ impl Jam {
     /// Hand the host everything the room has asked for and clear it: the host
     /// folds these into its real queue, which comes back to everyone on the
     /// next beat. Exactly once - the caller is expected to be the host's
-    /// client, whichever of its reads got here first.
-    fn drain(&mut self) -> Vec<i64> {
-        std::mem::take(&mut self.additions).into_iter().map(|a| a.track_id).collect()
+    /// client, whichever of its reads got here first. Two lists, each in the
+    /// order asked: `(additions, additions_next)` - the ones for the end of
+    /// the line, and the ones for right after the song on (the first asker's
+    /// song plays first). A play-next ask is in the second list only.
+    fn drain(&mut self) -> (Vec<i64>, Vec<i64>) {
+        let (mut end, mut next) = (Vec::new(), Vec::new());
+        for a in std::mem::take(&mut self.additions) {
+            if a.next { next.push(a.track_id) } else { end.push(a.track_id) }
+        }
+        (end, next)
     }
 
     /// A member presses the transport. Refused for anyone not in the room
@@ -361,7 +376,8 @@ impl Jam {
     fn poll(&mut self, caller_id: i64, now: i64) -> Polled {
         self.touch(caller_id, now);
         if self.host_id == caller_id && self.clock_quiet(now) {
-            Polled { additions: self.drain(), commands: self.drain_controls(now) }
+            let (additions, additions_next) = self.drain();
+            Polled { additions, additions_next, commands: self.drain_controls(now) }
         } else {
             Polled::default()
         }
@@ -378,7 +394,7 @@ impl Jam {
         // while the clock device reports nothing of the sort.
         let other_device = !self.clock_device.is_empty() && self.clock_device != body.device_id;
         if other_device && now - self.clock_at < CLOCK_HANDOVER_MS && !(body.playing && !self.playing) {
-            return json!({ "ok": true, "additions": [], "commands": [], "clock": false });
+            return json!({ "ok": true, "additions": [], "additionsNext": [], "commands": [], "clock": false });
         }
         self.clock_device = body.device_id;
         self.clock_at = now;
@@ -393,7 +409,14 @@ impl Jam {
         self.updated_at = now;
         // The presses ride the same beat as the asks: this device is the
         // deck they were meant for.
-        json!({ "ok": true, "additions": self.drain(), "commands": self.drain_controls(now), "clock": true })
+        let (additions, additions_next) = self.drain();
+        json!({
+            "ok": true,
+            "additions": additions,
+            "additionsNext": additions_next,
+            "commands": self.drain_controls(now),
+            "clock": true,
+        })
     }
 
     fn note(&mut self, kind: &'static str, who: &str) {
@@ -460,7 +483,7 @@ impl Jam {
             // in the order asked. `queue` and `addedBy` stay exactly as they
             // were for older clients; this is the part they could not see.
             "pending": self.additions.iter().map(|a| json!({
-                "trackId": a.track_id, "by": a.by, "at": a.at,
+                "trackId": a.track_id, "by": a.by, "at": a.at, "next": a.next,
             })).collect::<Vec<_>>(),
             // Presses the host's deck has not taken yet. A count, not the
             // presses: a member wants to know their "pause" is still on its
@@ -656,9 +679,10 @@ pub async fn create(State(state): State<Arc<AppState>>, peer: netaddr::Peer, hea
 /// room you are sitting in is yours to be offered, friend or not, since a hub
 /// is already a circle. Reading is also the member's heartbeat, and for a
 /// host whose player has stopped beating it carries the room's pending asks
-/// as `additions` and its transport presses as `commands`, exactly as the
-/// clock post does - whichever of the host's reads gets there first takes
-/// them, and nobody's song (or pause) is lost to a paused player.
+/// as `additions` (for the end of the line) and `additionsNext` (for right
+/// after the song on) and its transport presses as `commands`, exactly as
+/// the clock post does - whichever of the host's reads gets there first
+/// takes them, and nobody's song (or pause) is lost to a paused player.
 pub async fn list(State(state): State<Arc<AppState>>, peer: netaddr::Peer, headers: HeaderMap) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let addr = netaddr::from_request(&headers, &peer);
@@ -691,6 +715,7 @@ pub async fn list(State(state): State<Arc<AppState>>, peer: netaddr::Peer, heade
         "nearby": nearby,
         "invites": invites,
         "additions": polled.additions,
+        "additionsNext": polled.additions_next,
         "commands": polled.commands,
     })))
 }
@@ -1053,13 +1078,20 @@ pub async fn set_state(
 pub struct QueueAdd {
     #[serde(rename = "trackId")]
     pub track_id: i64,
+    /// Play next: right after the song on rather than at the end of the line.
+    /// An older client sends none and means the end, as it always did.
+    #[serde(default)]
+    pub next: bool,
 }
 
-/// `POST /api/jams/{id}/queue` - a member drops a track into the room's line.
-/// Anyone in the jam may (that is the point); the host folds it in on its next
-/// beat. Deduped against what is already queued or pending so a double-tap does
-/// not stack the same song twice. Answers with the room, so the asker's screen
-/// can show the song pending without waiting for its next poll.
+/// `POST /api/jams/{id}/queue {trackId, next?}` - a member drops a track into
+/// the room's line, at the end or (`next`) right after the song on. Anyone in
+/// the jam may (that is the point); the host folds it in on its next beat,
+/// which hands it `additions` and `additionsNext` apart. Deduped against what
+/// is already queued or pending so a double-tap does not stack the same song
+/// twice. Answers with the room, so the asker's screen can show the song
+/// pending - and whether it is playing next - without waiting for its next
+/// poll.
 pub async fn add_to_queue(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1078,7 +1110,7 @@ pub async fn add_to_queue(
     };
     let now = now_ms();
     jam.touch(caller.id, now);
-    jam.ask(&who, body.track_id, now)?;
+    jam.ask(&who, body.track_id, body.next, now)?;
     let mut out = jam.to_json();
     out["ok"] = json!(true);
     Ok(Json(out))
@@ -1216,18 +1248,18 @@ mod tests {
         let mut jam = room();
         let ana = person(2, "ana");
         let kayla = person(3, "kayla");
-        jam.ask(&ana, 200, 1_000).unwrap();
-        jam.ask(&kayla, 300, 2_000).unwrap();
+        jam.ask(&ana, 200, false, 1_000).unwrap();
+        jam.ask(&kayla, 300, false, 2_000).unwrap();
         // A double-tap does not stack the song twice, and the credit is
         // whoever asked - even for a song the host already had queued.
-        jam.ask(&ana, 200, 3_000).unwrap();
-        jam.ask(&kayla, 100, 4_000).unwrap();
+        jam.ask(&ana, 200, false, 3_000).unwrap();
+        jam.ask(&kayla, 100, false, 4_000).unwrap();
 
         let j = jam.to_json();
         let pending = j["pending"].as_array().unwrap();
         assert_eq!(pending.len(), 2, "{pending:?}");
-        assert_eq!(pending[0], json!({ "trackId": 200, "by": "ana", "at": 1_000 }));
-        assert_eq!(pending[1], json!({ "trackId": 300, "by": "kayla", "at": 2_000 }));
+        assert_eq!(pending[0], json!({ "trackId": 200, "by": "ana", "at": 1_000, "next": false }));
+        assert_eq!(pending[1], json!({ "trackId": 300, "by": "kayla", "at": 2_000, "next": false }));
         // The shape older clients read is untouched.
         assert_eq!(j["queue"], json!([100]));
         assert_eq!(j["addedBy"]["200"], json!("ana"));
@@ -1252,8 +1284,8 @@ mod tests {
     #[test]
     fn a_guest_takes_back_their_own_ask_and_nobody_elses() {
         let mut jam = room();
-        jam.ask(&person(2, "ana"), 200, 1_000).unwrap();
-        jam.ask(&person(3, "kayla"), 300, 2_000).unwrap();
+        jam.ask(&person(2, "ana"), 200, false, 1_000).unwrap();
+        jam.ask(&person(3, "kayla"), 300, false, 2_000).unwrap();
 
         // kayla cannot take back ana's.
         let err = jam.take_back(3, 200).unwrap_err();
@@ -1281,8 +1313,8 @@ mod tests {
     #[test]
     fn the_hosts_poll_drains_the_asks_exactly_once() {
         let mut jam = room();
-        jam.ask(&person(2, "ana"), 200, 1_000).unwrap();
-        jam.ask(&person(3, "kayla"), 300, 2_000).unwrap();
+        jam.ask(&person(2, "ana"), 200, false, 1_000).unwrap();
+        jam.ask(&person(3, "kayla"), 300, false, 2_000).unwrap();
 
         // A guest's poll hands nothing over: the asks are the host's to fold.
         assert!(jam.poll(2, 3_000).additions.is_empty());
@@ -1296,6 +1328,7 @@ mod tests {
         // And a beat after a drained poll has nothing to hand over either.
         let out = jam.beat(clock(true, Some(vec![100, 200, 300])), 6_000);
         assert_eq!(out["additions"], json!([]));
+        assert_eq!(out["additionsNext"], json!([]));
         assert_eq!(out["clock"], json!(true));
         assert_eq!(jam.to_json()["queue"], json!([100, 200, 300]));
     }
@@ -1306,7 +1339,7 @@ mod tests {
         // while that beat is arriving, the poll must not steal them.
         let mut jam = room();
         jam.beat(clock(true, None), 10_000);
-        jam.ask(&person(2, "ana"), 200, 11_000).unwrap();
+        jam.ask(&person(2, "ana"), 200, false, 11_000).unwrap();
         assert!(jam.poll(1, 12_000).additions.is_empty());
         assert_eq!(jam.additions.len(), 1);
         let out = jam.beat(clock(true, None), 13_000);
@@ -1315,7 +1348,7 @@ mod tests {
 
         // The beat stops (paused, backgrounded): after the handover window the
         // poll takes over so the song is not left waiting.
-        jam.ask(&person(2, "ana"), 400, 14_000).unwrap();
+        jam.ask(&person(2, "ana"), 400, false, 14_000).unwrap();
         assert!(jam.poll(1, 20_000).additions.is_empty());
         assert_eq!(jam.poll(1, 13_000 + CLOCK_HANDOVER_MS).additions, vec![400]);
     }
@@ -1325,11 +1358,132 @@ mod tests {
         let mut jam = room();
         let ana = person(2, "ana");
         for t in 0..ADDITIONS_CAP as i64 {
-            jam.ask(&ana, 1_000 + t, t).unwrap();
+            jam.ask(&ana, 1_000 + t, false, t).unwrap();
         }
-        let err = jam.ask(&ana, 5_000, 99).unwrap_err();
+        let err = jam.ask(&ana, 5_000, false, 99).unwrap_err();
         assert_eq!(err.0, StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(err.1, "the groove's queue is full for now");
+    }
+
+    #[test]
+    fn a_play_next_ask_and_a_plain_one_land_apart_in_the_order_asked() {
+        let mut jam = room();
+        let ana = person(2, "ana");
+        let kayla = person(3, "kayla");
+        // ana wants 200 played next; kayla adds 300 to the end; then ana adds
+        // 400 to the end and kayla wants 500 next - two of each, interleaved.
+        jam.ask(&ana, 200, true, 1_000).unwrap();
+        jam.ask(&kayla, 300, false, 2_000).unwrap();
+        jam.ask(&ana, 400, false, 3_000).unwrap();
+        jam.ask(&kayla, 500, true, 4_000).unwrap();
+
+        // The room reads which is which, in the order asked.
+        let j = jam.to_json();
+        let pending = j["pending"].as_array().unwrap();
+        assert_eq!(pending.len(), 4, "{pending:?}");
+        assert_eq!(pending[0], json!({ "trackId": 200, "by": "ana", "at": 1_000, "next": true }));
+        assert_eq!(pending[1], json!({ "trackId": 300, "by": "kayla", "at": 2_000, "next": false }));
+        assert_eq!(pending[2], json!({ "trackId": 400, "by": "ana", "at": 3_000, "next": false }));
+        assert_eq!(pending[3], json!({ "trackId": 500, "by": "kayla", "at": 4_000, "next": true }));
+        assert_eq!(j["addedBy"]["200"], json!("ana"));
+        assert_eq!(j["addedBy"]["500"], json!("kayla"));
+
+        // One beat takes all four, split: the play-next ones oldest first (the
+        // first asker's song plays first), the rest oldest first, and no id
+        // in both.
+        let out = jam.beat(clock(true, None), 5_000);
+        assert_eq!(out["clock"], json!(true));
+        assert_eq!(out["additionsNext"], json!([200, 500]));
+        assert_eq!(out["additions"], json!([300, 400]));
+        assert!(jam.additions.is_empty());
+        assert!(jam.to_json()["pending"].as_array().unwrap().is_empty());
+        // A second beat has nothing to hand over, on either list.
+        let again = jam.beat(clock(true, None), 6_000);
+        assert_eq!(again["additions"], json!([]));
+        assert_eq!(again["additionsNext"], json!([]));
+    }
+
+    #[test]
+    fn a_second_play_next_queues_after_the_first() {
+        let mut jam = room();
+        jam.ask(&person(3, "kayla"), 300, true, 1_000).unwrap();
+        jam.ask(&person(2, "ana"), 200, true, 2_000).unwrap();
+        // A double-tap of a play-next does not stack it, nor move it.
+        jam.ask(&person(3, "kayla"), 300, true, 3_000).unwrap();
+        assert_eq!(jam.additions.len(), 2);
+        let out = jam.beat(clock(true, None), 4_000);
+        assert_eq!(out["additionsNext"], json!([300, 200]), "kayla asked first");
+        assert_eq!(out["additions"], json!([]));
+    }
+
+    #[test]
+    fn a_play_next_ask_can_be_taken_back_like_any_other() {
+        let mut jam = room();
+        jam.ask(&person(2, "ana"), 200, true, 1_000).unwrap();
+        jam.ask(&person(2, "ana"), 300, false, 2_000).unwrap();
+        // kayla cannot take back ana's play-next; ana can.
+        assert_eq!(jam.take_back(3, 200).unwrap_err().0, StatusCode::FORBIDDEN);
+        jam.take_back(2, 200).unwrap();
+        assert!(!jam.added_by.contains_key(&200));
+        assert_eq!(jam.to_json()["pending"], json!([{ "trackId": 300, "by": "ana", "at": 2_000, "next": false }]));
+        // Gone from the beat too: only the plain ask is left to fold.
+        let out = jam.beat(clock(true, None), 3_000);
+        assert_eq!(out["additionsNext"], json!([]));
+        assert_eq!(out["additions"], json!([300]));
+        // The host may take back anyone's play-next as well.
+        jam.ask(&person(3, "kayla"), 500, true, 4_000).unwrap();
+        jam.take_back(1, 500).unwrap();
+        assert!(jam.additions.is_empty());
+    }
+
+    #[test]
+    fn the_hosts_quiet_poll_carries_the_play_next_asks_apart_too() {
+        let mut jam = room();
+        jam.ask(&person(2, "ana"), 200, true, 1_000).unwrap();
+        jam.ask(&person(3, "kayla"), 300, false, 2_000).unwrap();
+        jam.ask(&person(3, "kayla"), 400, true, 3_000).unwrap();
+        // A guest's poll hands nothing over, on either list.
+        assert_eq!(jam.poll(2, 3_500), Polled::default());
+        assert_eq!(jam.additions.len(), 3);
+        // The clock has never beaten: the host's poll takes them, split.
+        let polled = jam.poll(1, 4_000);
+        assert_eq!(polled.additions_next, vec![200, 400]);
+        assert_eq!(polled.additions, vec![300]);
+        assert!(polled.commands.is_empty());
+        // Once only.
+        assert_eq!(jam.poll(1, 5_000), Polled::default());
+
+        // While the clock beats, the poll leaves a play-next for the beat.
+        jam.beat(clock(true, None), 10_000);
+        jam.ask(&person(2, "ana"), 600, true, 11_000).unwrap();
+        assert_eq!(jam.poll(1, 12_000), Polled::default());
+        assert_eq!(jam.beat(clock(true, None), 13_000)["additionsNext"], json!([600]));
+    }
+
+    #[test]
+    fn an_older_clients_send_is_an_append() {
+        // The wire body without `next` - what every client sent before this -
+        // parses as the end of the line, and the beat hands it over there.
+        let old: QueueAdd = serde_json::from_str(r#"{"trackId":7}"#).unwrap();
+        assert_eq!(old.track_id, 7);
+        assert!(!old.next);
+        let new: QueueAdd = serde_json::from_str(r#"{"trackId":7,"next":true}"#).unwrap();
+        assert!(new.next);
+
+        let mut jam = room();
+        jam.ask(&person(2, "ana"), old.track_id, old.next, 1_000).unwrap();
+        assert_eq!(jam.to_json()["pending"][0]["next"], json!(false));
+        let out = jam.beat(clock(true, None), 2_000);
+        assert_eq!(out["additions"], json!([7]));
+        assert_eq!(out["additionsNext"], json!([]));
+        // Another of the host's devices, refused the clock, reads both lists
+        // empty rather than a missing key.
+        let mut other = clock(false, None);
+        other.device_id = "laptop".into();
+        let refused = jam.beat(other, 3_000);
+        assert_eq!(refused["clock"], json!(false));
+        assert_eq!(refused["additions"], json!([]));
+        assert_eq!(refused["additionsNext"], json!([]));
     }
 
     #[test]
@@ -1405,7 +1559,7 @@ mod tests {
     fn the_hosts_quiet_poll_takes_the_presses_exactly_once() {
         let mut jam = room();
         jam.command(2, "next", None, 1_000).unwrap();
-        jam.ask(&person(3, "kayla"), 300, 1_500).unwrap();
+        jam.ask(&person(3, "kayla"), 300, false, 1_500).unwrap();
         // A guest's poll hands nothing over.
         assert_eq!(jam.poll(2, 2_000), Polled::default());
         assert_eq!(jam.controls.len(), 1);
