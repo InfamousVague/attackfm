@@ -168,7 +168,10 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       if (brand) {
         root.removeAttribute('data-accent');
         const scheme: Theme = preset.mode === 'system' ? (systemDark ? 'dark' : 'light') : preset.mode;
-        deepenRamp(accentSteps(brand, scheme), brand.deep ?? 0).forEach((value, index) =>
+        // A brand accent carries a catalogue key where the kit's AccentOption
+        // wants a name; the ramp reads hue, chroma and contrast and never
+        // touches the label, so any string satisfies the type honestly.
+        deepenRamp(accentSteps({ ...brand, label: brand.name }, scheme), brand.deep ?? 0).forEach((value, index) =>
           root.style.setProperty(`--glacier-accent-${index + 1}`, value),
         );
         root.style.setProperty(

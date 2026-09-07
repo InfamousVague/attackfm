@@ -16,6 +16,7 @@ const MIX_SHAPE: SongTableShape = { hide: ['addedAt'], fixedOrder: true };
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useWallClips } from '../library/wallClips.ts';
 import type { Track } from '../core/tauri.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * A list somebody else made, opened as a page.
@@ -58,6 +59,7 @@ export function MixPage({
   /** Where the copy lands, so Add can walk you straight to it. */
   onOpenPlaylist?: (id: string) => void;
 }) {
+  const t = useT();
   const { create } = usePlaylists();
   const { toast } = useToast();
   // The follow-the-playing-song scroll used to live here, hunting
@@ -84,10 +86,13 @@ export function MixPage({
       tracks.map((t) => t.path),
     ).then((id) => {
       toast({
-        message: `Saved “${title}” to your playlists`,
+        message: t('playlists.savedCopy', { title }),
         // The copy is a real list now, so the toast can hand you to it rather
         // than leaving you on the page you copied FROM.
-        action: id && onOpenPlaylist ? { label: 'Open', onPress: () => onOpenPlaylist(id) } : undefined,
+        action:
+          id && onOpenPlaylist
+            ? { label: t('common.open'), onPress: () => onOpenPlaylist(id) }
+            : undefined,
       });
     });
   };
@@ -153,11 +158,11 @@ export function MixPage({
           {/* "Mix", not "Playlist": the kicker is the one word that says this
               list is not yours and explains why the verb below is Add. */}
           <Text tone="muted" size="xs" className="playlistHead__kicker">
-            Mix
+            {t('playlists.mix')}
           </Text>
           <h2 className="playlistHead__name">{title}</h2>
           <Text tone="muted" size="sm">
-            {tracks.length} {tracks.length === 1 ? 'song' : 'songs'}
+            {t('library.songCount', { count: tracks.length })}
             {totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}
           </Text>
 
@@ -173,7 +178,7 @@ export function MixPage({
               onClick={() => tracks[0] && onPlay(tracks[0], tracks)}
             >
               <Play size={15} />
-              Play
+              {t('player.play')}
             </Button>
             <Button
               variant="soft"
@@ -185,11 +190,11 @@ export function MixPage({
               }}
             >
               <Shuffle size={15} />
-              Shuffle
+              {t('player.shuffle')}
             </Button>
             <Button variant="outline" size="sm" onClick={saveCopy} disabled={tracks.length === 0}>
               <Plus size={15} />
-              Add
+              {t('playlists.addCopy')}
             </Button>
           </EdgeScrollRow>
         </div>
@@ -198,7 +203,7 @@ export function MixPage({
       {tracks.length === 0 ? (
         <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name="search" />
-          <Text tone="muted">{emptyLabel ?? 'This mix came up empty.'}</Text>
+          <Text tone="muted">{emptyLabel ?? t('playlists.mixEmpty')}</Text>
         </div>
       ) : (
         <div className="pageSongs">

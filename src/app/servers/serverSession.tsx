@@ -43,6 +43,7 @@ import { fxChainParam } from '../player/fxChain.ts';
 import { setRemoteAudioResolver } from '../core/tauri.ts';
 import { setCastStreamResolver } from '../player/cast.ts';
 import { syncPushRegistration } from '../core/notifications.ts';
+import { translate } from '../i18n/LocaleShell.tsx';
 
 const SESSION_KEY = 'attackfm-server-session';
 const QUALITY_KEY = 'attackfm-server-quality';
@@ -446,7 +447,11 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   const connect = useCallback(
     async (url: string, username: string, password: string) => {
       const origin = normalizeServerUrl(url);
-      if (!origin) throw new Error('Enter the server address');
+      // Thrown rather than returned because both sign-in forms print
+      // `err.message` straight into their error line - so this one IS prose on
+      // screen, and `translate` is the tool for a string built outside a
+      // render.
+      if (!origin) throw new Error(translate('servers.enterAddress'));
       const next = await serverLogin(origin, username, password);
       persist(next);
     },

@@ -23,6 +23,12 @@ import { useArtLoad } from '../ux/artLoad.ts';
 import placeholderArt from '../../assets/attack-wave.png';
 import { usePrefetchArt } from '../ux/artPrefetch.ts';
 import { formatClock } from '../ux/format.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+
+/** The translator, as this file passes it around. Named `tr` rather than the
+ *  usual `t` because `t` is already the name every helper here gives the TRACK
+ *  it is handed, and shadowing that would be a rename waiting to go wrong. */
+type Tr = ReturnType<typeof useT>;
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -138,18 +144,24 @@ const NARROW_HIDDEN = new Set(['album', 'addedAt']);
  * appends its own transcript under the first line, and the first line is the
  * part that says whether trying again is worth anything.
  */
-export function shortFailure(error: string | null | undefined): string {
+export function shortFailure(error: string | null | undefined, tr: Tr): string {
   const first = (error ?? '').split('\n')[0]?.trim() ?? '';
-  if (!first) return 'download failed';
+  if (!first) return tr('downloads.failed');
   const cut = first.replace(/\s*Retry to resume\.?$/i, '').trim();
-  return cut.length > 48 ? `${cut.slice(0, 45)}\u2026` : cut || 'download failed';
+  return cut.length > 48 ? `${cut.slice(0, 45)}\u2026` : cut || tr('downloads.failed');
 }
 
 /** The one line under an arriving song's name: what it is waiting on. */
-export function incomingStatus(t: IncomingTrack): string {
-  if (!t.stalled) return t.artist ? `${t.artist} \u2014 downloading` : 'downloading';
-  const why = t.onRetry ? shortFailure(t.failure) : 'waiting for its turn';
-  return t.artist ? `${t.artist} \u2014 ${why}` : why;
+export function incomingStatus(t: IncomingTrack, tr: Tr): string {
+  const why = !t.stalled
+    ? tr('downloads.downloading')
+    : t.onRetry
+      ? shortFailure(t.failure, tr)
+      : tr('downloads.waitingTurn');
+  // The credit and the status are joined through a catalogue entry rather than
+  // an em dash written here, because which side of the dash each half sits on
+  // - and whether a dash is the right mark at all - is the translator's call.
+  return t.artist ? tr('downloads.statusWithArtist', { artist: t.artist, status: why }) : why;
 }
 
 /**
@@ -244,12 +256,12 @@ export interface SongTableShape {
 
 /** An arriving download, as a ghost. Keeps `incoming` the prop it always was
  *  while the mechanism underneath serves everybody. */
-function ghostOfIncoming(t: IncomingTrack): GhostRow {
+function ghostOfIncoming(t: IncomingTrack, tr: Tr): GhostRow {
   return {
     key: t.key,
     title: t.title,
     artwork: t.artwork,
-    note: incomingStatus(t),
+    note: incomingStatus(t, tr),
     lead: (
       <span className="incomingCell__mark" aria-hidden>
         {t.progress != null ? (
@@ -268,7 +280,7 @@ function ghostOfIncoming(t: IncomingTrack): GhostRow {
           <button
             type="button"
             className="incomingCell__act"
-            aria-label={`Try downloading ${t.title} again`}
+            aria-label={tr('downloads.retryTrack', { title: t.title })}
             onClick={(e) => {
               e.stopPropagation();
               t.onRetry?.();
@@ -281,7 +293,7 @@ function ghostOfIncoming(t: IncomingTrack): GhostRow {
           <button
             type="button"
             className="incomingCell__act"
-            aria-label={`Stop waiting for ${t.title}`}
+            aria-label={tr('downloads.cancelTrack', { title: t.title })}
             onClick={(e) => {
               e.stopPropagation();
               t.onCancel?.();
@@ -357,86 +369,94 @@ export type SongColumnKey = 'index' | 'title' | 'album' | 'addedAt' | 'onDevice'
 
 // The columns mirror the classic library table: an index, the title block with
 // artwork and artist, album, when it was added, and the running time.
-const COLUMNS: DataGridColumn[] = [
-  {
-    key: 'index',
-    header: '#',
-    width: '3rem',
-    align: 'end',
-    render: (_row, rowIndex) => <span className="songIndex">{rowIndex + 1}</span>,
-  },
-  {
-    key: 'title',
-    header: 'Title',
-    // Half the table, explicitly. Under table-layout:fixed the columns that
-    // declare a width take it first and the rest divide what is left, so a
-    // title with no width of its own loses to a 10rem date and a 5rem clock
-    // the moment the pane narrows - which is how it ended up one letter wide.
-    width: '50%',
-    sortable: true,
-    sortValue: (row) => sortKey(String(row.title)),
-    // Overridden in the component's `columns` memo, which is where the row
-    // context (the menu, the artist link, the now-playing mark) is in scope.
-    render: (row) => (
-      <div className="songTitleCell">
-        <SongArt artwork={row.artwork as string | null} />
-        <div className="songTitleText">
-          <span className="songTitle">{row.title as string}</span>
-          <span className="songArtist">{row.artist as string}</span>
+//
+// A function rather than the constant array it was: every header here is a
+// word on screen, and a table built at import time would be fixed in whatever
+// language the app booted in - the picker would leave these five headings
+// behind. Called from the component's `columns` memo, so they re-resolve when
+// the language does.
+function buildColumns(tr: Tr): DataGridColumn[] {
+  return [
+    {
+      key: 'index',
+      header: '#',
+      width: '3rem',
+      align: 'end',
+      render: (_row, rowIndex) => <span className="songIndex">{rowIndex + 1}</span>,
+    },
+    {
+      key: 'title',
+      header: tr('library.columnTitle'),
+      // Half the table, explicitly. Under table-layout:fixed the columns that
+      // declare a width take it first and the rest divide what is left, so a
+      // title with no width of its own loses to a 10rem date and a 5rem clock
+      // the moment the pane narrows - which is how it ended up one letter wide.
+      width: '50%',
+      sortable: true,
+      sortValue: (row) => sortKey(String(row.title)),
+      // Overridden in the component's `columns` memo, which is where the row
+      // context (the menu, the artist link, the now-playing mark) is in scope.
+      render: (row) => (
+        <div className="songTitleCell">
+          <SongArt artwork={row.artwork as string | null} />
+          <div className="songTitleText">
+            <span className="songTitle">{row.title as string}</span>
+            <span className="songArtist">{row.artist as string}</span>
+          </div>
         </div>
-      </div>
-    ),
-  },
-  {
-    key: 'album',
-    header: 'Album',
-    sortable: true,
-    sortValue: (row) => String(row.album).toLowerCase(),
-    render: (row) => <span className="songMuted">{(row.album as string) || '\u2014'}</span>,
-  },
-  {
-    key: 'addedAt',
-    header: 'Date added',
-    sortable: true,
-    width: '10rem',
-    sortValue: (row) => row.addedAt as number,
-    render: (row) => <span className="songMuted">{DATE_FORMAT.format(new Date(row.addedAt as number))}</span>,
-  },
-  {
-    /*
-     * On this device.
-     *
-     * This was a 13px tick tucked beside the song title, which says the same
-     * thing but cannot be SCANNED: you could not run your eye down a list and
-     * see what would survive a tunnel, and you certainly could not sort by it.
-     * As a column it does both, and sorting puts everything you already hold at
-     * the top - which is the question people actually ask of a liked list
-     * before going somewhere without signal.
-     *
-     * Both halves of "on the device" count, pinned and auto-cached alike: to a
-     * listener in a tunnel a file is a file, and which store happens to own it
-     * is the app's business rather than theirs. That is `useOnDevice`.
-     *
-     * The live set is not in scope up here, so render and sortValue are both
-     * replaced below where it is.
-     */
-    key: 'onDevice',
-    header: <ArrowDownToLine size={16} aria-label="On this device" />,
-    align: 'center',
-    width: '3.5rem',
-    sortable: true,
-    render: () => null,
-  },
-  {
-    key: 'duration',
-    header: <Clock size={16} aria-label="Duration" />,
-    align: 'end',
-    sortable: true,
-    width: '5rem',
-    sortValue: (row) => (row.duration as number | null) ?? 0,
-    render: (row) => <span className="songMuted">{formatClock(row.duration as number | null, '--:--')}</span>,
-  },
-];
+      ),
+    },
+    {
+      key: 'album',
+      header: tr('library.columnAlbum'),
+      sortable: true,
+      sortValue: (row) => String(row.album).toLowerCase(),
+      render: (row) => <span className="songMuted">{(row.album as string) || '\u2014'}</span>,
+    },
+    {
+      key: 'addedAt',
+      header: tr('library.columnDateAdded'),
+      sortable: true,
+      width: '10rem',
+      sortValue: (row) => row.addedAt as number,
+      render: (row) => <span className="songMuted">{DATE_FORMAT.format(new Date(row.addedAt as number))}</span>,
+    },
+    {
+      /*
+       * On this device.
+       *
+       * This was a 13px tick tucked beside the song title, which says the same
+       * thing but cannot be SCANNED: you could not run your eye down a list and
+       * see what would survive a tunnel, and you certainly could not sort by it.
+       * As a column it does both, and sorting puts everything you already hold at
+       * the top - which is the question people actually ask of a liked list
+       * before going somewhere without signal.
+       *
+       * Both halves of "on the device" count, pinned and auto-cached alike: to a
+       * listener in a tunnel a file is a file, and which store happens to own it
+       * is the app's business rather than theirs. That is `useOnDevice`.
+       *
+       * The live set is not in scope up here, so render and sortValue are both
+       * replaced below where it is.
+       */
+      key: 'onDevice',
+      header: <ArrowDownToLine size={16} aria-label={tr('library.onThisDevice')} />,
+      align: 'center',
+      width: '3.5rem',
+      sortable: true,
+      render: () => null,
+    },
+    {
+      key: 'duration',
+      header: <Clock size={16} aria-label={tr('library.columnDuration')} />,
+      align: 'end',
+      sortable: true,
+      width: '5rem',
+      sortValue: (row) => (row.duration as number | null) ?? 0,
+      render: (row) => <span className="songMuted">{formatClock(row.duration as number | null, '--:--')}</span>,
+    },
+  ];
+}
 
 /**
  * The whole library as one sortable, scrolling table. It reads the tracks the
@@ -504,6 +524,7 @@ export function SongTable({
    */
   defaultSort?: DataGridSort | null;
 }) {
+  const tr = useT();
   const library = useLibrary();
   const tracks = tracksProp ?? library.tracks;
   // Hold anywhere on a row - or right-click anywhere on it - and the row's
@@ -589,7 +610,7 @@ export function SongTable({
    */
   const ghostList = useMemo<GhostRow[]>(
     () => [
-      ...(selecting ? [] : (incoming ?? []).filter((t) => !t.leaving).map(ghostOfIncoming)),
+      ...(selecting ? [] : (incoming ?? []).filter((t) => !t.leaving).map((g) => ghostOfIncoming(g, tr))),
       ...(ghosts ?? []),
     ],
     [incoming, selecting, ghosts],
@@ -630,7 +651,7 @@ export function SongTable({
   // most of the row's width and the one part every layout keeps.
   const columns = useMemo<DataGridColumn[]>(
     () =>
-      COLUMNS.filter(
+      buildColumns(tr).filter(
         (col) =>
           // A browser has no vault, so the column could only ever answer "no"
           // for every row - a whole column of dashes saying nothing.
@@ -675,7 +696,7 @@ export function SongTable({
           : col.key === 'index' && plays
           ? {
               ...col,
-              header: 'Plays',
+              header: tr('library.columnPlays'),
               width: '4.5rem',
               render: (row) => {
                 const id = trackIdFromPath(row.id as string);
@@ -694,11 +715,11 @@ export function SongTable({
                   // 20, not the 15 it launched at: in its own 3.5rem column
                   // the mark is the cell's entire content, and at 15px it
                   // read as a speck rather than an answer.
-                  <CircleCheck size={20} className="songLocal" aria-label="On this device" />
+                  <CircleCheck size={20} className="songLocal" aria-label={tr('library.onThisDevice')} />
                 ) : (
                   // An em dash rather than an empty cell: a blank reads as "not
                   // loaded yet" where a dash reads as an answer.
-                  <span className="songMuted" aria-label="Not on this device">
+                  <span className="songMuted" aria-label={tr('library.notOnThisDevice')}>
                     {'\u2014'}
                   </span>
                 ),
@@ -847,7 +868,7 @@ export function SongTable({
   const displayed = useMemo(() => {
     if (!sort) return tracks;
     /*
-     * `columns`, not the static COLUMNS.
+     * `columns`, not the ones buildColumns hands back.
      *
      * The memo above is where a column's real behaviour lives - the static
      * list is a skeleton whose renderers and comparators are rewritten there.
@@ -1028,7 +1049,7 @@ export function SongTable({
         child its layout expects. */}
     <div ref={rootRef} style={{ display: 'contents' }}>
     <DataGrid
-      aria-label="Songs"
+      aria-label={tr('library.songsTable')}
       {...hold}
       className={flow ? 'songTable songTable--flow' : 'songTable'}
       columns={columns}
@@ -1054,10 +1075,10 @@ export function SongTable({
       emptyState={
         shape?.empty ??
         (library.source === 'server'
-          ? library.error ?? 'Nothing on the server yet — upload some music from the desktop app.'
+          ? library.error ?? tr('library.serverEmpty')
           : hasLocalLibrary
-            ? 'No music found in your library folder yet.'
-            : 'Connect to your music server in Settings to start listening.')
+            ? tr('library.folderEmpty')
+            : tr('library.connectServer'))
       }
       selectable={selecting}
       selectedIds={selected ?? undefined}

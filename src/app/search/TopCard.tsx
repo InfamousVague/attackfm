@@ -3,6 +3,7 @@ import { ChevronRight, Disc3, ListMusic, Music, Play, User } from '@glacier/icon
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { artSized } from '../server.ts';
 import { coversOf, type Item } from './searchModel.tsx';
+import { useSongCount, useT } from '../i18n/LocaleShell.tsx';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -25,6 +26,8 @@ export function TopCard({
   onOpen: () => void;
   onHover: () => void;
 }) {
+  const t = useT();
+  const songs = useSongCount();
   const face = (() => {
     switch (item.t) {
       case 'artist':
@@ -33,7 +36,11 @@ export function TopCard({
           cover: item.artist.cover,
           fallback: <User size={34} />,
           title: item.artist.name,
-          sub: `Artist · ${item.artist.count === 1 ? '1 song' : `${item.artist.count} songs`}`,
+          sub: (
+            <>
+              {t('search.kindArtist')} · {songs(item.artist.count)}
+            </>
+          ),
           play: false,
         };
       case 'album':
@@ -44,7 +51,7 @@ export function TopCard({
           title: item.album.title,
           sub: (
             <>
-              Album · <ArtistLink artist={item.album.artist} />
+              {t('search.kindAlbum')} · <ArtistLink artist={item.album.artist} />
             </>
           ),
           play: true,
@@ -57,7 +64,7 @@ export function TopCard({
           title: item.track.title,
           sub: (
             <>
-              Song · <ArtistLink artist={item.track.artist} />
+              {t('search.kindSong')} · <ArtistLink artist={item.track.artist} />
             </>
           ),
           play: true,
@@ -68,7 +75,11 @@ export function TopCard({
           cover: null,
           fallback: <ListMusic size={34} />,
           title: item.playlist.name,
-          sub: `Playlist · ${item.playlist.paths.length} songs`,
+          sub: (
+            <>
+              {t('search.kindPlaylist')} · {songs(item.playlist.paths.length)}
+            </>
+          ),
           play: false,
         };
       // A catalogue artist can lead the page when the library holds nothing
@@ -81,7 +92,7 @@ export function TopCard({
               cover: item.result.cover,
               fallback: <User size={34} />,
               title: item.result.title,
-              sub: 'Artist · not in your library',
+              sub: t('search.artistNotInLibrary'),
               play: false,
             }
           : null;
@@ -131,7 +142,7 @@ export function TopCard({
       <span className="searchTopCard__sub">{face.sub}</span>
       <span className="searchTopCard__verb">
         {face.play ? <Play size={15} /> : <ChevronRight size={15} />}
-        {face.play ? 'Play' : 'Open'}
+        {face.play ? t('player.play') : t('search.open')}
       </span>
     </button>
   );

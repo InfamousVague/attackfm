@@ -15,6 +15,8 @@ import { useNetworkHealth } from '../servers/NetworkDot.tsx';
 import { isTauri } from '../core/tauri.ts';
 import { developerModeEnabled, setDeveloperMode } from './developerMode.ts';
 import { SettingsNavContext } from './settingsShared.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import {
   applyStagedBundle,
@@ -69,13 +71,17 @@ function countKnock(): number {
 export function AboutSettings() {
   const { toast } = useToast();
   const goTo = useContext(SettingsNavContext);
+  const t = useT();
   const knock = () => {
     const left = countKnock();
     if (left === 0) {
       const already = developerModeEnabled();
       setDeveloperMode(true);
       fireNativeHaptic('success');
-      toast({ message: already ? 'Developer mode is already on' : 'Developer mode on', duration: 1800 });
+      toast({
+        message: already ? t('settings.devModeAlreadyOn') : t('settings.devModeOn'),
+        duration: 1800,
+      });
       // Land on the page that just appeared, rather than leaving the person
       // to find a new row under About. A no-op if no shell provided the nav.
       goTo?.('developer');
@@ -84,7 +90,7 @@ export function AboutSettings() {
     if (left <= KNOCKS_WANTED - KNOCK_HINT_FROM) {
       // The toast replaces itself on each press (latest wins), which is exactly
       // the behaviour a countdown wants.
-      toast({ message: `${left} more ${left === 1 ? 'tap' : 'taps'} to developer mode`, duration: 1200 });
+      toast({ message: t('settings.devModeCountdown', { count: left }), duration: 1200 });
     }
   };
   const { session } = useServerSession();
@@ -138,6 +144,8 @@ export function AboutSettings() {
   // Keyed by a stable id, not the label: a server named "AttackFM" (the
   // shipped default) would otherwise collide with the app row's key.
   const rows: { id: string; icon: React.ReactNode; label: string; value: string }[] = [
+    // The app's own row keeps the product name: it is the name on the icon in
+    // every language, not a word to be translated.
     { id: 'app', icon: <Music size={16} />, label: 'AttackFM', value: `v${APP_VERSION} · ${platform}` },
     // The shell is the installed binary - the number that only a store or a
     // sideload moves. Shown on device so "the app updated but this says the
@@ -148,8 +156,8 @@ export function AboutSettings() {
           {
             id: 'shell',
             icon: <PlatformGlyph size={16} />,
-            label: 'App shell',
-            value: `v${SHELL_VERSION} · updates with an install`,
+            label: t('settings.aboutShell'),
+            value: `v${SHELL_VERSION} · ${t('settings.aboutShellValue')}`,
           },
         ]
       : []),
@@ -163,10 +171,10 @@ export function AboutSettings() {
             // server's own version - which reads as the app reporting the
             // wrong one. A named server keeps its name; the default one
             // says what it is.
-            label: stats?.name && stats.name !== 'AttackFM' ? stats.name : 'Server',
+            label: stats?.name && stats.name !== 'AttackFM' ? stats.name : t('settings.aboutServer'),
             value: [
               stats ? `v${stats.version}` : null,
-              stats ? `up ${uptimeLabel(stats.uptimeSecs)}` : null,
+              stats ? t('settings.aboutUptime', { time: uptimeLabel(stats.uptimeSecs) }) : null,
               session.url.replace(/^https?:\/\//, ''),
             ]
               .filter(Boolean)
@@ -182,14 +190,12 @@ export function AboutSettings() {
           {
             id: 'connection',
             icon: <StatusDot tone={net.tone} pulse={net.ok === true} size="sm" />,
-            label: 'Connection',
+            label: t('settings.aboutConnection'),
             value: [
               net.label,
-              net.mirrors > 0
-                ? `${net.mirrors} ${net.mirrors === 1 ? 'mirror' : 'mirrors'} standing by`
-                : null,
+              net.mirrors > 0 ? t('settings.aboutMirrors', { count: net.mirrors }) : null,
               net.otherDevices > 0
-                ? `${net.otherDevices} other ${net.otherDevices === 1 ? 'device' : 'devices'}`
+                ? t('settings.aboutOtherDevices', { count: net.otherDevices })
                 : null,
             ]
               .filter(Boolean)
@@ -200,8 +206,14 @@ export function AboutSettings() {
     {
       id: 'library',
       icon: <PlatformGlyph size={16} />,
-      label: 'Library',
-      value: `${tracks.length.toLocaleString()} songs · about ${hours.toLocaleString()} ${hours === 1 ? 'hour' : 'hours'} of music`,
+      label: t('settings.aboutLibrary'),
+      // Two counts, one line, and each needs its own plural form - so each is
+      // its own entry rather than a sentence with two holes a translator has
+      // to keep in agreement.
+      value: [
+        t('settings.aboutSongCount', { count: tracks.length, n: formatNumber(tracks.length) }),
+        t('settings.aboutHours', { count: hours, n: formatNumber(hours) }),
+      ].join(' · '),
     },
   ];
 
@@ -216,7 +228,7 @@ export function AboutSettings() {
           onClick={knock}
         />
         <Text tone="muted" size="sm">
-          Your music, on your machines. Nothing rented, nothing shared.
+          {t('settings.aboutTagline')}
         </Text>
         <div className="aboutHero__pills">
           <Pill size="sm" tone="accent">
@@ -228,7 +240,7 @@ export function AboutSettings() {
         </div>
       </div>
 
-      <PaneSection title="This build">
+      <PaneSection title={t('settings.aboutThisBuild')}>
         {rows.map((row) => (
           <SettingRow
             key={row.id}
@@ -240,7 +252,7 @@ export function AboutSettings() {
         <div className="setk-row">
           <div className="prefsActions">
             <Button variant="outline" size="sm" onClick={() => void openExternal(REPO_URL)}>
-              Source on GitHub <ExternalLink size={12} />
+              {t('settings.aboutSource')} <ExternalLink size={12} />
             </Button>
           </div>
         </div>
@@ -251,14 +263,14 @@ export function AboutSettings() {
           to explain itself instead of leaving the device silently stale. */}
       {isTauri() && (
         <PaneSection
-          title="Updates"
+          title={t('settings.aboutUpdates')}
           footer={
             outcome && !staged ? (
               <Text tone={outcome.state === 'error' ? 'danger' : 'muted'} size="sm">
                 {outcome.state === 'current'
-                  ? `You're on the latest (v${outcome.version}).`
+                  ? t('settings.updateCurrent', { version: outcome.version })
                   : outcome.state === 'staged'
-                    ? `v${outcome.version} downloaded.`
+                    ? t('settings.updateDownloaded', { version: outcome.version })
                     : outcome.why}
               </Text>
             ) : undefined
@@ -266,16 +278,19 @@ export function AboutSettings() {
         >
           <SettingRow
             icon={<span className="aboutRow__icon" aria-hidden="true"><RefreshCw size={16} /></span>}
-            label="Updates"
-            hint={staged ? `v${staged} is ready — restart to apply` : 'from attack.fm'}
+            label={t('settings.aboutUpdates')}
+            hint={
+              staged ? t('settings.updateStaged', { version: staged }) : t('settings.updateSource')
+            }
             control={
               staged ? (
                 <Button variant="solid" size="sm" onClick={() => applyStagedBundle()}>
-                  Restart and update
+                  {t('settings.updateRestart')}
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" onClick={() => void check()} disabled={checking}>
-                  <RefreshCw size={12} /> {checking ? 'Checking…' : 'Check for updates'}
+                  <RefreshCw size={12} />{' '}
+                  {checking ? t('settings.updateChecking') : t('settings.updateCheck')}
                 </Button>
               )
             }
@@ -286,10 +301,7 @@ export function AboutSettings() {
       {/* The release history the update banner only ever showed one page of. */}
       <WhatsNew />
 
-      <SettingsFootnote>
-        Lyrics from LRCLIB · album art lookups via the iTunes Search API. All of it optional, all
-        of it switchable in these settings.
-      </SettingsFootnote>
+      <SettingsFootnote>{t('settings.aboutCredits')}</SettingsFootnote>
     </div>
   );
 }

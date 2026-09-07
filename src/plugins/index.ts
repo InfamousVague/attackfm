@@ -74,3 +74,38 @@ export function filterAvailable(
 export function registeredIds(): ReadonlySet<string> {
   return new Set(REGISTERED.map((p) => p.id));
 }
+
+/**
+ * The compiled-in plugins, with their words put back.
+ *
+ * A plugin object is module-scope data: `buy`, `books` and `visualizers` are
+ * built the moment this file is imported, which is before anybody has chosen a
+ * language. So those three carry catalogue KEYS in their text fields, and this
+ * turns them back into prose at render - once, at the one place every consumer
+ * reads the list from (PluginsProvider), so the marketplace card, the detail
+ * dialog, the settings tab and the nav item are all covered by one call.
+ *
+ * ONLY the compiled-in set goes through here. A plugin installed from a
+ * repository ships its own English and has no entries in our catalogue;
+ * handing a whole sentence to t() would be asking i18next about a key that
+ * happens to be a paragraph.
+ */
+export function localizePlugins(
+  plugins: readonly Plugin[],
+  t: (key: string) => string,
+): readonly Plugin[] {
+  return plugins.map((plugin) => ({
+    ...plugin,
+    name: t(plugin.name),
+    description: t(plugin.description),
+    ...(plugin.details ? { details: t(plugin.details) } : {}),
+    ...(plugin.tags ? { tags: plugin.tags.map((tag) => t(tag)) } : {}),
+    ...(plugin.settingsSections
+      ? { settingsSections: plugin.settingsSections.map((s) => ({ ...s, label: t(s.label) })) }
+      : {}),
+    ...(plugin.pages ? { pages: plugin.pages.map((page) => ({ ...page, label: t(page.label) })) } : {}),
+    ...(plugin.downloads
+      ? { downloads: plugin.downloads.map((source) => ({ ...source, label: t(source.label) })) }
+      : {}),
+  }));
+}

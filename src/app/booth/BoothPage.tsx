@@ -47,6 +47,7 @@ import { CuratorSettings } from '../settings/CuratorSettings.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useNowPlayingMotion } from '../player/nowPlayingMotion.tsx';
 import { useDjChat, DJ_AUTHOR } from './djChat.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 import {
   analyzeDjTrack,
   fetchCollectorStatus,
@@ -59,7 +60,7 @@ import {
   type FeaturesStatus,
 } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
-import { formatBytes } from '../ux/format.ts';
+import { formatAgo, formatBytes, formatNumber } from '../ux/format.ts';
 import djMascot from '../../assets/dj-mascot.webp';
 
 /** A glyph for each trait category the analyzer can emit - the icon system
@@ -78,22 +79,36 @@ const TRAIT_GLYPH: Record<string, typeof Waves> = {
 };
 
 /** The pill's one line: the curator loop's phase, in its own voice. */
-function pulseLine(feed: CuratorFeed | null): { Icon: typeof Ear; text: string } {
+function pulseLine(
+  feed: CuratorFeed | null,
+  t: (key: string, values?: Record<string, unknown>) => string,
+): { Icon: typeof Ear; text: string } {
   if (feed) {
     const { status, progress } = feed;
     if (status.phase === 'enriching' && progress.total > 0) {
-      return { Icon: Ear, text: `Reading your library · ${progress.checked} of ${progress.total}` };
+      return {
+        Icon: Ear,
+        text: t('booth.pulseReading', {
+          checked: formatNumber(progress.checked),
+          total: formatNumber(progress.total),
+        }),
+      };
     }
-    if (status.phase === 'curating') return { Icon: Sparkles, text: 'Building your next mixes' };
+    if (status.phase === 'curating') return { Icon: Sparkles, text: t('booth.pulseCurating') };
     if (status.lastCurated > 0) {
       const hours = Math.max(1, Math.round((Date.now() / 1000 - status.lastCurated) / 3600));
+      // "an hour"/"3 hours" was English grammar with the plural boundary
+      // hard-coded at one; Intl already knows where every language puts it.
       return {
         Icon: Sparkles,
-        text: hours < 24 ? `Mixes freshened ${hours === 1 ? 'an hour' : `${hours} hours`} ago` : 'Mixes ready · more as you listen',
+        text:
+          hours < 24
+            ? t('booth.mixesFreshened', { ago: formatAgo(status.lastCurated * 1000) })
+            : t('booth.mixesReady'),
       };
     }
   }
-  return { Icon: Sparkles, text: 'Your taste, at the decks' };
+  return { Icon: Sparkles, text: t('booth.pulseIdle') };
 }
 
 export function BoothPage({
@@ -112,6 +127,7 @@ export function BoothPage({
   // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
   const refreshNonce = useRefreshNonce();
   const { track: playing } = useNowPlayingMotion();
+  const t = useT();
   const chat = useDjChat();
 
   const [feed, setFeed] = useState<CuratorFeed | null>(null);
@@ -183,10 +199,18 @@ export function BoothPage({
   // Tune a mix: any curated crate opens into the trait mixer that built it.
   const [tuneMix, setTuneMix] = useState<{ title: string; tracks: Track[] } | null>(null);
 
-  const pulse = pulseLine(feed);
+  const pulse = pulseLine(feed, t);
   const waiting = pulls?.recent?.filter((r) => r.state === 'landed').length ?? 0;
-  const lastDjLine =
-    chat?.messages.filter((m) => m.authorId === DJ_AUTHOR && m.text).at(-1)?.text ?? null;
+  // The seeded greeting arrives as a catalogue key rather than words (it is
+  // built at import time, before there is a language to build it in), so the
+  // caption has to resolve it - otherwise a fresh conversation reads as though
+  // the DJ had never said anything.
+  const lastDjSaid = chat?.messages
+    .filter((m) => m.authorId === DJ_AUTHOR && (m.text || m.textKey))
+    .at(-1);
+  const lastDjLine = lastDjSaid
+    ? (lastDjSaid.textKey ? t(lastDjSaid.textKey) : lastDjSaid.text) ?? null
+    : null;
 
   const analysis = platter && playing && platter.path === playing.path ? platter.analysis : null;
   const topTraits = analysis
@@ -198,7 +222,7 @@ export function BoothPage({
   return (
     <div className="boothPage">
       <header className="boothHead">
-        <h1 className="boothHead__title">The Booth</h1>
+        <h1 className="boothHead__title">{t('booth.title')}</h1>
         {/* The pill is the loop's real phase; tapping it opens the brain's
             preferences. Model health lives in the brain card below, where it
             gets words - two bare dots up here read as stray punctuation. */}
@@ -208,7 +232,7 @@ export function BoothPage({
           size="sm"
           className="boothPulse"
           onClick={() => setPrefsOpen(true)}
-          aria-label="Curator status and preferences"
+          aria-label={t('booth.curatorStatusAria')}
         >
           <pulse.Icon size={13} aria-hidden="true" />
           <span className="boothPulse__text">{pulse.text}</span>
@@ -229,15 +253,15 @@ export function BoothPage({
           fullWidth
           className="boothPlatter"
           onClick={() => setSheetTrack(playing)}
-          aria-label={`How the DJ hears ${playing.title}`}
+          aria-label={t('booth.howDjHears', { title: playing.title })}
         >
           <span className="boothPlatter__head">
             <Disc3 size={15} className="boothPlatter__disc" aria-hidden="true" />
-            <span className="boothPlatter__label">On the platter</span>
+            <span className="boothPlatter__label">{t('booth.onThePlatter')}</span>
             {analysis && (
               <span className="boothPlatter__byline" data-ai={analysis.ai || undefined}>
                 {analysis.ai ? <Sparkles size={11} /> : <AudioLines size={11} />}
-                {analysis.ai ? 'heard by the model' : 'read by ear'}
+                {analysis.ai ? t('booth.heardByModel') : t('booth.readByEar')}
               </span>
             )}
           </span>
@@ -269,7 +293,7 @@ export function BoothPage({
             </>
           ) : (
             <span className="boothPlatter__summary boothPlatter__summary--busy">
-              <Spinner size="sm" aria-label="" /> The DJ is listening…
+              <Spinner size="sm" aria-label="" /> {t('booth.djListening')}
             </span>
           )}
         </Button>
@@ -282,13 +306,13 @@ export function BoothPage({
           <img src={djMascot} alt="" />
         </span>
         <span className="boothDate__text">
-          <span className="boothDate__title">Ask the DJ</span>
+          <span className="boothDate__title">{t('booth.askTheDj')}</span>
           <span className="boothDate__caption">
-            {chat?.busy ? 'Going through the crates…' : (lastDjLine ?? "Tell him what you're after")}
+            {chat?.busy ? t('booth.goingThroughCrates') : (lastDjLine ?? t('booth.djPrompt'))}
           </span>
         </span>
         {chat?.busy ? (
-          <Spinner size="sm" aria-label="The DJ is thinking" />
+          <Spinner size="sm" aria-label={t('booth.djThinking')} />
         ) : (
           <ChevronRight size={18} className="boothDate__chevron" aria-hidden="true" />
         )}
@@ -302,7 +326,7 @@ export function BoothPage({
             <span className="boothBrain__glyph" aria-hidden="true">
               <BrainCircuit size={15} />
             </span>
-            <span className="boothBrain__title">The curator&rsquo;s brain</span>
+            <span className="boothBrain__title">{t('booth.curatorBrain')}</span>
             <Settings2 size={14} className="boothBrain__gear" aria-hidden="true" />
           </span>
           {feed && (
@@ -310,8 +334,12 @@ export function BoothPage({
               <span className="boothBrain__icon" data-tint="purple" aria-hidden="true">
                 <Ear size={13} />
               </span>
-              Read {feed.progress.checked} of {feed.progress.total} · {feed.progress.withTempo}{' '}
-              tempo · {feed.progress.withLyrics} lyrics
+              {t('booth.brainRead', {
+                checked: formatNumber(feed.progress.checked),
+                total: formatNumber(feed.progress.total),
+                tempo: formatNumber(feed.progress.withTempo),
+                lyrics: formatNumber(feed.progress.withLyrics),
+              })}
             </span>
           )}
           {feats && (
@@ -319,8 +347,11 @@ export function BoothPage({
               <span className="boothBrain__icon" data-tint="blue" aria-hidden="true">
                 <AudioLines size={13} />
               </span>
-              Fingerprinted {feats.fingerprinted} of {feats.total}
-              {!feats.ffmpeg && <span className="boothBrain__tag">analysis off — no ffmpeg</span>}
+              {t('booth.brainFingerprinted', {
+                done: formatNumber(feats.fingerprinted),
+                total: formatNumber(feats.total),
+              })}
+              {!feats.ffmpeg && <span className="boothBrain__tag">{t('booth.analysisOff')}</span>}
             </span>
           )}
           {pulls && pulls.capBytes > 0 && (
@@ -328,8 +359,13 @@ export function BoothPage({
               <span className="boothBrain__icon" data-tint="green" aria-hidden="true">
                 <HardDrive size={13} />
               </span>
-              Collector holds {formatBytes(pulls.ledgerBytes)} of {formatBytes(pulls.capBytes)}
-              {pulls.halted === 'cap' && <span className="boothBrain__tag">paused — budget spent</span>}
+              {t('booth.collectorHolds', {
+                held: formatBytes(pulls.ledgerBytes),
+                cap: formatBytes(pulls.capBytes),
+              })}
+              {pulls.halted === 'cap' && (
+                <span className="boothBrain__tag">{t('booth.budgetSpent')}</span>
+              )}
             </span>
           )}
         </Button>
@@ -343,33 +379,42 @@ export function BoothPage({
             </span>
             <span>
               <span id="booth-enrichment-title" className="boothBrain__title">
-                Library enrichment
+                {t('booth.enrichment')}
               </span>
               <span className="boothEnrichment__status" role="status" aria-live="polite">
                 {feed.enrichment.stage === 'first'
-                  ? 'Building and normalizing the first layer'
+                  ? t('booth.enrichFirst')
                   : feed.enrichment.stage === 'second'
-                    ? 'Refining and normalizing the second layer'
-                    : 'Both layers are up to date'}
+                    ? t('booth.enrichSecond')
+                    : t('booth.enrichDone')}
               </span>
             </span>
           </span>
+          {/* The pair is keyed, not worded: the key is also what `key` and the
+              bar's aria-label are built from, so it has to survive the language
+              changing under a mounted page. */}
           {([
-            ['First layer', feed.enrichment.firstLayer],
-            ['Second layer', feed.enrichment.secondLayer],
-          ] as const).map(([label, progress]) => {
+            ['booth.layerFirst', feed.enrichment.firstLayer],
+            ['booth.layerSecond', feed.enrichment.secondLayer],
+          ] as const).map(([labelKey, progress]) => {
+            const label = t(labelKey);
             return (
-              <span className="boothEnrichment__layer" key={label}>
+              <span className="boothEnrichment__layer" key={labelKey}>
                 <span className="boothEnrichment__label">
                   <span>{label}</span>
-                  <span>{progress.complete.toLocaleString()} of {progress.total.toLocaleString()}</span>
+                  <span>
+                    {t('booth.layerProgress', {
+                      complete: formatNumber(progress.complete),
+                      total: formatNumber(progress.total),
+                    })}
+                  </span>
                 </span>
                 <ProgressBar
                   className="boothEnrichment__track"
                   size="sm"
                   value={progress.complete}
                   max={progress.total || 1}
-                  aria-label={`${label} enrichment`}
+                  aria-label={t('booth.layerEnrichmentAria', { label })}
                 />
               </span>
             );
@@ -384,7 +429,7 @@ export function BoothPage({
           <span className="boothBrain__glyph" aria-hidden="true">
             <ListMusic size={15} />
           </span>
-          <span className="boothBrain__title">Made from your library</span>
+          <span className="boothBrain__title">{t('booth.madeFromLibrary')}</span>
         </span>
         <CuratorShelves onPlay={onPlay} onOpenArtist={onOpenArtist} onTune={setTuneMix} />
       </section>
@@ -402,7 +447,7 @@ export function BoothPage({
         />
       )}
 
-      <Modal open={prefsOpen} onClose={() => setPrefsOpen(false)} title="Booth preferences" size="md">
+      <Modal open={prefsOpen} onClose={() => setPrefsOpen(false)} title={t('booth.prefsTitle')} size="md">
         <CuratorSettings />
       </Modal>
     </div>

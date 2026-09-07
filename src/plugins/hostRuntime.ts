@@ -30,7 +30,7 @@ import { useLibrary } from '../app/library/library.tsx';
 import { useLibrarySync } from '../app/library/librarySync.tsx';
 import { useServerSession } from '../app/servers/serverSession.tsx';
 import { usePlaylists } from '../app/playlists/playlists.tsx';
-import { EQ_BANDS, EQ_PRESETS, useEqualizer } from '../app/player/equalizer.tsx';
+import { EQ_BANDS, EQ_PRESETS, eqPresets, useEqualizer } from '../app/player/equalizer.tsx';
 import * as fxChain from '../app/player/fxChain.ts';
 import {
   importServerUrl,
@@ -88,7 +88,12 @@ export function installHostRuntime(): PluginHost {
       '@attackfm/app/deckHold': { holdDeck, deckHeld },
       // Added for the 2026-08 plugin batch (additive - the table only grows).
       '@attackfm/app/playlists': { usePlaylists },
-      '@attackfm/app/equalizer': { EQ_BANDS, EQ_PRESETS, useEqualizer },
+      // EQ_PRESETS now carries a `labelKey` where it used to carry a `label`:
+      // the table is module-level, so a finished name in it could never follow
+      // the language picker. `eqPresets()` is the replacement a plugin drawing
+      // a preset list wants - it resolves the names on every call, so one
+      // called during render is in the language on screen.
+      '@attackfm/app/equalizer': { EQ_BANDS, EQ_PRESETS, eqPresets, useEqualizer },
       // Which server runs an import, and the picker that chooses it. The
       // downloader lives on ONE box and the library usually on another, so an
       // importer that assumed the session server could only ever drive half of

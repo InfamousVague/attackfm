@@ -18,6 +18,7 @@ import { Button, Spinner } from '@glacier/react';
 import { Flame, Lightbulb, Mic, MoonStar, Play, Sparkles, Square, TrendingUp, Waves } from '@glacier/icons';
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTalkToDj } from './useTalkToDj.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { startDjRun } from './djSession.ts';
@@ -28,30 +29,50 @@ import djMascot from '../../assets/dj-mascot.webp';
 
 /** The Booth's steering row: each chip is a whole brief, one tap from sound.
  *  The seeds mirror the server's own mood-mix recipes, so the chip and the
- *  curated shelf speak the same dialect. */
-export const MOODS: {
-  label: string;
+ *  curated shelf speak the same dialect.
+ *
+ *  The words are keys rather than words because this table is built when the
+ *  module loads, long before there is a language to build it in: a literal
+ *  here is whatever language the app booted in, for the rest of the session,
+ *  and the picker in Settings would move six chips not at all. */
+export type Mood = {
   seed: string;
   Icon: typeof Waves;
   /** Three words under the label, where a card has room for them (the Now
    *  Playing deck): what the mood sounds like, not what it is called. */
-  hint: string;
+  hintKey: string;
   /** The mood's own colour, as a hue the card tints its glyph with - six
    *  moods, six hues, so the deck reads as six things and not six pills. */
   hue: number;
-}[] = [
-  { label: 'Chill', seed: 'something chill and unhurried', Icon: Waves, hint: 'slow, warm, unhurried', hue: 196 },
-  { label: 'Energy', seed: 'high energy, turn it up', Icon: Flame, hint: 'loud, fast, lit', hue: 18 },
-  { label: 'Late night', seed: 'late night, low lights', Icon: MoonStar, hint: 'dim, deep, after-hours', hue: 262 },
-  { label: 'Focus', seed: 'steady focus, no distractions', Icon: Lightbulb, hint: 'steady, even, wordless', hue: 44 },
+} & (
+  /** A mood the listener reads in their own language... */
+  | { labelKey: string; label?: never }
+  /** ...or one whose word is a NAME: `Charts` and `New music` are the hub's
+   *  own shelf and folder names, matched on elsewhere, and a chip that says
+   *  something the shelf does not is a door onto nothing. */
+  | { label: string; labelKey?: never }
+);
+
+export const MOODS: Mood[] = [
+  { labelKey: 'booth.moodChill', seed: 'something chill and unhurried', Icon: Waves, hintKey: 'booth.moodChillHint', hue: 196 },
+  { labelKey: 'booth.moodEnergy', seed: 'high energy, turn it up', Icon: Flame, hintKey: 'booth.moodEnergyHint', hue: 18 },
+  { labelKey: 'booth.moodLateNight', seed: 'late night, low lights', Icon: MoonStar, hintKey: 'booth.moodLateNightHint', hue: 262 },
+  { labelKey: 'booth.moodFocus', seed: 'steady focus, no distractions', Icon: Lightbulb, hintKey: 'booth.moodFocusHint', hue: 44 },
   // The charts: what everyone is playing, from what is already on the box -
   // owned hits plus the collector's pre-downloaded chart auditions. The seed
   // string is the server's vibe contract (vibes.rs), verbatim.
-  { label: 'Charts', seed: 'the charts right now', Icon: TrendingUp, hint: 'big, now, everywhere', hue: 334 },
+  { label: 'Charts', seed: 'the charts right now', Icon: TrendingUp, hintKey: 'booth.moodChartsHint', hue: 334 },
   // New music: the dates waiting to meet you and the arrivals you have not
   // heard, dates leading. Same contract discipline - the seed IS the key.
-  { label: 'New music', seed: 'the new music waiting for me', Icon: Sparkles, hint: 'fresh, unheard, yours', hue: 150 },
+  { label: 'New music', seed: 'the new music waiting for me', Icon: Sparkles, hintKey: 'booth.moodNewHint', hue: 150 },
 ];
+
+/** Both doors onto the moods - the Booth's chip row and the Now Playing deck -
+ *  need the same fallback, and a chip that says one thing in the Booth and
+ *  another on the deck is a bug you would only ever see in German. */
+export function moodLabel(mood: Mood, t: (key: string) => string): string {
+  return mood.labelKey === undefined ? mood.label : t(mood.labelKey);
+}
 
 export function DjLauncher({
   onPlay,
@@ -62,6 +83,7 @@ export function DjLauncher({
    *  drop-the-needle card with the mood chips underneath. */
   variant?: 'chip' | 'hero';
 }) {
+  const t = useT();
   const { session } = useServerSession();
   const { tracks, forYou } = useLibrary();
   // Which brief is in flight: '' is the seedless hero press, null is idle.
@@ -103,11 +125,9 @@ export function DjLauncher({
     session,
     async ({ heard, fetching }) => {
       if (fetching.length > 0) {
-        setToast(
-          `Heard: “${heard}” — fetching ${fetching.length} new ${
-            fetching.length === 1 ? 'track' : 'tracks'
-          } for you in the background.`,
-        );
+        // One entry, not four fragments: the count decides the noun's form,
+        // and where it sits in the sentence is the translator's business.
+        setToast(t('booth.heardFetching', { heard, count: fetching.length }));
       }
       await start(heard);
     },
@@ -162,37 +182,41 @@ export function DjLauncher({
           className="boothHero"
           onClick={() => void start()}
           disabled={busy}
-          aria-label="Start a set from your taste"
+          aria-label={t('booth.startFromTaste')}
         >
           <span className="boothHero__disc" aria-hidden="true">
             {busySeed === '' ? (
-              <Spinner size="sm" aria-label="Cueing" />
+              <Spinner size="sm" aria-label={t('booth.cueing')} />
             ) : (
               <Play size={22} fill="currentColor" />
             )}
           </span>
           <span className="boothHero__text">
             <span className="boothHero__title">
-              Drop the needle
+              {t('booth.dropTheNeedle')}
               {aiSet && <Sparkles size={14} className="boothHero__spark" aria-hidden="true" />}
             </span>
-            <span className="boothHero__caption">A live set, built from what you play</span>
+            <span className="boothHero__caption">{t('booth.tasteStationBlurb')}</span>
           </span>
         </Button>
-        <div className="boothChips" role="group" aria-label="Set the mood">
-          {MOODS.map(({ label, seed, Icon }) => (
+        <div className="boothChips" role="group" aria-label={t('booth.setTheMood')}>
+          {MOODS.map((mood) => (
             <Button
-              key={label}
+              key={mood.seed}
               type="button"
-              variant={busySeed === seed ? 'solid' : 'outline'}
+              variant={busySeed === mood.seed ? 'solid' : 'outline'}
               size="sm"
               className="boothChip"
-              data-on={busySeed === seed || undefined}
+              data-on={busySeed === mood.seed || undefined}
               disabled={busy}
-              onClick={() => void start(seed)}
+              onClick={() => void start(mood.seed)}
             >
-              {busySeed === seed ? <Spinner size="sm" aria-label="Cueing" /> : <Icon size={14} />}
-              {label}
+              {busySeed === mood.seed ? (
+                <Spinner size="sm" aria-label={t('booth.cueing')} />
+              ) : (
+                <mood.Icon size={14} />
+              )}
+              {moodLabel(mood, t)}
             </Button>
           ))}
           {canTalk && (
@@ -204,16 +228,16 @@ export function DjLauncher({
               data-on={recording || undefined}
               disabled={busy || hearing}
               onClick={() => void talk()}
-              aria-label={recording ? 'Stop and send' : 'Tell the DJ what you want'}
+              aria-label={recording ? t('booth.stopAndSend') : t('booth.tellTheDj')}
             >
               {hearing ? (
-                <Spinner size="sm" aria-label="Listening back" />
+                <Spinner size="sm" aria-label={t('booth.listeningBack')} />
               ) : recording ? (
                 <Square size={14} fill="currentColor" />
               ) : (
                 <Mic size={14} />
               )}
-              {hearing ? 'Hearing…' : recording ? 'Send it' : 'Tell me'}
+              {hearing ? t('booth.hearing') : recording ? t('booth.sendIt') : t('booth.tellMe')}
             </Button>
           )}
         </div>
@@ -234,7 +258,7 @@ export function DjLauncher({
         style={{ '--libChipHue': 265, '--libChipHue2': 315, '--art': `url("${djMascot}")` } as CSSProperties}
         onClick={() => void start()}
         disabled={busy}
-        aria-label="Start the DJ"
+        aria-label={t('booth.startTheDj')}
       >
         <img className="libChip__art" src={djMascot} alt="" loading="lazy" />
         {/* The DJ has no fixed collection - it wears the whole library's
@@ -244,7 +268,7 @@ export function DjLauncher({
         <LibChipStat value="∞" glyph />
         <span className="libChip__name">DJ</span>
         <span className="libChip__count">
-          {busy ? <Spinner size="sm" aria-label="Cueing" /> : 'A live set, from your taste'}
+          {busy ? <Spinner size="sm" aria-label={t('booth.cueing')} /> : t('booth.chipBlurb')}
         </span>
       </Button>
       {toast && <DjToast line={toast} onDismiss={() => setToast(null)} />}

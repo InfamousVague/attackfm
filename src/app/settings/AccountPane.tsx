@@ -7,6 +7,7 @@ import { WhereYouListen } from '../profile/WhereYouListen.tsx';
 import { DevicesSettings } from './DevicesSettings.tsx';
 import { RecoveryCodesSection } from './RecoveryCodes.tsx';
 import { SettingsNavContext } from './settingsShared.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { PaneHero, PaneSection, SettingsEmpty } from './kit/settingsKit.tsx';
 
 /**
@@ -27,15 +28,16 @@ import { PaneHero, PaneSection, SettingsEmpty } from './kit/settingsKit.tsx';
 export function AccountPane() {
   const { session, disconnect } = useServerSession();
   const goTo = useContext(SettingsNavContext);
+  const t = useT();
 
   if (!session) {
     return (
       <div className="prefsBody">
         <SettingsEmpty
           icon={<CircleUserRound size={22} />}
-          title="Not signed in"
-          body="Your AttackFM account is the one key: it lives at attack.fm, not on any server. Sign in and every server saved to it, your devices and your household appear here."
-          action={goTo ? { label: 'Set up under Servers', onPress: () => goTo('server') } : undefined}
+          title={t('settings.accountSignedOut')}
+          body={t('settings.accountSignedOutBody')}
+          action={goTo ? { label: t('settings.accountSetUpUnderServers'), onPress: () => goTo('server') } : undefined}
         />
       </div>
     );
@@ -51,11 +53,11 @@ export function AccountPane() {
           glyph={<Avatar name={session.username || 'AttackFM'} size="md" />}
           // A session restored from before usernames were stored has an empty
           // one; the hero still needs a first line.
-          title={session.username || 'Signed in'}
+          title={session.username || t('settings.summarySignedIn')}
           meta={session.url.replace(/^https?:\/\//, '')}
           trailing={
             <Button variant="outline" size="sm" onClick={() => void disconnect()}>
-              <LogOut size={14} /> Log out
+              <LogOut size={14} /> {t('settings.logOut')}
             </Button>
           }
         />
@@ -66,11 +68,10 @@ export function AccountPane() {
       <section className="serversSettings__part">
         <header className="serversSettings__partHead">
           <Heading level={3} noMargin>
-            Where you listen
+            {t('settings.whereYouListen')}
           </Heading>
           <Text size="sm" tone="muted">
-            Servers saved to your AttackFM account, wherever you sign in. Switch between them, or
-            hand someone a way into yours.
+            {t('settings.whereYouListenBody')}
           </Text>
         </header>
         <WhereYouListen />
@@ -82,11 +83,10 @@ export function AccountPane() {
       <section className="serversSettings__part">
         <header className="serversSettings__partHead">
           <Heading level={3} noMargin>
-            Devices
+            {t('settings.devices')}
           </Heading>
           <Text size="sm" tone="muted">
-            Every signed-in device on the account. Any of them can control, or take over, what is
-            playing.
+            {t('settings.devicesBody')}
           </Text>
         </header>
         <DevicesSettings />

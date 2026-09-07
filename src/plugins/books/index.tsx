@@ -14,19 +14,33 @@ import { BooksPage } from './BooksPage.tsx';
  * is a Music/Books toggle at the top of the Library page - turn the plugin off
  * and the toggle goes with it.
  */
+/**
+ * The listing's words, as catalogue keys.
+ *
+ * A plugin object is evaluated the moment this module is imported, which is
+ * before anybody has chosen a language: a sentence written into it would be
+ * the sentence the app booted with, whatever the picker says afterwards. So
+ * the object carries keys, and PluginsProvider resolves them at render - one
+ * call covering the marketplace card, its detail dialog and the nav item.
+ *
+ * They are gathered here rather than written inline because Plugin types those
+ * fields `string`, and a key sitting in `description:` reads as prose to
+ * anybody skimming. Named for what they are, they cannot be mistaken.
+ */
+const TEXT = {
+  nameKey: 'settings.pluginBooksName',
+  descriptionKey: 'settings.pluginBooksDescription',
+  detailsKey: 'settings.pluginBooksDetails',
+  navLabelKey: 'books.navLabel',
+};
+
 export const books: Plugin = {
   id: 'books',
-  name: 'Books',
-  description: 'Your audiobook shelf — read your books and pick up where you left off.',
+  name: TEXT.nameKey,
+  description: TEXT.descriptionKey,
   icon: <BookAudio size={22} />,
   author: 'AttackFM',
   version: '1.0.0',
-  details:
-    'The reading side of audiobooks, built in: your shelf of books, however they got into the ' +
-    'library, played back with chapters and your place kept across devices. It shows as a ' +
-    'Music/Books toggle at the top of the Library; turn it off and that toggle goes away. ' +
-    'Getting books IN is a separate job — the Audible ' +
-    'downloader does it for books you own, and anything dropped in the library\u2019s Audiobooks ' +
-    'folder is shelved here too.',
-  pages: [{ id: 'shelf', label: 'Books', icon: <BookAudio size={18} />, Content: BooksPage }],
+  details: TEXT.detailsKey,
+  pages: [{ id: 'shelf', label: TEXT.navLabelKey, icon: <BookAudio size={18} />, Content: BooksPage }],
 };

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useT } from '../../app/i18n/LocaleShell.tsx';
 import { OptionCards, PaneSection, SettingsFootnote } from '../../app/settings/kit/settingsKit.tsx';
 import { VISUALIZERS } from './visualizers.ts';
 import { VizThumb } from './VizThumb.tsx';
@@ -10,6 +11,7 @@ import { VIZ_EVENT, readVizIndex, writeVizIndex } from './vizPref.ts';
  * the square that is already on screen.
  */
 export function VisualizersSettings() {
+  const t = useT();
   const [index, setIndex] = useState(readVizIndex);
   useEffect(() => {
     const on = () => setIndex(readVizIndex());
@@ -21,12 +23,8 @@ export function VisualizersSettings() {
   return (
     <>
       <PaneSection
-        title="Visualizer"
-        description={
-          'Thirteen ways to draw the sound, in the spot where the CD spins. Pick one here, or tap the ' +
-          'picture while it plays to cycle through them. Every one paints in the record’s own ' +
-          'accent colour.'
-        }
+        title={t('visualizers.paneTitle')}
+        description={t('visualizers.paneDescription')}
       >
         <OptionCards
           value={current?.id ?? ''}
@@ -39,15 +37,12 @@ export function VisualizersSettings() {
           options={VISUALIZERS.map((v) => ({
             id: v.id,
             preview: <VizThumb def={v} />,
-            label: v.name,
-            note: v.note,
+            label: t(v.nameKey),
+            note: t(v.noteKey),
           }))}
         />
       </PaneSection>
-      <SettingsFootnote>
-        Choose Visualizer under Now Playing’s Artwork style menu (long-press the art) to show
-        it. Drawn on the device from the live audio - nothing leaves the phone.
-      </SettingsFootnote>
+      <SettingsFootnote>{t('visualizers.footnote')}</SettingsFootnote>
     </>
   );
 }

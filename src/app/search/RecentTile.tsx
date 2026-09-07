@@ -6,6 +6,7 @@ import { useArtLoad } from '../ux/artLoad.ts';
 import type { Playlist } from '../playlists/playlists.tsx';
 import type { Recent } from './searchRecents.ts';
 import { SEP } from './searchModel.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -27,6 +28,7 @@ export function RecentTile({
   onOpen: () => void;
   onForget: () => void;
 }) {
+  const t = useT();
   const cover = useMemo(() => {
     switch (recent.kind) {
       case 'track':
@@ -78,12 +80,17 @@ export function RecentTile({
           )}
         </span>
         <span className="searchRecent__title">{recent.title}</span>
-        <span className="searchRecent__sub">{recent.subtitle}</span>
+        {/* A remembered artist, playlist or genre has no subtitle of its own -
+            the only thing there was ever to say is WHAT it is, and that word
+            cannot be stored: the row outlives the language it was opened in.
+            So the kind supplies it here, and a stored subtitle (a song's
+            artist, a catalogue row's) wins when there is one. */}
+        <span className="searchRecent__sub">{recent.subtitle || kindKey(recent.kind, t)}</span>
       </button>
       <button
         type="button"
         className="searchRecent__forget"
-        aria-label={`Forget ${recent.title}`}
+        aria-label={t('search.forget', { title: recent.title })}
         onClick={onForget}
       >
         <X size={13} />
@@ -93,3 +100,14 @@ export function RecentTile({
 
   return recentTrack ? <TrackMenu track={recentTrack}>{tile}</TrackMenu> : tile;
 }
+
+const KIND_KEY: Partial<Record<Recent['kind'], string>> = {
+  artist: 'search.kindArtist',
+  playlist: 'search.kindPlaylist',
+  genre: 'search.kindGenre',
+};
+
+const kindKey = (kind: Recent['kind'], t: (key: string) => string): string => {
+  const key = KIND_KEY[kind];
+  return key ? t(key) : '';
+};

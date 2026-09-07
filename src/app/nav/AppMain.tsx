@@ -23,6 +23,7 @@ import type { Suggestion } from '../api/curator.ts';
 import { BoothPage } from '../booth/BoothPage.tsx';
 import { ProfilePage } from '../profile/ProfilePage.tsx';
 import { StatsPage } from '../profile/StatsPage.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /** Re-exported so App and useNavStack can name the song-page views without
  *  reaching past this content host. */
@@ -120,6 +121,7 @@ export function AppMain({
   // Books is no longer a standalone page - it is a toggle inside the Library -
   // so a tab that still names it (a session that predates the move) falls
   // through to the Library rather than rendering the shelf on its own.
+  const t = useT();
   const activePage = detail
     ? null
     : (pages.find((pg) => pg.key === tab && pg.pluginId !== 'books') ?? null);
@@ -299,7 +301,7 @@ export function AppMain({
         // it lives at the top of the Booth now, as a fullscreen layer.
         profileRoom === 'stats' ? (
           <div className="profileRoomHost">
-            <RoomBar label="This week" onBack={() => onProfileRoom(null)} />
+            <RoomBar label={t('profile.thisWeek')} onBack={() => onProfileRoom(null)} />
             <StatsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
           </div>
         ) : (

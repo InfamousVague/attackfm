@@ -3,7 +3,9 @@ import { AudioWaveform, Disc3, Flame, Play, Tag } from '@glacier/icons';
 import { Heatmap, ProgressRing, SegmentedBar } from '@glacier/react';
 import { clamp01, fmtMinutes, type StatsSummary } from './stats.ts';
 import { fmtDay } from './statsFormat.ts';
+import { formatNumber } from '../ux/format.ts';
 import { GENRE_DOT, GENRE_TONES, Heading, RowArt, SoundMeter } from './StatsBits.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /** One slice of the genre bar, computed by the page so the bar and the
  *  legend cannot diverge from the chips above the fold. */
@@ -33,13 +35,14 @@ export function StatsMore({
   albumArt: Map<string, string>;
   yearDays: StatsSummary['byDay'] | null;
 }) {
+  const t = useT();
   const albums = summary.topAlbums.slice(0, 8);
   const genres = summary.topGenres.slice(0, 8);
 
   return (
     <>
       <section className="statsSection">
-        <Heading icon={<Play size={14} />}>How you listen</Heading>
+        <Heading icon={<Play size={14} />}>{t('profile.statsHowYouListen')}</Heading>
         <div className="statsRings">
           <div className="statsRing">
             <ProgressRing
@@ -49,9 +52,9 @@ export function StatsMore({
               thickness={8}
               tone="accent"
               showValue
-              aria-label="Songs finished"
+              aria-label={t('profile.statsFinishedLabel')}
             />
-            <span className="statsRing__label">finished</span>
+            <span className="statsRing__label">{t('profile.statsFinished')}</span>
           </div>
           <div className="statsRing">
             <ProgressRing
@@ -61,14 +64,16 @@ export function StatsMore({
               thickness={8}
               tone="warning"
               showValue
-              aria-label="Songs skipped"
+              aria-label={t('profile.statsSkippedLabel')}
             />
-            <span className="statsRing__label">skipped</span>
+            <span className="statsRing__label">{t('profile.statsSkipped')}</span>
           </div>
           <div className="statsRing" data-wide>
-            <span className="statsRing__big">{summary.firstListens.toLocaleString()}</span>
+            {/* formatNumber, not toLocaleString: the latter groups by the
+                BROWSER's locale, not the one the app is set to. */}
+            <span className="statsRing__big">{formatNumber(summary.firstListens)}</span>
             <span className="statsRing__label">
-              {summary.firstListens === 1 ? 'song' : 'songs'} new to you
+              {t('profile.statsNewToYou', { count: summary.firstListens })}
             </span>
           </div>
         </div>
@@ -76,8 +81,8 @@ export function StatsMore({
 
       {genres.length > 0 && (
         <section className="statsSection">
-          <Heading icon={<Tag size={14} />}>Genres</Heading>
-          <SegmentedBar data={genreSegments} size="md" rounded aria-label="Listening by genre" />
+          <Heading icon={<Tag size={14} />}>{t('profile.statsGenresHeading')}</Heading>
+          <SegmentedBar data={genreSegments} size="md" rounded aria-label={t('profile.statsGenreBarLabel')} />
           <ol className="statsSmallRows">
             {genreSegments.map((seg, i) => (
               <li key={`${seg.label}:${i}`} className="statsSmallRow">
@@ -90,8 +95,15 @@ export function StatsMore({
                   <span className="statsSmallRow__name">{seg.label}</span>
                 </span>
                 <span className="statsSmallRow__meta">
-                  {genreTotal > 0 ? `${Math.round((seg.value / genreTotal) * 100)}%` : ''} ·{' '}
-                  {fmtMinutes(seg.value)}
+                  {/* The percent sign is a unit like any other - Arabic writes
+                      its own (٪) and some locales space it off the number. */}
+                  {genreTotal > 0
+                    ? formatNumber(seg.value / genreTotal, {
+                        style: 'percent',
+                        maximumFractionDigits: 0,
+                      })
+                    : ''}{' '}
+                  · {fmtMinutes(seg.value)}
                 </span>
               </li>
             ))}
@@ -101,7 +113,7 @@ export function StatsMore({
 
       {albums.length > 0 && (
         <section className="statsSection">
-          <Heading icon={<Disc3 size={14} />}>Top albums</Heading>
+          <Heading icon={<Disc3 size={14} />}>{t('profile.statsTopAlbumsHeading')}</Heading>
           <ol className="statsRows">
             {albums.map((row, i) => (
               <li key={`${row.album}:${row.artist}:${i}`} className="statsRow">
@@ -113,14 +125,14 @@ export function StatsMore({
                 />
                 <span className="statsRow__body">
                   <span className="statsRow__name" data-plain>
-                    {row.album || 'Unknown album'}
+                    {row.album || t('common.unknownAlbum')}
                   </span>
                   <span className="statsRow__sub">
                     <ArtistLink artist={row.artist} />
                   </span>
                 </span>
                 <span className="statsRow__meta">
-                  {row.plays.toLocaleString()} {row.plays === 1 ? 'play' : 'plays'}
+                  {t('profile.statsPlayCount', { count: row.plays })}
                 </span>
               </li>
             ))}
@@ -130,27 +142,27 @@ export function StatsMore({
 
       {summary.sound && (
         <section className="statsSection">
-          <Heading icon={<AudioWaveform size={14} />}>Your sound</Heading>
+          <Heading icon={<AudioWaveform size={14} />}>{t('profile.statsSoundHeading')}</Heading>
           <div className="statsSound">
             <div className="statsTempo">
-              <span className="statsTempo__value">{Math.round(summary.sound.bpm)}</span>
-              <span className="statsTempo__label">BPM</span>
+              <span className="statsTempo__value">{formatNumber(Math.round(summary.sound.bpm))}</span>
+              <span className="statsTempo__label">{t('profile.statsBpm')}</span>
             </div>
-            <SoundMeter label="Energy" value={summary.sound.energy} />
-            <SoundMeter label="Brightness" value={summary.sound.brightness} />
+            <SoundMeter label={t('profile.statsEnergy')} value={summary.sound.energy} />
+            <SoundMeter label={t('profile.statsBrightness')} value={summary.sound.brightness} />
           </div>
         </section>
       )}
 
       {yearDays && yearDays.some((d) => d.minutes > 0) && (
         <section className="statsSection">
-          <Heading icon={<Flame size={14} />}>A year of listening</Heading>
+          <Heading icon={<Flame size={14} />}>{t('profile.statsYearHeading')}</Heading>
           <div className="statsHeat">
             <Heatmap
               data={yearDays.map((d) => ({ date: fmtDay(d.day), value: d.minutes }))}
               rows={7}
               legend
-              aria-label="Minutes listened per day over the last year"
+              aria-label={t('profile.statsYearChartLabel')}
             />
           </div>
         </section>

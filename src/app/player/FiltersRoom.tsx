@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Input, SegmentedControl, Switch, Text } from '@glacier/react';
+import { Input, SegmentedControl, Text } from '@glacier/react';
 import { CircleOff, Search, X } from '@glacier/icons';
 import { setFxChain, useFxChain, useServerFxNodes, type FxNode } from './fxChain.ts';
 import { FAMILIES, FILTERS, kindsUsed, signature, type Filter } from './filters.ts';
 import { scrollOwner } from './fxEditing.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * Filters: one tap, one whole sound.
@@ -27,10 +28,11 @@ function freshKey(): string {
 }
 
 /** The segment that means "do not filter the shelf". Leading space keeps it
- *  from colliding with a real family name. */
+ *  from colliding with a real family id. */
 const ALL = ' all';
 
 export function FiltersRoom() {
+  const t = useT();
   const chain = useFxChain();
   const { session } = useServerSession();
   const [family, setFamily] = useState<string>(ALL);
@@ -53,15 +55,15 @@ export function FiltersRoom() {
    * can change under this room entirely. Turning one knob over there should
    * stop a filter claiming to be on, and this is what makes that automatic.
    */
-  const activeId = useMemo(() => {
+  const active = useMemo(() => {
     if (chain.nodes.length === 0) return null;
     const now = signature(chain.nodes.map((n) => ({ t: n.t, params: n.params })));
-    return FILTERS.find((f) => signature(f.nodes) === now)?.id ?? null;
+    return FILTERS.find((f) => signature(f.nodes) === now) ?? null;
   }, [chain]);
 
   /** Kinds a filter needs that the server has said it cannot render. */
   const missingFor = (filter: Filter): string[] =>
-    supported ? kindsUsed(filter).filter((t) => !supported.has(t)) : [];
+    supported ? kindsUsed(filter).filter((k) => !supported.has(k)) : [];
 
   const apply = (filter: Filter, root: HTMLElement | null) => {
     const nodes: FxNode[] = filter.nodes.map((n) => ({
@@ -81,39 +83,55 @@ export function FiltersRoom() {
     const counts = new Map<string, number>();
     for (const f of FILTERS) counts.set(f.family, (counts.get(f.family) ?? 0) + 1);
     return [
-      { value: ALL, label: `All ${FILTERS.length}` },
-      ...FAMILIES.filter((f) => counts.has(f)).map((f) => ({ value: f, label: f })),
+      { value: ALL, label: t('player.filterFamilyAll', { count: FILTERS.length }) },
+      ...FAMILIES.filter((f) => counts.has(f.id)).map((f) => ({
+        value: f.id,
+        label: t(f.labelKey),
+      })),
     ];
-  }, []);
+  }, [t]);
 
   const searching = query.trim().length > 0;
 
-  /** A query beats the family rather than narrowing it: searching inside one
-   *  drawer is how you get "no results" for a filter sitting in the next. */
+  /**
+   * The shelf, with every row's words already resolved.
+   *
+   * Resolved HERE rather than at each row because the query is matched against
+   * them: the table holds catalogue keys, so searching it raw would only ever
+   * find a filter by its English name, in every language.
+   *
+   * A query beats the family rather than narrowing it - searching inside one
+   * drawer is how you get "no results" for a filter sitting in the next.
+   */
   const shelf = useMemo(() => {
+    const rows = FILTERS.map((filter) => ({
+      filter,
+      name: t(filter.nameKey),
+      blurb: t(filter.blurbKey),
+    }));
     const q = query.trim().toLowerCase();
     if (q) {
-      return FILTERS.filter(
-        (f) => f.name.toLowerCase().includes(q) || f.blurb.toLowerCase().includes(q),
+      return rows.filter(
+        (r) => r.name.toLowerCase().includes(q) || r.blurb.toLowerCase().includes(q),
       );
     }
-    return family === ALL ? FILTERS : FILTERS.filter((f) => f.family === family);
-  }, [family, query]);
+    return family === ALL ? rows : rows.filter((r) => r.filter.family === family);
+  }, [family, query, t]);
 
   return (
     <div className="fxRoom">
       <div className="fxRoom__head">
         <Text weight="bold" size="sm">
-          Filters
+          {t('player.filtersTitle')}
         </Text>
         <Text tone="muted" size="xs">
-          {activeId ? (FILTERS.find((f) => f.id === activeId)?.name ?? 'on') : 'none'}
+          {active ? t(active.nameKey) : t('player.filterNone')}
         </Text>
       </div>
 
       {!session && (
         <Text tone="muted" size="xs">
-          Filters colour the stream your server encodes, so sign in to hear one.
+          {t('player.filtersNeedServer')}
         </Text>
       )}
 
@@ -127,10 +145,10 @@ export function FiltersRoom() {
           onClick={() => setFxChain([])}
         >
           <CircleOff size={14} />
-          No filter
+          {t('player.filterClear')}
         </button>
         <Text tone="muted" size="xs">
-          A filter replaces the chain — there is only one signal path.
+          {t('player.filterReplacesChain')}
         </Text>
       </div>
 
@@ -139,8 +157,8 @@ export function FiltersRoom() {
           <div className="fxShelf__search">
             <Search size={14} />
             <Input
-              aria-label="Search filters"
-              placeholder={`Search ${FILTERS.length} filters`}
+              aria-label={t('player.filterSearch')}
+              placeholder={t('player.filterSearchPlaceholder', { count: FILTERS.length })}
               value={query}
               size="sm"
               onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
@@ -149,7 +167,7 @@ export function FiltersRoom() {
               <button
                 type="button"
                 className="fxShelf__clear"
-                aria-label="Clear search"
+                aria-label={t('common.clearSearch')}
                 onClick={() => setQuery('')}
               >
                 <X size={13} />
@@ -159,7 +177,7 @@ export function FiltersRoom() {
           {!searching && (
             <div className="fxShelf__rail">
               <SegmentedControl
-                aria-label="Family"
+                aria-label={t('player.filterFamily')}
                 size="sm"
                 value={family}
                 options={options}
@@ -171,12 +189,12 @@ export function FiltersRoom() {
 
         {shelf.length === 0 ? (
           <Text tone="muted" size="xs">
-            Nothing here matches “{query.trim()}”.
+            {t('player.filterNoMatch', { query: query.trim() })}
           </Text>
         ) : (
           <ul className="fxShelf__list">
-            {shelf.map((filter) => {
-              const active = filter.id === activeId;
+            {shelf.map(({ filter, name, blurb }) => {
+              const on = filter.id === active?.id;
               const missing = missingFor(filter);
               const unavailable = missing.length > 0;
               const Icon = filter.icon;
@@ -185,26 +203,26 @@ export function FiltersRoom() {
                   <button
                     type="button"
                     className="fxShelf__item"
-                    data-active={active ? 'true' : undefined}
-                    aria-pressed={active}
+                    data-active={on ? 'true' : undefined}
+                    aria-pressed={on}
                     disabled={unavailable}
                     title={
                       unavailable
-                        ? `This server's encoder cannot do ${missing.join(', ')} yet`
+                        ? t('player.filterNeedsNodes', { nodes: missing.join(', ') })
                         : undefined
                     }
                     onClick={(e) => apply(filter, e.currentTarget)}
                   >
-                    <span className="fxShelf__icon" data-active={active ? 'true' : undefined}>
+                    <span className="fxShelf__icon" data-active={on ? 'true' : undefined}>
                       <Icon size={16} />
                     </span>
                     <span className="fxShelf__text">
-                      <span className="fxShelf__name">{filter.name}</span>
+                      <span className="fxShelf__name">{name}</span>
                       <span className="fxShelf__blurb">
-                        {unavailable ? 'Needs a newer server' : filter.blurb}
+                        {unavailable ? t('player.filterNeedsNewerServer') : blurb}
                       </span>
                     </span>
-                    {active && <span className="fxShelf__on">on</span>}
+                    {on && <span className="fxShelf__on">{t('player.filterOn')}</span>}
                   </button>
                 </li>
               );

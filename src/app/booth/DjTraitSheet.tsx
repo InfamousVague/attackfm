@@ -16,6 +16,7 @@ import {
   type DjTraitAnalysis,
 } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 export function DjTraitSheet({ track, open, onClose, quick = false }: {
   track: Track;
@@ -24,6 +25,7 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
   /** Analyze, choose the strongest directions, and play without asking. */
   quick?: boolean;
 }) {
+  const t = useT();
   const { session } = useServerSession();
   const { tracks } = useLibrary();
   const play = useDjPlay();
@@ -57,7 +59,7 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
           .slice(0, 3).map((t) => t.id)));
       })
       .catch((reason: unknown) => {
-        if (!ctrl.signal.aborted) setError(reason instanceof Error ? reason.message : 'The DJ could not listen to this song.');
+        if (!ctrl.signal.aborted) setError(reason instanceof Error ? reason.message : t('booth.couldNotListen'));
       })
       .finally(() => { if (!ctrl.signal.aborted) setBusy(false); });
     return () => ctrl.abort();
@@ -81,13 +83,13 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
       }
       const queue = result.trackIds.map((id) => byId.get(id)).filter((item): item is Track => item !== undefined);
       const opener = queue[0];
-      if (!opener) throw new Error('The DJ found no playable tracks in this library.');
+      if (!opener) throw new Error(t('booth.noPlayableTracks'));
       play(opener, queue);
       const reason = result.explanations.find((item) => item.trackId === trackIdFromPath(opener.path));
-      if (reason) toast({ message: `Why this mix started here · ${reason.reason}` });
+      if (reason) toast({ message: t('booth.whyStartedHere', { reason: reason.reason }) });
       onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'The DJ could not build that queue.');
+      setError(reason instanceof Error ? reason.message : t('booth.couldNotBuildQueue'));
     } finally {
       setBusy(false);
     }
@@ -112,12 +114,14 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
       side="bottom"
       size="lg"
       className="djTraitSheet"
-      title={<>{quick ? 'Generating your queue' : 'Build a mix from this song'}</>}
-      description={`${track.title} · ${track.artist}`}
+      title={<>{quick ? t('booth.generatingQueue') : t('booth.buildMixFromSong')}</>}
+      description={t('booth.trackByArtist', { title: track.title, artist: track.artist })}
       footer={!quick ? (
         <Button variant="solid" disabled={busy || chosen.length === 0} onClick={() => void generate()}>
           {busy && analysis ? <Spinner size="sm" /> : <Play size={15} fill="currentColor" />}
-          Build my queue{chosen.length > 0 ? ` · ${chosen.length}` : ''}
+          {chosen.length > 0
+            ? t('booth.buildMyQueueCount', { count: chosen.length })
+            : t('booth.buildMyQueue')}
         </Button>
       ) : undefined}
     >
@@ -125,7 +129,7 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
         {!analysis && busy && (
           <div className="djTraitListening" role="status">
             <Sparkles size={22} />
-            <span>{quick ? 'The DJ is choosing the strongest directions…' : 'The DJ is listening for its groove, sound, voice, and attitude…'}</span>
+            <span>{quick ? t('booth.chooseStrongest') : t('booth.listeningToSong')}</span>
           </div>
         )}
         {error && (
@@ -134,7 +138,7 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
         {analysis && !quick && (
           <>
             <Text tone="muted" size="sm" className="djTraitSummary">{analysis.summary}</Text>
-            <div className="djTraitCloud" aria-label="Musical traits">
+            <div className="djTraitCloud" aria-label={t('booth.musicalTraits')}>
               {analysis.traits.map((trait: DjTrait) => {
                 const active = selected.has(trait.id);
                 return (
@@ -160,9 +164,9 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
               })}
             </div>
             <div className="djNoteEditor">
-              <label htmlFor={`dj-note-${trackId}`}>Your DJ note</label>
+              <label htmlFor={`dj-note-${trackId}`}>{t('booth.yourDjNote')}</label>
               <Textarea id={`dj-note-${trackId}`} value={djNote} maxLength={2000}
-                placeholder="Mix role, transition points, crowd response, or anything the model should know…"
+                placeholder={t('booth.djNotePlaceholder')}
                 onChange={(event) => { setDjNote(event.target.value); setNoteSaved(false); }} />
               <Button variant="outline" size="sm" disabled={noteSaved || busy} onClick={() => {
                 if (!session || trackId === null) return;
@@ -176,9 +180,9 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
                       .sort((a, b) => b.weight * b.confidence - a.weight * a.confidence)
                       .slice(0, 3).map((trait) => trait.id)));
                   })
-                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Could not save DJ note.'))
+                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : t('booth.couldNotSaveNote')))
                   .finally(() => setBusy(false));
-              }}>{noteSaved ? 'Note saved' : 'Save note'}</Button>
+              }}>{noteSaved ? t('booth.noteSaved') : t('booth.saveNote')}</Button>
             </div>
           </>
         )}
@@ -187,10 +191,19 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
   );
 }
 
+/** Two entries rather than one sentence with the noun poured in: "this album"
+ *  and "this playlist" stop sharing a shape the moment the article has to
+ *  agree with the noun. */
+const COLLECTION_TITLE = {
+  album: 'booth.buildMixFromAlbum',
+  playlist: 'booth.buildMixFromPlaylist',
+} as const;
+
 export function DjCollectionTraitSheet({ source, name, seedTracks, open, onClose }: {
   source: 'album' | 'playlist'; name: string; seedTracks: Track[];
   open: boolean; onClose: () => void;
 }) {
+  const t = useT();
   const { session } = useServerSession();
   const { tracks } = useLibrary();
   const play = useDjPlay();
@@ -215,7 +228,7 @@ export function DjCollectionTraitSheet({ source, name, seedTracks, open, onClose
           .slice(0, 3).map((t) => t.id)));
       })
       .catch((reason: unknown) => {
-        if (!ctrl.signal.aborted) setError(reason instanceof Error ? reason.message : 'The DJ could not read this collection.');
+        if (!ctrl.signal.aborted) setError(reason instanceof Error ? reason.message : t('booth.couldNotReadCollection'));
       })
       .finally(() => { if (!ctrl.signal.aborted) setBusy(false); });
     return () => ctrl.abort();
@@ -235,29 +248,32 @@ export function DjCollectionTraitSheet({ source, name, seedTracks, open, onClose
       }
       const queue = result.trackIds.map((id) => byId.get(id)).filter((item): item is Track => item !== undefined);
       const first = queue[0];
-      if (!first) throw new Error('The DJ found no playable matches in this library.');
+      if (!first) throw new Error(t('booth.noPlayableMatches'));
       play(first, queue);
       rememberDjReasons(result.explanations);
       const reason = result.explanations.find((item) => item.trackId === trackIdFromPath(first.path));
-      if (reason) toast({ message: `Why this mix started here · ${reason.reason}` });
+      if (reason) toast({ message: t('booth.whyStartedHere', { reason: reason.reason }) });
       onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'The DJ could not build that mix.');
+      setError(reason instanceof Error ? reason.message : t('booth.couldNotBuildMix'));
     } finally { setBusy(false); }
   };
 
   return <Drawer open={open} onClose={onClose} side="bottom" size="lg" className="djTraitSheet"
-    title={<>Build a mix from this {source}</>} description={`${name} · ${seedIds.length} songs`}
+    title={<>{t(COLLECTION_TITLE[source])}</>}
+    description={t('booth.collectionSongs', { name, count: seedIds.length })}
     footer={<Button variant="solid" disabled={busy || chosen.length === 0} onClick={() => void generate()}>
       {busy && analysis ? <Spinner size="sm" /> : <Play size={15} fill="currentColor" />}
-      Build my queue{chosen.length > 0 ? ` · ${chosen.length}` : ''}
+      {chosen.length > 0
+        ? t('booth.buildMyQueueCount', { count: chosen.length })
+        : t('booth.buildMyQueue')}
     </Button>}>
     <div className="djTraitSheet__body">
       {!analysis && busy && <div className="djTraitListening" role="status"><Sparkles size={22} />
-        <span>The DJ is finding the musical center and strongest side roads…</span></div>}
+        <span>{t('booth.findingCenter')}</span></div>}
       {error && <Text tone="danger" size="sm" className="djTraitError">{error}</Text>}
       {analysis && <><Text tone="muted" size="sm" className="djTraitSummary">{analysis.summary}</Text>
-        <div className="djTraitCloud" aria-label="Musical traits">{analysis.traits.map((trait) => {
+        <div className="djTraitCloud" aria-label={t('booth.musicalTraits')}>{analysis.traits.map((trait) => {
           const active = selected.has(trait.id);
           return <Button type="button" variant={active ? 'solid' : 'outline'} size="sm" key={trait.id} className="djTrait" data-selected={active || undefined}
             aria-pressed={active} title={trait.description} onClick={() => setSelected((previous) => {

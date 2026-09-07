@@ -28,9 +28,15 @@ export type EffectGroup = 'lofi' | 'tone' | 'dirt' | 'move' | 'space' | 'speed';
 export interface EffectDef {
   /** The contract with the server. Must exist in stream.rs's EFFECTS. */
   id: string;
-  label: string;
-  /** What it sounds like, in the words someone would use to want it. */
-  blurb: string;
+  /**
+   * Catalogue keys rather than the words themselves. The table is built at
+   * import - before a language exists - so the text had to move out of it, and
+   * a rack that comes back reads these through t() at render. What it sounds
+   * like, in the words someone would use to want it, now lives in en.json
+   * beside every other string somebody has to translate.
+   */
+  labelKey: string;
+  blurbKey: string;
   group: EffectGroup;
 }
 
@@ -39,24 +45,24 @@ export interface EffectDef {
  * the way the rack reads, with the one most people are actually after first.
  */
 export const EFFECTS: EffectDef[] = [
-  { id: 'lofi', label: 'Lofi', blurb: 'Tape, dust and a low ceiling', group: 'lofi' },
+  { id: 'lofi', labelKey: 'player.effectLofi', blurbKey: 'player.effectLofiBlurb', group: 'lofi' },
 
-  { id: 'lowpass', label: 'Through the wall', blurb: 'Everything above the mids, gone', group: 'tone' },
-  { id: 'radio', label: 'AM radio', blurb: 'Thin, boxy, mid-range only', group: 'tone' },
-  { id: 'warm', label: 'Warm', blurb: 'Extremes rolled off and glued', group: 'tone' },
+  { id: 'lowpass', labelKey: 'player.effectLowPass', blurbKey: 'player.effectLowPassBlurb', group: 'tone' },
+  { id: 'radio', labelKey: 'player.effectRadio', blurbKey: 'player.effectRadioBlurb', group: 'tone' },
+  { id: 'warm', labelKey: 'player.effectWarm', blurbKey: 'player.effectWarmBlurb', group: 'tone' },
 
-  { id: 'drive', label: 'Attack pedal', blurb: 'Overdrive - the peaks grit up', group: 'dirt' },
-  { id: 'crush', label: 'Bitcrush', blurb: 'Fewer bits, coarser clock', group: 'dirt' },
+  { id: 'drive', labelKey: 'player.effectDrive', blurbKey: 'player.effectDriveBlurb', group: 'dirt' },
+  { id: 'crush', labelKey: 'player.effectCrush', blurbKey: 'player.effectCrushBlurb', group: 'dirt' },
 
-  { id: 'wow', label: 'Tape wow', blurb: 'The wobble of a worn tape', group: 'move' },
-  { id: 'tremolo', label: 'Tremolo', blurb: 'Volume pulsing in time', group: 'move' },
-  { id: 'phaser', label: 'Phaser', blurb: 'A sweep moving through it', group: 'move' },
+  { id: 'wow', labelKey: 'player.effectWow', blurbKey: 'player.effectWowBlurb', group: 'move' },
+  { id: 'tremolo', labelKey: 'player.effectTremolo', blurbKey: 'player.effectTremoloBlurb', group: 'move' },
+  { id: 'phaser', labelKey: 'player.effectPhaser', blurbKey: 'player.effectPhaserBlurb', group: 'move' },
 
-  { id: 'room', label: 'Room', blurb: 'Played in a small hard room', group: 'space' },
-  { id: 'hall', label: 'Hall', blurb: 'Further away, longer tail', group: 'space' },
+  { id: 'room', labelKey: 'player.effectRoom', blurbKey: 'player.effectRoomBlurb', group: 'space' },
+  { id: 'hall', labelKey: 'player.effectHall', blurbKey: 'player.effectHallBlurb', group: 'space' },
 
-  { id: 'slow', label: 'Slowed', blurb: 'A little under tempo', group: 'speed' },
-  { id: 'fast', label: 'Sped up', blurb: 'A little over tempo', group: 'speed' },
+  { id: 'slow', labelKey: 'player.effectSlow', blurbKey: 'player.effectSlowBlurb', group: 'speed' },
+  { id: 'fast', labelKey: 'player.effectFast', blurbKey: 'player.effectFastBlurb', group: 'speed' },
 ];
 
 const KEY = 'attackfm-effects';

@@ -14,6 +14,7 @@ import {
 } from '@glacier/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { Button, StatTile, TimeSeriesChart } from '@glacier/react';
@@ -28,12 +29,13 @@ import {
 import type { Track } from '../core/tauri.ts';
 import {
   AXIS_HOURS,
-  MONTHS,
   RANGES,
   dayToLocalMs,
   fmtAxisMinutes,
+  fmtDayMs,
   fmtHour,
 } from './statsFormat.ts';
+import { formatNumber } from '../ux/format.ts';
 import { ArtChip, GENRE_TONES, Heading, RowArt } from './StatsBits.tsx';
 import { StatsMore } from './StatsMore.tsx';
 import { FriendsThisWeek } from './FriendsThisWeek.tsx';
@@ -67,6 +69,7 @@ export function StatsPage({
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
 }) {
+  const t = useT();
   const { session } = useServerSession();
   // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
   const refreshNonce = useRefreshNonce();
@@ -112,9 +115,9 @@ export function StatsPage({
   // library's Track rows. One map bridges them for every cover on the page.
   const byId = useMemo(() => {
     const map = new Map<number, Track>();
-    for (const t of tracksOfHub(tracks, session)) {
-      const id = trackIdFromPath(t.path);
-      if (id !== null) map.set(id, t);
+    for (const track of tracksOfHub(tracks, session)) {
+      const id = trackIdFromPath(track.path);
+      if (id !== null) map.set(id, track);
     }
     return map;
   }, [tracks]);
@@ -125,10 +128,10 @@ export function StatsPage({
   // is the acceptable end of that trade.
   const albumArt = useMemo(() => {
     const map = new Map<string, string>();
-    for (const t of tracks) {
-      if (!t.artwork || !t.album) continue;
-      const key = t.album.toLowerCase();
-      if (!map.has(key)) map.set(key, t.artwork);
+    for (const track of tracks) {
+      if (!track.artwork || !track.album) continue;
+      const key = track.album.toLowerCase();
+      if (!map.has(key)) map.set(key, track.artwork);
     }
     return map;
   }, [tracks]);
@@ -136,13 +139,13 @@ export function StatsPage({
   if (!session) {
     return (
       <div className="homePage statsPage">
-        <p className="statsNote">Stats live on your server — connect to one.</p>
+        <p className="statsNote">{t('profile.statsNeedServer')}</p>
       </div>
     );
   }
 
   const chips = (
-    <div className="statsChips" role="tablist" aria-label="Time range">
+    <div className="statsChips" role="tablist" aria-label={t('profile.statsRangeTabs')}>
       {RANGES.map((r) => (
         <button
           key={r.id}
@@ -153,7 +156,7 @@ export function StatsPage({
           data-on={range === r.id ? '' : undefined}
           onClick={() => setRange(r.id)}
         >
-          {r.label}
+          {t(r.labelKey)}
         </button>
       ))}
     </div>
@@ -169,7 +172,7 @@ export function StatsPage({
             <StatTile key={i} skeleton value="" label="" />
           ))}
         </div>
-        <TimeSeriesChart skeleton times={[]} series={[]} height="180px" aria-label="Loading" />
+        <TimeSeriesChart skeleton times={[]} series={[]} height="180px" aria-label={t('common.loading')} />
       </div>
     );
   }
@@ -178,9 +181,7 @@ export function StatsPage({
     return (
       <div className="homePage statsPage">
         {chips}
-        <p className="statsNote">
-          This server does not track listening yet — it needs the current home-hub build.
-        </p>
+        <p className="statsNote">{t('profile.statsUnsupported')}</p>
       </div>
     );
   }
@@ -190,10 +191,14 @@ export function StatsPage({
     return (
       <div className="homePage statsPage">
         {chips}
-        <p className="statsNote">Nothing counted yet — stats start with your next listen.</p>
+        <p className="statsNote">{t('profile.statsEmpty')}</p>
       </div>
     );
   }
+
+  // The hero says "listened this week": the range's mid-sentence form, which
+  // is a separate catalogue entry rather than a lower-cased chip label.
+  const rangeSentence = RANGES.find((r) => r.id === range)?.sentenceKey ?? null;
 
   const clockMax = Math.max(...summary.clock);
   const peakHour = clockMax > 0 ? summary.clock.indexOf(clockMax) : -1;
@@ -223,10 +228,10 @@ export function StatsPage({
   const genreSegments = genres.slice(0, GENRE_TONES.length).map((g, i) => ({
     value: g.minutes,
     tone: GENRE_TONES[i],
-    label: g.genre || 'Unknown',
+    label: g.genre || t('common.unknownGenre'),
   }));
   const genreRest = genres.slice(GENRE_TONES.length).reduce((n, g) => n + g.minutes, 0);
-  if (genreRest > 0) genreSegments.push({ value: genreRest, tone: 'neutral', label: 'Everything else' });
+  if (genreRest > 0) genreSegments.push({ value: genreRest, tone: 'neutral', label: t('profile.statsGenreRest') });
 
   return (
     <div className="homePage statsPage">
@@ -239,37 +244,39 @@ export function StatsPage({
           <div className="statsHero__head">
             <span className="statsHero__value">{fmtMinutes(summary.minutes)}</span>
             <span className="statsHero__label">
-              listened {RANGES.find((r) => r.id === range)?.label.toLowerCase()}
+              {t('profile.statsListenedRange', { range: rangeSentence ? t(rangeSentence) : '' })}
             </span>
           </div>
           {summary.firstListens > 0 && (
             <p className="statsFirsts">
-              {summary.firstListens.toLocaleString()}{' '}
-              {summary.firstListens === 1 ? 'song' : 'songs'} you&rsquo;d never played before
+              {t('profile.statsFirstListens', { count: summary.firstListens })}
             </p>
           )}
         </div>
+        {/* formatNumber, not toLocaleString: the latter groups by the BROWSER's
+            locale, so switching the app to German left these counts grouped
+            the way the OS was set. */}
         <div className="statsTiles">
           <StatTile
             icon={<Play size={16} />}
-            value={summary.plays.toLocaleString()}
-            label="plays"
+            value={formatNumber(summary.plays)}
+            label={t('profile.statsPlaysLabel', { count: summary.plays })}
             edgeAccent
           />
           <StatTile
             icon={<Music size={16} />}
-            value={summary.uniqueTracks.toLocaleString()}
-            label="different songs"
+            value={formatNumber(summary.uniqueTracks)}
+            label={t('profile.statsUniqueTracks', { count: summary.uniqueTracks })}
           />
           <StatTile
             icon={<User size={16} />}
-            value={summary.uniqueArtists.toLocaleString()}
-            label="different artists"
+            value={formatNumber(summary.uniqueArtists)}
+            label={t('profile.statsUniqueArtists', { count: summary.uniqueArtists })}
           />
           <StatTile
             icon={<Flame size={16} />}
-            value={summary.streakDays.toLocaleString()}
-            label={summary.streakDays === 1 ? 'day streak' : 'day streak'}
+            value={formatNumber(summary.streakDays)}
+            label={t('profile.statsStreak', { count: summary.streakDays })}
           />
         </div>
       </section>
@@ -279,8 +286,8 @@ export function StatsPage({
         <div className="statsArtChips">
           {topArtist && (
             <ArtChip
-              label="Top artist"
-              value={topArtist.artist || 'Unknown artist'}
+              label={t('profile.statsTopArtist')}
+              value={topArtist.artist || t('common.unknownArtist')}
               artwork={topArtistCover}
               shape="circle"
               glyph={<User size={16} />}
@@ -293,8 +300,8 @@ export function StatsPage({
             (topSongTrack ? (
               <TrackMenu track={topSongTrack}>
                 <ArtChip
-                  label="On repeat"
-                  value={topSong.title || 'Unknown song'}
+                  label={t('profile.statsOnRepeat')}
+                  value={topSong.title || t('common.unknownSong')}
                   artwork={topSongTrack.artwork ?? null}
                   glyph={<Music size={16} />}
                   onClick={() => onPlay(topSongTrack, [topSongTrack])}
@@ -302,24 +309,24 @@ export function StatsPage({
               </TrackMenu>
             ) : (
               <ArtChip
-                label="On repeat"
-                value={topSong.title || 'Unknown song'}
+                label={t('profile.statsOnRepeat')}
+                value={topSong.title || t('common.unknownSong')}
                 artwork={null}
                 glyph={<Music size={16} />}
               />
             ))}
           {topAlbum && (
             <ArtChip
-              label="Top album"
-              value={topAlbum.album || 'Unknown album'}
+              label={t('profile.statsTopAlbum')}
+              value={topAlbum.album || t('common.unknownAlbum')}
               artwork={albumArt.get(topAlbum.album.toLowerCase()) ?? null}
               glyph={<Disc3 size={16} />}
             />
           )}
           {topGenre && (
             <ArtChip
-              label="Top genre"
-              value={topGenre.genre || 'Unknown'}
+              label={t('profile.statsTopGenre')}
+              value={topGenre.genre || t('common.unknownGenre')}
               artwork={genreSlug ? artworkUrl(genreSlug) : null}
               glyph={<Tag size={16} />}
               hue={genreSlug ? artworkHue(genreSlug) : null}
@@ -327,7 +334,7 @@ export function StatsPage({
           )}
           {peakHour >= 0 && (
             <ArtChip
-              label="Peak hour"
+              label={t('profile.statsPeakHour')}
               value={fmtHour(peakHour)}
               glyph={<Clock size={16} />}
               hue={210}
@@ -337,37 +344,40 @@ export function StatsPage({
       )}
 
       <section className="statsSection">
-        <Heading icon={<AudioWaveform size={14} />}>Listening</Heading>
+        <Heading icon={<AudioWaveform size={14} />}>{t('profile.statsListeningHeading')}</Heading>
         <TimeSeriesChart
           times={chartTimes}
-          series={[{ id: 'minutes', label: 'Minutes', values: chartValues, tone: 'accent' }]}
+          series={[{ id: 'minutes', label: t('profile.statsMinutesSeries'), values: chartValues, tone: 'accent' }]}
           shape="area"
           height="180px"
           formatValue={fmtAxisMinutes}
-          formatTime={(t) => {
-            const d = new Date(t);
-            return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
-          }}
-          emptyLabel="Nothing yet for this range."
-          aria-label="Minutes listened per day"
+          formatTime={fmtDayMs}
+          emptyLabel={t('profile.statsRangeEmpty')}
+          aria-label={t('profile.statsChartLabel')}
         />
       </section>
 
       <section className="statsSection">
-        <Heading icon={<Clock size={14} />}>Your clock</Heading>
+        <Heading icon={<Clock size={14} />}>{t('profile.statsClockHeading')}</Heading>
         {clockMax === 0 ? (
-          <p className="statsQuiet">Nothing yet — the clock fills in as you listen.</p>
+          <p className="statsQuiet">{t('profile.statsClockEmpty')}</p>
         ) : (
           <div
             className="statsClock"
             role="img"
-            aria-label={`Listening by hour of day, busiest around ${fmtHour(peakHour)}`}
+            aria-label={t('profile.statsClockLabel', { hour: fmtHour(peakHour) })}
           >
             {summary.clock.map((minutes, hour) => (
               <div
                 key={hour}
                 className="statsClock__col"
-                title={`${fmtHour(hour)} — ${Math.round(minutes)} min`}
+                // The minutes arrive already formatted rather than as a bare
+                // number beside a "min" in the catalogue entry: the unit and
+                // which side of the number it sits on are Intl's to decide.
+                title={t('profile.statsClockTip', {
+                  hour: fmtHour(hour),
+                  minutes: fmtAxisMinutes(minutes),
+                })}
               >
                 {hour === peakHour && (
                   <span className="statsClock__peak" aria-hidden>
@@ -393,7 +403,7 @@ export function StatsPage({
 
       {artists.length > 0 && (
         <section className="statsSection">
-          <Heading icon={<User size={14} />}>Top artists</Heading>
+          <Heading icon={<User size={14} />}>{t('profile.statsTopArtistsHeading')}</Heading>
           <ol className="statsRows">
             {artists.map((row, i) => {
               const cover =
@@ -408,11 +418,11 @@ export function StatsPage({
                       className="statsRow__name"
                       onClick={() => onOpenArtist(row.artist)}
                     >
-                      {row.artist || 'Unknown artist'}
+                      {row.artist || t('common.unknownArtist')}
                     </button>
                   </span>
                   <span className="statsRow__meta">
-                    {row.plays.toLocaleString()} {row.plays === 1 ? 'play' : 'plays'} ·{' '}
+                    {t('profile.statsPlayCount', { count: row.plays })} ·{' '}
                     {fmtMinutes(row.minutes)}
                   </span>
                 </li>
@@ -424,7 +434,7 @@ export function StatsPage({
 
       {songs.length > 0 && (
         <section className="statsSection">
-          <Heading icon={<Music size={14} />}>Top songs</Heading>
+          <Heading icon={<Music size={14} />}>{t('profile.statsTopSongsHeading')}</Heading>
           <ol className="statsRows">
             {songs.map((row, i) => {
               // The song may have left the library since it was played; the
@@ -445,7 +455,7 @@ export function StatsPage({
                       </button>
                     ) : (
                       <span className="statsRow__name" data-plain>
-                        {row.title || 'Unknown song'}
+                        {row.title || t('common.unknownSong')}
                       </span>
                     )}
                     <span className="statsRow__sub">
@@ -453,7 +463,7 @@ export function StatsPage({
                     </span>
                   </span>
                   <span className="statsRow__meta">
-                    {row.plays.toLocaleString()} {row.plays === 1 ? 'play' : 'plays'}
+                    {t('profile.statsPlayCount', { count: row.plays })}
                   </span>
                 </li>
               );
@@ -477,7 +487,7 @@ export function StatsPage({
       <div className="statsMore">
         <Button variant="soft" onClick={() => setMore((v) => !v)} aria-expanded={more}>
           {more ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          {more ? 'Fewer stats' : 'View more stats'}
+          {more ? t('profile.statsFoldLess') : t('profile.statsFoldMore')}
         </Button>
       </div>
 

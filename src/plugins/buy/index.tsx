@@ -1,6 +1,7 @@
 import { ShoppingBag } from '@glacier/icons';
 import type { AcquireHandler, Plugin } from '../types.ts';
 import { BuyProvider, useBuy } from './BuyProvider.tsx';
+import { useT } from '../../app/i18n/LocaleShell.tsx';
 
 /**
  * The Buy handler: for a song or an album, "Buy" opens the store sheet. It reads
@@ -11,11 +12,12 @@ import { BuyProvider, useBuy } from './BuyProvider.tsx';
  */
 function useBuyHandlers(): readonly AcquireHandler[] {
   const buy = useBuy();
+  const t = useT();
   if (!buy) return [];
   return [
     {
       id: 'buy',
-      label: 'Buy',
+      label: t('common.buy'),
       icon: <ShoppingBag size={16} />,
       canHandle: (target) => target.kind === 'track' || target.kind === 'album',
       run: (target) => buy.open(target),
@@ -31,21 +33,29 @@ function useBuyHandlers(): readonly AcquireHandler[] {
  * link out to a store, so it ships on and works everywhere, the app's default
  * answer to "where do I get this" when nothing downloads it.
  */
+/**
+ * The listing is catalogue keys, not words: the object is built when this
+ * module is imported, long before a language has been chosen, so anything
+ * written here in English would stay English however often the picker is
+ * used. PluginsProvider resolves the compiled-in plugins' text at render.
+ * Kept in a named table because Plugin types those fields as plain strings.
+ */
+const TEXT = {
+  nameKey: 'settings.pluginBuyName',
+  descriptionKey: 'settings.pluginBuyDescription',
+  detailsKey: 'settings.pluginBuyDetails',
+  tagKeys: ['settings.pluginBuyTagBuy', 'settings.pluginBuyTagStores'],
+};
+
 export const buy: Plugin = {
   id: 'buy',
-  name: 'Buy',
-  description: 'Find where to buy a song or album as an MP3 or FLAC download.',
+  name: TEXT.nameKey,
+  description: TEXT.descriptionKey,
   icon: <ShoppingBag size={22} />,
   author: 'AttackFM',
   version: '1.0.0',
-  tags: ['Buy', 'Stores'],
-  details:
-    'Adds a Buy option wherever the app offers to add music - Discover cards, ' +
-    'search results, an artist’s catalogue. Choosing it opens a sheet of stores ' +
-    '(Bandcamp, Qobuz, 7digital, HDtracks, the iTunes Store, Amazon Music), each ' +
-    'searched for the song or album, so you can buy it as an MP3 or a lossless ' +
-    'FLAC and own the file. Ships on: when no downloader is enabled, Buy is how ' +
-    'you still get the track.',
+  tags: TEXT.tagKeys,
+  details: TEXT.detailsKey,
   Provider: BuyProvider,
   useAcquireHandlers: useBuyHandlers,
 };

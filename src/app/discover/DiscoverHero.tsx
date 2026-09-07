@@ -12,6 +12,7 @@ import { newForYouLists, newMusicCovers } from '../library/NewMusicShelf.tsx';
 import type { NewMusicList } from '../api/newMusic.ts';
 import type { Track } from '../core/tauri.ts';
 import type { SongCollection } from '../library/SongPage.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The top of Discover: one thing, big, wearing its music.
@@ -55,15 +56,23 @@ export interface HeroLead {
   tracks?: Track[];
 }
 
-export function heroLead(feed: DiscoverFeedValue, library: Track[]): HeroLead {
+/** Takes the translator rather than reaching for one: this is a plain
+ *  function, and every string it settles on is prose that has to re-resolve
+ *  when the language does - so the caller passes the `t` it already has and
+ *  the memo around it lists `t` among its dependencies. */
+export function heroLead(
+  feed: DiscoverFeedValue,
+  library: Track[],
+  t: ReturnType<typeof useT>,
+): HeroLead {
   const list = newForYouLists(feed.newMusic)[0];
   if (list) {
     const first = list.items[0];
     return {
       kind: 'list',
-      kicker: 'New for you',
+      kicker: t('discover.newForYou'),
       title: list.title,
-      blurb: list.blurb || `${list.items.length} songs you do not own yet`,
+      blurb: list.blurb || t('discover.notOwnedYetCount', { count: list.items.length }),
       covers: newMusicCovers(list, 4),
       first: first ? { title: first.title, artist: first.artist } : null,
       list,
@@ -84,12 +93,12 @@ export function heroLead(feed: DiscoverFeedValue, library: Track[]): HeroLead {
   }
   return {
     kind: 'library',
-    kicker: 'Discover',
-    title: 'Your library, read back to you',
+    kicker: t('nav.discover'),
+    title: t('discover.libraryReadBack'),
     blurb:
       library.length > 0
-        ? 'Play a few songs and this page starts learning what you like.'
-        : 'Add music and this page fills with what it finds for you.',
+        ? t('discover.learningBlurb')
+        : t('discover.addMusicBlurb'),
     covers: mosaicArts(library.map((t) => t.artwork), 4, 640),
     first: null,
   };
@@ -104,6 +113,7 @@ export function DiscoverHero({
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenSongs: (view: SongCollection) => void;
 }) {
+  const t = useT();
   const { session, clips, wallSettled, openList } = useDiscoverFeed();
   const { tracks } = useLibrary();
   // A hidden tab pauses the clip; this puts it back when the tab returns.
@@ -175,17 +185,17 @@ export function DiscoverHero({
           {lead.kind === 'list' && lead.list && (
             <Button variant="solid" size="sm" onClick={() => openList(lead.list!)}>
               <ListMusic size={14} />
-              <span>Open</span>
+              <span>{t('common.open')}</span>
             </Button>
           )}
           {lead.kind === 'daylist' && lead.tracks && lead.tracks.length > 0 && (
             <Button variant="solid" size="sm" onClick={() => onPlay(lead.tracks![0]!, lead.tracks!)}>
               <Play size={14} />
-              <span>Play</span>
+              <span>{t('player.play')}</span>
             </Button>
           )}
           <Button variant="glass" size="sm" onClick={() => onOpenSongs('all')}>
-            <span>All songs</span>
+            <span>{t('library.allSongs')}</span>
           </Button>
         </EdgeScrollRow>
       </div>

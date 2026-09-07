@@ -19,6 +19,7 @@ import allSongsChip from '../../assets/chip-all-songs.webp';
 import { CoverWall } from '../playlists/CoverWall.tsx';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { tracksOfHub } from '../server.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * A whole collection of songs, opened as its own page - the fullscreen answer
@@ -50,48 +51,53 @@ const RECENT_LIMIT = 50;
  * of them before it ellipsises. Giving a mark to a page that never had one buys
  * an icon by spending half of what is left of the name - "All songs" goes to
  * "A." - which is a worse trade than the bare name it replaces.
+ *
+ * The three words on the page are held as catalogue KEYS rather than as the
+ * words themselves. This table is built when the module is imported, which is
+ * before anything has decided what language the app is in; resolving here would
+ * bake the boot language into every later render and leave the picker changing
+ * nothing on this page. The component resolves each key as it draws.
  */
 const META: Record<
   SongCollection,
   {
-    kicker: string;
-    title: string;
+    kickerKey: string;
+    titleKey: string;
     art: HeroArtName;
     glyph?: ComponentType<{ size?: number }>;
     tone: string;
-    empty: string;
+    emptyKey: string;
   }
 > = {
   liked: {
-    kicker: 'Your library',
-    title: 'Liked songs',
+    kickerKey: 'library.yourLibrary',
+    titleKey: 'library.likedSongs',
     art: 'liked',
     glyph: Heart,
     tone: 'songPage--liked',
-    empty: 'No liked songs yet. Tap the heart while a song plays and it lands here.',
+    emptyKey: 'library.likedEmpty',
   },
   all: {
-    kicker: 'Your library',
-    title: 'All songs',
+    kickerKey: 'library.yourLibrary',
+    titleKey: 'library.allSongs',
     art: 'library',
     tone: 'songPage--all',
-    empty: 'No music in your library yet. Sign in to your server or import songs to fill it.',
+    emptyKey: 'library.empty',
   },
   onrepeat: {
-    kicker: 'Your library',
-    title: 'On repeat',
+    kickerKey: 'library.yourLibrary',
+    titleKey: 'library.onRepeat',
     art: 'library',
     glyph: Repeat,
     tone: 'songPage--repeat',
-    empty:
-      'Nothing on repeat yet. Play your library for a while and the songs you keep returning to gather here.',
+    emptyKey: 'library.onRepeatEmpty',
   },
   recent: {
-    kicker: 'Your library',
-    title: 'Recently added',
+    kickerKey: 'library.yourLibrary',
+    titleKey: 'library.recentlyAdded',
     art: 'library',
     tone: 'songPage--repeat',
-    empty: 'Nothing here yet. Songs appear as they land in your library, newest first.',
+    emptyKey: 'library.recentEmpty',
   },
 };
 
@@ -108,7 +114,10 @@ export function SongPage({
   const { session } = useServerSession();
   // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
   const refreshNonce = useRefreshNonce();
+  const t = useT();
   const meta = META[view];
+  // Resolved here, not in META: see the note on that table.
+  const title = t(meta.titleKey);
 
   // All computed unconditionally (hooks must be), one chosen after. All songs
   // open newest-first to match the table's own default sort; Liked keeps the
@@ -271,7 +280,7 @@ export function SongPage({
   useEffect(() => {
     if (!stuck) return;
     setHeaderActions({
-      title: meta.title,
+      title,
       // A kit glyph where the page used to send its object. Liked and On repeat
       // sent rendered objects up here and they did not survive the trip: a
       // photographed valve at 1.4rem is a coloured blob, and reads as a cover
@@ -283,7 +292,7 @@ export function SongPage({
       disabled: empty,
     });
     return () => setHeaderActions(null);
-  }, [stuck, empty, meta.title, view]);
+  }, [stuck, empty, title, view]);
 
   return (
     <div className={`homePage libraryPage songPage ${meta.tone}`} ref={pageRef}>
@@ -322,23 +331,28 @@ export function SongPage({
 
         <div className="playlistHead__body">
           <Text tone="muted" size="xs" className="playlistHead__kicker">
-            {meta.kicker}
+            {t(meta.kickerKey)}
           </Text>
-          <h2 className="playlistHead__name">{meta.title}</h2>
+          <h2 className="playlistHead__name">{title}</h2>
           <Text tone="muted" size="sm">
-            {shown.length} {shown.length === 1 ? 'song' : 'songs'}
-            {filtering ? ` of ${listTracks.length}` : ''}
+            {/* "12 songs" and "12 songs of 4,003" are two whole sentences
+                rather than a count with " of N" glued on: the count is already
+                inflected by the number in most languages, and a language that
+                puts the total first has nowhere to put a trailing fragment. */}
+            {filtering
+              ? t('library.songCountOfTotal', { count: shown.length, total: listTracks.length })
+              : t('library.songCount', { count: shown.length })}
             {totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}
           </Text>
 
           <EdgeScrollRow className="playlistHead__actions">
             <Button variant="solid" size="sm" onClick={playAll} disabled={empty}>
               <Play size={15} fill="currentColor" />
-              Play
+              {t('player.play')}
             </Button>
             <Button variant="ghost" size="sm" onClick={shuffleAll} disabled={empty}>
               <Shuffle size={15} />
-              Shuffle
+              {t('player.shuffle')}
             </Button>
             {/* The whole list into a playlist, in one act.
 
@@ -351,7 +365,7 @@ export function SongPage({
                 the list you are looking at and therefore the one you meant. */}
             <Button variant="ghost" size="sm" onClick={() => setFilingAll(true)} disabled={empty}>
               <ListPlus size={15} />
-              Add all
+              {t('player.addAll')}
             </Button>
           </EdgeScrollRow>
         </div>
@@ -370,8 +384,8 @@ export function SongPage({
             className="pageSearch"
             value={filter}
             onValueChange={setFilter}
-            placeholder="Filter these songs"
-            aria-label="Filter these songs"
+            placeholder={t('library.filterSongs')}
+            aria-label={t('library.filterSongs')}
             autoComplete="off"
           />
         </div>
@@ -380,7 +394,7 @@ export function SongPage({
       {empty && !loading && !hasIncoming ? (
         <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name={meta.art} />
-          <Text tone="muted">{meta.empty}</Text>
+          <Text tone="muted">{t(meta.emptyKey)}</Text>
         </div>
       ) : empty && !loading ? null : (
         // The same table the "All" library face draws, so a collection reads
@@ -390,7 +404,7 @@ export function SongPage({
           <div className="libraryBody">
             {filtering && shown.length === 0 ? (
               <Text tone="muted" className="songFilter__none">
-                No song here matches “{filter.trim()}”.
+                {t('library.filterNoMatch', { query: filter.trim() })}
               </Text>
             ) : (
               <>

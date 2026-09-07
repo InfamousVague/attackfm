@@ -1,12 +1,14 @@
+import { useMemo } from 'react';
 import { AudioEqualizer, Select } from '@glacier/react';
 import {
   EQ_BANDS_NARROW,
   EQ_PRESETS,
-  EQ_PRESETS_NARROW,
+  eqPresetsNarrow,
   expandNarrowGains,
   narrowEqGains,
   useEqualizer,
 } from './equalizer.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The equalizer as it is shown everywhere: a preset dropdown over the sliders.
@@ -26,7 +28,14 @@ import {
  * to the list shows up in each without being wired three times.
  */
 export function EqPanel({ narrow = false }: { narrow?: boolean }) {
+  const t = useT();
   const { gains, setGains, preset, setPreset } = useEqualizer();
+
+  // The preset table holds catalogue keys, so both lists below are named here
+  // rather than there - the whole reason it holds keys is that a name written
+  // into a module-level array can never follow the language picker.
+  const named = useMemo(() => EQ_PRESETS.map((p) => ({ value: p.id, label: t(p.labelKey) })), [t]);
+  const kitPresets = useMemo(() => eqPresetsNarrow(t), [t]);
 
   /** Picking a preset draws its whole curve, hidden bands included. */
   const choose = (id: string) => {
@@ -38,15 +47,15 @@ export function EqPanel({ narrow = false }: { narrow?: boolean }) {
   return (
     <div className="eqPanel">
       <Select
-        aria-label="Equalizer preset"
+        aria-label={t('player.eqPreset')}
         fullWidth
         // A hand-moved curve matches no preset, and the field says so rather
         // than keeping the last name and quietly lying about what you hear.
         value={preset ?? 'custom'}
         onValueChange={choose}
         options={[
-          ...(preset ? [] : [{ value: 'custom', label: 'Custom' }]),
-          ...EQ_PRESETS.map((p) => ({ value: p.id, label: p.label })),
+          ...(preset ? [] : [{ value: 'custom', label: t('player.eqCustom') }]),
+          ...named,
         ]}
       />
       {narrow ? (
@@ -54,7 +63,7 @@ export function EqPanel({ narrow = false }: { narrow?: boolean }) {
           size="sm"
           hidePresets
           bands={EQ_BANDS_NARROW}
-          presets={EQ_PRESETS_NARROW}
+          presets={kitPresets}
           value={narrowEqGains(gains)}
           onValueChange={(g) => setGains(expandNarrowGains(g, gains))}
           preset={preset}

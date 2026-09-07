@@ -3,8 +3,10 @@ import { Button } from '@glacier/react';
 import { ChartNoAxesColumn, Flame, Music, User } from '@glacier/icons';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { fetchStatsSummary, fmtMinutes, type StatsSummary } from '../profile/stats.ts';
+import { fetchStatsSummary, type StatsSummary } from '../profile/stats.ts';
+import { formatNumber } from '../ux/format.ts';
 import { hueOf } from '../search/searchModel.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 import '../profile/StatsPage.css';
 
 /**
@@ -26,6 +28,7 @@ import '../profile/StatsPage.css';
  * the app talking about itself instead of the music.
  */
 export function HomeStatsCards({ onOpenStats }: { onOpenStats: () => void }) {
+  const t = useT();
   const { session } = useServerSession();
   const [summary, setSummary] = useState<StatsSummary | null>(null);
 
@@ -48,44 +51,92 @@ export function HomeStatsCards({ onOpenStats }: { onOpenStats: () => void }) {
   const topArtist = summary.topArtists[0]?.artist;
 
   return (
-    <section className="statsGlance" aria-label="Your listening this week">
+    <section className="statsGlance" aria-label={t('profile.weekGlance')}>
       <p className="statsGlance__time">
-        <span className="statsGlance__value">{fmtMinutes(summary.minutes)}</span>
-        <span className="statsGlance__label">listened this week</span>
+        <span className="statsGlance__value">{listened(summary.minutes)}</span>
+        <span className="statsGlance__label">{t('profile.listenedThisWeek')}</span>
       </p>
 
       <div className="statsMinis statsMinis--three">
         <Mini
+          seed="streak"
           icon={<Flame size={15} />}
-          value={String(summary.streakDays)}
-          label={summary.streakDays === 1 ? 'day streak' : 'day streak'}
+          value={formatNumber(summary.streakDays)}
+          label={t('profile.dayStreak', { count: summary.streakDays })}
         />
         <Mini
+          seed="songs"
           icon={<Music size={15} />}
-          value={summary.uniqueTracks.toLocaleString()}
-          label={summary.uniqueTracks === 1 ? 'song' : 'songs'}
+          value={formatNumber(summary.uniqueTracks)}
+          label={t('profile.songsHeard', { count: summary.uniqueTracks })}
         />
         {/* The name is the interesting number here, but a week with plays and
             no clear leader still has a count to show, so the card never goes
             missing and leaves a two-across row behind. */}
         <Mini
+          seed="artists"
           icon={<User size={15} />}
           value={topArtist ? <ArtistLink artist={topArtist} /> : summary.uniqueArtists.toLocaleString()}
-          label={topArtist ? 'top artist' : summary.uniqueArtists === 1 ? 'artist' : 'artists'}
+          label={
+            topArtist
+              ? t('profile.topArtist')
+              : t('profile.artistsHeard', { count: summary.uniqueArtists })
+          }
         />
       </div>
 
       <Button variant="soft" size="sm" className="statsGlance__all" onClick={onOpenStats}>
         <ChartNoAxesColumn size={15} />
-        View all stats
+        {t('profile.viewAllStats')}
       </Button>
     </section>
   );
 }
 
-function Mini({ icon, value, label }: { icon: ReactNode; value: ReactNode; label: string }) {
+/**
+ * "42 min" / "3.5 hr".
+ *
+ * Not `fmtMinutes` from profile/stats.ts, which spells the unit itself and so
+ * says "min" to a reader whose app is in Japanese. The number and its unit are
+ * one thing to Intl, and Intl is the only party that knows the abbreviation,
+ * which side of the digits it sits, and how the digits group - so the whole
+ * readout comes from it rather than from a template string.
+ */
+function listened(minutes: number): string {
+  const whole = Math.max(0, Math.round(minutes));
+  if (whole <= 120) {
+    return formatNumber(whole, { style: 'unit', unit: 'minute', unitDisplay: 'short' });
+  }
+  const hours = whole / 60;
+  // Past a hundred hours the tenth is noise, and a four-digit readout with a
+  // decimal point in it stops fitting the card.
+  const decimals = hours >= 100 ? 0 : 1;
+  return formatNumber(hours, {
+    style: 'unit',
+    unit: 'hour',
+    unitDisplay: 'short',
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+/* `seed` rather than the label: hueOf derives a colour from the characters it
+   is given, so tinting by the visible word would repaint all three cards when
+   the language changed - and give a German reader a different set of colours
+   than an English one for the same three facts. */
+function Mini({
+  seed,
+  icon,
+  value,
+  label,
+}: {
+  seed: string;
+  icon: ReactNode;
+  value: ReactNode;
+  label: string;
+}) {
   return (
-    <div className="statsMini" style={hueOf(label)}>
+    <div className="statsMini" style={hueOf(seed)}>
       <span className="statsMini__icon" aria-hidden>
         {icon}
       </span>

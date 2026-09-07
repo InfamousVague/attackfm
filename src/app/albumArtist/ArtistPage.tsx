@@ -32,6 +32,7 @@ import { ArtistPopular } from './ArtistPopular.tsx';
 import { ArtistAbout } from './ArtistAbout.tsx';
 import { ArtistCanvasStrip } from './ArtistCanvasStrip.tsx';
 import placeholderArt from '../../assets/attack-wave.png';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 interface ArtistPageProps {
   artist: string;
@@ -86,6 +87,7 @@ function PlaylistTile({ featured }: { featured: Track[] }) {
  */
 export function ArtistPage({ artist, onPlay, onOpenArtist,
   onOpenAlbum, onOpenPlaylist }: ArtistPageProps) {
+  const t = useT();
   const { tracks } = useLibrary();
   const { playlists } = usePlaylists();
   const { session } = useServerSession();
@@ -220,24 +222,30 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
               // Counting your zero songs and zero albums would be a page
               // telling you what you already know.
               <>
-                Artist
+                {t('library.artist')}
                 {discography.records.length > 0 &&
-                  ` · ${discography.records.length} ${
-                    discography.records.length === 1 ? 'album' : 'albums'
-                  } to explore`}
+                  ` · ${t('library.albumsToExplore', { count: discography.records.length })}`}
               </>
             ) : (
               <>
-                {theirs.length} {theirs.length === 1 ? 'song' : 'songs'} · {albums.length}{' '}
-                {albums.length === 1 ? 'album' : 'albums'}
+                {t('library.songCount', { count: theirs.length })}
+                {' · '}
                 {/* Of how many there are to have - the number that turns a shelf
                     into a discography. Records only: counting the singles would
-                    say "3 of 45" for an artist with fifteen albums. */}
-                {discography.records.length > albums.length && ` of ${discography.records.length}`}
+                    say "3 of 45" for an artist with fifteen albums.
+
+                    Whole phrase per catalogue entry, not "N albums" with " of M"
+                    glued behind it: the count is inflected by the number in most
+                    languages, and one that puts the total first has nowhere to
+                    hang a trailing fragment. */}
+                {discography.records.length > albums.length
+                  ? t('library.albumCountOfTotal', {
+                      count: albums.length,
+                      total: discography.records.length,
+                    })
+                  : t('library.albumCount', { count: albums.length })}
                 {inPlaylists.length > 0 &&
-                  ` · in ${inPlaylists.length} ${
-                    inPlaylists.length === 1 ? 'playlist' : 'playlists'
-                  }`}
+                  ` · ${t('library.inPlaylistCount', { count: inPlaylists.length })}`}
               </>
             )}
           </Text>
@@ -250,7 +258,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
               onClick={() => onPlay(playThrough[0]!, playThrough)}
             >
               <Play size={15} />
-              <span>Play</span>
+              <span>{t('player.play')}</span>
             </Button>
             <Button
               variant="soft"
@@ -261,7 +269,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
               }}
             >
               <Shuffle size={15} />
-              <span>Shuffle</span>
+              <span>{t('player.shuffle')}</span>
             </Button>
           </div>
         )}
@@ -314,7 +322,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
 
       {inPlaylists.length > 0 && (
         <section className="homeShelf">
-          <h2 className="homeShelfTitle">In your playlists</h2>
+          <h2 className="homeShelfTitle">{t('library.inYourPlaylists')}</h2>
           <ScrollArea orientation="horizontal" className="homeShelfScroll" hideScrollbar>
             <div className="homeShelfRow">
               {inPlaylists.map(({ playlist, featured }) => (
@@ -327,7 +335,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
                   <PlaylistTile featured={featured} />
                   <span className="artistPlaylistName">{playlist.name}</span>
                   <span className="artistPlaylistCount">
-                    {featured.length} {featured.length === 1 ? 'song' : 'songs'} of theirs
+                    {t('library.songsOfTheirs', { count: featured.length })}
                   </span>
                 </button>
               ))}
@@ -338,7 +346,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
 
       {theirs.length > 0 && (
         <section className="homeShelf librarySongs">
-          <h2 className="homeShelfTitle">All songs</h2>
+          <h2 className="homeShelfTitle">{t('library.allSongs')}</h2>
           <div className="libraryBody">
             <SongTable tracks={theirs} onPlay={onPlay} onOpenArtist={onOpenArtist} />
           </div>
@@ -353,8 +361,8 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
         discography.singles.length === 0 && (
           <Text tone="muted" size="sm" className="artistDiscNote">
             {profile === null && session
-              ? 'Looking them up…'
-              : `Nothing found for ${artist} — the catalogue does not know them.`}
+              ? t('library.lookingThemUp')
+              : t('library.artistNotFound', { artist })}
           </Text>
         )}
     </div>

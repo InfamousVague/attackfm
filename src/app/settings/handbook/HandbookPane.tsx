@@ -5,6 +5,7 @@ import {
   HANDBOOK_CHAPTERS,
   HANDBOOK_PAGES,
 } from './handbookPages.tsx';
+import { useT } from '../../i18n/LocaleShell.tsx';
 
 /** The reader's place, kept across sessions - a manual that forgets where you
  *  were is a manual read once. */
@@ -27,6 +28,8 @@ const EDGE = 28;
  * from any other.
  */
 export function HandbookPane() {
+  // The pages are keys and body-builders until here - see handbookPages.
+  const t = useT();
   const pages = HANDBOOK_PAGES;
   const [index, setIndex] = useState(() => {
     try {
@@ -137,16 +140,16 @@ export function HandbookPane() {
 
   return (
     <div className="handbook">
-      <div className="handbook__progress" role="tablist" aria-label="Chapters">
+      <div className="handbook__progress" role="tablist" aria-label={t('settings.handbookChapters')}>
         {HANDBOOK_CHAPTERS.map((c) => {
           const done = Math.max(0, Math.min(c.count, index - c.start + 1));
           return (
             <button
-              key={c.title}
+              key={c.titleKey}
               type="button"
               role="tab"
               aria-selected={c === chapter}
-              aria-label={`${c.title} — ${c.count} pages`}
+              aria-label={t('settings.handbookChapterAria', { title: t(c.titleKey), count: c.count })}
               className="handbook__seg"
               style={{ flexGrow: c.count }}
               onClick={() => go(c.start)}
@@ -172,14 +175,14 @@ export function HandbookPane() {
           <span className="handbook__glyph" aria-hidden="true">
             {page.icon}
           </span>
-          <span className="handbook__kicker">{page.chapter}</span>
-          <h3 className="handbook__title">{page.title}</h3>
-          <div className="handbook__prose">{page.body}</div>
+          <span className="handbook__kicker">{t(page.chapterKey)}</span>
+          <h3 className="handbook__title">{t(page.titleKey)}</h3>
+          <div className="handbook__prose">{page.body(t)}</div>
           {index === 0 && (
-            <nav className="handbook__toc" aria-label="Contents">
+            <nav className="handbook__toc" aria-label={t('settings.handbookContents')}>
               {HANDBOOK_CHAPTERS.filter((c) => c.start > 0).map((c) => (
                 <button
-                  key={c.title}
+                  key={c.titleKey}
                   type="button"
                   className="handbook__tocRow"
                   onClick={() => go(c.start)}
@@ -187,9 +190,9 @@ export function HandbookPane() {
                   <span className="handbook__tocIcon" aria-hidden="true">
                     {c.icon}
                   </span>
-                  <span className="handbook__tocTitle">{c.title}</span>
+                  <span className="handbook__tocTitle">{t(c.titleKey)}</span>
                   <span className="handbook__tocPages">
-                    {c.count} {c.count === 1 ? 'page' : 'pages'}
+                    {t('settings.handbookPageCount', { count: c.count })}
                   </span>
                 </button>
               ))}
@@ -202,7 +205,7 @@ export function HandbookPane() {
         <IconButton
           variant="ghost"
           size="sm"
-          aria-label="Previous page"
+          aria-label={t('settings.handbookPrevPage')}
           disabled={index === 0}
           onClick={() => go(index - 1)}
         >
@@ -212,24 +215,24 @@ export function HandbookPane() {
             away, so the bar's chapter jumps are the shortcut and this is the
             whole map. */}
         <Menu
-          aria-label="Handbook index"
+          aria-label={t('settings.handbookIndex')}
           className="handbookIndex"
           placement="top"
           open={indexOpen}
           onOpenChange={setIndexOpen}
           trigger={
-            <button type="button" className="handbook__where" title="Open the index">
+            <button type="button" className="handbook__where" title={t('settings.handbookOpenIndex')}>
               <TableOfContents size={14} aria-hidden="true" />
               <span>
-                {chapter.title} · {index + 1} / {pages.length}
+                {t(chapter.titleKey)} · {index + 1} / {pages.length}
               </span>
             </button>
           }
         >
           {HANDBOOK_CHAPTERS.map((c) => (
-            <div key={c.title} className="handbookIndex__chapter">
+            <div key={c.titleKey} className="handbookIndex__chapter">
               <div className="handbookIndex__head" aria-hidden="true">
-                {c.title}
+                {t(c.titleKey)}
               </div>
               {pages.slice(c.start, c.start + c.count).map((p, i) => (
                 <MenuItem
@@ -244,7 +247,7 @@ export function HandbookPane() {
                     className="handbookIndex__label"
                     data-here={c.start + i === index || undefined}
                   >
-                    {p.title}
+                    {t(p.titleKey)}
                   </span>
                 </MenuItem>
               ))}
@@ -254,7 +257,7 @@ export function HandbookPane() {
         <IconButton
           variant="ghost"
           size="sm"
-          aria-label="Next page"
+          aria-label={t('settings.handbookNextPage')}
           disabled={index === pages.length - 1}
           onClick={() => go(index + 1)}
         >

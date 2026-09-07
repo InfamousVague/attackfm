@@ -18,27 +18,21 @@ import { useSyncExternalStore } from 'react';
  */
 export type CardStyle = 'stat' | 'mosaic' | 'chrome' | 'halftoneRich';
 
-export const CARD_STYLES: { id: CardStyle; name: string; note: string }[] = [
-  {
-    id: 'stat',
-    name: 'Numbers first',
-    note: 'The count is the card, set large, with the object dropped to a watermark behind it. The doors that are really a number - Liked, All songs - lead with it. The look the app ships with.',
-  },
-  {
-    id: 'mosaic',
-    name: 'Blurred real art',
-    note: 'The collection\'s own sleeves, blurred into a soft field of its real colours rather than laid out sharp. It changes as your library does; a thin library simply shows fewer colours.',
-  },
-  {
-    id: 'chrome',
-    name: 'Chrome',
-    note: 'Anodised metal that takes each card\'s own colour - rose for Liked, blue steel for All songs - with a slow specular sweep across the plate.',
-  },
-  {
-    id: 'halftoneRich',
-    name: 'Rich stock',
-    note: 'The printed halftone, run on properly coloured stock instead of tinted paper. Pale paper is what made the old printed look go chalky: ink multiplied onto it cannot add colour the paper does not have. This drops the ground and darkens the ink to match, so the colour arrives without touching the dots.',
-  },
+/**
+ * The table carries KEYS, not prose.
+ *
+ * This module is imported for its side effect - `apply()` runs from the body,
+ * before React exists - so anything spelled out here is resolved long before a
+ * language has been chosen, and the picker would go on describing the styles
+ * in whatever language the app booted in. The two places that show these read
+ * them through `t()` at render instead, which is the only point at which the
+ * answer can change with the picker.
+ */
+export const CARD_STYLES: { id: CardStyle; nameKey: string; noteKey: string }[] = [
+  { id: 'stat', nameKey: 'settings.cardStyleStat', noteKey: 'settings.cardStyleStatNote' },
+  { id: 'mosaic', nameKey: 'settings.cardStyleMosaic', noteKey: 'settings.cardStyleMosaicNote' },
+  { id: 'chrome', nameKey: 'settings.cardStyleChrome', noteKey: 'settings.cardStyleChromeNote' },
+  { id: 'halftoneRich', nameKey: 'settings.cardStyleRich', noteKey: 'settings.cardStyleRichNote' },
 ];
 
 const KEY = 'attackfm-card-style';

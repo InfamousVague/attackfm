@@ -6,6 +6,8 @@ import { artSized } from '../server.ts';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { lyricExcerpt, type Why } from './trackSearch.ts';
 import { hueOf } from './searchModel.tsx';
+import { formatNumber } from '../ux/format.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import type { Track } from '../core/tauri.ts';
 
 /* --------------------------------------------------------------------- bits */
@@ -23,16 +25,20 @@ export function Heading({
   count?: number;
   onSeeAll?: () => void;
 }) {
+  const t = useT();
   return (
     <h2 className="searchSection__title">
       <span className="searchSection__glyph" aria-hidden>
         {icon}
       </span>
       {children}
-      {count !== undefined && <span className="searchSection__count">{count}</span>}
+      {/* Through Intl rather than straight into the JSX: a library with four
+          thousand songs in it needs the separator its reader expects, and an
+          Arabic reader expects the digits themselves to look different. */}
+      {count !== undefined && <span className="searchSection__count">{formatNumber(count)}</span>}
       {onSeeAll && (
         <button type="button" className="searchSeeAll" onClick={onSeeAll}>
-          See all
+          {t('search.seeAll')}
           <ChevronRight size={14} />
         </button>
       )}
@@ -135,7 +141,7 @@ export function GenreArt({ src, raw, fallback }: { src: string; raw?: boolean; f
   const object = raw && !dead;
   const active = raw && dead ? (fallback ?? null) : src;
   const sized = active === null ? null : object ? active : artSized(active, 640);
-  const art = useArtLoad(sized, object ? 'searchGenre__objectArt' : 'searchGenre__art');
+  const art = useArtLoad(sized, `searchGenre__${object ? 'objectArt' : 'art'}`);
   if (sized === null) return null;
   return (
     <img
@@ -155,6 +161,7 @@ export function GenreArt({ src, raw, fallback }: { src: string; raw?: boolean; f
  *  match came from the lyrics, the line that matched - because "why is this
  *  here" is the question a lyric hit always raises. */
 export function SongSub({ track, why, query }: { track: Track; why: Why; query: string }) {
+  const t = useT();
   const line = why === 'lyrics' ? lyricExcerpt(track, query) : null;
   if (line) {
     return (
@@ -166,8 +173,11 @@ export function SongSub({ track, why, query }: { track: Track; why: Why; query: 
   }
   return (
     <span className="searchRow__sub">
-      Song · <ArtistLink artist={track.artist} />
-      {track.lossless && <span className="searchQuality">Lossless</span>}
+      {/* Kind and artist are two facts on one line, not a sentence: the middot
+          is punctuation between them, so each half is its own entry rather than
+          a phrase a translator would have to keep the order of. */}
+      {t('search.kindSong')} · <ArtistLink artist={track.artist} />
+      {track.lossless && <span className="searchQuality">{t('search.lossless')}</span>}
     </span>
   );
 }

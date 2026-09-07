@@ -7,6 +7,7 @@ import { StemsRoom, useStemsOut } from './StemsRoom.tsx';
 import { FILTERS, signature } from './filters.ts';
 import { FxSaved } from './FxSaved.tsx';
 import { FX_NODES, silenceFxChain, useFxChain } from './fxChain.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The sound console: one door onto the whole signal path, extracted whole
@@ -45,6 +46,7 @@ import { FX_NODES, silenceFxChain, useFxChain } from './fxChain.ts';
 type Room = 'eq' | 'hifi' | 'filters' | 'stems';
 
 export function SoundConsole({ narrow }: { narrow: boolean }) {
+  const t = useT();
   const chain = useFxChain();
   // How many parts are out of the song right now, for the tab's dot.
   const stemsOut = useStemsOut();
@@ -85,8 +87,9 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
   const filterOn = useMemo(() => {
     if (chain.nodes.length === 0) return null;
     const now = signature(chain.nodes.map((n) => ({ t: n.t, params: n.params })));
-    return FILTERS.find((f) => signature(f.nodes) === now)?.name ?? null;
-  }, [chain]);
+    const hit = FILTERS.find((f) => signature(f.nodes) === now);
+    return hit ? t(hit.nameKey) : null;
+  }, [chain, t]);
 
   return (
     <div className="soundConsole">
@@ -98,17 +101,17 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
           needs no material of its own. */}
       <div className="soundConsole__tabs">
         <SegmentedControl
-          aria-label="Sound"
+          aria-label={t('player.soundConsole')}
           size="sm"
           fullWidth
           value={room}
           options={[
-            { value: 'eq', label: 'EQ' },
+            { value: 'eq', label: t('player.roomEq') },
             {
               value: 'hifi',
               label: (
                 <span className="soundConsole__tab">
-                  HiFi
+                  {t('player.roomHifi')}
                   {/* A count badge does hide itself at zero, but it is said
                       here too so the two tabs read the same way. */}
                   {hifiCount > 0 && <CounterBadge count={hifiCount} size="sm" tone="neutral" />}
@@ -119,7 +122,7 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
               value: 'stems',
               label: (
                 <span className="soundConsole__tab">
-                  Stems
+                  {t('player.roomStems')}
                   {/* A count, not a dot: "two parts out" is a thing somebody
                       wants to know at a glance, and unlike a filter the number
                       genuinely means something. */}
@@ -131,7 +134,7 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
               value: 'filters',
               label: (
                 <span className="soundConsole__tab">
-                  Filters
+                  {t('player.roomFilters')}
                   {/* A dot, not a number: a filter is one thing or nothing, and
                       "1" would invite the question of what two would mean.
                       Rendered conditionally rather than leaning on count={0}:
@@ -139,7 +142,7 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
                       whatever the count is, so the tab claimed a filter was on
                       when none was. */}
                   {filterOn && (
-                    <CounterBadge count={1} dot tone="accent" size="sm" aria-label={`${filterOn} is on`} />
+                    <CounterBadge count={1} dot tone="accent" size="sm" aria-label={t('player.filterIsOn', { filter: filterOn })} />
                   )}
                 </span>
               ),
@@ -178,17 +181,21 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
 const CONSOLE_KEY = 'attackfm-sound-console-room';
 
 function FxChainRow() {
+  const t = useT();
   const chain = useFxChain();
   if (chain.nodes.length === 0) return null;
   const live = chain.nodes.filter((n) => n.on).length;
   return (
     <div className="eqFxChainRow">
+      {/* The whole line is one entry, count included: "HiFi chain · 3 nodes"
+          reads as a heading with a value appended in English and as neither in
+          a language that puts the number first. */}
       <span className="eqFxChainRow__label">
-        HiFi chain · {live > 0 ? `${live} node${live === 1 ? '' : 's'}` : 'all out'}
+        {live > 0 ? t('player.hifiChainNodes', { count: live }) : t('player.hifiChainSilent')}
       </span>
       {live > 0 && (
         <button type="button" className="eqFxChainRow__allOff" onClick={silenceFxChain}>
-          All out
+          {t('player.allOut')}
         </button>
       )}
     </div>

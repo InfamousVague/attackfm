@@ -10,6 +10,8 @@ import { discoverDoorOpen, openDiscover } from '../nav/discoverDoor.ts';
 import { musicDateDoorOpen, openMusicDate } from '../nav/musicDateDoor.ts';
 import { openPlaylistById, playlistDoorOpen } from '../nav/playlistDoor.ts';
 import { useJamOptional } from '../player/jam.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatLocale } from '../ux/format.ts';
 
 /**
  * The bell, and the news behind it.
@@ -37,6 +39,7 @@ export function NotifyBell({
    *  page simply leaves those rows unpressable. */
   onOpenFriends?: () => void;
 }) {
+  const t = useT();
   const items = useNotices();
   const unread = useUnreadNotices();
   const kinds = useUnreadKinds();
@@ -82,12 +85,15 @@ export function NotifyBell({
   const total = sized.reduce((sum, j) => sum + (j.total ?? 0), 0);
   const pct = total > 0 ? Math.round((done / total) * 100) : null;
 
+  // Whole sentences rather than "Notifications" plus a fragment: the count and
+  // the noun trade places between languages, and a screen reader reads whatever
+  // order they were concatenated in.
   const label =
     active.length > 0
-      ? `Notifications — ${active.length} downloading`
+      ? t('notices.bellDownloading', { count: active.length })
       : unread > 0
-        ? `Notifications — ${unread} new`
-        : 'Notifications';
+        ? t('notices.bellUnread', { count: unread })
+        : t('notices.bell');
 
   return (
     <Popover
@@ -103,7 +109,7 @@ export function NotifyBell({
       // panel that dresses itself lays a second pane over the first. Doing that
       // is what made this one popover a dark slab among frosted ones.
       className="popoverSheet notifyPopoverPanel"
-      aria-label="Notifications"
+      aria-label={t('notices.bell')}
       open={open}
       onOpenChange={setOpen}
       trigger={
@@ -134,14 +140,14 @@ export function NotifyBell({
       <div className="notifyPanel">
         <div className="notifyPanel__head">
           <span className="notifyPanel__title">
-            <Bell size={14} /> Notifications
+            <Bell size={14} /> {t('notices.bell')}
           </span>
           {items.length > 0 && (
             <IconButton
               variant="ghost"
               size="sm"
-              aria-label="Clear notifications"
-              title="Clear"
+              aria-label={t('notices.clearAll')}
+              title={t('notices.clear')}
               onClick={() => clearNotices()}
             >
               <Trash2 size={15} />
@@ -152,7 +158,9 @@ export function NotifyBell({
         {active.length > 0 && (
           <div className="notifyLive">
             <Text tone="muted" size="xs" className="notifyLive__head">
-              {`${active.length} downloading${pct !== null ? ` · ${pct}%` : ''}`}
+              {pct !== null
+                ? t('notices.downloadingPct', { count: active.length, pct })
+                : t('notices.downloading', { count: active.length })}
             </Text>
             {active.map((job) => {
               // The song coming down right now, and who it is by - the popover
@@ -173,7 +181,7 @@ export function NotifyBell({
                   )}
                 </span>
                 <span className="notifyLive__text">
-                  <span className="notifyLive__name">{job.title || 'That link'}</span>
+                  <span className="notifyLive__name">{job.title || t('notices.thatLink')}</span>
                   {job.state === 'downloading' && nowTitle && (
                     <span className="notifyLive__now">
                       {nowTitle}
@@ -210,7 +218,7 @@ export function NotifyBell({
               <Bell size={18} />
             </span>
             <Text tone="muted" size="sm">
-              Nothing new. Downloads and news land here.
+              {t('notices.empty')}
             </Text>
           </div>
         ) : (
@@ -271,7 +279,7 @@ export function NotifyBell({
                 onOpenDownloads();
               }}
             >
-              Open downloads
+              {t('notices.openDownloads')}
             </Button>
           </div>
         )}
@@ -329,6 +337,7 @@ function NoticeRow({
   unseen: boolean;
   onOpen: () => void;
 }) {
+  const t = useT();
   const Glyph = noticeGlyph(notice.kind);
   const pressable = notice.door !== null && canOpen;
   return (
@@ -373,7 +382,7 @@ function NoticeRow({
         <button
           type="button"
           className="notifyRow__dismiss"
-          aria-label={`Dismiss ${notice.title}`}
+          aria-label={t('notices.dismiss', { title: notice.title })}
           onClick={(e) => {
             e.stopPropagation();
             dismissNotice(notice.id);
@@ -387,7 +396,7 @@ function NoticeRow({
 }
 
 /**
- * "3 min" — how long ago, in the fewest characters that stay true.
+ * "3 min. ago" — how long ago, in the fewest characters that stay true.
  *
  * The house has two of these already (the friends list, the storage pane) and
  * they disagree about their units, so this is a third rather than a shared
@@ -395,14 +404,35 @@ function NoticeRow({
  * its opinions though - that lives in notices.ts, once, because a second copy
  * of it is how the watcher came to be comparing a seconds timestamp against a
  * millisecond duration and silently dropping every arrival.
+ *
+ * It used to hand-build "now", "5 min", "2h", "3d". Those are four English
+ * words hiding in a column too narrow for anyone to notice they were words, and
+ * no catalogue key can fix them: the unit's abbreviation, which side of the
+ * number it sits, and how many plural forms the count has all differ per
+ * language. Intl already knows all three, so this asks it - in the `narrow`
+ * style, which is what buys back the terseness the column was built around.
  */
+let agoFmt: { locale: string; fmt: Intl.RelativeTimeFormat } | null = null;
+
+function agoFormatter(): Intl.RelativeTimeFormat {
+  const locale = formatLocale();
+  // Rebuilt only when the picker moves. Constructing one of these per row is
+  // measurably expensive and this list repaints on every arrival.
+  if (!agoFmt || agoFmt.locale !== locale) {
+    agoFmt = { locale, fmt: new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'narrow' }) };
+  }
+  return agoFmt.fmt;
+}
+
 function agoOf(at: number): string {
+  const fmt = agoFormatter();
   const secs = Math.max(0, Math.round((Date.now() - msOf(at)) / 1000));
-  if (secs < 60) return 'now';
+  // Negative, because these are all in the past - `numeric: 'auto'` is what
+  // turns the smallest of them into "now" rather than "in 0 seconds".
+  if (secs < 60) return fmt.format(0, 'second');
   const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins} min`;
+  if (mins < 60) return fmt.format(-mins, 'minute');
   const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.round(hours / 24);
-  return `${days}d`;
+  if (hours < 24) return fmt.format(-hours, 'hour');
+  return fmt.format(-Math.round(hours / 24), 'day');
 }

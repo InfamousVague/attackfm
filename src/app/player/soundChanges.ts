@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { useEqualizer } from './equalizer.tsx';
 import { useFxChain } from './fxChain.ts';
 import { useStemsOut } from './StemsRoom.tsx';
+import { translate } from '../i18n/LocaleShell.tsx';
+import { formatLocale } from '../ux/format.ts';
 
 /**
  * How much the sound has been moved away from the record, as one number.
@@ -47,12 +49,52 @@ export function useSoundChanges(): SoundChanges {
   }, [chain, stems, gains]);
 }
 
-/** What the button says out loud, for anyone not looking at the badge. */
-export function soundChangesLabel(c: SoundChanges): string {
-  if (c.total === 0) return 'Sound';
+/**
+ * What the button says out loud, for anyone not looking at the badge.
+ *
+ * Takes a translator so the two callers in the player chrome can hand it
+ * `useT()` and have the label follow the language picker; the `translate`
+ * default keeps the one-argument signature those callers still use working.
+ *
+ * The clauses are whole catalogue entries, plural forms included, rather than
+ * a count glued to a noun: "1 effect"/"2 effects" is English's two-form
+ * grammar written as a ternary, and the languages the app ships in have
+ * between one and six forms.
+ *
+ * PlayerStrip strips the leading "Sound - " back off this to nest the detail
+ * inside a longer label, which is why the English entry keeps that exact
+ * prefix. It is a caller in another file's hands right now; when it can be
+ * touched it should call `soundChangesDetail` and drop the surgery, because a
+ * language whose entry does not start that way gets the prefix twice.
+ */
+export function soundChangesLabel(c: SoundChanges, t: SoundTranslate = translate): string {
+  if (c.total === 0) return t('player.soundChangesNone');
+  return t('player.soundChangesLabel', { detail: soundChangesDetail(c, t) });
+}
+
+/** Just the clauses - "2 effects, EQ set" - for a label that supplies its own
+ *  opening. */
+export function soundChangesDetail(c: SoundChanges, t: SoundTranslate = translate): string {
   const parts: string[] = [];
-  if (c.effects > 0) parts.push(c.effects === 1 ? '1 effect' : `${c.effects} effects`);
-  if (c.stems > 0) parts.push(c.stems === 1 ? '1 part out' : `${c.stems} parts out`);
-  if (c.eq) parts.push('EQ set');
-  return `Sound — ${parts.join(', ')}`;
+  if (c.effects > 0) parts.push(t('player.soundEffectsOn', { count: c.effects }));
+  if (c.stems > 0) parts.push(t('player.soundStemsOut', { count: c.stems }));
+  if (c.eq) parts.push(t('player.soundEqSet'));
+  return joinClauses(parts);
+}
+
+/** A translator - `useT()`'s, or `translate` outside a component. */
+export type SoundTranslate = (key: string, options?: Record<string, unknown>) => string;
+
+/**
+ * "a, b and c" - through Intl rather than a comma join, because the separator
+ * and the word before the last item are both language, and Arabic does not
+ * spell either of them the way a hard-coded ", " does.
+ */
+function joinClauses(parts: string[]): string {
+  try {
+    return new Intl.ListFormat(formatLocale(), { style: 'short', type: 'unit' }).format(parts);
+  } catch {
+    // An engine without ListFormat still has to say something.
+    return parts.join(', ');
+  }
 }

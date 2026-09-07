@@ -7,14 +7,23 @@ import { CatalogTrackMenu } from '../library/CatalogTrackMenu.tsx';
 import type { QueueControls } from '../player/queueControls.tsx';
 import type { AcquireValue } from '../../plugins/runtime.tsx';
 import { PROBE_URL } from './resolveImport.ts';
-import { coversOf, kindWord, targetOf, type Item } from './searchModel.tsx';
+import { coversOf, kindWordKey, targetOf, type Item } from './searchModel.tsx';
 import { Glyph, SongSub } from './SearchBits.tsx';
 import type { AddingState } from './useCatalogSearch.ts';
 import type { Track } from '../core/tauri.ts';
 
+/** Where a catalogue row came from. Brand names, so they are the same word in
+ *  every language and stay out of the catalogue. */
+const SOURCE_NAME: Record<string, string> = { deezer: 'Deezer', spotify: 'Spotify' };
+
 /** Everything a row needs from the page: the cursor seat, the verbs, and the
  *  live state its trailing edge reflects. Built plain per render by SearchPage. */
 export interface RowCtx {
+  /* The row renderer is a plain call, so it cannot hold hooks of its own -
+     the page's translator and song counter travel in the seat with everything
+     else it needs, which also keeps every row on the SAME render's language. */
+  t: (key: string, options?: Record<string, unknown>) => string;
+  songs: (n: number) => string;
   position: Map<string, number>;
   cursor: number;
   setCursor: (n: number) => void;
@@ -34,7 +43,7 @@ export interface RowCtx {
  *  replace every row's element type - which would drop the open context menu
  *  and reset each row on every letter. */
 export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
-  const { position, cursor, setCursor, open, like, queue, adding, acquire, onPlay, onOpenArtist, query, tracks } = ctx;
+  const { t, songs, position, cursor, setCursor, open, like, queue, adding, acquire, onPlay, onOpenArtist, query, tracks } = ctx;
   const n = position.get(item.id);
   const active = n !== undefined && n === cursor;
   const seat = {
@@ -83,8 +92,8 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
               <button
                 type="button"
                 className="searchVerb"
-                title="Play next (N)"
-                aria-label={`Play ${item.track.title} next`}
+                title={t('search.playNextHint')}
+                aria-label={t('search.playNextOf', { title: item.track.title })}
                 onClick={() => queue.playNext(item.track)}
               >
                 <ListStart size={15} />
@@ -92,8 +101,8 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
               <button
                 type="button"
                 className="searchVerb"
-                title="Add to queue (Q)"
-                aria-label={`Add ${item.track.title} to the queue`}
+                title={t('search.queueHint')}
+                aria-label={t('search.queueOf', { title: item.track.title })}
                 onClick={() => queue.addToQueue(item.track)}
               >
                 <ListEnd size={15} />
@@ -110,7 +119,7 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
           <span className="searchRow__text">
             <span className="searchRow__title">{item.artist.name}</span>
             <span className="searchRow__sub">
-              Artist · {item.artist.count === 1 ? '1 song' : `${item.artist.count} songs`}
+              {t('search.kindArtist')} · {songs(item.artist.count)}
             </span>
           </span>
           <ChevronRight size={16} className="searchRow__end" />
@@ -127,10 +136,8 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
               {/* The author is NOT an ArtistLink. That door opens an artist page
                   - other records, top songs - which is built for a musician and
                   would hold one book. */}
-              Book &middot; {item.book.author} &middot;{' '}
-              {item.book.chapters.length === 1
-                ? '1 chapter'
-                : `${item.book.chapters.length} chapters`}
+              {t('search.kindBook')} · {item.book.author} ·{' '}
+              {t('books.chapterCount', { count: item.book.chapters.length })}
             </span>
           </span>
           <Play size={16} className="searchRow__end" />
@@ -151,8 +158,8 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
             <span className="searchRow__text">
               <span className="searchRow__title">{item.album.title}</span>
               <span className="searchRow__sub">
-                Album · <ArtistLink artist={item.album.artist} /> ·{' '}
-                {item.album.count === 1 ? '1 song' : `${item.album.count} songs`}
+                {t('search.kindAlbum')} · <ArtistLink artist={item.album.artist} /> ·{' '}
+                {songs(item.album.count)}
               </span>
             </span>
             <Play size={16} className="searchRow__end" />
@@ -171,10 +178,7 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
           <span className="searchRow__text">
             <span className="searchRow__title">{item.playlist.name}</span>
             <span className="searchRow__sub">
-              Playlist ·{' '}
-              {item.playlist.paths.length === 1
-                ? '1 song'
-                : `${item.playlist.paths.length} songs`}
+              {t('search.kindPlaylist')} · {songs(item.playlist.paths.length)}
             </span>
           </span>
           <ChevronRight size={16} className="searchRow__end" />
@@ -188,7 +192,7 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
           <span className="searchRow__text">
             <span className="searchRow__title">{item.genre.name}</span>
             <span className="searchRow__sub">
-              Genre · {item.genre.count === 1 ? '1 song' : `${item.genre.count} songs`}
+              {t('search.kindGenre')} · {songs(item.genre.count)}
             </span>
           </span>
           <ChevronRight size={16} className="searchRow__end" />
@@ -202,8 +206,8 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
           <span className="searchRow__text">
             <span className="searchRow__title">@{item.friend.handle}</span>
             <span className="searchRow__sub">
-              Friend
-              {item.friend.songs > 0 ? ` · ${item.friend.songs.toLocaleString()} songs` : ''}
+              {t('search.kindFriend')}
+              {item.friend.songs > 0 ? ` · ${songs(item.friend.songs)}` : ''}
             </span>
           </span>
         </div>
@@ -242,19 +246,19 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
                   "Artist" itself, so saying the kind twice is all it would
                   ever do; say where it leads instead. */}
               {isArtist ? (
-                'Artist · not in your library'
+                t('search.artistNotInLibrary')
               ) : item.result.kind === 'track' || item.result.kind === 'album' ? (
                 // The catalogue's subtitle for a song or a record IS the
                 // artist's name, so it opens like one.
                 <>
-                  {kindWord(item.result.kind)} · <ArtistLink artist={item.result.subtitle} />
+                  {t(kindWordKey(item.result.kind))} · <ArtistLink artist={item.result.subtitle} />
                 </>
               ) : (
-                `${kindWord(item.result.kind)} · ${item.result.subtitle}`
+                `${t(kindWordKey(item.result.kind))} · ${item.result.subtitle}`
               )}
               {item.result.source && (
                 <span className={`searchSource searchSource--${item.result.source}`}>
-                  {item.result.source === 'deezer' ? 'Deezer' : 'Spotify'}
+                  {SOURCE_NAME[item.result.source] ?? item.result.source}
                 </span>
               )}
             </span>
@@ -278,15 +282,15 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
             <Check size={16} className="searchRow__end" data-ok />
           ) : state === 'finding' ? (
             <span className="searchAdd" data-busy>
-              <span className="artistAlbumSpin" aria-hidden /> Finding
+              <span className="artistAlbumSpin" aria-hidden /> {t('search.finding')}
             </span>
           ) : state === 'missing' ? (
             <span className="searchAdd" data-missing>
-              <X size={14} /> Not on Spotify
+              <X size={14} /> {t('search.notOnSpotify')}
             </span>
           ) : (
             <span className="searchAdd">
-              <Plus size={14} /> Add
+              <Plus size={14} /> {t('search.add')}
             </span>
           )}
         </button>

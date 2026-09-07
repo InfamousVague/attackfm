@@ -16,6 +16,7 @@ import { TrackMenu } from '../library/TrackMenu.tsx';
 import type { Track } from '../core/tauri.ts';
 import djMascot from '../../assets/dj-mascot.webp';
 import { fetchDjStations, type DjStation } from '../api/dj.ts';
+import { useSongCount, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The DJ, as a conversation.
@@ -85,6 +86,8 @@ function EmbedRow({
  *  existed - play, queue, create a playlist - so nothing here depends on the
  *  model having behaved. */
 function EmbedCard({ embed }: { embed: DjEmbed }) {
+  const t = useT();
+  const songCount = useSongCount();
   const chat = useDjChat();
   const play = useDjPlay();
   const queue = useQueueControls();
@@ -109,14 +112,14 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
       <div className="djChips">
         {embed.options.map((o) => (
           <Button
-            key={o.label}
+            key={o.send}
             type="button"
             variant="outline"
             size="sm"
             className="djChip"
             onClick={() => chat.send(o.send)}
           >
-            {o.label}
+            {t(o.labelKey)}
           </Button>
         ))}
       </div>
@@ -129,9 +132,7 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
       <div className="djCard djCard--receipt">
         <div className="djCard__head">
           <span className="djCard__title">{embed.name}</span>
-          <span className="djCard__count">
-            {found.length} {found.length === 1 ? 'song' : 'songs'}
-          </span>
+          <span className="djCard__count">{songCount(found.length)}</span>
         </div>
         <div className="djCard__actions">
           <Button
@@ -140,7 +141,7 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
             disabled={found.length === 0}
             onClick={() => found[0] && play?.(found[0], found)}
           >
-            <Play size={14} fill="currentColor" /> Play
+            <Play size={14} fill="currentColor" /> {t('player.play')}
           </Button>
         </div>
       </div>
@@ -156,26 +157,26 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
       <div className="djCard">
         <div className="djCard__head">
           <span className="djCard__count">
-            {found.length} {found.length === 1 ? 'song' : 'songs'}
-            {mins > 0 ? ` · ${mins} min` : ''}
+            {songCount(found.length)}
+            {mins > 0 ? t('booth.dotMinutes', { count: mins }) : ''}
           </span>
         </div>
         <div className="djCard__rows">
-          {found.map((t) => (
+          {found.map((song) => (
             <EmbedRow
-              key={t.path}
-              track={t}
-              onPlay={() => play?.(t, found)}
-              why={embed.why?.[rowsOfId(t) ?? -1]}
-              onNo={(scope) => down(t, { scope })}
+              key={song.path}
+              track={song}
+              onPlay={() => play?.(song, found)}
+              why={embed.why?.[rowsOfId(song) ?? -1]}
+              onNo={(scope) => down(song, { scope })}
               trailing={
                 <IconButton
                   type="button"
                   variant="ghost"
                   size="sm"
                   className="djRow__add"
-                  aria-label={`Queue ${t.title}`}
-                  onClick={() => queue.addToQueue(t)}
+                  aria-label={t('booth.queueTrack', { title: song.title })}
+                  onClick={() => queue.addToQueue(song)}
                 >
                   <Plus size={15} />
                 </IconButton>
@@ -190,7 +191,7 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
             disabled={found.length === 0}
             onClick={() => found[0] && play?.(found[0], found)}
           >
-            <Play size={14} fill="currentColor" /> Play these
+            <Play size={14} fill="currentColor" /> {t('booth.playThese')}
           </Button>
           <Button
             variant="ghost"
@@ -198,7 +199,7 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
             disabled={found.length === 0}
             onClick={() => chat.toDraft(embed.trackIds)}
           >
-            <ListPlus size={14} /> Into a playlist
+            <ListPlus size={14} /> {t('booth.intoAPlaylist')}
           </Button>
         </div>
       </div>
@@ -216,7 +217,7 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
           <span className="djCard__title">{embed.name}</span>
         ) : (
           <Input
-            aria-label="Playlist name"
+            aria-label={t('playlists.nameField')}
             value={name ?? embed.name}
             onChange={(e) => {
               setName(e.currentTarget.value);
@@ -225,24 +226,24 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
           />
         )}
         <span className="djCard__count">
-          {found.length} {found.length === 1 ? 'song' : 'songs'}
-          {mins > 0 ? ` · ${mins} min` : ''}
+          {songCount(found.length)}
+          {mins > 0 ? t('booth.dotMinutes', { count: mins }) : ''}
         </span>
       </div>
       <div className="djCard__rows">
-        {found.map((t) => (
+        {found.map((song) => (
           <EmbedRow
-            key={t.path}
-            track={t}
-            onPlay={() => play?.(t, found)}
+            key={song.path}
+            track={song}
+            onPlay={() => play?.(song, found)}
             onNo={(scope) =>
-              down(t, {
+              down(song, {
                 scope,
                 // A no inside a draft also takes the song out of the
                 // playlist being built - the draft is the listener's own
                 // list, and "not this song" means it there too.
                 onLeave: () => {
-                  const id = rowsOfId(t);
+                  const id = rowsOfId(song);
                   if (id != null && !saved) chat.removeFromDraft(embed.draftId, id);
                 },
               })
@@ -254,9 +255,9 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
                   variant="ghost"
                   size="sm"
                   className="djRow__add"
-                  aria-label={`Remove ${t.title}`}
+                  aria-label={t('booth.removeTrack', { title: song.title })}
                   onClick={() => {
-                    const id = embed.trackIds.find((n) => rowsOfId(t) === n);
+                    const id = embed.trackIds.find((n) => rowsOfId(song) === n);
                     if (id != null) chat.removeFromDraft(embed.draftId, id);
                   }}
                 >
@@ -274,11 +275,11 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
           disabled={saved || found.length === 0}
           onClick={() => chat.saveDraft(embed.draftId)}
         >
-          <ListMusic size={14} /> {saved ? 'Saved' : 'Save to my playlists'}
+          <ListMusic size={14} /> {saved ? t('booth.draftSavedChip') : t('booth.saveToPlaylists')}
         </Button>
         {existing && (
           <Text tone="muted" size="xs">
-            In your playlists
+            {t('booth.inYourPlaylists')}
           </Text>
         )}
       </div>
@@ -305,6 +306,7 @@ function rowsOfId(track: Track): number | null {
  * steer toward.
  */
 function DjStations({ onPick }: { onPick: (station: DjStation) => void }) {
+  const t = useT();
   const { session } = useServerSession();
   const [stations, setStations] = useState<DjStation[]>([]);
   useEffect(() => {
@@ -326,7 +328,7 @@ function DjStations({ onPick }: { onPick: (station: DjStation) => void }) {
   if (stations.length === 0) return null;
   return (
     <div className="djStations">
-      <p className="djStations__title">Stations for you</p>
+      <p className="djStations__title">{t('booth.stationsForYou')}</p>
       <div className="djStations__row">
         {stations.map((st) => (
           <Button
@@ -356,20 +358,21 @@ function DjStations({ onPick }: { onPick: (station: DjStation) => void }) {
  * screen presses), so the page never needs the deck in hand.
  */
 function DjNowStrip() {
+  const t = useT();
   const run = useDjRun();
   const { track, position } = useNowPlayingMotion();
   if (!run || !track || !run.paths.has(track.path)) return null;
   const src = rowsOf(track);
   const why = run.whyAt.get(track.path);
   return (
-    <div className="djNow" role="region" aria-label="Playing from the set">
+    <div className="djNow" role="region" aria-label={t('booth.playingFromSet')}>
       {src ? (
         <img className="djNow__art" src={src} alt="" />
       ) : (
         <span className="djNow__art djNow__art--blank" aria-hidden />
       )}
       <span className="djNow__text">
-        <span className="djNow__label">On now</span>
+        <span className="djNow__label">{t('booth.onNow')}</span>
         <span className="djNow__title">{track.title}</span>
         <span className="djNow__artist">{track.artist}</span>
         {why && <span className="djNow__why">{why}</span>}
@@ -387,10 +390,16 @@ function DjNowStrip() {
 }
 
 export function DjPage() {
+  const t = useT();
   const chat = useDjChat();
   const { session } = useServerSession();
   const [draft, setDraft] = useState('');
   if (!chat) return null;
+
+  // What a message actually says. Only the seeded opening arrives as a key -
+  // it is built at import time, before there is a language - so this is the
+  // one place that has to ask which of the two a message carries.
+  const said = (m: DjMessage) => (m.textKey ? t(m.textKey) : m.text);
 
   // Nobody has spoken yet. The seeded greeting and its chips render as a
   // clean invitation - the mascot, one line, the suggestions - instead of a
@@ -399,7 +408,8 @@ export function DjPage() {
   // history, opening included.
   const virgin = !chat.messages.some((m) => m.authorId !== DJ_AUTHOR);
   if (virgin) {
-    const greeting = chat.messages.find((m) => m.text)?.text;
+    const opening = chat.messages.find((m) => m.text || m.textKey);
+    const greeting = opening?.textKey ? t(opening.textKey) : opening?.text;
     const chips = chat.messages.flatMap((m) =>
       m.embed?.kind === 'chips' ? m.embed.options : [],
     );
@@ -413,14 +423,14 @@ export function DjPage() {
           <div className="djChips djFresh__chips">
             {chips.map((o) => (
               <Button
-                key={o.label}
+                key={o.send}
                 type="button"
                 variant="outline"
                 size="sm"
                 className="djChip"
                 onClick={() => chat.send(o.send)}
               >
-                {o.label}
+                {t(o.labelKey)}
               </Button>
             ))}
           </div>
@@ -431,7 +441,7 @@ export function DjPage() {
             value={draft}
             onValueChange={setDraft}
             busy={chat.busy}
-            placeholder="Tell the DJ what you're after"
+            placeholder={t('booth.composerPlaceholder')}
             minRows={1}
             maxRows={4}
             onSend={({ text }) => {
@@ -458,10 +468,10 @@ export function DjPage() {
         avatarFor={(id) =>
           id === DJ_AUTHOR ? <img className="djAvatar" src={djMascot} alt="" /> : undefined
         }
-        authorNameFor={(id) => (id === DJ_AUTHOR ? 'DJ' : (session?.username ?? 'You'))}
+        authorNameFor={(id) => (id === DJ_AUTHOR ? 'DJ' : (session?.username ?? t('common.you')))}
         renderBody={(ctx) => (
           <>
-            {ctx.message.text && <span className="djSaid">{ctx.message.text}</span>}
+            {said(ctx.message) && <span className="djSaid">{said(ctx.message)}</span>}
             {ctx.message.embed && <EmbedCard embed={ctx.message.embed} />}
           </>
         )}
@@ -471,7 +481,9 @@ export function DjPage() {
           className="djTyping"
           names={['DJ']}
           dots
-          templates={{ one: '{first} is going through the crates' }}
+          // `{first}` is the kit's own hole, not i18next's - it fills the name
+          // in after we hand the sentence over, so the catalogue entry keeps it.
+          templates={{ one: t('booth.typingCrates') }}
         />
       )}
       {/* The composer, and the mic beside it: the conversation is the DJ
@@ -483,7 +495,7 @@ export function DjPage() {
           value={draft}
           onValueChange={setDraft}
           busy={chat.busy}
-          placeholder="Tell the DJ what you're after"
+          placeholder={t('booth.composerPlaceholder')}
           minRows={1}
           maxRows={4}
           onSend={({ text }) => {

@@ -9,12 +9,13 @@
  * escape-time Julia set, the Lorenz butterfly, the Lissajous figure, the
  * Winamp-era starfield - written small.
  *
- * Each visualizer is a `VizDef`: static identity (id, name, note - for the
- * picker grid and the tap-to-cycle label) plus `create()`, which builds the
- * per-instance state and returns a draw closure. The frame handed to it every
- * tick carries everything: the canvas, the clock, the smoothed spectrum and
- * loudness, a beat pulse, and the app's accent hue with a colour helper - so a
- * visualizer never touches the DOM, the audio graph, or the theme itself.
+ * Each visualizer is a `VizDef`: static identity (id, plus the catalogue keys
+ * for its name and note - for the picker grid and the tap-to-cycle label) plus
+ * `create()`, which builds the per-instance state and returns a draw closure.
+ * The frame handed to it every tick carries everything: the canvas, the clock,
+ * the smoothed spectrum and loudness, a beat pulse, and the app's accent hue
+ * with a colour helper - so a visualizer never touches the DOM, the audio
+ * graph, or the theme itself.
  *
  * Colour comes from the app's dynamic accent (the album-art tint, see
  * player/artTint.ts): every visualizer paints in the accent hue and its
@@ -49,9 +50,16 @@ export interface VizFrame {
 
 export interface VizDef {
   id: string;
-  name: string;
-  /** One line for the picker. */
-  note: string;
+  /**
+   * The name and the one-line note are CATALOGUE KEYS, not the words. This
+   * table is built the moment the module is imported, which is long before a
+   * language provider exists, so a literal here would be fixed in whatever
+   * language the app booted in and the picker would go on saying it after the
+   * language changed. The two screens that show a visualizer - the picker and
+   * the art square's label - resolve these with t() as they render.
+   */
+  nameKey: string;
+  noteKey: string;
   /** Builds fresh state and returns the per-frame draw. */
   create: () => (f: VizFrame) => void;
 }
@@ -235,8 +243,8 @@ function glowStroke(f: VizFrame, width: number, blur: number, shift = 0, light =
  *  so the shape reads as a halo rather than a bar chart bent round. */
 const halo: VizDef = {
   id: 'halo',
-  name: 'Halo',
-  note: 'Spectrum bars around a breathing ring.',
+  nameKey: 'visualizers.haloName',
+  noteKey: 'visualizers.haloNote',
   create: () => {
     let rot = 0;
     return (f) => {
@@ -278,8 +286,8 @@ const halo: VizDef = {
  *  shape without being its samples. */
 const scope: VizDef = {
   id: 'scope',
-  name: 'Scope',
-  note: 'A vector oscilloscope ring, drawn from the spectrum.',
+  nameKey: 'visualizers.scopeName',
+  noteKey: 'visualizers.scopeNote',
   create: () => {
     let phase = 0;
     return (f) => {
@@ -315,8 +323,8 @@ const scope: VizDef = {
  *  shape an oscilloscope in X-Y mode draws from a stereo signal. */
 const lissajous: VizDef = {
   id: 'lissajous',
-  name: 'Lissajous',
-  note: 'X-Y curves whose ratio the bands bend.',
+  nameKey: 'visualizers.lissajousName',
+  noteKey: 'visualizers.lissajousNote',
   create: () => {
     let t = 0;
     return (f) => {
@@ -346,8 +354,8 @@ const lissajous: VizDef = {
 /** Particles burst from the centre on the beat and drift out in additive glow. */
 const nebula: VizDef = {
   id: 'nebula',
-  name: 'Nebula',
-  note: 'Particles burst on the beat and drift in the glow.',
+  nameKey: 'visualizers.nebulaName',
+  noteKey: 'visualizers.nebulaNote',
   create: () => {
     interface P {
       x: number;
@@ -412,8 +420,8 @@ const nebula: VizDef = {
  *  fractal folds and unfolds with the song. */
 const julia: VizDef = {
   id: 'julia',
-  name: 'Julia',
-  note: 'A Julia set whose seed orbits with the music.',
+  nameKey: 'visualizers.juliaName',
+  noteKey: 'visualizers.juliaNote',
   create: () => {
     const R = 96;
     let off: HTMLCanvasElement | null = null;
@@ -474,8 +482,8 @@ const julia: VizDef = {
  *  it and the treble pushing its colour round the wheel. */
 const plasma: VizDef = {
   id: 'plasma',
-  name: 'Plasma',
-  note: 'The old demoscene plasma, breathing with the bass.',
+  nameKey: 'visualizers.plasmaName',
+  noteKey: 'visualizers.plasmaNote',
   create: () => {
     const R = 80;
     let off: HTMLCanvasElement | null = null;
@@ -523,8 +531,8 @@ const plasma: VizDef = {
 /** Streamlines through a drifting noise field; the loudness sets the wind. */
 const flow: VizDef = {
   id: 'flow',
-  name: 'Flow',
-  note: 'Streamlines through a drifting noise field.',
+  nameKey: 'visualizers.flowName',
+  noteKey: 'visualizers.flowNote',
   create: () => {
     interface P {
       x: number;
@@ -570,8 +578,8 @@ const flow: VizDef = {
 /** One wedge of spectrum, mirrored eight ways round the centre. */
 const kaleido: VizDef = {
   id: 'kaleido',
-  name: 'Kaleido',
-  note: 'One spectrum wedge, mirrored eight ways.',
+  nameKey: 'visualizers.kaleidoName',
+  noteKey: 'visualizers.kaleidoNote',
   create: () => {
     let rot = 0;
     return (f) => {
@@ -610,8 +618,8 @@ const kaleido: VizDef = {
  *  on the throttle, each one a streak as long as it is fast. */
 const warp: VizDef = {
   id: 'warp',
-  name: 'Warp',
-  note: 'A starfield that throws itself at you on the beat.',
+  nameKey: 'visualizers.warpName',
+  noteKey: 'visualizers.warpNote',
   create: () => {
     interface Star {
       x: number;
@@ -658,8 +666,8 @@ const warp: VizDef = {
 /** Three logarithmic spiral arms, each dot lit by its band. */
 const galaxy: VizDef = {
   id: 'galaxy',
-  name: 'Galaxy',
-  note: 'Spiral arms, lit band by band.',
+  nameKey: 'visualizers.galaxyName',
+  noteKey: 'visualizers.galaxyNote',
   create: () => {
     let rot = 0;
     return (f) => {
@@ -693,8 +701,8 @@ const galaxy: VizDef = {
  *  the bass so the wings widen on a drop, projected and slowly turned. */
 const lorenz: VizDef = {
   id: 'lorenz',
-  name: 'Lorenz',
-  note: 'The butterfly attractor, stirred by the music.',
+  nameKey: 'visualizers.lorenzName',
+  noteKey: 'visualizers.lorenzNote',
   create: () => {
     let x = 0.1;
     let y = 0;
@@ -747,8 +755,8 @@ const lorenz: VizDef = {
 /** Rings dropped on every beat, crossing as they grow. */
 const ripples: VizDef = {
   id: 'ripples',
-  name: 'Ripples',
-  note: 'Rings dropped on every beat, crossing as they grow.',
+  nameKey: 'visualizers.ripplesName',
+  noteKey: 'visualizers.ripplesNote',
   create: () => {
     interface Ring {
       x: number;
@@ -804,8 +812,8 @@ const ripples: VizDef = {
  *  opens the bloom. */
 const rose: VizDef = {
   id: 'rose',
-  name: 'Rose',
-  note: 'A rose curve whose petals follow the treble.',
+  nameKey: 'visualizers.roseName',
+  noteKey: 'visualizers.roseNote',
   create: () => {
     let rot = 0;
     return (f) => {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useT } from '../../app/i18n/LocaleShell.tsx';
 import { useNowPlayingMotion } from '../../app/player/nowPlayingMotion.tsx';
 import { VISUALIZERS, accentHue, makeColor, type VizFrame } from './visualizers.ts';
 import { VIZ_EVENT, readVizIndex, writeVizIndex } from './vizPref.ts';
@@ -102,6 +103,7 @@ export function VisualizerArt() {
   }, []);
 
   const def = VISUALIZERS[index % VISUALIZERS.length] ?? VISUALIZERS[0];
+  const t = useT();
 
   const next = () => {
     const n = (index + 1) % VISUALIZERS.length;
@@ -111,8 +113,8 @@ export function VisualizerArt() {
   };
   useEffect(() => {
     if (!showName) return;
-    const t = window.setTimeout(() => setShowName(false), 1400);
-    return () => window.clearTimeout(t);
+    const timer = window.setTimeout(() => setShowName(false), 1400);
+    return () => window.clearTimeout(timer);
   }, [showName, index]);
 
   useEffect(() => {
@@ -274,10 +276,10 @@ export function VisualizerArt() {
         next();
       }}
       role="button"
-      aria-label={`Visualizer: ${def?.name ?? ''}. Tap for the next one.`}
+      aria-label={t('visualizers.artLabel', { name: def ? t(def.nameKey) : '' })}
     >
       <canvas ref={canvasRef} className="vizArt__canvas" />
-      <span className="vizArt__name">{def?.name}</span>
+      <span className="vizArt__name">{def ? t(def.nameKey) : null}</span>
     </div>
   );
 }

@@ -10,6 +10,12 @@
 //! it knows, and this is only how each one READS. A kind absent from here falls
 //! back to its own id rather than vanishing, which is what the pane has always
 //! done and what lets the server add one without a frontend release.
+//!
+//! The words themselves are CATALOGUE KEYS rather than the words. This table is
+//! built at import time, which is before any locale provider exists, so a table
+//! of English here would be a table of English for the rest of the session and
+//! the language picker would move nothing in it. Whoever renders a row resolves
+//! the key with `t()` at that moment, and the switch list re-reads on a change.
 
 import {
   Bell,
@@ -27,37 +33,37 @@ import {
 } from '@glacier/icons';
 import type { ComponentType } from 'react';
 
-export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
+export const NOTICE_COPY: Record<string, { labelKey: string; hintKey: string }> = {
   drops: {
-    label: 'New music',
-    hint: 'When something you asked for finishes landing in the library.',
+    labelKey: 'notices.dropsLabel',
+    hintKey: 'notices.dropsHint',
   },
   curated: {
-    label: 'Curator playlists',
-    hint: 'When your curator has built something new to hear.',
+    labelKey: 'notices.curatedLabel',
+    hintKey: 'notices.curatedHint',
   },
   dates: {
-    label: 'Waiting to meet you',
-    hint: 'When songs the collector found are queued up for a date.',
+    labelKey: 'notices.datesLabel',
+    hintKey: 'notices.datesHint',
   },
   digest: {
-    label: 'While you were away',
-    hint: 'Every few days: what landed in the library, and who it was by.',
+    labelKey: 'notices.digestLabel',
+    hintKey: 'notices.digestHint',
   },
   recap: {
-    label: 'Your week in music',
-    hint: 'Once a week: what you played, for how long, and the name that ran through it.',
+    labelKey: 'notices.recapLabel',
+    hintKey: 'notices.recapHint',
   },
   friends: {
-    label: 'Friend requests',
-    hint: 'When somebody asks to be friends.',
+    labelKey: 'notices.friendsLabel',
+    hintKey: 'notices.friendsHint',
   },
   // Local-only, raised by GrooveNotices off the groove provider's own poll:
   // a friend asking you into a groove, or to listen along with you. Addressed
   // to you and waiting on an answer, so it rings like a friend request.
   groove: {
-    label: 'Groove invites',
-    hint: 'When a friend invites you to groove, or asks to listen along.',
+    labelKey: 'notices.grooveLabel',
+    hintKey: 'notices.grooveHint',
   },
   // A local-only kind (not a server push kind, so it never appears in the
   // account's switch list), raised by the client's NewMusicNotices watcher and
@@ -66,20 +72,20 @@ export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
   // is music picked for you that you do not own yet - a door to Discover, not a
   // song to start.
   newmusic: {
-    label: 'New to discover',
-    hint: 'When the discovery shelf has fresh music picked for your taste.',
+    labelKey: 'notices.newMusicLabel',
+    hintKey: 'notices.newMusicHint',
   },
   // Shared playlists - local-only kinds, raised by the client's
   // PlaylistNotices watcher off the hub's own activity ledger. Addressed to
   // you (a friend chose YOUR name to share with, and adds to a list you are
   // on), so they ring whether or not verbose is on, like a friend request.
   'playlist-shared': {
-    label: 'Shared playlists',
-    hint: 'When a friend shares a playlist with you.',
+    labelKey: 'notices.playlistSharedLabel',
+    hintKey: 'notices.playlistSharedHint',
   },
   'playlist-add': {
-    label: 'Playlist additions',
-    hint: 'When somebody adds songs to a playlist you share.',
+    labelKey: 'notices.playlistAddLabel',
+    hintKey: 'notices.playlistAddHint',
   },
   // ---- verbose kinds: local-only, behind the device's "verbose" switch ----
   // These never appear in the server's push list (set_pref would 400 on
@@ -88,39 +94,39 @@ export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
   // ring replaces the start with the completion and rings again (same id +
   // different kind = a new event - see notices.ts).
   'download-started': {
-    label: 'Download started',
-    hint: 'The moment a download is picked up, not only when it lands.',
+    labelKey: 'notices.downloadStartedLabel',
+    hintKey: 'notices.downloadStartedHint',
   },
   'stems-started': {
-    label: 'Taking a song apart',
-    hint: 'When the server starts pulling a song into stems in the background.',
+    labelKey: 'notices.stemsStartedLabel',
+    hintKey: 'notices.stemsStartedHint',
   },
   stems: {
-    label: 'Stems ready',
-    hint: 'When a song has been pulled apart and its stems are on the server.',
+    labelKey: 'notices.stemsLabel',
+    hintKey: 'notices.stemsHint',
   },
   'ai-started': {
-    label: 'AI working',
-    hint: 'When a background AI pass begins: profiles, curation, discovery, mixes.',
+    labelKey: 'notices.aiStartedLabel',
+    hintKey: 'notices.aiStartedHint',
   },
   ai: {
-    label: 'AI finished',
-    hint: 'When a background AI pass completes, with what it did.',
+    labelKey: 'notices.aiLabel',
+    hintKey: 'notices.aiHint',
   },
   // The quiet half of the shared-playlist news: a song taken out, somebody
   // leaving, a list taken away. Housekeeping rather than an offer, so it
   // sits behind the same switch as the machine's own chatter.
   'playlist-removed': {
-    label: 'Playlist removals',
-    hint: 'When somebody takes a song out of a playlist you share.',
+    labelKey: 'notices.playlistRemovedLabel',
+    hintKey: 'notices.playlistRemovedHint',
   },
   'playlist-left': {
-    label: 'Playlist departures',
-    hint: 'When somebody leaves a playlist you share.',
+    labelKey: 'notices.playlistLeftLabel',
+    hintKey: 'notices.playlistLeftHint',
   },
   'playlist-unshared': {
-    label: 'Playlist withdrawn',
-    hint: 'When a friend stops sharing a playlist with you.',
+    labelKey: 'notices.playlistUnsharedLabel',
+    hintKey: 'notices.playlistUnsharedHint',
   },
 };
 

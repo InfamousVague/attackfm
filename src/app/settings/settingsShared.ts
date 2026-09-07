@@ -34,6 +34,15 @@ export const PANE_KEYWORDS: Record<string, string> = {
 };
 
 /**
+ * The narrow face of `useT()`: a key in, a string out.
+ *
+ * Spelled out here rather than imported from i18next so that the helpers below
+ * - which are plain functions, not components - can take a translator without
+ * dragging a generic TFunction through every signature that touches one.
+ */
+export type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+/**
  * Every individual setting, so the search box can find one.
  *
  * The field says "Find a setting" and until now found only PANES: typing
@@ -51,9 +60,34 @@ export interface SettingEntry {
   id: string;
   /** Which pane holds it - a SettingsSection.id. */
   pane: string;
-  label: string;
-  description: string;
-  /** What someone would type looking for it, beyond the words above. */
+  /**
+   * Catalogue keys, not words. This array is built when the module is
+   * imported, which is before a language has been chosen, so a translated
+   * string written here would be frozen in whatever language the app booted
+   * in - and the picker would silently stop working for the search results.
+   * Both surfaces that render the index resolve these at render.
+   */
+  labelKey: string;
+  /**
+   * The row's own label key, shared with the pane, so a search hit and the row
+   * it lands on cannot drift apart.
+   *
+   * The DESCRIPTION cannot be shared the same way. A row's hint in its pane is
+   * the full explanation - three lines about Wi-Fi allowances, or what the DJ
+   * needs on the server - and a search result has room for a sentence. So the
+   * gloss is its own entry (`…Gloss`) rather than the pane's hint reused at a
+   * size it does not fit.
+   */
+  descriptionKey: string;
+  /**
+   * What someone would type looking for it, beyond the words above.
+   *
+   * Deliberately still English, and not through the catalogue: these are
+   * spelling variants and half-remembered words ("wifi", "phone home"), and
+   * the match runs over them ALONGSIDE the translated label and description -
+   * so a French app finds this row by its French name and by the English term
+   * somebody read in a forum, which is two ways in rather than one.
+   */
   keywords?: string;
 }
 
@@ -61,120 +95,120 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   {
     id: 'online-metadata',
     pane: 'privacy',
-    label: 'Online metadata lookups',
-    description: 'Lyrics from LRCLIB and album art from Apple, keyed by track titles.',
+    labelKey: 'settings.onlineLookups',
+    descriptionKey: 'settings.onlineLookupsGloss',
     keywords: 'lyrics artwork album art lrclib apple itunes third party internet offline',
   },
   {
     id: 'listening-history',
     pane: 'privacy',
-    label: 'Save listening history',
-    description: 'Reports finished listens to your server, which feeds recently-played and your mixes.',
+    labelKey: 'settings.saveHistory',
+    descriptionKey: 'settings.saveHistoryGloss',
     keywords: 'history scrobble plays recently played mixes recap stats tracking',
   },
   {
     id: 'share-position',
     pane: 'privacy',
-    label: 'Keep my place across devices',
-    description: 'Sends what you are playing and how far in to your AttackFM account.',
+    labelKey: 'settings.keepPlace',
+    descriptionKey: 'settings.keepPlaceGloss',
     keywords: 'resume position where i left off sync registry account telemetry phone home now playing',
   },
   {
     id: 'share-week',
     pane: 'privacy',
-    label: 'Share my listening with friends',
-    description: 'Friends on your server can open your full profile; friends elsewhere see your week.',
+    labelKey: 'settings.shareListening',
+    descriptionKey: 'settings.shareListeningGloss',
     keywords: 'friends social share week streak top artist stats registry profile liked songs privacy',
   },
   {
     id: 'dynamic-accent',
     pane: 'appearance',
-    label: 'Album colour while playing',
-    description: "The whole app takes the album cover's colour while music plays.",
+    labelKey: 'settings.albumColour',
+    descriptionKey: 'settings.albumColourGloss',
     keywords: 'accent colour color album cover dynamic tint theme now playing adaptive',
   },
   {
     id: 'now-playing-video',
     pane: 'appearance',
-    label: 'Video clips on Now Playing',
-    description: "The song's short looping clip behind the full player.",
+    labelKey: 'settings.videoClips',
+    descriptionKey: 'settings.videoClipsGloss',
     keywords: 'canvas video clip loop spotify animation background data cellular battery',
   },
   {
     id: 'auto-upload',
     pane: 'general',
-    label: 'Send new music automatically',
-    description: "Uploads anything in this machine's music folder the server does not have.",
+    labelKey: 'settings.autoUpload',
+    descriptionKey: 'settings.autoUploadGloss',
     keywords: 'upload sync folder send push library bandwidth add music import files automatic',
   },
   {
     id: 'streaming-quality',
     pane: 'playback',
-    label: 'Streaming quality',
-    description: 'Lossless sends the original file; Data saver re-encodes to a bitrate you pick.',
+    labelKey: 'settings.streamingQuality',
+    descriptionKey: 'settings.streamingQualityGloss',
     keywords: 'quality bitrate lossless data saver transcode cellular metered bandwidth kbps',
   },
   {
     id: 'haptics',
     pane: 'appearance',
-    label: 'Haptics',
-    description: 'Ticks from the Taptic Engine as you tap, play, and spin the disc.',
+    labelKey: 'settings.haptics',
+    descriptionKey: 'settings.hapticsGloss',
     keywords: 'haptics vibration vibrate taptic feedback feel buzz',
   },
   {
     id: 'shake-flick',
     pane: 'appearance',
-    label: 'Shake and flick',
-    description: 'Shake to change shuffle, flick left or right to change songs, on Now Playing.',
+    labelKey: 'settings.shakeFlick',
+    descriptionKey: 'settings.shakeFlickGloss',
     keywords: 'shake flick motion gesture accelerometer tilt skip',
   },
   {
     id: 'sleep-timer',
     pane: 'playback',
-    label: 'Sleep timer',
-    description: 'Fades out and pauses when the time is up.',
+    labelKey: 'settings.sleepTimer',
+    descriptionKey: 'settings.sleepTimerGloss',
     keywords: 'sleep timer bedtime night stop fade minutes',
   },
   {
     id: 'crossfade',
     pane: 'playback',
-    label: 'Crossfade',
-    description: 'Blends the end of one song into the start of the next.',
+    labelKey: 'settings.crossfade',
+    descriptionKey: 'settings.crossfadeGloss',
     keywords: 'crossfade blend fade transition seconds gapless',
   },
   {
     id: 'device-rename',
     pane: 'account',
-    label: 'Device name',
-    description: 'What this device is called in every picker on the account.',
+    labelKey: 'settings.deviceName',
+    descriptionKey: 'settings.deviceNameGloss',
     keywords: 'device name rename phone label picker connect',
   },
   {
     id: 'dev-mode',
     pane: 'developer',
-    label: 'Developer mode',
-    description: 'Shows the Developer page and Diagnostics in Settings.',
+    labelKey: 'settings.developerMode',
+    descriptionKey: 'settings.developerModeGloss',
     keywords: 'developer dev mode tools debug hidden unlock',
   },
   {
     id: 'notify-os',
     pane: 'notifications',
-    label: 'Show them on this device',
-    description: "Puts the app's news in your phone's notification tray, so it reaches you without the app open.",
+    labelKey: 'settings.notifyOnDevice',
+    descriptionKey: 'settings.notifyOnDeviceGloss',
     keywords: 'notifications push phone tray system os alerts banner lock screen device notify popup',
   },
   {
     id: 'notify-os-test',
     pane: 'notifications',
-    label: 'Send a test one',
-    description: 'Puts one notification in the tray now, to check they arrive.',
+    labelKey: 'settings.notifyTest',
+    descriptionKey: 'settings.notifyTestGloss',
     keywords: 'test notification try check send sample verify tray',
   },
   {
     id: 'notify-verbose',
     pane: 'notifications',
-    label: 'Verbose notifications',
-    description: 'Ring for background work too: downloads starting, songs being pulled into stems, the AI running.',
+    labelKey: 'settings.notifyVerbose',
+    descriptionKey: 'settings.notifyVerboseGloss',
     keywords: 'verbose notifications background stems ai downloads started chatty detail',
   },
   {
@@ -184,78 +218,78 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     // rather than as a typo here.
     id: 'dj-voice',
     pane: 'local-ai',
-    label: 'DJ voice',
-    description: 'The DJ speaks its lines between songs, in a real voice.',
+    labelKey: 'settings.djVoice',
+    descriptionKey: 'settings.djVoiceGloss',
     keywords: 'dj voice speech tts talk spoken elevenlabs kokoro radio announcer',
   },
   {
     id: 'dj-voice-character',
     pane: 'local-ai',
-    label: 'DJ voice character',
-    description: "Pick who the DJ sounds like - five of ElevenLabs' best voices.",
+    labelKey: 'settings.djVoiceCharacter',
+    descriptionKey: 'settings.djVoiceCharacterGloss',
     keywords: 'dj voice character elevenlabs hope verity brian daniel jessica accent',
   },
   {
     id: 'date-voice',
     pane: 'local-ai',
-    label: 'Music Date briefing',
-    description: 'The DJ introduces your next three dates on the way in.',
+    labelKey: 'settings.dateBriefing',
+    descriptionKey: 'settings.dateBriefingGloss',
     keywords: 'date briefing voice dj music date spoken tour introduce suggestions',
   },
   {
     id: 'ai-url',
     pane: 'local-ai',
-    label: 'Model endpoint',
-    description: 'Where the server sends its AI requests - an Ollama or any OpenAI-compatible origin.',
+    labelKey: 'settings.modelEndpoint',
+    descriptionKey: 'settings.modelEndpointGloss',
     keywords: 'ai endpoint url ollama model local llm server',
   },
   {
     id: 'ai-do-discover',
     pane: 'local-ai',
-    label: 'Find me new music',
-    description: 'Ask the server to go looking for artists around what you have been playing.',
+    labelKey: 'settings.aiFindMusic',
+    descriptionKey: 'settings.aiFindMusicGloss',
     keywords: 'ai discover find new music harvest recommendations suggestions look',
   },
   {
     id: 'ai-do-mix',
     pane: 'local-ai',
-    label: 'Make me a new mix',
-    description: 'Rebuild the mixes on your home screen from your recent listening.',
+    labelKey: 'settings.aiNewMix',
+    descriptionKey: 'settings.aiNewMixGloss',
     keywords: 'ai mix mixes rebuild home shuffle playlist make new',
   },
   {
     id: 'ai-do-dates',
     pane: 'local-ai',
-    label: 'Top up Music Date',
-    description: 'Look for something you do not own and ask for it, so the deck has more to show.',
+    labelKey: 'settings.aiTopUpDates',
+    descriptionKey: 'settings.aiTopUpDatesGloss',
     keywords: 'ai music date dates deck audition top up refresh cards more',
   },
   {
     id: 'ai-taste',
     pane: 'local-ai',
-    label: 'Your listening moods',
-    description: 'What the machine reads off your last three weeks - the moods, their tempo and energy, and the stations built on them.',
+    labelKey: 'settings.aiListeningMoods',
+    descriptionKey: 'settings.aiListeningMoodsGloss',
     keywords: 'ai mood moods taste profile clusters stations listening recent vibe',
   },
   {
     id: 'ai-do-curate',
     pane: 'local-ai',
-    label: 'Full curation pass',
-    description: 'Read the library, rebuild the lists and look for more, all in one go.',
+    labelKey: 'settings.aiFullPass',
+    descriptionKey: 'settings.aiFullPassGloss',
     keywords: 'ai curate pass full run now curator enrich refresh everything',
   },
   {
     id: 'stem-prefetch',
     pane: 'server',
-    label: 'Separate songs before you ask',
-    description: 'Pulls liked and playlisted songs apart in the background so the Pads open instantly.',
+    labelKey: 'settings.stemPrefetch',
+    descriptionKey: 'settings.stemPrefetchGloss',
     keywords: 'stems separate demucs pads sampler karaoke vocals drums bass prefetch ahead gpu disk background auto stemming',
   },
   {
     id: 'wifi-only',
     pane: 'storage',
-    label: 'Only download on Wi-Fi',
-    description: 'Automatic downloads wait for Wi-Fi; playing, pins and Check now are unaffected.',
+    labelKey: 'settings.wifiOnly',
+    descriptionKey: 'settings.wifiOnlyGloss',
     // "roaming", "allowance" and "bill" are here because they are what somebody
     // types when they have just been charged for something, which is the moment
     // most people go looking for this row.
@@ -269,25 +303,27 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     // and both search surfaces drop the entry silently and forever - which is
     // also, used correctly, what makes it disappear when the plugin is off.
     pane: 'spotify-import:downloads',
-    label: 'Where downloads run',
-    description: 'Which server fetches imported links, before the songs are copied across to your library.',
+    labelKey: 'settings.importServer',
+    descriptionKey: 'settings.importServerGloss',
     keywords: 'import download server which box spotiflac peer hub mirror where runs downloader sync copy',
   },
 ];
 
-/** Does one row answer this query? Same AND-across-words rule as the panes. */
-export function settingMatches(entry: SettingEntry, query: string): boolean {
+/** Does one row answer this query? Same AND-across-words rule as the panes.
+ *  The translator comes in from the caller because the row's words only exist
+ *  once a language has been picked. */
+export function settingMatches(entry: SettingEntry, query: string, t: Translate): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  const hay = [entry.label, entry.description, entry.keywords ?? ''].join(' ').toLowerCase();
+  const hay = [t(entry.labelKey), t(entry.descriptionKey), entry.keywords ?? ''].join(' ').toLowerCase();
   return q.split(/\s+/).every((word) => hay.includes(word));
 }
 
 /** The rows a query finds, in index order. */
-export function settingsMatching(query: string): SettingEntry[] {
+export function settingsMatching(query: string, t: Translate): SettingEntry[] {
   const q = query.trim();
   if (!q) return [];
-  return SETTINGS_INDEX.filter((e) => settingMatches(e, q));
+  return SETTINGS_INDEX.filter((e) => settingMatches(e, q, t));
 }
 
 /**
@@ -460,15 +496,16 @@ export const SettingsNavContext = createContext<((sectionId: string) => void) | 
  * so the clustering reads as intent rather than as accidental gaps. The same
  * labels head the desktop rail's runs, which used to ignore `group` entirely.
  */
-export const SETTINGS_GROUPS: readonly { id: number; label: string }[] = [
-  { id: 0, label: 'Look & sound' },
-  { id: 1, label: 'Your stuff' },
-  { id: 2, label: 'The machinery' },
-  { id: 3, label: 'Reference' },
+export const SETTINGS_GROUPS: readonly { id: number; labelKey: string }[] = [
+  { id: 0, labelKey: 'settings.groupLookSound' },
+  { id: 1, labelKey: 'settings.groupYourStuff' },
+  { id: 2, labelKey: 'settings.groupMachinery' },
+  { id: 3, labelKey: 'settings.groupReference' },
 ];
 
-export function settingsGroupLabel(id: number | undefined): string | null {
-  return SETTINGS_GROUPS.find((g) => g.id === id)?.label ?? null;
+export function settingsGroupLabel(id: number | undefined, t: Translate): string | null {
+  const group = SETTINGS_GROUPS.find((g) => g.id === id);
+  return group ? t(group.labelKey) : null;
 }
 
 /** One entry in the settings rail: an id, its label, its icon, its pane -
@@ -488,19 +525,22 @@ export interface SettingsSection {
   group?: number;
 }
 
-// The name and one-line gloss for each theme, keyed by preset id.
-export const THEME_COPY: Record<ThemePreference, { label: string; description: string }> = {
-  system: { label: 'Automatic', description: 'Follows the system.' },
-  light: { label: 'Alpine', description: 'Bright and neutral.' },
-  dark: { label: 'Midnight', description: 'Dim and neutral.' },
-  dawn: { label: 'Dawn', description: 'Warm light.' },
-  boreal: { label: 'Boreal', description: 'Cool dark.' },
-  ember: { label: 'Ember', description: 'Warm dark.' },
+// The name and one-line gloss for each theme, keyed by preset id - as
+// catalogue keys, because this map is built at import and the theme cards
+// would otherwise keep the language the app started in.
+export const THEME_COPY: Record<ThemePreference, { labelKey: string; descriptionKey: string }> = {
+  system: { labelKey: 'settings.themeAutomatic', descriptionKey: 'settings.themeAutomaticHint' },
+  light: { labelKey: 'settings.themeAlpine', descriptionKey: 'settings.themeAlpineHint' },
+  dark: { labelKey: 'settings.themeMidnight', descriptionKey: 'settings.themeMidnightHint' },
+  dawn: { labelKey: 'settings.themeDawn', descriptionKey: 'settings.themeDawnHint' },
+  boreal: { labelKey: 'settings.themeBoreal', descriptionKey: 'settings.themeBorealHint' },
+  ember: { labelKey: 'settings.themeEmber', descriptionKey: 'settings.themeEmberHint' },
 };
 
-/** The accent slug's human name, brand accents first, kit accents after. */
-export function accentLabel(accent: string): string {
+/** The accent slug's human name, brand accents first, kit accents after. The
+ *  kit's own names come from its catalogue, not ours. */
+export function accentLabel(accent: string, t: Translate): string {
   const brand = Object.values(BRAND_ACCENTS).find((a) => a.name === accent);
-  if (brand) return brand.label;
+  if (brand) return t(brand.labelKey);
   return accentOptions.find((a) => a.name === accent)?.label ?? accent;
 }

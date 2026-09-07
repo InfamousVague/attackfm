@@ -8,7 +8,8 @@ import { usePlayNowOptional } from './playNow.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { useJamOptional } from './jam.tsx';
 import { startDjRun } from '../booth/djSession.ts';
-import { MOODS } from '../booth/DjLauncher.tsx';
+import { MOODS, moodLabel } from '../booth/DjLauncher.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { peekDj, fetchDjStations, type DjStation } from '../api/dj.ts';
 import { recentDjAsks } from '../booth/djAsks.ts';
 import { clockInWords } from '../booth/djClock.ts';
@@ -38,21 +39,26 @@ import type { Track } from '../core/tauri.ts';
  * card would play (cached per seed per hour), nothing at all for the moods.
  */
 
-/** What the DJ is up to while you wait - cycled under the hero's title. */
+/** What the DJ is up to while you wait - cycled under the hero's title.
+ *  Keys, not lines: this array is built when the module loads, and a line
+ *  translated here would still be in the boot language an hour after the
+ *  listener changed it. `useCueClock` resolves the one it hands back. */
 const CUE_LINES = [
-  'Reading the room…',
-  'Digging the crates…',
-  'Matching the mood…',
-  'Lining up the opener…',
-  'Dropping the needle…',
+  'booth.cueReadingRoom',
+  'booth.cueDigging',
+  'booth.cueMatchingMood',
+  'booth.cueLiningUp',
+  'booth.cueDroppingNeedle',
 ];
 
 /** The wait budget the countdown paces itself to - the server holds the
  *  patter model to five seconds, so the whole reply lands inside this. */
 const CUE_SECONDS = 8;
 
-/** The card that stands in when the hub has no stations yet. */
-const TASTE = { name: 'From my taste', blurb: 'A live set, built from what you play' };
+/** The card that stands in when the hub has no stations yet. Its words are
+ *  keys for the same reason the cue lines are: nothing at module scope can
+ *  know what language the listener will be reading in. */
+const TASTE = { nameKey: 'booth.tasteStation', blurbKey: 'booth.tasteStationBlurb' };
 
 // --- the hour's caches -----------------------------------------------------
 
@@ -202,6 +208,7 @@ function Mosaic({ arts }: { arts: string[] }) {
  * ellipsis and the ring stays full - a promise, not a stopwatch.
  */
 function useCueClock(running: boolean): { left: number; frac: number; line: string } {
+  const t = useT();
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!running) {
@@ -215,7 +222,7 @@ function useCueClock(running: boolean): { left: number; frac: number; line: stri
   return {
     left: Math.max(0, CUE_SECONDS - elapsed),
     frac: Math.min(1, elapsed / CUE_SECONDS),
-    line: CUE_LINES[Math.min(CUE_LINES.length - 1, Math.floor(elapsed / 1.7))]!,
+    line: t(CUE_LINES[Math.min(CUE_LINES.length - 1, Math.floor(elapsed / 1.7))]!),
   };
 }
 
@@ -272,10 +279,13 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
 interface Cue {
   seed: string;
   filter?: string;
+  /** Shown, never sent: the seed and the filter are the hub's contract, so
+   *  this one is safe to hand over in the listener's language. */
   name: string;
 }
 
 export function NpDjButton() {
+  const t = useT();
   const { session } = useServerSession();
   const { tracks, forYou } = useLibrary();
   const play = usePlayNowOptional();
@@ -345,7 +355,7 @@ export function NpDjButton() {
       });
       const opener = queue[0];
       if (!opener) {
-        setNote('The DJ came up empty. Play a few things first.');
+        setNote(t('booth.emptyRun'));
         return;
       }
       // Close FIRST: starting the set re-renders the whole sheet (new
@@ -358,23 +368,31 @@ export function NpDjButton() {
       await panelGone();
       play(opener, queue);
     } catch (err) {
-      setNote(err instanceof Error ? err.message : 'The DJ could not start.');
+      setNote(err instanceof Error ? err.message : t('booth.couldNotStart'));
     } finally {
       setCue(null);
     }
   };
 
   // The hero's words: the clock, or the room, or what is being cued.
-  const heroName = hero?.name ?? TASTE.name;
-  const heroBlurb = hero?.blurb || TASTE.blurb;
-  const eyebrow = busy ? 'Cueing up' : hosting ? 'Into the groove' : clockInWords();
-  const title = busy ? cue.name : following ? `${room.hostName} sets the pace` : heroName;
+  const heroName = hero?.name ?? t(TASTE.nameKey);
+  const heroBlurb = hero?.blurb || t(TASTE.blurbKey);
+  const eyebrow = busy
+    ? t('booth.cueingUp')
+    : hosting
+      ? t('booth.intoTheGroove')
+      : clockInWords();
+  const title = busy
+    ? cue.name
+    : following
+      ? t('booth.hostSetsThePace', { host: room.hostName })
+      : heroName;
   const blurb = busy
     ? clock.line
     : hosting
-      ? `To the room — ${room.memberCount} listening`
+      ? t('booth.toTheRoom', { count: room.memberCount })
       : following
-        ? `You're in ${room.hostName}'s groove. Leave the room to start a set of your own.`
+        ? t('booth.followerLocked', { host: room.hostName })
         : heroBlurb;
 
   const playingArt = playing ? artSized(playing.artwork, 160) : null;
@@ -394,7 +412,7 @@ export function NpDjButton() {
            wearing the same glyph as the thing it plays. The DJ is a machine
            that talks - say so, and the seat stops reading as "another album
            button" on a row where the neighbours are a book and a microphone. */
-        <IconButton variant="ghost" aria-label="Start a DJ set">
+        <IconButton variant="ghost" aria-label={t('player.startDjSet')}>
           <Bot size={20} />
         </IconButton>
       }
@@ -404,7 +422,7 @@ export function NpDjButton() {
             While a set is cued THIS card becomes the console - the ring on
             the mosaic, the DJ's busywork under the title - and the rest of
             the deck stands down until the needle drops. */}
-        <Section label="For right now">
+        <Section label={t('booth.deckNow')}>
           {following ? (
             <div className="npDjCard npDjHero npDjHero--locked" role="note">
               <span className="npDjHero__art">
@@ -413,7 +431,7 @@ export function NpDjButton() {
               <span className="npDjHero__text">
                 <span className="npDjHero__eyebrow">
                   <Users size={12} aria-hidden />
-                  In {room.hostName}&rsquo;s groove
+                  {t('booth.inHostGroove', { host: room.hostName })}
                 </span>
                 <span className="npDjHero__title">{title}</span>
                 <span className="npDjHero__blurb npDjHero__blurb--wrap">{blurb}</span>
@@ -423,7 +441,11 @@ export function NpDjButton() {
             <button
               type="button"
               className="npDjCard npDjHero"
-              aria-label={busy ? `Cueing ${cue.name}` : `Play ${heroName}: ${heroBlurb}`}
+              aria-label={
+                busy
+                  ? t('booth.cueingNamed', { name: cue.name })
+                  : t('booth.playStation', { name: heroName, blurb: heroBlurb })
+              }
               aria-busy={busy || undefined}
               disabled={busy}
               onClick={() => void start({ seed: heroSeed, filter: heroFilter, name: heroName })}
@@ -451,17 +473,17 @@ export function NpDjButton() {
 
         {/* 2. More like this: the song on the deck, as a station of one. */}
         {playing && playing.kind !== 'book' && (
-          <Section label="More like this">
+          <Section label={t('booth.deckMoreLikeThis')}>
             <button
               type="button"
               className="npDjCard npDjLike"
-              aria-label={`Play more like ${playing.title} by ${playing.artist}`}
+              aria-label={t('booth.playMoreLike', { title: playing.title, artist: playing.artist })}
               disabled={busy || following}
               onClick={() =>
                 void start({
                   seed: `more like ${playing.title} by ${playing.artist}`,
                   filter: `artist:${playing.artist}`,
-                  name: `More like ${playing.title}`,
+                  name: t('booth.moreLikeTitle', { title: playing.title }),
                 })
               }
             >
@@ -473,8 +495,12 @@ export function NpDjButton() {
                 </span>
               )}
               <span className="npDjLike__text">
-                <span className="npDjLike__title">More like {playing.title}</span>
-                <span className="npDjLike__blurb">{playing.artist} and the artists next door</span>
+                <span className="npDjLike__title">
+                  {t('booth.moreLikeTitle', { title: playing.title })}
+                </span>
+                <span className="npDjLike__blurb">
+                  {t('booth.artistsNextDoor', { artist: playing.artist })}
+                </span>
               </span>
               <span className="npDjLike__go" aria-hidden>
                 <Play size={14} fill="currentColor" />
@@ -484,33 +510,37 @@ export function NpDjButton() {
         )}
 
         {/* 3. Moods: six ways to steer, each its own colour and its own glyph. */}
-        <Section label="Moods">
+        <Section label={t('booth.deckMoods')}>
           <div className="npDjMoods">
-            {MOODS.map(({ label, seed, Icon, hint, hue }) => (
-              <button
-                key={label}
-                type="button"
-                className="npDjCard npDjMood"
-                style={{ '--mood-hue': hue } as CSSProperties}
-                aria-label={`Play a ${label} set — ${hint}`}
-                disabled={busy || following}
-                onClick={() => void start({ seed, name: label })}
-              >
-                <span className="npDjMood__icon" aria-hidden>
-                  <Icon size={18} />
-                </span>
-                <span className="npDjMood__text">
-                  <span className="npDjMood__label">{label}</span>
-                  <span className="npDjMood__hint">{hint}</span>
-                </span>
-              </button>
-            ))}
+            {MOODS.map((mood) => {
+              const label = moodLabel(mood, t);
+              const hint = t(mood.hintKey);
+              return (
+                <button
+                  key={mood.seed}
+                  type="button"
+                  className="npDjCard npDjMood"
+                  style={{ '--mood-hue': mood.hue } as CSSProperties}
+                  aria-label={t('booth.playMoodSet', { label, hint })}
+                  disabled={busy || following}
+                  onClick={() => void start({ seed: mood.seed, name: label })}
+                >
+                  <span className="npDjMood__icon" aria-hidden>
+                    <mood.Icon size={18} />
+                  </span>
+                  <span className="npDjMood__text">
+                    <span className="npDjMood__label">{label}</span>
+                    <span className="npDjMood__hint">{hint}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </Section>
 
         {/* 4. Your stations: the rest of the hub's dial, in the hour's order. */}
         {rest.length > 0 && (
-          <Section label="Your stations">
+          <Section label={t('booth.deckStations')}>
             <EdgeScrollRow className="npDjStations">
               {rest.map((st) => {
                 const art = stationArt.get(st.id);
@@ -519,7 +549,11 @@ export function NpDjButton() {
                     key={st.id}
                     type="button"
                     className="npDjCard npDjStation"
-                    aria-label={st.blurb ? `Play ${st.name}: ${st.blurb}` : `Play ${st.name}`}
+                    aria-label={
+                      st.blurb
+                        ? t('booth.playStation', { name: st.name, blurb: st.blurb })
+                        : t('booth.playStationPlain', { name: st.name })
+                    }
                     disabled={busy || following}
                     onClick={() => void start({ seed: st.seed, filter: st.filter, name: st.name })}
                   >
@@ -532,7 +566,7 @@ export function NpDjButton() {
                         </span>
                       )}
                       {st.flavor === 'ai' && (
-                        <span className="npDjStation__ai" title="Named by the DJ" aria-hidden>
+                        <span className="npDjStation__ai" title={t('booth.namedByDj')} aria-hidden>
                           <Sparkles size={12} />
                         </span>
                       )}
@@ -548,14 +582,14 @@ export function NpDjButton() {
 
         {/* 5. Recent asks: the listener's last three briefs, one tap again. */}
         {asks.length > 0 && (
-          <Section label="Recent asks">
+          <Section label={t('booth.deckRecentAsks')}>
             <div className="npDjAsks">
               {asks.map((ask) => (
                 <button
                   key={ask}
                   type="button"
                   className="npDjCard npDjAsk"
-                  aria-label={`Ask again: ${ask}`}
+                  aria-label={t('booth.askAgain', { ask })}
                   disabled={busy || following}
                   onClick={() => void start({ seed: ask, name: ask })}
                 >
@@ -574,7 +608,7 @@ export function NpDjButton() {
           <button
             type="button"
             className="npDjCard npDjTalk"
-            aria-label="Say what you're after — talk to the DJ"
+            aria-label={t('booth.talkToDjAria')}
             disabled={busy}
             onClick={() => {
               setOpen(false);
@@ -585,7 +619,7 @@ export function NpDjButton() {
               <MessageCircle size={18} />
               <Mic size={18} />
             </span>
-            <span className="npDjTalk__label">Say what you&rsquo;re after</span>
+            <span className="npDjTalk__label">{t('booth.talkToDj')}</span>
           </button>
         )}
 

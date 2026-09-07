@@ -46,22 +46,27 @@ export type Filter =
  *  rule between them, so it reads as two questions rather than nine chips.
  *  The group travels with the chip because chips drop out when a query has
  *  nothing for them - the rule has to follow the last surviving scope, not a
- *  fixed index into a list that no longer looks like this one. */
-export const CHIPS: { id: Filter; label: string; icon: ReactNode; group: 'scope' | 'kind' }[] = [
-  { id: 'all', label: 'All', icon: <Search size={13} />, group: 'scope' },
-  { id: 'mine', label: 'Yours', icon: <Check size={13} />, group: 'scope' },
-  { id: 'catalog', label: 'To add', icon: <Compass size={13} />, group: 'scope' },
-  { id: 'songs', label: 'Songs', icon: <Music size={13} />, group: 'kind' },
+ *  fixed index into a list that no longer looks like this one.
+ *
+ *  The chips carry a KEY rather than a word. This array is built once, at
+ *  import, which is before any language has been chosen and long before the
+ *  picker can change it - a word placed here would be the word the app booted
+ *  in, for the rest of the session. The page resolves the key as it draws. */
+export const CHIPS: { id: Filter; labelKey: string; icon: ReactNode; group: 'scope' | 'kind' }[] = [
+  { id: 'all', labelKey: 'search.scopeAll', icon: <Search size={13} />, group: 'scope' },
+  { id: 'mine', labelKey: 'search.scopeMine', icon: <Check size={13} />, group: 'scope' },
+  { id: 'catalog', labelKey: 'search.toAdd', icon: <Compass size={13} />, group: 'scope' },
+  { id: 'songs', labelKey: 'search.songs', icon: <Music size={13} />, group: 'kind' },
   /* Books are a KIND, not a scope: they are things you own, sitting in the same
      library as the songs - they are simply kept out of `tracks` so a twelve-hour
      reading never turns up in a mix or a shuffle. That separation is why the one
      global search could not find them at all until now. */
-  { id: 'books', label: 'Books', icon: <BookAudio size={13} />, group: 'kind' },
-  { id: 'artists', label: 'Artists', icon: <User size={13} />, group: 'kind' },
-  { id: 'albums', label: 'Albums', icon: <Disc3 size={13} />, group: 'kind' },
-  { id: 'playlists', label: 'Playlists', icon: <ListMusic size={13} />, group: 'kind' },
-  { id: 'genres', label: 'Genres', icon: <Tag size={13} />, group: 'kind' },
-  { id: 'friends', label: 'Friends', icon: <Users size={13} />, group: 'kind' },
+  { id: 'books', labelKey: 'search.books', icon: <BookAudio size={13} />, group: 'kind' },
+  { id: 'artists', labelKey: 'search.artists', icon: <User size={13} />, group: 'kind' },
+  { id: 'albums', labelKey: 'search.albums', icon: <Disc3 size={13} />, group: 'kind' },
+  { id: 'playlists', labelKey: 'search.playlists', icon: <ListMusic size={13} />, group: 'kind' },
+  { id: 'genres', labelKey: 'search.genres', icon: <Tag size={13} />, group: 'kind' },
+  { id: 'friends', labelKey: 'search.friends', icon: <Users size={13} />, group: 'kind' },
 ];
 
 /* -------------------------------------------------------------------- items */
@@ -88,7 +93,10 @@ export type Item =
 export interface Section {
   /** The chip its See all turns on. */
   key: Filter;
-  title: string;
+  /** Catalogue key for the heading, resolved by the page - a section is data
+   *  the page rebuilds every render, and its heading has to follow the
+   *  language rather than the render that first named it. */
+  titleKey: string;
   icon: ReactNode;
   /** How many exist, which is what the count beside the heading says. */
   total: number;
@@ -110,9 +118,17 @@ export function targetOf(result: SearchResult): AcquireTarget {
 export const albumKey = (album: { title: string; artist: string }): string =>
   `${album.title}${SEP}${album.artist}`;
 
-export function kindWord(kind: SearchResult['kind']): string {
-  return kind === 'artist' ? 'Artist' : kind === 'album' ? 'Album' : 'Song';
+/** Which word a catalogue row wears for its kind - as a key, because the only
+ *  callers are rows being drawn and the word has to be this render's language. */
+export function kindWordKey(kind: SearchResult['kind']): string {
+  return KIND_KEY[kind];
 }
+
+const KIND_KEY: Record<SearchResult['kind'], string> = {
+  artist: 'search.kindArtist',
+  album: 'search.kindAlbum',
+  track: 'search.kindSong',
+};
 
 /** Whether a catalogue row's name is what the query was reaching for: the
  *  same name, the start of it, or all of it and then some ("ethel" finding

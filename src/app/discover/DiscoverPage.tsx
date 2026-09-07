@@ -21,6 +21,7 @@ import { DiscoverHero, heroLead } from './DiscoverHero.tsx';
 import { MusicDateChip } from '../library/MusicDateChip.tsx';
 import { TrendingShelves } from './TrendingShelves.tsx';
 import { PeopleShelf } from './PeopleShelf.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * Discover: everything the machine has to say.
@@ -63,6 +64,7 @@ export function DiscoverPage({
   /** The Friends page - the People shelf's live card leads there. */
   onOpenFriends?: () => void;
 }) {
+  const t = useT();
   const { session } = useServerSession();
   // The entrance wave: cards ripple in as they meet the view, each landing
   // with a soft tick - see rippleWave.ts. Watching the page root covers every
@@ -76,7 +78,7 @@ export function DiscoverPage({
         <div className="emptyState emptyState--tall">
           <EmptyArt name="discovery" />
           <p className="emptyState__text">
-            Sign in to a server and this page fills with what it finds for you.
+            {t('discover.signInBlurb')}
           </p>
         </div>
       ) : (
@@ -116,9 +118,10 @@ function DiscoverBody({
   onOpenStats?: () => void;
   onOpenFriends?: () => void;
 }) {
+  const t = useT();
   const feed = useDiscoverFeed();
   const { tracks } = useLibrary();
-  const lead = useMemo(() => heroLead(feed, tracks), [feed, tracks]);
+  const lead = useMemo(() => heroLead(feed, tracks, t), [feed, tracks, t]);
 
   return (
     <>
@@ -250,6 +253,7 @@ function topGenres(tracks: readonly Track[], take = 6): string[] {
  * watches.
  */
 function SuggestedLists({ onOpen }: { onOpen: (item: Suggestion) => void }) {
+  const t = useT();
   const { session } = useServerSession();
   const { home } = useDiscoverFeed();
   const { tracks } = useLibrary();
@@ -342,7 +346,7 @@ function SuggestedLists({ onOpen }: { onOpen: (item: Suggestion) => void }) {
   if (items === null) {
     return (
       <div ref={setSeat}>
-        <ShelfSkeleton title="Suggested playlists" kind="mix" count={3} />
+        <ShelfSkeleton title={t('discover.suggestedPlaylists')} kind="mix" count={3} />
       </div>
     );
   }
@@ -370,10 +374,10 @@ function SuggestedLists({ onOpen }: { onOpen: (item: Suggestion) => void }) {
               : 'idle';
             const label =
               state === 'added'
-                ? `${item.title} is in your library`
+                ? t('discover.itemInLibrary', { title: item.title })
                 : state === 'adding'
-                  ? `${item.title} is downloading`
-                  : `Add ${item.title}`;
+                  ? t('discover.itemDownloading', { title: item.title })
+                  : t('discover.addItem', { title: item.title });
             return (
               <div className="suggestCard" key={item.id}>
                 {/* The card OPENS the list. Add is its own control, below,
@@ -381,7 +385,7 @@ function SuggestedLists({ onOpen }: { onOpen: (item: Suggestion) => void }) {
                 <button
                   type="button"
                   className="suggestCardBody"
-                  aria-label={`${item.title} - see what is on it`}
+                  aria-label={t('discover.seeWhatIsOnIt', { title: item.title })}
                   onClick={() => onOpen(item)}
                 >
                   <div className="suggestCardCover">
@@ -405,7 +409,7 @@ function SuggestedLists({ onOpen }: { onOpen: (item: Suggestion) => void }) {
                   </div>
                   <span className="suggestCardTitle">{item.title}</span>
                   <span className="suggestCardBlurb">
-                    {item.trackCount ? `${item.trackCount} songs` : item.blurb}
+                    {item.trackCount ? t('library.songCount', { count: item.trackCount }) : item.blurb}
                   </span>
                 </button>
                 <button
@@ -416,7 +420,13 @@ function SuggestedLists({ onOpen }: { onOpen: (item: Suggestion) => void }) {
                   onClick={() => add(item, viaImporter)}
                 >
                   {state === 'idle' ? <Plus size={14} /> : <Check size={14} />}
-                  <span>{state === 'added' ? 'Added' : state === 'adding' ? 'Adding…' : 'Add'}</span>
+                  <span>
+                    {state === 'added'
+                      ? t('discover.added')
+                      : state === 'adding'
+                        ? t('discover.adding')
+                        : t('discover.add')}
+                  </span>
                 </button>
               </div>
             );

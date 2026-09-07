@@ -21,6 +21,7 @@ import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VOLUME_UNITY } from './VolumeControl.tsx';
 import { recordResume } from '../servers/resumeSync.ts';
 import { useEffects } from './effects.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useFxChain, chainRate } from './fxChain.ts';
 import { recordDiag } from '../diag/diagLog.ts';
 import { loadAudioSource, loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from '../core/tauri.ts';
@@ -168,6 +169,11 @@ export function Player({
    */
   autoplay?: boolean;
 }) {
+  // `t` is the translator here, as everywhere. A few effects below still
+  // declare a local `t` of their own (a lerp fraction); those need no string,
+  // so the shadowing is harmless and left alone. The one in chapterLabel was
+  // renamed, because that block now does.
+  const t = useT();
   const audioRef = useRef<HTMLAudioElement>(null);
   // The analyser tapping the element. Null until the first play, because an
   // AudioContext built before a user gesture starts suspended and, on WebKit,
@@ -395,9 +401,11 @@ export function Player({
   // way IN. Un-hearting stays silent in the hand but leaves a way back on
   // screen: the heart is small, the thumb is not, and a like taken by
   // accident should cost one tap rather than a hunt through the library.
-  const toggleFavoriteFor = (t: Track | null) => () => {
-    if (!t) return;
-    const path = t.path;
+  // The parameter is `song` rather than the `t` it was: `t` is the translator
+  // in this file now, and the toast below needs it.
+  const toggleFavoriteFor = (song: Track | null) => () => {
+    if (!song) return;
+    const path = song.path;
     const on = isFavorite(path);
     if (!on) {
       heartbeatHaptic();
@@ -406,8 +414,8 @@ export function Player({
     toggleFavorite(path);
     if (on) {
       toast({
-        message: `Removed “${t.title}” from Liked`,
-        action: { label: 'Undo', onPress: () => toggleFavorite(path) },
+        message: t('player.unliked', { title: song.title }),
+        action: { label: t('common.undo'), onPress: () => toggleFavorite(path) },
       });
     }
   };
@@ -1800,7 +1808,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     const numbers = chapterNumbers(marks.map((c) => c.title ?? ''));
     const n = numbers[here] ?? null;
     if (n === null) return frontMatterTitle(marks[here]?.title ?? '', here);
-    return `Chapter ${n} of ${marks.length}`;
+    return t('books.chapterOf', { n, total: marks.length });
   })();
 
   /* The lock screen, Control Center, CarPlay, Android Auto, the headphone
@@ -3241,10 +3249,14 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // render off `position`, so it ticks over as the book plays.
   const chapterLabel = (() => {
     if (!hasChapters) return null;
-    const t = position * 1000;
+    // `ms`, not the `t` this used to be: the label needs the translator of
+    // that name from the top of the component, and a millisecond clock
+    // shadowing it here would have silently made every chapter line a
+    // TypeError.
+    const ms = position * 1000;
     let idx = 0;
     for (let i = 0; i < chapters.length; i++) {
-      if (t >= chapters[i]!.startMs - 1000) idx = i;
+      if (ms >= chapters[i]!.startMs - 1000) idx = i;
       else break;
     }
     const title = chapters[idx]!.title?.trim();
@@ -3253,8 +3265,11 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     const n = chapterNumbers(chapters.map((c) => c.title ?? ''))[idx] ?? null;
     // Front matter is not "Chapter -1 of 50" - it is the Preamble, by name,
     // or the Intro where the name it came with was a number it has no right to.
-    if (n === null) return frontMatterTitle(title ?? '', idx) || `Chapter ${idx + 1} of ${chapters.length}`;
-    const ord = `Chapter ${n} of ${chapters.length}`;
+    if (n === null)
+      return (
+        frontMatterTitle(title ?? '', idx) ||
+        t('books.chapterOf', { n: idx + 1, total: chapters.length })
+      );
     /*
      * The title only adds something when it is WORDS.
      *
@@ -3263,8 +3278,13 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
      * as chapter one: two answers to the same question, one of them wrong, side
      * by side. A label is dropped whatever number it states; a real name stays.
      */
+    // One entry for the whole line rather than an ordinal with a name
+    // appended: the separator and the order of the two halves are both
+    // language, and a caller gluing them can move neither.
     const words = chapterTitleWords(title ?? '');
-    return words ? `${ord} · ${words}` : ord;
+    return words
+      ? t('books.chapterOfNamed', { n, total: chapters.length, title: words })
+      : t('books.chapterOf', { n, total: chapters.length });
   })();
   /**
    * How much book is left, not how much file.
@@ -4037,7 +4057,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       // here exactly as before.
       if (!castToastShown.current) {
         castToastShown.current = true;
-        toast({ message: `“${track.title}” only lives on this device, so it can't be cast` });
+        toast({ message: t('player.castLocalOnly', { title: track.title }) });
       }
       return;
     }

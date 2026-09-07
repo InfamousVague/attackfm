@@ -4,6 +4,7 @@ import { MirrorSection, ServerSettings } from './ServerSettings.tsx';
 import { ServersPanel } from './ServersPage.tsx';
 import { SyncToHubSection } from './SyncToHubSection.tsx';
 import { SubNav } from '../settings/kit/settingsKit.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The boxes: the one you are signed into, and the network serving bytes.
@@ -29,12 +30,15 @@ import { SubNav } from '../settings/kit/settingsKit.tsx';
 
 type Chunk = 'server' | 'network';
 
-const CHUNKS: { id: Chunk; label: string }[] = [
-  { id: 'server', label: 'This server' },
-  { id: 'network', label: 'Network' },
+// Keys rather than words, because this table is evaluated at import - before
+// a language exists - and a tab named here would never follow the picker.
+const CHUNKS: { id: Chunk; labelKey: string }[] = [
+  { id: 'server', labelKey: 'servers.tabThisServer' },
+  { id: 'network', labelKey: 'servers.tabNetwork' },
 ];
 
 export function ServersSettings() {
+  const t = useT();
   const { session } = useServerSession();
   const [chunk, setChunk] = useState<Chunk>('server');
 
@@ -54,7 +58,7 @@ export function ServersSettings() {
       <SubNav
         value={chunk}
         onValueChange={(next) => setChunk(next as Chunk)}
-        options={CHUNKS}
+        options={CHUNKS.map((c) => ({ id: c.id, label: t(c.labelKey) }))}
       />
 
       {chunk === 'server' && <ServerSettings />}

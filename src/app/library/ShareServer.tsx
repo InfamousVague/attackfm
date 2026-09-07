@@ -10,6 +10,8 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { createInvite, inviteLink } from '../servers/registry.ts';
 import { shoot } from '../widget/shot.ts';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
+import { formatDate, formatNumber } from '../ux/format.ts';
 import logo from '../../assets/attack-white.png';
 
 /**
@@ -45,45 +47,61 @@ function splitCode(code: string): string {
   return `${code.slice(0, mid)} ${code.slice(mid)}`;
 }
 
-/** Whose server this is, for the title. The username is the one thing about
- *  the account a friend will recognise; a server with no name on it is just
- *  a URL. */
-function possessive(name: string): string {
-  return name.endsWith('s') ? `${name}'` : `${name}'s`;
-}
+/**
+ * Whose server this is, for the title - and the reason there is no
+ * `possessive()` helper any more. The apostrophe-s (and the bare apostrophe
+ * after a name ending in s) is English punctuation: French wants "le serveur
+ * de Matt" and Japanese wants the name first with a particle after it, and
+ * neither can be reached by decorating the name before it goes in. So the
+ * whole line is one catalogue entry with the name as a hole, and a second
+ * entry for the case the account has no username to put in it - which the old
+ * "my" fallback rendered as "Join my's Server".
+ */
+type Owner = string | null;
 
 /** Invites expire; a PNG does not. The card says until when, so a stale
  *  picture explains its own dead code. The registry stamps milliseconds; a
  *  seconds stamp is tolerated in case that ever changes under us. */
-function untilLabel(expiresAt: number): string {
+function untilLabel(t: ReturnType<typeof useT>, expiresAt: number): string {
   // 0 is the registry's mark for a standing invite: no expiry, and not used up
   // by the first person through, so one card can admit a whole group.
-  if (expiresAt === 0) return 'code never expires';
+  if (expiresAt === 0) return t('servers.inviteNeverExpires');
   const ms = expiresAt < 1e12 ? expiresAt * 1000 : expiresAt;
-  return `code valid until ${new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  return t('servers.inviteValidUntil', {
+    date: formatDate(ms, { month: 'short', day: 'numeric' }),
+  });
 }
 
 /** The lifetimes on offer. Seconds, or 0 for a standing (never-expiring,
- *  reusable) code. A week is the registry's own default and the middle seat. */
+ *  reusable) code. A week is the registry's own default and the middle seat.
+ *
+ *  The labels are KEYS rather than words: this array is built when the module
+ *  is imported, long before a language has been chosen, so a translated string
+ *  here would be the language the app booted in for the rest of the session
+ *  and the picker in Settings would move nothing. The Select resolves them. */
 const WEEK_TTL = 7 * 24 * 3600;
 
-const LIVES: { label: string; ttl: number }[] = [
-  { label: '1 day', ttl: 24 * 3600 },
-  { label: '1 week', ttl: WEEK_TTL },
-  { label: '1 month', ttl: 30 * 24 * 3600 },
-  { label: 'Never expires', ttl: 0 },
+const LIVES: { labelKey: string; ttl: number }[] = [
+  { labelKey: 'servers.inviteLifeDay', ttl: 24 * 3600 },
+  { labelKey: 'servers.inviteLifeWeek', ttl: WEEK_TTL },
+  { labelKey: 'servers.inviteLifeMonth', ttl: 30 * 24 * 3600 },
+  { labelKey: 'servers.inviteLifeNever', ttl: 0 },
 ];
 
 /** How many DISTINCT people a code admits. `n === 0` is "no limit", which in
  *  this registry is the same object as a standing (never-expiring) code - a
  *  capped code has to carry an expiry, there is no "never expires but only 5
  *  people" - so choosing one snaps the other, below. `1` is the classic
- *  one-time invite and stays the default. */
-const USES: { label: string; n: number }[] = [
-  { label: 'Once', n: 1 },
-  { label: '5 people', n: 5 },
-  { label: '25 people', n: 25 },
-  { label: 'Unlimited', n: 0 },
+ *  one-time invite and stays the default.
+ *
+ *  The two middle seats share one key and differ only by `n`, because "5
+ *  people" and "25 people" are the same sentence counted twice - and a
+ *  language with more than two number forms needs to be asked, not told. */
+const USES: { labelKey: string; n: number }[] = [
+  { labelKey: 'servers.inviteUsesOnce', n: 1 },
+  { labelKey: 'servers.inviteUsesPeople', n: 5 },
+  { labelKey: 'servers.inviteUsesPeople', n: 25 },
+  { labelKey: 'servers.inviteUsesUnlimited', n: 0 },
 ];
 
 interface Invite {
@@ -98,49 +116,71 @@ function InviteCard({
   qr,
 }: {
   cardRef: React.RefObject<HTMLDivElement | null>;
-  owner: string;
+  owner: Owner;
   invite: Invite;
   qr: string | null;
 }) {
+  const t = useT();
   return (
     <div className="inviteCard" ref={cardRef}>
       <div className="inviteCard__head">
+        {/* The mark's alt text is the product's name, which is the same word
+            in every language. */}
         <img className="inviteCard__logo" src={logo} alt="AttackFM" />
-        <span className="inviteCard__kicker">You're invited</span>
+        <span className="inviteCard__kicker">{t('servers.inviteKicker')}</span>
       </div>
 
       {/* Whose server, as a quiet line under the mark - not a headline. The
           code and the QR are the card's subject; the name is context. */}
-      <p className="inviteCard__sub">Join {possessive(owner)} Server</p>
+      <p className="inviteCard__sub">
+        {owner ? t('servers.inviteJoinOwner', { owner }) : t('servers.inviteJoinGeneric')}
+      </p>
 
       <div className="inviteCard__qrWrap">
         {qr ? (
-          <img className="inviteCard__qr" src={qr} alt={`Invite code ${invite.code}`} />
+          <img
+            className="inviteCard__qr"
+            src={qr}
+            alt={t('servers.inviteQrAlt', { code: invite.code })}
+          />
         ) : (
           <div className="inviteCard__qr" aria-hidden />
         )}
       </div>
 
-      <span className="inviteCard__addrLabel">Invite code</span>
+      <span className="inviteCard__addrLabel">{t('servers.inviteCodeLabel')}</span>
       <p className="inviteCard__addr inviteCard__code">{splitCode(invite.code)}</p>
 
+      {/* Both steps are one sentence each with something bold inside them, so
+          they go through Trans rather than being cut at the <b>: a translator
+          who is handed "Get the app at" and "and create your free AttackFM
+          account" as two pieces cannot put the address anywhere else. */}
+      {/* The step badges are numbers, not labels, so they come from Intl and
+          not the catalogue - a reader on an Arabic build counts the steps in
+          the digits the rest of their phone uses. */}
       <ol className="inviteCard__steps">
         <li className="inviteCard__step">
-          <span className="inviteCard__n">1</span>
+          <span className="inviteCard__n">{formatNumber(1)}</span>
           <span>
-            Get the app at <b>attack.fm</b> and create your free AttackFM account.
+            <Trans i18nKey="servers.inviteStepGetApp" ns="app" components={{ b: <b /> }} />
           </span>
         </li>
         <li className="inviteCard__step">
-          <span className="inviteCard__n">2</span>
+          <span className="inviteCard__n">{formatNumber(2)}</span>
           <span>
-            Scan this code, or enter <b>{splitCode(invite.code)}</b> under Join a server — and
-            you're in.
+            <Trans
+              i18nKey="servers.inviteStepEnterCode"
+              ns="app"
+              values={{ code: splitCode(invite.code) }}
+              components={{ b: <b /> }}
+            />
           </span>
         </li>
       </ol>
 
-      <p className="inviteCard__foot">attack.fm · {untilLabel(invite.expiresAt)}</p>
+      <p className="inviteCard__foot">
+        {t('servers.inviteFoot', { until: untilLabel(t, invite.expiresAt) })}
+      </p>
     </div>
   );
 }
@@ -151,6 +191,7 @@ function InviteCard({
  */
 export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
   const { session } = useServerSession();
+  const t = useT();
   const { toast } = useToast();
   const registry = useRegistryOptional();
   const door = useShareDoor();
@@ -167,7 +208,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
   const cardRef = useRef<HTMLDivElement | null>(null);
 
   const identity = registry?.session ?? null;
-  const owner = session?.username?.trim() || 'my';
+  const owner: Owner = session?.username?.trim() || null;
 
   /*
    * Mint the invite when the drawer opens, once - then reuse it for as long as
@@ -189,6 +230,10 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
         howMany === 0
           ? { standing: true }
           : { ttlSecs: ttl === 0 ? WEEK_TTL : ttl, maxUses: howMany };
+      // The third argument is the server's NAME as the registry will store and
+      // serve it - to every member, on every device, in whatever language each
+      // of them is running. It is a record, not this screen's copy, so it stays
+      // in one language rather than taking the minting device's.
       const made = await createInvite(
         identity.token,
         session.url,
@@ -198,7 +243,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
       setInvite({ code: made.code, expiresAt: made.expiresAt });
       setCopied(false);
     } catch (err) {
-      setMintError(err instanceof Error ? err.message : 'Could not make an invite right now.');
+      setMintError(err instanceof Error ? err.message : t('servers.inviteMintFailed'));
     } finally {
       setMinting(false);
     }
@@ -303,7 +348,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
       // the share sheet below is asked for inside the tap, not after a wait.
       const dataUrl = png ?? (await shoot(node, Math.round(box.width), Math.round(box.height), 5));
       if (!dataUrl) {
-        toast({ message: 'Could not draw the card. Try again in a moment.' });
+        toast({ message: t('servers.inviteDrawFailed') });
         return;
       }
       /*
@@ -321,11 +366,10 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
       }).AFMNative;
       if (native?.saveImage) {
         const ok = native.saveImage(dataUrl.slice(dataUrl.indexOf(',') + 1), 'attackfm-invite.png');
-        toast({
-          message: ok
-            ? 'Saved to Photos, in the AttackFM album.'
-            : 'Could not save the picture. Check storage access in Settings.',
-        });
+        // Two outcomes, two entries - the branch picks the key and t() does
+        // the rest, so neither sentence is built out of the other's pieces.
+        const saved = ok ? t('servers.inviteSavedToPhotos') : t('servers.inviteSaveDenied');
+        toast({ message: saved });
         return;
       }
       // Decoded by hand rather than fetch()ed: a fetch is one more await
@@ -335,7 +379,12 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
       for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
       const blob = new Blob([bytes], { type: 'image/png' });
       const file = new File([blob], 'attackfm-invite.png', { type: 'image/png' });
-      const shareData = { files: [file], title: `Join ${possessive(owner)} AttackFM server` };
+      const shareData = {
+        files: [file],
+        title: owner
+          ? t('servers.inviteShareTitleOwner', { owner })
+          : t('servers.inviteShareTitleGeneric'),
+      };
       if (navigator.canShare?.(shareData)) {
         try {
           await navigator.share(shareData);
@@ -344,7 +393,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
           // file. A REFUSED sheet (the tap's moment had passed) is said out
           // loud, because the alternative is a button that does nothing.
           if (err instanceof Error && err.name !== 'AbortError') {
-            toast({ message: 'The share sheet would not open - tap Save image again.' });
+            toast({ message: t('servers.inviteShareSheetFailed') });
           }
         }
         return;
@@ -363,8 +412,14 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
         } catch {
           // Unknown is fine; the sentence still stands.
         }
+        // Two whole sentences rather than one with an optional clause spliced
+        // into the middle of it: where the aside about the installed version
+        // belongs is a decision about the sentence, and only the translator
+        // holding the sentence can make it.
         toast({
-          message: `Saving pictures needs the AttackFM app itself from the 0.5.38 release or newer${installed ? ` - this phone has the ${installed} app installed` : ''}. Updates over the air do not replace the app; install the latest from attack.fm.`,
+          message: installed
+            ? t('servers.inviteNeedsNativeAppVersion', { installed })
+            : t('servers.inviteNeedsNativeApp'),
         });
         return;
       }
@@ -373,7 +428,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
         // is the door that works everywhere on a desk.
         try {
           await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-          toast({ message: 'Copied the card to the clipboard - paste it into a message.' });
+          toast({ message: t('servers.inviteCopiedToClipboard') });
           return;
         } catch {
           // Fall through to the download and let the platform decide.
@@ -387,7 +442,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
       a.click();
       a.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      toast({ message: 'Downloaded attackfm-invite.png.' });
+      toast({ message: t('servers.inviteDownloaded', { file: 'attackfm-invite.png' }) });
     } finally {
       setSaving(false);
     }
@@ -400,29 +455,36 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
           the button opens THAT; otherwise it is the invite card. */}
       <IconButton
         variant="ghost"
-        aria-label={door?.label ?? 'Invite a friend'}
-        title={door?.label ?? 'Invite a friend'}
+        aria-label={door?.label ?? t('servers.inviteFriend')}
+        title={door?.label ?? t('servers.inviteFriend')}
         onClick={() => (door ? door.open() : setOpen(true))}
       >
         <Share2 size={iconSize} />
       </IconButton>
 
-      <GlassSheet open={open} onClose={() => setOpen(false)} label="Invite a friend" className="inviteSheet">
-        <h2 className="inviteSheet__title">Invite a friend</h2>
-        <p className="inviteSheet__desc">Share how to join {possessive(owner)} server.</p>
+      <GlassSheet
+        open={open}
+        onClose={() => setOpen(false)}
+        label={t('servers.inviteFriend')}
+        className="inviteSheet"
+      >
+        <h2 className="inviteSheet__title">{t('servers.inviteFriend')}</h2>
+        <p className="inviteSheet__desc">
+          {owner ? t('servers.inviteShareHowOwner', { owner }) : t('servers.inviteShareHowGeneric')}
+        </p>
         {identity && (
           // Two dropdowns side by side, each labelled above. They still snap
           // each other: "Never expires" and "Unlimited" are the one standing
           // code, and a use cap needs a real lifetime, so the pair that cannot
           // exist (never-expires AND capped) can never be selected.
           <div className="inviteSheet__pickers">
-            <Field label="Code lasts">
+            <Field label={t('servers.inviteCodeLasts')}>
               <Select
                 fullWidth
-                aria-label="How long the code lasts"
+                aria-label={t('servers.inviteCodeLastsHint')}
                 disabled={minting}
                 value={String(life)}
-                options={LIVES.map((l) => ({ value: String(l.ttl), label: l.label }))}
+                options={LIVES.map((l) => ({ value: String(l.ttl), label: t(l.labelKey) }))}
                 onValueChange={(v) => {
                   const ttl = Number(v);
                   if (ttl === life) return;
@@ -435,13 +497,19 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
                 }}
               />
             </Field>
-            <Field label="Uses">
+            <Field label={t('servers.inviteUsesTitle')}>
               <Select
                 fullWidth
-                aria-label="How many people can join"
+                aria-label={t('servers.inviteUsesHint')}
                 disabled={minting}
                 value={String(uses)}
-                options={USES.map((u) => ({ value: String(u.n), label: u.label }))}
+                options={USES.map((u) => ({
+                  value: String(u.n),
+                  // `count` is passed to every row, not only the two that read
+                  // it: the row that says "Once" ignores it in English and may
+                  // well need it in a language that counts differently.
+                  label: t(u.labelKey, { count: u.n }),
+                }))}
                 onValueChange={(v) => {
                   const n = Number(v);
                   if (n === uses) return;
@@ -461,9 +529,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
              has none yet. Say where to get one rather than offering a card
              with no code on it. */
           <Text tone="muted" className="inviteSheet__note">
-            Invites come from your AttackFM account, and this device is not signed into one
-            yet. Create it under Profile → Friends — it is free and works on every server —
-            then come back here.
+            {t('servers.inviteNeedsAccount')}
           </Text>
         ) : mintError ? (
           <Text tone="danger" className="inviteSheet__note">
@@ -471,7 +537,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
           </Text>
         ) : !invite ? (
           <Text tone="muted" className="inviteSheet__note">
-            Making your invite…
+            {t('servers.inviteMinting')}
           </Text>
         ) : (
           <InviteCard cardRef={cardRef} owner={owner} invite={invite} qr={qr} />
@@ -481,11 +547,11 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
           <div className="inviteSheet__actions">
             <Button variant="ghost" fullWidth onClick={copyLink} disabled={!link}>
               {copied ? <Check size={16} /> : <Copy size={16} />}
-              {copied ? 'Copied' : 'Copy link'}
+              {copied ? t('servers.inviteCopied') : t('servers.inviteCopyLink')}
             </Button>
             <Button variant="solid" fullWidth onClick={() => void saveImage()} disabled={saving || !invite}>
               <Download size={16} />
-              {saving ? 'Saving…' : 'Save image'}
+              {saving ? t('servers.inviteSaving') : t('servers.inviteSaveImage')}
             </Button>
           </div>
         )}

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { AudioEqualizerBand, AudioEqualizerPreset } from '@glacier/react';
+import { translate } from '../i18n/LocaleShell.tsx';
 
 const STORAGE_KEY = 'attackfm-eq';
 // Matches the kit AudioEqualizer's default bands and the meter's EQ filters.
@@ -7,20 +8,35 @@ const BAND_COUNT = 8;
 const FLAT: number[] = Array(BAND_COUNT).fill(0);
 
 /**
+ * A band's centre frequency, written out.
+ *
+ * Deliberately NOT a catalogue string and not Intl either, for the same reason
+ * formatClock stays in Latin digits: this is notation. "Hz" and "kHz" are SI
+ * symbols, identical in every language the app ships, and the eight labels sit
+ * in a row a slider wide - a locale that regrouped or re-scripted the digits
+ * would widen them past the column without telling anybody anything new.
+ * Building them from the numbers rather than typing them keeps the frequencies
+ * and the filter table impossible to disagree.
+ */
+function bandLabel(hz: number): string {
+  return hz >= 1000 ? `${hz / 1000}kHz` : `${hz}Hz`;
+}
+
+/**
  * The kit's own eight bands and stock presets, restated so the phone's
  * five-band view can be derived from them. The graph always runs all eight -
  * the narrow view is a way of holding the sliders, not a different equalizer.
  */
 export const EQ_BANDS: readonly AudioEqualizerBand[] = [
-  { id: 'sub', label: '32Hz' },
-  { id: 'bass', label: '64Hz' },
-  { id: 'low-mid', label: '125Hz' },
-  { id: 'mid', label: '250Hz' },
-  { id: 'presence', label: '500Hz' },
-  { id: 'high-mid', label: '1kHz' },
-  { id: 'high', label: '2kHz' },
-  { id: 'air', label: '4kHz' },
-];
+  { id: 'sub', hz: 32 },
+  { id: 'bass', hz: 64 },
+  { id: 'low-mid', hz: 125 },
+  { id: 'mid', hz: 250 },
+  { id: 'presence', hz: 500 },
+  { id: 'high-mid', hz: 1000 },
+  { id: 'high', hz: 2000 },
+  { id: 'air', hz: 4000 },
+].map(({ id, hz }) => ({ id, label: bandLabel(hz) }));
 
 /**
  * The presets, in the order the dropdown lists them: Flat first, then curves
@@ -33,37 +49,67 @@ export const EQ_BANDS: readonly AudioEqualizerBand[] = [
  * lift one end dip the other slightly rather than only adding, so switching
  * presets changes the SHAPE of the sound instead of just its loudness.
  */
-export const EQ_PRESETS: readonly AudioEqualizerPreset[] = [
-  { id: 'flat', label: 'Flat', gains: [0, 0, 0, 0, 0, 0, 0, 0] },
+/**
+ * A curve and the catalogue key that names it.
+ *
+ * Not the kit's AudioEqualizerPreset, which carries the finished `label`: this
+ * list is built at import, so a name written here would be stuck in the
+ * language the app started in and the picker below would stop meaning
+ * anything. `eqPresets()` puts the kit's shape back on with the words resolved
+ * at the moment they are drawn.
+ */
+export interface EqPreset {
+  id: string;
+  labelKey: string;
+  gains: number[];
+}
+
+export const EQ_PRESETS: readonly EqPreset[] = [
+  { id: 'flat', labelKey: 'player.eqFlat', gains: [0, 0, 0, 0, 0, 0, 0, 0] },
 
   // --- more of one end ---
-  { id: 'bass-boost', label: 'Bass boost', gains: [6, 5, 4, 2, 0, -2, -3, -4] },
-  { id: 'deep-bass', label: 'Deep bass', gains: [8, 6, 3, 0, -1, -2, -2, -2] },
-  { id: 'air', label: 'Air', gains: [-4, -2, -1, 0, 1, 3, 5, 6] },
-  { id: 'treble-boost', label: 'Treble boost', gains: [-2, -2, -1, 0, 1, 3, 5, 7] },
+  { id: 'bass-boost', labelKey: 'player.eqBassBoost', gains: [6, 5, 4, 2, 0, -2, -3, -4] },
+  { id: 'deep-bass', labelKey: 'player.eqDeepBass', gains: [8, 6, 3, 0, -1, -2, -2, -2] },
+  { id: 'air', labelKey: 'player.eqAir', gains: [-4, -2, -1, 0, 1, 3, 5, 6] },
+  { id: 'treble-boost', labelKey: 'player.eqTrebleBoost', gains: [-2, -2, -1, 0, 1, 3, 5, 7] },
   // Both ends up, middle scooped - the classic "smile", loud and scooped out.
-  { id: 'loudness', label: 'Loudness', gains: [7, 5, 1, -2, -3, -1, 4, 6] },
+  { id: 'loudness', labelKey: 'player.eqLoudness', gains: [7, 5, 1, -2, -3, -1, 4, 6] },
 
   // --- kinds of music ---
-  { id: 'vocal', label: 'Vocal', gains: [-2, -1, 1, 3, 4, 3, 1, -1] },
-  { id: 'acoustic', label: 'Acoustic', gains: [2, 1, 0, 1, 2, 2, 3, 3] },
-  { id: 'electronic', label: 'Electronic', gains: [6, 4, 1, -1, -1, 1, 3, 5] },
-  { id: 'rock', label: 'Rock', gains: [4, 3, 1, -1, -1, 1, 3, 4] },
-  { id: 'hiphop', label: 'Hip-hop', gains: [7, 5, 2, 0, -1, 0, 2, 3] },
-  { id: 'jazz', label: 'Jazz', gains: [3, 2, 0, 1, 2, 1, 2, 3] },
-  { id: 'classical', label: 'Classical', gains: [3, 2, 0, 0, 0, 1, 2, 4] },
+  { id: 'vocal', labelKey: 'player.eqVocal', gains: [-2, -1, 1, 3, 4, 3, 1, -1] },
+  { id: 'acoustic', labelKey: 'player.eqAcoustic', gains: [2, 1, 0, 1, 2, 2, 3, 3] },
+  { id: 'electronic', labelKey: 'player.eqElectronic', gains: [6, 4, 1, -1, -1, 1, 3, 5] },
+  { id: 'rock', labelKey: 'player.eqRock', gains: [4, 3, 1, -1, -1, 1, 3, 4] },
+  { id: 'hiphop', labelKey: 'player.eqHipHop', gains: [7, 5, 2, 0, -1, 0, 2, 3] },
+  { id: 'jazz', labelKey: 'player.eqJazz', gains: [3, 2, 0, 1, 2, 1, 2, 3] },
+  { id: 'classical', labelKey: 'player.eqClassical', gains: [3, 2, 0, 0, 0, 1, 2, 4] },
 
   // --- where you are listening ---
   // Small speakers have no sub to give: stop asking, and lift the mids that
   // actually reach you.
-  { id: 'small-speakers', label: 'Small speakers', gains: [-4, -2, 1, 3, 4, 3, 2, 0] },
-  { id: 'headphones', label: 'Headphones', gains: [4, 2, 0, -1, 0, 1, 2, 3] },
+  { id: 'small-speakers', labelKey: 'player.eqSmallSpeakers', gains: [-4, -2, 1, 3, 4, 3, 2, 0] },
+  { id: 'headphones', labelKey: 'player.eqHeadphones', gains: [4, 2, 0, -1, 0, 1, 2, 3] },
   // A car is all low-end boom and road noise over the top of it.
-  { id: 'car', label: 'Car', gains: [5, 3, -1, -2, 0, 2, 3, 2] },
+  { id: 'car', labelKey: 'player.eqCar', gains: [5, 3, -1, -2, 0, 2, 3, 2] },
   // Quiet listening loses the ends first (equal-loudness), so give them back.
-  { id: 'late-night', label: 'Late night', gains: [4, 3, 0, -1, -1, 0, 2, 3] },
-  { id: 'podcast', label: 'Spoken word', gains: [-6, -4, 0, 4, 5, 4, 2, -1] },
+  { id: 'late-night', labelKey: 'player.eqLateNight', gains: [4, 3, 0, -1, -1, 0, 2, 3] },
+  { id: 'podcast', labelKey: 'player.eqSpokenWord', gains: [-6, -4, 0, 4, 5, 4, 2, -1] },
 ];
+
+/** A translator - `useT()`'s, or `translate` for code with no component
+ *  around it. Named so the tables below do not have to import react-i18next. */
+export type EqTranslate = (key: string) => string;
+
+/**
+ * The presets in the kit's own shape, named in the language showing now.
+ *
+ * Takes the translator rather than reaching for one so a component can hand it
+ * `useT()` and re-render on a language change; the `translate` default is for
+ * the plugin seam, where a bundle has no hook of the host's to call.
+ */
+export function eqPresets(t: EqTranslate = translate): AudioEqualizerPreset[] {
+  return EQ_PRESETS.map((p) => ({ id: p.id, label: t(p.labelKey), gains: p.gains }));
+}
 
 /**
  * Portrait keeps the ends and thins the middle: eight sliders do not fit a
@@ -75,10 +121,15 @@ export const EQ_NARROW_INDICES: readonly number[] = [0, 2, 4, 6, 7];
 export const EQ_BANDS_NARROW: readonly AudioEqualizerBand[] = EQ_NARROW_INDICES.map(
   (i) => EQ_BANDS[i]!,
 );
-export const EQ_PRESETS_NARROW: readonly AudioEqualizerPreset[] = EQ_PRESETS.map((p) => ({
+export const EQ_PRESETS_NARROW: readonly EqPreset[] = EQ_PRESETS.map((p) => ({
   ...p,
   gains: EQ_NARROW_INDICES.map((i) => p.gains[i] ?? 0),
 }));
+
+/** The five-band projection, in the kit's shape. Same deal as `eqPresets`. */
+export function eqPresetsNarrow(t: EqTranslate = translate): AudioEqualizerPreset[] {
+  return EQ_PRESETS_NARROW.map((p) => ({ id: p.id, label: t(p.labelKey), gains: p.gains }));
+}
 
 /** The five shown gains, read out of the full eight. */
 export function narrowEqGains(full: readonly number[]): number[] {

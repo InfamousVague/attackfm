@@ -30,7 +30,9 @@ import {
 import { IconTile, PaneSection, SettingRow, SettingsCallout, SettingsEmpty, SubNav } from './kit/settingsKit.tsx';
 import { djVoiceEnabled, setDjVoice } from '../booth/djVoice.ts';
 import { dateVoiceEnabled, setDateVoice } from '../date/dateVoice.ts';
-import { takePendingReveal } from './settingsShared.ts';
+import { takePendingReveal, type Translate } from './settingsShared.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatAgo, formatNumber, formatTotal } from '../ux/format.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { fetchAiActivity, fetchAiReport, fetchAiVoices, probeAi, runAi, setAiSettings } from '../api/ai.ts';
 import type { AiHealth, AiReport, AiRunWhat, AiSettingsPatch, AiVoice } from '../api/ai.ts';
@@ -57,47 +59,58 @@ import { ServerError } from '../api/http.ts';
  * than one with a button. Health starts as "not checked".
  */
 
-/** Fields that are a plain line of text, in the order they read. */
+/**
+ * Fields that are a plain line of text, in the order they read.
+ *
+ * Catalogue keys rather than words: this array is built when the module is
+ * imported, before a language has been chosen, so anything written here in
+ * English would still be English after the picker was used. The pane resolves
+ * them where it draws the field.
+ *
+ * `example` is NOT one of them, and is not called `placeholder` any more. An
+ * origin and a model tag - `qwen3.5:9b` - are things you type back verbatim,
+ * not prose about them, and naming the field for what it holds keeps the next
+ * reader (and the string scanner) from filing them as copy to translate.
+ */
 const TEXT_FIELDS = [
   {
     key: 'url' as const,
-    label: 'Endpoint',
-    hint: 'The origin only — the server appends /v1/chat/completions itself.',
-    placeholder: 'http://127.0.0.1:11434',
+    labelKey: 'settings.aiEndpoint',
+    hintKey: 'settings.aiEndpointHint',
+    example: 'http://127.0.0.1:11434',
   },
   {
     key: 'chatModel' as const,
-    label: 'Chat model',
-    hint: 'Writes playlist names and the DJ’s analysis. Not defaulted on purpose — a guess costs every cycle a timeout.',
-    placeholder: 'qwen3.5:9b',
+    labelKey: 'settings.aiChatModel',
+    hintKey: 'settings.aiChatModelHint',
+    example: 'qwen3.5:9b',
   },
   {
     key: 'embedModel' as const,
-    label: 'Embedding model',
-    hint: 'Reads lyrics into vectors. The half that drives recommendations.',
-    placeholder: 'nomic-embed-text',
+    labelKey: 'settings.aiEmbedModel',
+    hintKey: 'settings.aiEmbedModelHint',
+    example: 'nomic-embed-text',
   },
   {
     key: 'fastModel' as const,
-    label: 'Fast profile model',
-    hint: 'The first pass over a new song. Small and quick — it runs on everything.',
-    placeholder: 'qwen3.5:9b',
+    labelKey: 'settings.aiFastModel',
+    hintKey: 'settings.aiFastModelHint',
+    example: 'qwen3.5:9b',
   },
   {
     key: 'refinementModel' as const,
-    label: 'Audit model',
-    hint: 'Removes what the evidence does not support. Bigger and slower on purpose.',
-    placeholder: 'gemma4:12b',
+    labelKey: 'settings.aiAuditModel',
+    hintKey: 'settings.aiAuditModelHint',
+    example: 'gemma4:12b',
   },
 ];
 
-function ago(seconds: number | null): string {
-  if (!seconds) return 'never';
-  const d = Math.max(0, Math.floor(Date.now() / 1000 - seconds));
-  if (d < 60) return 'just now';
-  if (d < 3600) return `${Math.floor(d / 60)}m ago`;
-  if (d < 86_400) return `${Math.floor(d / 3600)}h ago`;
-  return `${Math.floor(d / 86_400)}d ago`;
+/* "3 hours ago", and the six Arabic forms of it. The hand-rolled ladder this
+ * replaces is one of the four ux/format.ts was written to absorb - it said
+ * "3d ago" in English on every surface, in every language. */
+function ago(seconds: number | null, t: Translate): string {
+  if (!seconds) return t('settings.aiNever');
+  return formatAgo(seconds * 1000);
 }
 
 /**
@@ -117,34 +130,36 @@ function ago(seconds: number | null): string {
 /** The picker's escape hatch: a model the list cannot offer. */
 const TYPE_IT = '\u0000type';
 
+// `what` is the word the server matches on and stays English; everything the
+// reader sees is a key, because the tiles are built at import time.
 const ACTIONS: {
   what: AiRunWhat;
-  label: string;
-  patience: string;
+  labelKey: string;
+  patienceKey: string;
   icon: ReactNode;
 }[] = [
   {
     what: 'discover',
-    label: 'Find me new music',
-    patience: 'Looks for artists around what you play, then listens to what it finds. A minute or two.',
+    labelKey: 'settings.aiFindMusic',
+    patienceKey: 'settings.aiFindMusicPatience',
     icon: <Compass size={20} />,
   },
   {
     what: 'mix',
-    label: 'Make me a new mix',
-    patience: 'Rereads your last month and rebuilds the mixes on your home screen.',
+    labelKey: 'settings.aiNewMix',
+    patienceKey: 'settings.aiNewMixPatience',
     icon: <Shuffle size={20} />,
   },
   {
     what: 'dates',
-    label: 'Top up Music Date',
-    patience: 'Finds something you do not own and asks for it. The card appears once it has downloaded.',
+    labelKey: 'settings.aiTopUpDates',
+    patienceKey: 'settings.aiTopUpDatesPatience',
     icon: <HeartHandshake size={20} />,
   },
   {
     what: 'curate',
-    label: 'Full pass',
-    patience: 'Everything at once: reads the library, rebuilds the lists, looks for more. The long one.',
+    labelKey: 'settings.aiFullPassTile',
+    patienceKey: 'settings.aiFullPassPatience',
     icon: <Sparkles size={20} />,
   },
 ];
@@ -158,12 +173,15 @@ const ACTIONS: {
  * reading everybody got - a freshly deployed box reported six dead functions
  * while its models were still resident from the work it had just finished.
  */
-function activity(fn: { calls: number; lastAt: number | null; everAt: number | null }): string {
+function activity(
+  fn: { calls: number; lastAt: number | null; everAt: number | null },
+  t: Translate,
+): string {
   if (fn.calls > 0) {
-    return `${fn.calls} call${fn.calls === 1 ? '' : 's'}, ${ago(fn.lastAt)}`;
+    return t('settings.aiFnCalls', { count: fn.calls, when: ago(fn.lastAt, t) });
   }
-  if (fn.everAt) return `last used ${ago(fn.everAt)}, before this restart`;
-  return 'never run';
+  if (fn.everAt) return t('settings.aiFnLastUsed', { when: ago(fn.everAt, t) });
+  return t('settings.aiFnNeverRun');
 }
 
 /**
@@ -181,11 +199,18 @@ function sameModel(named: string | null | undefined, listed: string): boolean {
   return bare(named) === bare(listed);
 }
 
-function duration(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  const h = Math.floor(seconds / 3600);
-  return h < 48 ? `${h}h` : `${Math.floor(h / 24)}d`;
+/**
+ * How long something has been running.
+ *
+ * Everything from a minute up goes through the house formatter, which knows
+ * the unit names in every locale. Under a minute there is nothing there to
+ * ask: formatTotal rounds to whole minutes, so a pass that started twenty
+ * seconds ago would report "0 min" - which is why the seconds case, and only
+ * the seconds case, is a catalogue entry.
+ */
+function duration(seconds: number, t: Translate): string {
+  if (seconds < 60) return t('settings.aiElapsedSeconds', { count: seconds });
+  return formatTotal(seconds);
 }
 
 /*
@@ -211,13 +236,16 @@ function duration(seconds: number): string {
  * voice on an account that is nobody else's, and a hand-typed list can never
  * show it.
  */
+// The id is ElevenLabs'; the line beside it is ours, so it is a key - the
+// voice's NAME is a proper noun a translator leaves alone, the description of
+// how it sounds is not.
 const DJ_VOICES = [
-  { id: 'FGY2WhTYpPnrIDTdsKH5', label: 'Laura - bright and quick' },
-  { id: 'tnSpp4vdxKPjI9w0GnoV', label: 'Hope - upbeat and clear' },
-  { id: 'oW8bn5YtBB89X2nJ0DT9', label: 'Verity - chatty British storyteller' },
-  { id: 'nPczCjzI2devNBz1zQrb', label: 'Brian - deep late-night radio' },
-  { id: 'onwK4e9ZLuTAKqWW03F9', label: 'Daniel - steady British broadcaster' },
-  { id: 'cgSgspJ2msm6clMCkdW9', label: 'Jessica - playful and bright' },
+  { id: 'FGY2WhTYpPnrIDTdsKH5', labelKey: 'settings.voiceLaura' },
+  { id: 'tnSpp4vdxKPjI9w0GnoV', labelKey: 'settings.voiceHope' },
+  { id: 'oW8bn5YtBB89X2nJ0DT9', labelKey: 'settings.voiceVerity' },
+  { id: 'nPczCjzI2devNBz1zQrb', labelKey: 'settings.voiceBrian' },
+  { id: 'onwK4e9ZLuTAKqWW03F9', labelKey: 'settings.voiceDaniel' },
+  { id: 'cgSgspJ2msm6clMCkdW9', labelKey: 'settings.voiceJessica' },
 ];
 
 /**
@@ -234,12 +262,14 @@ const DJ_VOICES = [
  */
 const DEFAULT_DJ_VOICE = 'FGY2WhTYpPnrIDTdsKH5';
 
-/** How ElevenLabs' own word for where a voice came from reads on a row. */
+/** How ElevenLabs' own word for where a voice came from reads on a row. The
+ *  KEYS are the service's categories and are matched on; the values are ours,
+ *  so they are catalogue keys in turn. */
 const VOICE_KIND: Record<string, string> = {
-  cloned: 'your own recording',
-  professional: 'professional',
-  premade: 'premade',
-  generated: 'generated',
+  cloned: 'settings.voiceKindCloned',
+  professional: 'settings.voiceKindProfessional',
+  premade: 'settings.voiceKindPremade',
+  generated: 'settings.voiceKindGenerated',
 };
 
 /**
@@ -250,18 +280,22 @@ const VOICE_KIND: Record<string, string> = {
  * can offer - and burying it under five stock names alphabetically would be
  * filing it as one more option.
  */
-function voiceOptions(live: AiVoice[]): { value: string; label: string }[] {
-  if (live.length === 0) return DJ_VOICES.map((v) => ({ value: v.id, label: v.label }));
+function voiceOptions(live: AiVoice[], t: Translate): { value: string; label: string }[] {
+  if (live.length === 0) return DJ_VOICES.map((v) => ({ value: v.id, label: t(v.labelKey) }));
   const rank = (v: AiVoice) => (v.category === 'cloned' ? 0 : v.category === 'professional' ? 1 : 2);
   return [...live]
     .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
     .map((v) => {
-      const kind = VOICE_KIND[v.category] ?? v.category;
+      // A category the service has invented since this map was written falls
+      // through as its own raw word rather than as nothing.
+      const known = VOICE_KIND[v.category];
+      const kind = known ? t(known) : v.category;
       return { value: v.id, label: kind ? `${v.name} - ${kind}` : v.name };
     });
 }
 
 export function LocalAiPane() {
+  const t = useT();
   const { session } = useServerSession();
   const { toast } = useToast();
   const [voiceOn, setVoiceOn] = useState(djVoiceEnabled);
@@ -394,7 +428,7 @@ export function LocalAiPane() {
       // is the ordinary state of a server that has not caught up - not a fault
       // to alarm the owner with.
       if (e instanceof ServerError && e.status === 404) setMissing(true);
-      else setError(e instanceof Error ? e.message : 'Could not read the report.');
+      else setError(e instanceof Error ? e.message : t('settings.aiReportFailed'));
     }
   }, [session]);
 
@@ -425,7 +459,12 @@ export function LocalAiPane() {
       setReport((prev) => (prev ? { ...prev, settings } : prev));
       setDraft((d) => { const { [which]: _drop, ...rest } = d; return rest; });
     } catch (e) {
-      toast({ message: `Could not save — ${e instanceof Error ? e.message : 'the server refused it'}`, tone: 'danger' });
+      toast({
+        message: t('settings.aiSaveFailed', {
+          why: e instanceof Error ? e.message : t('settings.aiServerRefused'),
+        }),
+        tone: 'danger',
+      });
     } finally {
       if (alive.current) setSaving(null);
     }
@@ -469,7 +508,7 @@ export function LocalAiPane() {
     } catch (e) {
       if (alive.current) {
         setHealth({ checkedAt: Math.floor(Date.now() / 1000), reachable: false, latencyMs: null, models: [],
-          error: e instanceof Error ? e.message : 'The check failed.' });
+          error: e instanceof Error ? e.message : t('settings.aiCheckFailed') });
       }
     } finally {
       if (alive.current) setProbing(false);
@@ -481,7 +520,7 @@ export function LocalAiPane() {
     setRunning(true);
     try {
       await runAi(session, what);
-      toast({ message: `${label} — follow it below` });
+      toast({ message: t('settings.aiStarted', { label }) });
       // Not awaited: the pass runs for minutes on the server. The poll below
       // picks it up and keeps the step line moving.
       window.setTimeout(() => { void load(); }, 800);
@@ -494,11 +533,16 @@ export function LocalAiPane() {
        * does not cover because the route exists and only the word is unknown.
        */
       const status = e instanceof ServerError ? e.status : 0;
-      if (status === 409) toast({ message: 'Already working on something — one at a time' });
+      if (status === 409) toast({ message: t('settings.aiBusy') });
       else if (status === 400) {
-        toast({ message: 'This server is too old for that one — rebuild the hub', tone: 'danger' });
+        toast({ message: t('settings.aiActionTooOld'), tone: 'danger' });
       } else {
-        toast({ message: `Could not start it — ${e instanceof Error ? e.message : 'the server refused it'}`, tone: 'danger' });
+        toast({
+          message: t('settings.aiStartFailed', {
+            why: e instanceof Error ? e.message : t('settings.aiServerRefused'),
+          }),
+          tone: 'danger',
+        });
       }
     } finally {
       if (alive.current) setRunning(false);
@@ -510,8 +554,8 @@ export function LocalAiPane() {
       <div className="prefsBody localAiPane">
         <SettingsEmpty
           icon={<Bot size={22} />}
-          title="This server does not have Local AI settings yet"
-          body="The app updates over the air and the server does not. Rebuild the hub and this pane fills in."
+          title={t('settings.aiMissingTitle')}
+          body={t('settings.aiMissingBody')}
         />
       </div>
     );
@@ -521,11 +565,11 @@ export function LocalAiPane() {
     return (
       <div className="prefsBody localAiPane">
         {error ? (
-          <SettingsCallout tone="danger" action={<Button size="sm" variant="soft" onClick={() => void load()}>Try again</Button>}>
+          <SettingsCallout tone="danger" action={<Button size="sm" variant="soft" onClick={() => void load()}>{t('common.tryAgain')}</Button>}>
             {error}
           </SettingsCallout>
         ) : (
-          <div className="localAi__loading"><Spinner /> <Text tone="muted" size="sm">Reading the report…</Text></div>
+          <div className="localAi__loading"><Spinner /> <Text tone="muted" size="sm">{t('settings.aiReading')}</Text></div>
         )}
       </div>
     );
@@ -546,17 +590,17 @@ export function LocalAiPane() {
         value={chunk}
         onValueChange={(id) => setChunk(id as typeof chunk)}
         options={[
-          { id: 'ask', label: 'Ask' },
-          { id: 'taste', label: 'Taste' },
-          { id: 'model', label: 'Model' },
-          { id: 'activity', label: 'Activity' },
+          { id: 'ask', label: t('settings.aiTabAsk') },
+          { id: 'taste', label: t('settings.aiTabTaste') },
+          { id: 'model', label: t('settings.aiTabModel') },
+          { id: 'activity', label: t('settings.aiTabActivity') },
         ]}
       />
 
       {chunk === 'ask' && (
       <PaneSection
-        title="Ask for something"
-        description="Each of these already runs on its own schedule. This is the door to doing it now."
+        title={t('settings.aiAskTitle')}
+        description={t('settings.aiAskDescription')}
       >
         {report.running ? (
           /*
@@ -577,7 +621,7 @@ export function LocalAiPane() {
             <div className="aiRun__clock">
               <Spinner size="sm" aria-label="" />
               <Text tone="muted" size="xs">
-                {duration(Math.max(0, Math.floor((Date.now() - report.running.startedAt) / 1000)))}
+                {duration(Math.max(0, Math.floor((Date.now() - report.running.startedAt) / 1000)), t)}
               </Text>
             </div>
           </div>
@@ -590,18 +634,18 @@ export function LocalAiPane() {
                 className="aiAction"
                 data-setting={`ai-do-${a.what}`}
                 disabled={running || !configured}
-                onClick={() => void start(a.what, a.label)}
+                onClick={() => void start(a.what, t(a.labelKey))}
               >
                 <IconTile variant="accent" size="lg">{a.icon}</IconTile>
-                <span className="aiAction__label">{a.label}</span>
-                <span className="aiAction__patience">{a.patience}</span>
+                <span className="aiAction__label">{t(a.labelKey)}</span>
+                <span className="aiAction__patience">{t(a.patienceKey)}</span>
               </button>
             ))}
           </div>
         )}
         {!configured && (
           <Text tone="muted" size="sm">
-            Name an endpoint and a chat model below to switch these on.
+            {t('settings.aiNotConfigured')}
           </Text>
         )}
       </PaneSection>
@@ -610,13 +654,12 @@ export function LocalAiPane() {
       {chunk === 'model' && (
       <>
       <PaneSection
-        title="Endpoint"
-        description="Usually Ollama, on this machine or your network. Nothing here leaves it."
+        title={t('settings.aiEndpointSection')}
+        description={t('settings.aiEndpointSectionDescription')}
       >
         {!configured && (
           <SettingsCallout tone="accent" icon={<Bot size={16} />}>
-            No model is configured, so the curator runs on tempo and genre alone. Point this at an
-            endpoint and name a chat model to switch the rest on.
+            {t('settings.aiNoModelCallout')}
           </SettingsCallout>
         )}
 
@@ -630,14 +673,14 @@ export function LocalAiPane() {
           return (
             <div className="localAi__field" key={field.key} data-setting={`ai-${field.key}`}>
               <div className="localAi__fieldHead">
-                <Text weight="medium" size="sm">{field.label}</Text>
+                <Text weight="medium" size="sm">{t(field.labelKey)}</Text>
                 {owned ? (
-                  <Pill size="sm" variant="soft" tone="accent">Set here</Pill>
+                  <Pill size="sm" variant="soft" tone="accent">{t('settings.aiSetHere')}</Pill>
                 ) : fromEnv ? (
-                  <Pill size="sm" variant="soft" tone="neutral">From the server’s environment</Pill>
+                  <Pill size="sm" variant="soft" tone="neutral">{t('settings.aiFromEnv')}</Pill>
                 ) : null}
               </div>
-              <Text tone="muted" size="xs">{field.hint}</Text>
+              <Text tone="muted" size="xs">{t(field.hintKey)}</Text>
               <div className="localAi__fieldRow">
                 {/*
                   * A PICKER when the box has told us what it has, a text field
@@ -660,8 +703,8 @@ export function LocalAiPane() {
                        values exactly - so the saved model would show as
                        nothing chosen. */
                     value={installed.find((m) => sameModel(shown, m)) ?? shown}
-                    placeholder={String(fromEnv ?? field.placeholder)}
-                    aria-label={field.label}
+                    placeholder={String(fromEnv ?? field.example)}
+                    aria-label={t(field.labelKey)}
                     options={[
                       /*
                        * A model that is NAMED but not on the box gets its own
@@ -672,10 +715,10 @@ export function LocalAiPane() {
                        * anything, and a feature that silently never runs.
                        */
                       ...(shown && !installed.some((m) => sameModel(shown, m))
-                        ? [{ value: shown, label: `${shown} — not on this server` }]
+                        ? [{ value: shown, label: t('settings.aiModelMissing', { model: shown }) }]
                         : []),
                       ...installed.map((m) => ({ value: m, label: m })),
-                      { value: TYPE_IT, label: 'Type a name…' },
+                      { value: TYPE_IT, label: t('settings.aiTypeAName') },
                     ]}
                     onValueChange={(v: string) => {
                       if (v === TYPE_IT) {
@@ -689,10 +732,10 @@ export function LocalAiPane() {
                 ) : (
                   <Input
                     value={shown}
-                    placeholder={String(fromEnv ?? field.placeholder)}
+                    placeholder={String(fromEnv ?? field.example)}
                     spellCheck={false}
                     autoCapitalize="off"
-                    aria-label={field.label}
+                    aria-label={t(field.labelKey)}
                     onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.currentTarget.value }))}
                   />
                 )}
@@ -703,7 +746,7 @@ export function LocalAiPane() {
                     disabled={!dirty || saving === field.key}
                     onClick={() => void save({ [field.key]: draft[field.key] } as AiSettingsPatch, field.key)}
                   >
-                    {saving === field.key ? <Spinner size="sm" /> : 'Save'}
+                    {saving === field.key ? <Spinner size="sm" /> : t('common.save')}
                   </Button>
                 )}
                 {saving === field.key && choosable && !typing[field.key] && <Spinner size="sm" aria-label="" />}
@@ -711,8 +754,8 @@ export function LocalAiPane() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    aria-label={`Hand ${field.label} back to the environment`}
-                    title="Hand this back to the server’s environment"
+                    aria-label={t('settings.aiHandBackAria', { field: t(field.labelKey) })}
+                    title={t('settings.aiHandBack')}
                     disabled={saving === field.key}
                     onClick={() => void save({ [field.key]: null } as AiSettingsPatch, field.key)}
                   >
@@ -726,15 +769,15 @@ export function LocalAiPane() {
 
         <SettingRow
           id="ai-timeout"
-          label="Request timeout"
-          hint="How long one model call may take. A big model on a CPU-only box legitimately needs minutes."
+          label={t('settings.aiTimeout')}
+          hint={t('settings.aiTimeoutHint')}
           value={`${settings.timeoutSecs}s`}
           control={
             <Input
               type="number"
               min={10}
               max={900}
-              aria-label="Request timeout in seconds"
+              aria-label={t('settings.aiTimeoutAria')}
               defaultValue={String(settings.timeoutSecs)}
               onBlur={(e) => {
                 const n = Number(e.currentTarget.value);
@@ -745,27 +788,30 @@ export function LocalAiPane() {
         />
       </PaneSection>
 
-      <PaneSection title="What the model is used for" description="Turn a half off and whatever needs it stands down cleanly.">
+      <PaneSection
+        title={t('settings.aiUsesTitle')}
+        description={t('settings.aiUsesDescription')}
+      >
         <SettingRow
           id="ai-chat-enabled"
-          label="Chat"
-          hint="Playlist names, song profiles, the DJ’s analysis."
+          label={t('settings.aiChat')}
+          hint={t('settings.aiChatHint')}
           control={
             <Switch
               checked={settings.chatEnabled}
-              aria-label="Chat"
+              aria-label={t('settings.aiChat')}
               onCheckedChange={(v) => void save({ chatEnabled: v }, 'chatEnabled')}
             />
           }
         />
         <SettingRow
           id="dj-voice"
-          label="DJ voice"
-          hint="The DJ speaks its lines between songs - short cached clips from the server, ducked under the music. Needs a voice on the server (an ElevenLabs key, or the local model from install-voice.sh). This switch is per device."
+          label={t('settings.djVoice')}
+          hint={t('settings.djVoiceHint')}
           control={
             <Switch
               checked={voiceOn}
-              aria-label="DJ voice"
+              aria-label={t('settings.djVoice')}
               onCheckedChange={(v) => {
                 setDjVoice(v);
                 setVoiceOn(v);
@@ -775,30 +821,30 @@ export function LocalAiPane() {
         />
         <SettingRow
           id="dj-voice-character"
-          label="DJ voice character"
+          label={t('settings.djVoiceCharacter')}
           hint={
             voices.some((v) => v.category === 'cloned')
-              ? 'Who the DJ sounds like - every voice on this server\u2019s account, your own recordings first. Switching re-speaks its lines gradually in the new voice; everything already spoken in an old one stays cached, so switching back is free.'
-              : 'Who the DJ sounds like. Switching re-speaks its lines gradually in the new voice; everything already spoken in an old one stays cached, so switching back is free.'
+              ? t('settings.djVoiceCharacterHintCloned')
+              : t('settings.djVoiceCharacterHint')
           }
           control={
             <Select
               fullWidth
               value={settings.djVoiceId ?? voiceNow ?? DEFAULT_DJ_VOICE}
-              aria-label="DJ voice character"
-              options={voiceOptions(voices)}
+              aria-label={t('settings.djVoiceCharacter')}
+              options={voiceOptions(voices, t)}
               onValueChange={(v) => void save({ djVoiceId: v }, 'djVoiceId')}
             />
           }
         />
         <SettingRow
           id="date-voice"
-          label="Music Date briefing"
-          hint="Walking into Music Date, the DJ tells you about your next three dates - what they are and why the collector picked them. Same voice and ducking as the DJ's sets; this switch is per device."
+          label={t('settings.dateBriefing')}
+          hint={t('settings.dateBriefingHint')}
           control={
             <Switch
               checked={dateVoiceOn}
-              aria-label="Music Date briefing"
+              aria-label={t('settings.dateBriefing')}
               onCheckedChange={(v) => {
                 setDateVoice(v);
                 setDateVoiceOn(v);
@@ -808,37 +854,47 @@ export function LocalAiPane() {
         />
         <SettingRow
           id="ai-embeddings-enabled"
-          label="Embeddings"
-          hint="Lyric and descriptor vectors — the half the recommendations actually run on."
+          label={t('settings.aiEmbeddings')}
+          hint={t('settings.aiEmbeddingsHint')}
           control={
             <Switch
               checked={settings.embeddingsEnabled}
-              aria-label="Embeddings"
+              aria-label={t('settings.aiEmbeddings')}
               onCheckedChange={(v) => void save({ embeddingsEnabled: v }, 'embeddingsEnabled')}
             />
           }
         />
       </PaneSection>
 
-      <PaneSection title="Health" description="Asked on demand — a cold model can take seconds to answer.">
+      <PaneSection
+        title={t('settings.aiHealth')}
+        description={t('settings.aiHealthDescription')}
+      >
         <div className="localAi__health" data-state={health ? (health.reachable ? 'ok' : 'bad') : 'unknown'}>
           <span className="localAi__healthMark" aria-hidden>
             {health ? (health.reachable ? <CircleCheck size={18} /> : <CircleX size={18} />) : <Activity size={18} />}
           </span>
           <div className="localAi__healthText">
             <Text weight="medium" size="sm">
-              {health ? (health.reachable ? 'The endpoint answered' : 'The endpoint did not answer') : 'Not checked yet'}
+              {health
+                ? health.reachable
+                  ? t('settings.aiHealthOk')
+                  : t('settings.aiHealthBad')
+                : t('settings.aiHealthUnknown')}
             </Text>
             <Text tone="muted" size="xs">
               {health?.error
                 ? health.error
                 : health?.reachable
-                  ? `${health.latencyMs}ms · ${health.models.length} model${health.models.length === 1 ? '' : 's'} available`
-                  : 'Nothing is asked of the model until you press the button.'}
+                  ? t('settings.aiHealthDetail', {
+                      ms: health.latencyMs,
+                      count: health.models.length,
+                    })
+                  : t('settings.aiHealthIdle')}
             </Text>
           </div>
           <Button size="sm" variant="soft" disabled={probing} onClick={() => void probe()}>
-            {probing ? <Spinner size="sm" /> : 'Check now'}
+            {probing ? <Spinner size="sm" /> : t('settings.aiCheckNow')}
           </Button>
         </div>
         {health?.reachable && health.models.length > 0 && (
@@ -867,8 +923,10 @@ export function LocalAiPane() {
       </PaneSection>
 
       <PaneSection
-        title="Functions"
-        description={`Counted since the server started, ${duration(totals.sinceBoot)} ago.`}
+        title={t('settings.aiFunctions')}
+        description={t('settings.aiCountedSince', {
+          when: formatAgo(Date.now() - totals.sinceBoot * 1000),
+        })}
       >
         {functions.map((fn) => (
           <SettingRow
@@ -876,14 +934,18 @@ export function LocalAiPane() {
             id={`ai-fn-${fn.id}`}
             icon={fn.uses === 'embed' ? <Zap size={16} /> : <Bot size={16} />}
             label={fn.label}
-            hint={`${fn.model ?? 'no model'} · ${activity(fn)}`}
+            hint={`${fn.model ?? t('settings.aiNoModel')} · ${activity(fn, t)}`}
             value={
               fn.calls === 0 ? (
                 <Text tone="muted" size="xs">—</Text>
               ) : (
                 <span className="localAi__fnStat" data-bad={fn.failures > 0 || fn.lastOk === false ? '' : undefined}>
                   {fn.avgMs != null && <span>{fn.avgMs < 1000 ? `${fn.avgMs}ms` : `${(fn.avgMs / 1000).toFixed(1)}s`}</span>}
-                  {fn.failures > 0 && <span className="localAi__fnFail">{fn.failures} failed</span>}
+                  {fn.failures > 0 && (
+                    <span className="localAi__fnFail">
+                      {t('settings.aiFailedCount', { count: fn.failures })}
+                    </span>
+                  )}
                 </span>
               )
             }
@@ -891,8 +953,13 @@ export function LocalAiPane() {
         ))}
         {totals.calls > 0 && (
           <Text tone="muted" size="xs">
-            {totals.calls} calls, {totals.failures} failed
-            {totals.avgMs != null ? `, ${(totals.avgMs / 1000).toFixed(1)}s average` : ''}.
+            {totals.avgMs != null
+              ? t('settings.aiTotalsWithAverage', {
+                  calls: totals.calls,
+                  failures: totals.failures,
+                  seconds: (totals.avgMs / 1000).toFixed(1),
+                })
+              : t('settings.aiTotals', { calls: totals.calls, failures: totals.failures })}
           </Text>
         )}
         {/*
@@ -905,22 +972,19 @@ export function LocalAiPane() {
           */}
         {(totals.unattributed?.length ?? 0) > 0 && (
           <Text size="sm" className="localAi__drift">
-            Work recorded under {totals.unattributed?.map((u) => u.id).join(', ')}, which no
-            function above claims — the list of names has drifted from the code.
+            {t('settings.aiDrift', { ids: totals.unattributed?.map((u) => u.id).join(', ') })}
           </Text>
         )}
       </PaneSection>
       </>
       )}
 
-      {chunk === 'taste' && (
-        <TastePage report={report} />
-      )}
+      {chunk === 'taste' && <TastePage report={report} />}
 
       {chunk === 'activity' && (
       <PaneSection
-        title="Recent activity"
-        description="What the model has been doing, newest first."
+        title={t('settings.aiActivityTitle')}
+        description={t('settings.aiActivityDescription')}
         footer={
           pages.length > 0 && (shown.length > 0) && (page > 0 || more) ? (
             <div className="localAi__pager">
@@ -930,13 +994,13 @@ export function LocalAiPane() {
                 disabled={page === 0}
                 onClick={() => setPage((n) => Math.max(0, n - 1))}
               >
-                <ArrowLeft size={14} /> Newer
+                <ArrowLeft size={14} /> {t('settings.aiNewer')}
               </Button>
               <Text tone="muted" size="xs">
                 {/* No total. The log is bounded and always being written to, so
                     "page 2 of 9" would be a number that changes while it is
                     read; where you are is honest, how much is left is not. */}
-                Page {page + 1}
+                {t('settings.aiPage', { page: page + 1 })}
               </Text>
               <Button
                 size="sm"
@@ -944,14 +1008,14 @@ export function LocalAiPane() {
                 disabled={paging || (page + 1 >= pages.length && !more)}
                 onClick={() => void older()}
               >
-                {paging ? <Spinner size="sm" /> : <>Older <ArrowRight size={14} /></>}
+                {paging ? <Spinner size="sm" /> : <>{t('settings.aiOlder')} <ArrowRight size={14} /></>}
               </Button>
             </div>
           ) : undefined
         }
       >
         {shown.length === 0 ? (
-          <Text tone="muted" size="sm">Nothing yet.</Text>
+          <Text tone="muted" size="sm">{t('settings.aiNothingYet')}</Text>
         ) : (
           <ol className="localAi__feed">
             {shown.map((ev) => (
@@ -961,7 +1025,7 @@ export function LocalAiPane() {
                   <Text size="sm">{ev.title}</Text>
                   <Text tone="muted" size="xs">{ev.body}</Text>
                 </div>
-                <Text tone="muted" size="xs">{ago(ev.at)}</Text>
+                <Text tone="muted" size="xs">{ago(ev.at, t)}</Text>
               </li>
             ))}
           </ol>
@@ -983,26 +1047,34 @@ export function LocalAiPane() {
  * but nothing about what it had learned.
  */
 function TastePage({ report }: { report: AiReport }) {
+  const t = useT();
   const mood = report.mood ?? null;
   const curator = report.curator;
 
   // UTC quarter-days shifted into this device's clock, coarsely - the buckets
   // are six hours wide, so the shift rounds to the nearest bucket.
-  const bucketNames = ['nights', 'mornings', 'afternoons', 'evenings'];
+  // Keys, not words: this is inside a component, but the four names read out
+  // as one phrase ("mostly evenings") and belong in the catalogue beside it.
+  const bucketKeys = [
+    'settings.aiWhenNights',
+    'settings.aiWhenMornings',
+    'settings.aiWhenAfternoons',
+    'settings.aiWhenEvenings',
+  ];
   const shift = Math.round(-new Date().getTimezoneOffset() / 60 / 6);
   const whenLabel = (hours: [number, number, number, number]) => {
     let best = 0;
     for (let i = 1; i < 4; i++) if (hours[i]! > hours[best]!) best = i;
     const local = (((best + shift) % 4) + 4) % 4;
-    return bucketNames[local];
+    return t(bucketKeys[local]!);
   };
 
   const TONES = ['accent', 'success', 'warning', 'danger'] as const;
 
   return (
     <PaneSection
-      title="Your listening, read back"
-      description="The moods the machine hears in your last three weeks, and what it builds on them."
+      title={t('settings.aiTasteTitle')}
+      description={t('settings.aiTasteDescription')}
     >
       {/*
         * .aiTaste, because .setk__card carries NO padding of its own - the
@@ -1016,21 +1088,18 @@ function TastePage({ report }: { report: AiReport }) {
           // The field itself is absent: a hub from before moods existed. Saying
           // "play more" would be a lie with a wrong fix attached.
           <Text tone="muted" size="sm">
-            This server does not read moods yet — it needs the current build. The app updates over
-            the air and the server does not.
+            {t('settings.aiMoodsUnsupported')}
           </Text>
         ) : !mood ? (
           <Text tone="muted" size="sm">
-            Not enough recent listening to read a mood yet — a few days of ordinary playing is all
-            it takes. The stations and the sharper picks switch on by themselves once there is
-            something to read.
+            {t('settings.aiMoodsNotEnough')}
           </Text>
         ) : (
           <>
             <SegmentedBar
               size="md"
               rounded
-              aria-label="Share of recent listening by mood"
+              aria-label={t('settings.aiMoodShareAria')}
               data={mood.clusters.map((c, i) => ({
                 value: Math.max(0.01, c.share),
                 tone: TONES[i % TONES.length],
@@ -1053,9 +1122,11 @@ function TastePage({ report }: { report: AiReport }) {
                   )}
                   <Text tone="muted" size="xs">
                     {[
-                      c.bpm != null ? `${Math.round(c.bpm)} bpm` : null,
-                      c.energy != null ? `energy ${c.energy.toFixed(2)}` : null,
-                      `mostly ${whenLabel(c.hours)}`,
+                      c.bpm != null ? t('settings.aiMoodBpm', { bpm: Math.round(c.bpm) }) : null,
+                      c.energy != null
+                        ? t('settings.aiMoodEnergy', { value: c.energy.toFixed(2) })
+                        : null,
+                      t('settings.aiMoodMostly', { when: whenLabel(c.hours) }),
                     ]
                       .filter(Boolean)
                       .join(' · ')}
@@ -1069,24 +1140,28 @@ function TastePage({ report }: { report: AiReport }) {
                   </div>
                   {c.exemplars.length > 0 && (
                     <Text tone="muted" size="xs">
-                      e.g. {c.exemplars.join(' · ')}
+                      {t('settings.aiMoodExamples', { list: c.exemplars.join(' · ') })}
                     </Text>
                   )}
                 </div>
               ))}
             </div>
             <Text tone="muted" size="xs">
-              Read from {mood.evidence.toLocaleString()} listens. Each mood becomes a station on
-              your Library page — your heavy rotation in that mood, deeper cuts beside it, and new
-              music tucked in between. What the moods reach for also steers what the collector goes
-              and finds.
+              {t('settings.aiMoodEvidence', {
+                count: mood.evidence,
+                n: formatNumber(mood.evidence),
+              })}
             </Text>
           </>
         )}
         {curator && (
           <Text tone="muted" size="xs">
-            The loop is {curator.phase || 'idle'}
-            {curator.lastCurated ? ` · last full pass ${ago(Math.floor(curator.lastCurated / 1000))}` : ''}.
+            {curator.lastCurated
+              ? t('settings.aiLoopPhaseWithPass', {
+                  phase: curator.phase || t('settings.aiLoopIdle'),
+                  when: ago(Math.floor(curator.lastCurated / 1000), t),
+                })
+              : t('settings.aiLoopPhase', { phase: curator.phase || t('settings.aiLoopIdle') })}
           </Text>
         )}
       </div>
@@ -1095,6 +1170,6 @@ function TastePage({ report }: { report: AiReport }) {
 }
 
 /** The rail row's second line, for SettingsModal. */
-export function localAiSummary(): string {
-  return 'Ask for things, your moods, the model, and what it has been doing';
+export function localAiSummary(t: Translate): string {
+  return t('settings.summaryLocalAi');
 }

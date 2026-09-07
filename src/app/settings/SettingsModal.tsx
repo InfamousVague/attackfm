@@ -34,7 +34,7 @@ import { ServersSettings } from '../servers/ServersSettings.tsx';
 import { knownServers } from '../servers/servers.ts';
 import { heldCount, offlineSpace, onOfflineChange } from '../downloads/offline.ts';
 import { useMediaQuery } from '../ux/useMediaQuery.ts';
-import { formatBytes } from '../ux/format.ts';
+import { formatBytes, formatNumber } from '../ux/format.ts';
 import { Appearance } from './AppearancePane.tsx';
 import { AccountPane } from './AccountPane.tsx';
 import { General } from './GeneralPane.tsx';
@@ -57,6 +57,7 @@ import {
   THEME_COPY,
   type SettingsSection,
 } from './settingsShared.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 interface SettingsModalProps {
   open: boolean;
@@ -74,6 +75,10 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   // Static data only - no plugin hooks - so no scope is needed here, and the
   // modal survives a toggle without remounting out from under the user.
   const pluginSections = usePluginSettingsSections();
+  // The rail's own words are still English (see settingsShared); this resolves
+  // the tables that are not - the theme names, the accent names, the cluster
+  // captions and the settings index the search field reads.
+  const t = useT();
 
   // The one-line readings the touch list shows under each row - each section's
   // current state, read from the same stores the panes edit so they can never
@@ -92,10 +97,10 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   const { source, tracks } = useLibrary();
 
   const playbackBits = [
-    pb.crossfade > 0 ? `Crossfade ${pb.crossfade}s` : null,
-    pb.smartShuffle ? 'Shuffle manners' : null,
-    pb.autoDj ? 'Auto DJ' : null,
-    pb.nightMode ? 'Night mode' : null,
+    pb.crossfade > 0 ? t('settings.summaryCrossfade', { seconds: pb.crossfade }) : null,
+    pb.smartShuffle ? t('settings.summaryShuffleManners') : null,
+    pb.autoDj ? t('settings.summaryAutoDj') : null,
+    pb.nightMode ? t('settings.summaryNightMode') : null,
   ].filter(Boolean);
   const online = devices.filter((d) => d.online).length;
   const enabledPlugins = allPlugins.filter((p) => isEnabled(p.id)).length;
@@ -127,8 +132,9 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   const [, bumpNotifySummary] = useState(0);
   useEffect(() => {
     if (!open || !session) return;
-    void primeNotificationsSummary(session).then((t) => {
-      if (t) bumpNotifySummary((x) => x + 1);
+    // Named, not `t`: the translator is in scope for the whole component now.
+    void primeNotificationsSummary(session).then((summary) => {
+      if (summary) bumpNotifySummary((x) => x + 1);
     });
   }, [open, session]);
 
@@ -141,19 +147,19 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   const sections: SettingsSection[] = [
     {
       id: 'appearance',
-      label: 'Appearance',
+      label: t('settings.paneAppearance'),
       icon: <Palette size={16} />,
       content: <Appearance />,
-      summary: `${THEME_COPY[theme].label} · ${accentLabel(accent)}`,
+      summary: `${t(THEME_COPY[theme].labelKey)} · ${accentLabel(accent, t)}`,
       tint: 'purple',
       group: 0,
     },
     {
       id: 'playback',
-      label: 'Playback',
+      label: t('settings.panePlayback'),
       icon: <Play size={16} />,
       content: <PlaybackSettings />,
-      summary: playbackBits.length > 0 ? playbackBits.slice(0, 2).join(' · ') : 'Standard playback',
+      summary: playbackBits.length > 0 ? playbackBits.slice(0, 2).join(' · ') : t('settings.summaryPlaybackStandard'),
       tint: 'pink',
       group: 0,
     },
@@ -163,16 +169,19 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     // chunk, where the identity had smeared itself.
     {
       id: 'account',
-      label: 'Account & devices',
+      label: t('settings.paneAccount'),
       icon: <CircleUserRound size={16} />,
       content: <AccountPane />,
       // A session restored from before usernames were stored has an empty
       // one; "Signed in" beats a line that starts with a dot.
       summary: session
-        ? [session.username || 'Signed in', online > 0 ? `${online} online` : null]
+        ? [
+            session.username || t('settings.summarySignedIn'),
+            online > 0 ? t('settings.summaryDevicesOnline', { count: online }) : null,
+          ]
             .filter(Boolean)
             .join(' · ')
-        : 'Not signed in',
+        : t('settings.summaryNotSignedIn'),
       tint: 'blue',
       group: 1,
     },
@@ -180,13 +189,13 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     // links hold - but the pane's one job now is the library itself.
     {
       id: 'general',
-      label: 'Library',
+      label: t('settings.paneLibrary'),
       icon: <Library size={16} />,
       content: <General />,
       summary:
         source === 'server'
-          ? `${tracks.length.toLocaleString()} songs from your server`
-          : `${tracks.length.toLocaleString()} songs in your folder`,
+          ? t('settings.summaryLibraryServer', { count: tracks.length, n: formatNumber(tracks.length) })
+          : t('settings.summaryLibraryFolder', { count: tracks.length, n: formatNumber(tracks.length) }),
       tint: 'slate',
       group: 1,
     },
@@ -196,7 +205,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     // engine's own, opened from its room, not a pane about an abstraction.
     {
       id: 'privacy',
-      label: 'Privacy',
+      label: t('settings.panePrivacy'),
       icon: <Shield size={16} />,
       content: <Privacy />,
       // Counts what is switched OFF, because that is the number somebody who
@@ -212,16 +221,17 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     },
     {
       id: 'storage',
-      label: 'Downloads & space',
+      label: t('settings.paneStorage'),
       icon: <HardDrive size={16} />,
       content: <DeviceStorageSettings />,
       // Both halves of the question in one line: how many songs are down here,
       // and what they cost. Either alone reads as half an answer.
       summary: (() => {
         const room = heldBytes != null && heldBytes > 0 ? formatBytes(heldBytes) : null;
-        if (offlineHeld > 0 && room) return `${offlineHeld} songs · ${room}`;
-        if (room) return `${room} on this device`;
-        return 'Nothing kept yet';
+        if (offlineHeld > 0 && room)
+          return t('settings.summaryStorageHeld', { count: offlineHeld, size: room });
+        if (room) return t('settings.summaryStorageOnDevice', { size: room });
+        return t('settings.summaryStorageEmpty');
       })(),
       tint: 'green',
       group: 1,
@@ -230,15 +240,15 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       ? [
           {
             id: 'downloads',
-            label: 'Downloads',
+            label: t('settings.paneDownloads'),
             icon: <Download size={16} />,
             content: <DownloadsPage />,
             summary:
               dlPulling > 0
-                ? `${dlPulling} downloading`
+                ? t('settings.summaryDownloading', { count: dlPulling })
                 : dlFailed > 0
-                  ? `${dlFailed} need a retry`
-                  : 'The queue, and anything that stalled',
+                  ? t('settings.summaryDownloadsFailed', { count: dlFailed })
+                  : t('settings.summaryDownloadsIdle'),
             tint: dlFailed > 0 && dlPulling === 0 ? ('orange' as const) : ('blue' as const),
             group: 1 as const,
           },
@@ -248,12 +258,12 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     // question, answered on one page (and glanced from the header's dot).
     {
       id: 'notifications',
-      label: 'Notifications',
+      label: t('settings.paneNotifications'),
       icon: <Bell size={16} />,
       content: <NotificationSettings />,
       summary: session
-        ? (notificationsSummaryCached(session) ?? 'What the app may interrupt you for')
-        : 'Needs a server',
+        ? (notificationsSummaryCached(session) ?? t('settings.summaryNotifications'))
+        : t('settings.summaryNeedsServer'),
       tint: 'pink',
       group: 1,
     },
@@ -263,16 +273,16 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     // things a listener touches weekly all sit in the cluster above.
     {
       id: 'server',
-      label: 'Servers',
+      label: t('settings.paneServers'),
       icon: <Server size={16} />,
       content: <ServersSettings />,
       // The host you are on, and how many boxes the account can reach. Both
       // numbers come from cheap reads, so the row is honest before any pane
       // has mounted.
       summary: (() => {
-        const here = session ? session.url.replace(/^https?:\/\//, '') : 'Not connected';
+        const here = session ? session.url.replace(/^https?:\/\//, '') : t('settings.summaryNotConnected');
         const n = knownServers().length;
-        return n > 1 ? `${here} · ${n} servers` : here;
+        return n > 1 ? t('settings.summaryServersCount', { host: here, count: n }) : here;
       })(),
       tint: 'blue',
       group: 2,
@@ -285,10 +295,10 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       ? [
           {
             id: 'local-ai',
-            label: 'Local AI',
+            label: t('settings.paneLocalAi'),
             icon: <Bot size={16} />,
             content: <LocalAiPane />,
-            summary: localAiSummary(),
+            summary: localAiSummary(t),
             tint: 'orange' as const,
             group: 2,
           },
@@ -305,10 +315,10 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     ...pluginSections.map((s) => ({ ...s, tint: 'orange' as const, group: 2 })),
     {
       id: 'plugins',
-      label: 'Plugins',
+      label: t('settings.panePlugins'),
       icon: <Blocks size={16} />,
       content: <PluginsSettings />,
-      summary: `${enabledPlugins} of ${allPlugins.length} enabled`,
+      summary: t('settings.summaryPluginsEnabled', { enabled: enabledPlugins, total: allPlugins.length }),
       tint: 'orange',
       group: 2,
     },
@@ -316,10 +326,10 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     // then the plugin contract the way a developer needs it.
     {
       id: 'handbook',
-      label: 'Handbook',
+      label: t('settings.paneHandbook'),
       icon: <BookOpen size={16} />,
       content: <HandbookPane />,
-      summary: `How it all works, in ${HANDBOOK_PAGES.length} pages`,
+      summary: t('settings.summaryHandbook', { count: HANDBOOK_PAGES.length }),
       tint: 'blue',
       group: 3,
     },
@@ -335,10 +345,13 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       ? [
           {
             id: 'diagnostics',
-            label: 'Diagnostics',
+            label: t('settings.paneDiagnostics'),
             icon: <Stethoscope size={16} />,
             content: <DiagnosticsPane />,
-            summary: diagCount > 0 ? `${diagCount} recent ${diagCount === 1 ? 'problem' : 'problems'}` : 'Nothing to report',
+            summary:
+              diagCount > 0
+                ? t('settings.summaryProblems', { count: diagCount })
+                : t('settings.summaryNoProblems'),
             tint: 'slate' as const,
             group: 3,
           },
@@ -346,7 +359,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       : []),
     {
       id: 'about',
-      label: 'About',
+      label: t('settings.paneAbout'),
       icon: <Info size={16} />,
       content: <AboutSettings />,
       summary: `AttackFM v${APP_VERSION}`,
@@ -358,7 +371,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       ? [
           {
             id: 'developer',
-            label: 'Developer',
+            label: t('settings.paneDeveloper'),
             icon: <Terminal size={16} />,
             content: <DeveloperPane />,
             summary: developerSummary(),
@@ -429,7 +442,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     // items. Suppressed while searching - a narrowed rail is one flat list.
     const startsGroup =
       !query.trim() && (i === 0 || (shown[i - 1]!.group ?? 99) !== (s.group ?? 99));
-    const groupLabel = startsGroup ? settingsGroupLabel(s.group) : null;
+    const groupLabel = startsGroup ? settingsGroupLabel(s.group, t) : null;
     return {
       ...s,
       // The chip carries the glyph now, so the kit's own icon slot stays empty -
@@ -483,10 +496,10 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       title={
         <div className="settingsHeader">
           <div className="settingsTitleRow">
-          <span>Settings</span>
+          <span>{t('settings.title')}</span>
           {/* The chips the phone list has always shown, finally here too. */}
           {!query.trim() && recents.length > 0 && (
-            <div className="settingsTitleRow__recents" aria-label="Recently opened">
+            <div className="settingsTitleRow__recents" aria-label={t('settings.recentlyOpened')}>
               {recents
                 .filter((r) => sections.some((s) => s.id === r.id))
                 .map((r) => (
@@ -505,15 +518,15 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
             className="settingsTitleRow__search"
             value={query}
             onValueChange={setQuery}
-            placeholder="Find a setting"
-            aria-label="Find a setting"
+            placeholder={t('settings.findASetting')}
+            aria-label={t('settings.findASetting')}
           />
           {/* Individual rows the query found: the index knows what every pane
               holds before it has mounted. Choosing one opens its pane and
               lights the row. */}
           {query.trim() &&
             (() => {
-              const hits = settingsMatching(query).filter((e) =>
+              const hits = settingsMatching(query, t).filter((e) =>
                 sections.some((s) => s.id === e.pane),
               );
               if (hits.length === 0) return null;
@@ -531,9 +544,9 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
                         revealSetting(e.id);
                       }}
                     >
-                      <span className="settingsScreen__rowHitLabel">{e.label}</span>
+                      <span className="settingsScreen__rowHitLabel">{t(e.labelKey)}</span>
                       <span className="settingsScreen__rowHitWhere">{String(nameOf(e.pane))}</span>
-                      <span className="settingsScreen__rowHitDesc">{e.description}</span>
+                      <span className="settingsScreen__rowHitDesc">{t(e.descriptionKey)}</span>
                     </button>
                   ))}
                 </div>

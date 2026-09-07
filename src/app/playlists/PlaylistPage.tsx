@@ -45,6 +45,7 @@ import { TrackMenu } from '../library/TrackMenu.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
 import { useOfferShare } from '../nav/shareDoor.ts';
 import type { Track } from '../core/tauri.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 interface PlaylistPageProps {
   id: string;
@@ -66,6 +67,7 @@ interface PlaylistPageProps {
  * its artist. The name, and the list itself, are editable from the header.
  */
 export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageProps) {
+  const t = useT();
   const { tracks } = useLibrary();
   const { playlists, rename, remove, removeTrack, reorder, addTrack, setMeta, setCover, setAutoStem, removeWant, settleWant, share, leave } =
     usePlaylists();
@@ -91,7 +93,9 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     shareable
       ? {
           label:
-            !playlist.role || playlist.role === 'owner' ? 'Share this playlist' : 'Who has this playlist',
+            !playlist.role || playlist.role === 'owner'
+              ? t('playlists.shareThis')
+              : t('playlists.whoHasThis'),
           open: () => {
             setShareFace('link');
             setSharing(true);
@@ -129,8 +133,8 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       toast({
         message:
           err instanceof Error && err.message
-            ? `That cover did not take: ${err.message}`
-            : 'That cover did not take.',
+            ? t('playlists.coverFailedWhy', { reason: err.message })
+            : t('playlists.coverFailed'),
       });
     } finally {
       setCoverBusy(false);
@@ -413,12 +417,16 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       arriving.map((w) => ({
         key: w.k,
         title: w.title,
-        note: w.artist ? `${w.artist} — on the way` : 'on the way',
+        // Same join the download ghosts use, for the same reason: where the
+        // credit sits relative to the status is the translator's call.
+        note: w.artist
+          ? t('downloads.statusWithArtist', { artist: w.artist, status: t('playlists.onTheWay') })
+          : t('playlists.onTheWay'),
         action: removeWant ? (
           <button
             type="button"
             className="incomingCell__act"
-            aria-label={`Stop waiting for ${w.title}`}
+            aria-label={t('downloads.cancelTrack', { title: w.title })}
             onClick={(e) => {
               e.stopPropagation();
               removeWant(playlistId!, w.k);
@@ -428,7 +436,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
           </button>
         ) : undefined,
       })),
-    [arriving, removeWant, playlistId],
+    [arriving, removeWant, playlistId, t],
   );
 
   const playlistShape = useMemo<SongTableShape>(
@@ -439,7 +447,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       // question about the playlist with a fact about the file.
       hide: ['addedAt'],
       fixedOrder: true,
-      empty: 'Nothing in this playlist yet.',
+      empty: t('playlists.empty'),
       action: canEdit
         ? {
             width: '3rem',
@@ -447,7 +455,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               <IconButton
                 variant="ghost"
                 size="sm"
-                aria-label={`Remove ${track.title}`}
+                aria-label={t('playlists.removeTrack', { title: track.title })}
                 onClick={(e) => {
                   // Or the row plays the song it is removing.
                   e.stopPropagation();
@@ -464,9 +472,12 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   const before = [...playlist.paths];
                   removeTrack(playlist.id, track.path);
                   toast({
-                    message: `Removed \u201c${track.title}\u201d from ${playlist.name}`,
+                    message: t('playlists.removedFrom', {
+                      title: track.title,
+                      playlist: playlist.name,
+                    }),
                     action: {
-                      label: 'Undo',
+                      label: t('common.undo'),
                       onPress: () =>
                         isOwner ? reorder(playlist.id, before) : addTrack(playlist.id, track.path),
                     },
@@ -480,7 +491,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
         : undefined,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the mutators are stable from the store
-    [canEdit, isOwner, playlist?.id, playlist?.name, playlist?.paths],
+    [canEdit, isOwner, playlist?.id, playlist?.name, playlist?.paths, t],
   );
 
   /*
@@ -545,17 +556,25 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
 
         <div className="playlistHead__body">
           <Text tone="muted" size="xs" className="playlistHead__kicker">
+            {/* Each of the three is one catalogue entry rather than a stem
+                with a suffix glued on: "shared by X, and you can edit" is a
+                sentence, and a language that puts the editor clause first has
+                nowhere to hang a trailing fragment. */}
             {playlist.origin
-              ? `Playlist on ${serverLabelFor(playlist.origin) ?? 'another server'}`
-              : playlist.role && playlist.role !== 'owner'
-                ? `Shared by ${playlist.ownerName ?? 'a friend'}${playlist.role === 'editor' ? ' · you can edit' : ''}`
-                : 'Playlist'}
+              ? t('playlists.onServer', {
+                  server: serverLabelFor(playlist.origin) ?? t('servers.anotherServer'),
+                })
+              : playlist.role === 'editor'
+                ? t('playlists.sharedByEditor', { name: playlist.ownerName ?? t('playlists.aFriend') })
+                : playlist.role && playlist.role !== 'owner'
+                  ? t('playlists.sharedBy', { name: playlist.ownerName ?? t('playlists.aFriend') })
+                  : t('playlists.playlist')}
           </Text>
           <h2 className="playlistHead__name">{playlist.name}</h2>
           <Text tone="muted" size="sm">
-            {rows.length} {rows.length === 1 ? 'song' : 'songs'}
+            {t('library.songCount', { count: rows.length })}
             {totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}
-            {sizeBytes > 0 ? ` · about ${formatBytes(sizeBytes)}` : ''}
+            {sizeBytes > 0 ? ` · ${t('playlists.aboutSize', { size: formatBytes(sizeBytes) })}` : ''}
           </Text>
 
           {/* The description, read in place and edited in place. A field that
@@ -571,7 +590,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                 if (isOwner) setDescribing(playlist.description ?? '');
               }}
             >
-              {playlist.description || 'Add a description'}
+              {playlist.description || t('playlists.addDescription')}
             </button>
           ) : (
             <form
@@ -599,8 +618,8 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                     e.currentTarget.blur();
                   }
                 }}
-                placeholder="What is this playlist for?"
-                aria-label="Playlist description"
+                placeholder={t('playlists.descriptionPrompt')}
+                aria-label={t('playlists.description')}
                 rows={2}
                 maxLength={300}
                 autoFocus
@@ -611,11 +630,11 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
           <EdgeScrollRow className="playlistHead__actions">
             <Button variant="solid" size="sm" onClick={playAll} disabled={rows.length === 0}>
               <Play size={15} fill="currentColor" />
-              Play
+              {t('player.play')}
             </Button>
             <Button variant="ghost" size="sm" onClick={shuffleAll} disabled={rows.length === 0}>
               <Shuffle size={15} />
-              Shuffle
+              {t('player.shuffle')}
             </Button>
             {/* Only the owner may rewrite the running order, so only the owner
                 is offered the mode. It is a toggle rather than a permanent set
@@ -631,20 +650,20 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                 onClick={() => setReordering((on) => !on)}
               >
                 <ArrowDownUp size={15} />
-                {reordering ? 'Done' : 'Reorder'}
+                {reordering ? t('common.done') : t('common.reorder')}
               </Button>
             )}
             <Menu
-              aria-label="Playlist actions"
+              aria-label={t('playlists.actions')}
               trigger={
-                <IconButton variant="ghost" size="sm" aria-label="Playlist actions">
+                <IconButton variant="ghost" size="sm" aria-label={t('playlists.actions')}>
                   <EllipsisVertical size={16} />
                 </IconButton>
               }
             >
               {isOwner && (
                 <MenuItem icon={<Pencil size={15} />} onSelect={() => setRenaming(playlist.name)}>
-                  Rename
+                  {t('playlists.rename')}
                 </MenuItem>
               )}
               {/* Sharing, for the owner of a list on a server that can: the
@@ -658,12 +677,12 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                     setSharing(true);
                   }}
                 >
-                  {isOwner ? 'Share with friends…' : 'Who has this…'}
+                  {isOwner ? t('playlists.shareWithFriends') : t('playlists.whoHasThisMenu')}
                 </MenuItem>
               )}
               {!isOwner && leave && !playlist.origin && (
                 <MenuItem icon={<LogOut size={15} />} onSelect={() => void leave(playlist.id)}>
-                  Leave playlist
+                  {t('playlists.leave')}
                 </MenuItem>
               )}
               {/* Folders live in the menu rather than behind a dialog: there
@@ -684,12 +703,12 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               ))}
               {isOwner && playlist.folder && (
                 <MenuItem icon={<FolderOpen size={15} />} onSelect={() => setMeta(playlist.id, { folder: '' })}>
-                  Take out of {playlist.folder}
+                  {t('playlists.takeOutOf', { folder: playlist.folder })}
                 </MenuItem>
               )}
               {isOwner && (
               <MenuItem icon={<FolderPlus size={15} />} onSelect={() => setNewFolder('')}>
-                New folder…
+                {t('playlists.newFolder')}
               </MenuItem>
               )}
               {/* Only where a cover can actually be kept - the provider leaves
@@ -697,12 +716,12 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   menu item that cannot work is worse than none. */}
               {isOwner && setCover && (
                 <MenuItem icon={<ImageIcon size={15} />} onSelect={() => coverInput.current?.click()}>
-                  {playlist.coverUrl ? 'Change cover…' : 'Choose cover…'}
+                  {playlist.coverUrl ? t('playlists.changeCover') : t('playlists.chooseCover')}
                 </MenuItem>
               )}
               {isOwner && setCover && playlist.coverUrl && (
                 <MenuItem icon={<X size={15} />} onSelect={() => void setCover(playlist.id, null)}>
-                  Remove cover
+                  {t('playlists.removeCover')}
                 </MenuItem>
               )}
               {/* The same item the shelf's tile menu carries, so a playlist
@@ -712,12 +731,12 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   icon={<AudioLines size={15} />}
                   onSelect={() => setAutoStem(playlist.id, !playlist.autoStem)}
                 >
-                  {playlist.autoStem ? 'Stop separating ahead' : 'Separate these ahead'}
+                  {playlist.autoStem ? t('playlists.stopSeparating') : t('playlists.separateAhead')}
                 </MenuItem>
               )}
               {isOwner && (
                 <MenuItem icon={<Trash2 size={15} />} onSelect={() => setConfirmDelete(true)}>
-                  Delete playlist
+                  {t('playlists.delete')}
                 </MenuItem>
               )}
             </Menu>
@@ -743,9 +762,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
         <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name="playlist" />
           <Text tone="muted">
-            Nothing here yet. Right-click a song — long-press on a phone — and choose “Add to
-            playlist”. Songs you don’t own yet can go in too: they download and fill in on their
-            own. The song that is playing can be filed from the player too.
+            {t('playlists.emptyHowTo')}
           </Text>
         </div>
       ) : (
@@ -757,8 +774,8 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               className="playlistFind"
               value={finding}
               onValueChange={setFinding}
-              placeholder="Find in this playlist"
-              aria-label="Find in this playlist"
+              placeholder={t('playlists.findInThis')}
+              aria-label={t('playlists.findInThis')}
             />
           )}
           {reordering ? (
@@ -838,27 +855,30 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
 
         {suggestions.length > 0 && (
           <section className="playlistSuggest">
-            <h3 className="playlistSuggest__title">Suggested for this playlist</h3>
+            <h3 className="playlistSuggest__title">{t('playlists.suggestedTitle')}</h3>
             <Text tone="muted" size="sm" className="playlistSuggest__blurb">
-              From your library, matched to what is already here.
+              {t('playlists.suggestedBlurb')}
             </Text>
             <ul className="playlistSuggest__list">
-              {suggestions.map((t) => (
-                <li key={t.path} className="playlistRow playlistSuggest__row">
-                  <RowMain track={t} onPlay={() => onPlay(t, [t, ...listTracks])} onOpenArtist={onOpenArtist} />
+              {/* `track`, not the `t` this map used to bind: `t` is the
+                  translator in this component now, and shadowing it here would
+                  have made the row's label a call on a Track. */}
+              {suggestions.map((track) => (
+                <li key={track.path} className="playlistRow playlistSuggest__row">
+                  <RowMain track={track} onPlay={() => onPlay(track, [track, ...listTracks])} onOpenArtist={onOpenArtist} />
                   <button
                     type="button"
                     className="songArtist songArtistLink playlistRow__artist"
-                    onClick={() => onOpenArtist(t.artist)}
+                    onClick={() => onOpenArtist(track.artist)}
                   >
-                    {t.artist}
+                    {track.artist}
                   </button>
-                  <span className="songMuted playlistRow__time">{formatClock(t.duration, '--:--')}</span>
+                  <span className="songMuted playlistRow__time">{formatClock(track.duration, '--:--')}</span>
                   <IconButton
                     variant="ghost"
                     size="sm"
-                    aria-label={`Add ${t.title} to this playlist`}
-                    onClick={() => addTrack(playlist.id, t.path)}
+                    aria-label={t('playlists.addTrackHere', { title: track.title })}
+                    onClick={() => addTrack(playlist.id, track.path)}
                   >
                     <Plus size={15} />
                   </IconButton>
@@ -873,7 +893,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       <Modal
         open={renaming !== null}
         onClose={() => setRenaming(null)}
-        title="Rename playlist"
+        title={t('playlists.renameTitle')}
         size="sm"
       >
         <form className="playlistCreate" onSubmit={commitRename}>
@@ -881,10 +901,10 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             autoFocus
             value={renaming ?? ''}
             onChange={(e) => setRenaming(e.currentTarget.value)}
-            aria-label="Playlist name"
+            aria-label={t('playlists.name')}
           />
           <Button type="submit" variant="solid">
-            Save
+            {t('common.save')}
           </Button>
         </form>
       </Modal>
@@ -892,7 +912,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       <Modal
         open={newFolder !== null}
         onClose={() => setNewFolder(null)}
-        title="New folder"
+        title={t('playlists.newFolderTitle')}
         size="sm"
       >
         <form
@@ -911,11 +931,11 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             autoFocus
             value={newFolder ?? ''}
             onChange={(e) => setNewFolder(e.currentTarget.value)}
-            placeholder="Road trips"
-            aria-label="Folder name"
+            placeholder={t('playlists.folderNameExample')}
+            aria-label={t('playlists.folderName')}
           />
           <Button type="submit" variant="solid">
-            Move here
+            {t('playlists.moveHere')}
           </Button>
         </form>
       </Modal>
@@ -926,17 +946,21 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       <Modal
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
-        title={`Delete "${playlist.name}"?`}
+        title={t('playlists.deleteConfirmTitle', { name: playlist.name })}
         size="sm"
       >
         <div className="playlistConfirm">
           <Text tone="muted" size="sm">
-            The songs stay in your library. The list itself is gone
-            {rows.length > 0 ? `, along with its ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}` : ''}.
+            {/* One sentence per case, not a stem plus a clause: the count
+                clause is grammatically inside the sentence, and English is the
+                only language that lets it be appended. */}
+            {rows.length > 0
+              ? t('playlists.deleteConfirmWithEntries', { count: rows.length })
+              : t('playlists.deleteConfirm')}
           </Text>
           <div className="playlistConfirm__actions">
             <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-              Keep it
+              {t('playlists.keepIt')}
             </Button>
             <Button
               variant="solid"
@@ -950,7 +974,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                 onGone();
               }}
             >
-              Delete
+              {t('common.delete')}
             </Button>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { PREFS_ADOPTED } from '../../app/servers/prefsSync.ts';
-import { availablePlugins, filterAvailable, registeredIds } from '../index.ts';
+import { availablePlugins, filterAvailable, localizePlugins, registeredIds } from '../index.ts';
 import {
   ensureDefaultPlugins,
   loadInstalledPlugins,
@@ -9,6 +9,7 @@ import {
   restoreWanted,
 } from '../remote.ts';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
+import { useT } from '../../app/i18n/LocaleShell.tsx';
 import { PluginsContext, type PluginsContextValue } from '../pluginsContext.ts';
 import type { Plugin } from '../types.ts';
 
@@ -54,6 +55,11 @@ function readDisabled(): string[] {
  */
 export function PluginsProvider({ children }: { children: ReactNode }) {
   const { session } = useServerSession();
+  // The compiled-in plugins' cards are catalogue keys until here - see
+  // localizePlugins. This is the chokepoint every consumer reads the list
+  // through, so resolving once covers all of them, and `t` changing identity
+  // on a language change is exactly what re-runs the memo below.
+  const t = useT();
   const [disabled, setDisabled] = useState<string[]>(readDisabled);
   const [failures, setFailures] = useState<ReadonlyMap<string, string>>(new Map());
   // The remotely-installed plugins, evaluated from their stored bundles once
@@ -118,14 +124,14 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
   // compiled-in set, in install order, and a remote id colliding with a
   // compiled-in one is dropped - the compiled-in plugin is authoritative.
   const plugins = useMemo<readonly Plugin[]>(() => {
-    const compiled = availablePlugins(session !== null);
+    const compiled = localizePlugins(availablePlugins(session !== null), t);
     const taken = registeredIds();
     const remote = filterAvailable(
       remoteState.plugins.filter((p) => !taken.has(p.id)),
       session !== null,
     );
     return [...compiled, ...remote];
-  }, [session !== null, remoteState]);
+  }, [session !== null, remoteState, t]);
 
   // What the marketplace shows against a card that came from a repository.
   const remoteInstalled = useMemo(() => {

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { setSettingsBack } from './settingsBack.ts';
 import { createPortal } from 'react-dom';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import {
   paneMatches,
   revealSetting,
@@ -31,6 +32,9 @@ export function MobileSettings({
   /** Land straight on one pane when told to (the network dot's Manage). */
   initialId?: string | null;
 }) {
+  // Resolves the tables that could not carry their own words: the cluster
+  // captions and the settings index behind the search field.
+  const t = useT();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   // Read once per open: the panes this hand reaches for. Opening one below
@@ -85,7 +89,7 @@ export function MobileSettings({
     <div
       className="settingsScreen"
       role="dialog"
-      aria-label="Settings"
+      aria-label={t('settings.title')}
       data-view={active ? 'detail' : 'list'}
     >
       {active ? (
@@ -95,7 +99,7 @@ export function MobileSettings({
               type="button"
               className="settingsScreen__icon"
               onClick={() => setActiveId(null)}
-              aria-label="Back to settings"
+              aria-label={t('settings.back')}
             >
               <ChevronLeft size={22} />
             </button>
@@ -108,12 +112,12 @@ export function MobileSettings({
         <>
           <header className="settingsScreen__head">
             <span className="settingsScreen__headSpacer" aria-hidden="true" />
-            <span className="settingsScreen__title">Settings</span>
+            <span className="settingsScreen__title">{t('settings.title')}</span>
             <button
               type="button"
               className="settingsScreen__icon"
               onClick={onClose}
-              aria-label="Close settings"
+              aria-label={t('settings.close')}
             >
               <X size={22} />
             </button>
@@ -125,11 +129,11 @@ export function MobileSettings({
               className="settingsScreen__search"
               value={query}
               onValueChange={setQuery}
-              placeholder="Find a setting"
-              aria-label="Find a setting"
+              placeholder={t('settings.findASetting')}
+              aria-label={t('settings.findASetting')}
             />
             {!query.trim() && recents.length > 0 && (
-              <div className="settingsScreen__recents" aria-label="Recently opened">
+              <div className="settingsScreen__recents" aria-label={t('settings.recentlyOpened')}>
                 {recents
                   .filter((r) => sections.some((s) => s.id === r.id))
                   .map((r) => (
@@ -164,9 +168,9 @@ export function MobileSettings({
                 <div key={cluster[0]!.id} className="settingsScreen__cluster">
                   {/* The card's name. Only while browsing - a search's flat
                       result list is not four half-empty clusters. */}
-                  {!query.trim() && settingsGroupLabel(cluster[0]!.group) && (
+                  {!query.trim() && settingsGroupLabel(cluster[0]!.group, t) && (
                     <div className="settingsScreen__groupLabel">
-                      {settingsGroupLabel(cluster[0]!.group)}
+                      {settingsGroupLabel(cluster[0]!.group, t)}
                     </div>
                   )}
                   <div className="settingsScreen__group">
@@ -203,14 +207,14 @@ export function MobileSettings({
                 Tapping one opens its pane and lights the row. */}
             {query.trim() &&
               (() => {
-                const hits = settingsMatching(query).filter((e) =>
+                const hits = settingsMatching(query, t).filter((e) =>
                   sections.some((s) => s.id === e.pane),
                 );
                 if (hits.length === 0) return null;
                 const nameOf = (id: string) => sections.find((s) => s.id === id)?.label ?? id;
                 return (
                   <div className="settingsScreen__cluster">
-                    <div className="settingsScreen__groupLabel">Settings</div>
+                    <div className="settingsScreen__groupLabel">{t('settings.rowHitsGroup')}</div>
                     <div className="settingsScreen__rowHits">
                       {hits.map((e) => (
                         <button
@@ -222,9 +226,9 @@ export function MobileSettings({
                             revealSetting(e.id);
                           }}
                         >
-                          <span className="settingsScreen__rowHitLabel">{e.label}</span>
+                          <span className="settingsScreen__rowHitLabel">{t(e.labelKey)}</span>
                           <span className="settingsScreen__rowHitWhere">{nameOf(e.pane)}</span>
-                          <span className="settingsScreen__rowHitDesc">{e.description}</span>
+                          <span className="settingsScreen__rowHitDesc">{t(e.descriptionKey)}</span>
                         </button>
                       ))}
                     </div>
@@ -233,9 +237,9 @@ export function MobileSettings({
               })()}
             {query.trim() &&
               sections.every((s) => !paneMatches(s, query)) &&
-              settingsMatching(query).length === 0 && (
+              settingsMatching(query, t).length === 0 && (
                 <Text tone="muted" size="sm" className="settingsScreen__none">
-                  Nothing matches “{query.trim()}”.
+                  {t('settings.noMatches', { query: query.trim() })}
                 </Text>
               )}
           </nav>

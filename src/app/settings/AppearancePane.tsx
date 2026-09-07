@@ -19,7 +19,7 @@ import {
 import { askMotionAccess, motionAvailable } from '../player/deviceMotion.ts';
 import { PaneSection, SettingRow } from './kit/settingsKit.tsx';
 import { LOCALES, LOCALE_NAMES } from '../i18n/index.ts';
-import { useAppLocale } from '../i18n/LocaleShell.tsx';
+import { useAppLocale, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The appearance controls: the theme, accent, and spacing pulled from the
@@ -36,6 +36,7 @@ import { useAppLocale } from '../i18n/LocaleShell.tsx';
 export function Appearance() {
   const { theme, accent, density, dynamicAccent, scale, update } = useAppearance();
   const { locale, setLocale } = useAppLocale();
+  const t = useT();
   // Only for the preview's count line, so the sample card says something true.
   const { tracks } = useLibrary();
   // Now Playing's dress and the app's feel, moved in from Playback: the lyric
@@ -77,12 +78,12 @@ export function Appearance() {
           Each language is written IN that language, so the row you need is
           the one you can read. */}
       <PaneSection
-        title="Language"
-        footer="Arabic lays the whole app out right-to-left."
+        title={t('settings.language')}
+        footer={t('settings.languageFooter')}
       >
         <div className="setk-row">
           <Select
-            aria-label="Language"
+            aria-label={t('settings.language')}
             fullWidth
             value={locale}
             onValueChange={(next) => void setLocale(next as typeof locale)}
@@ -91,10 +92,10 @@ export function Appearance() {
         </div>
       </PaneSection>
 
-      <PaneSection title="Theme">
+      <PaneSection title={t('settings.theme')}>
         <div className="setk-row">
           <ThemeSelector
-            aria-label="Theme"
+            aria-label={t('settings.theme')}
             value={theme}
             leadFirst
             options={shown.map((preset) => {
@@ -106,7 +107,11 @@ export function Appearance() {
                   preset.id === 'system' && preset.alternatePalette
                     ? livePreview(preset.alternatePalette)
                     : preset.alternatePalette,
-                ...THEME_COPY[preset.id],
+                // Resolved here rather than carried in THEME_COPY: the map is
+                // built at import, so its words would be the ones the app
+                // booted with.
+                label: t(THEME_COPY[preset.id].labelKey),
+                description: t(THEME_COPY[preset.id].descriptionKey),
               };
             })}
             // Choosing a theme takes its accent - except the neutral themes
@@ -122,12 +127,12 @@ export function Appearance() {
         </div>
       </PaneSection>
 
-      <PaneSection title="Accent">
+      <PaneSection title={t('settings.accent')}>
         <div className="setk-row">
-          <div className="accentSwatches" role="radiogroup" aria-label="Accent colour">
+          <div className="accentSwatches" role="radiogroup" aria-label={t('settings.accentColour')}>
             {/* Brand accents first, then the kit's own. */}
             {[
-              ...Object.values(BRAND_ACCENTS).map((a) => ({ name: a.name, label: a.label, color: a.swatch })),
+              ...Object.values(BRAND_ACCENTS).map((a) => ({ name: a.name, label: t(a.labelKey), color: a.swatch })),
               ...accentOptions.map((a) => ({ name: a.name, label: a.label, color: accentSteps(a, 'light')[8]! })),
             ].map((option) => (
               <button
@@ -147,11 +152,11 @@ export function Appearance() {
         </div>
         <SettingRow
           id="dynamic-accent"
-          label="Album colour while playing"
-          hint="While a song plays, the whole app's accent takes the album cover's own colour. Off keeps your chosen accent, always."
+          label={t('settings.albumColour')}
+          hint={t('settings.albumColourHint')}
           control={
             <Switch
-              aria-label="Album colour while playing"
+              aria-label={t('settings.albumColour')}
               checked={dynamicAccent}
               onCheckedChange={(on: boolean) => update({ dynamicAccent: on })}
             />
@@ -159,7 +164,7 @@ export function Appearance() {
         />
       </PaneSection>
 
-      <PaneSection title="Card style">
+      <PaneSection title={t('settings.cardStyle')}>
         {/* The four library doors, dressed four ways. This is the only door to
             the choice now: the card lab that held the other thirty-two
             directions was a workshop for picking, and the picking is done. */}
@@ -172,8 +177,8 @@ export function Appearance() {
       </PaneSection>
 
       <PaneSection
-        title="Size"
-        footer="Scales the whole interface — text, artwork, controls and spacing alike."
+        title={t('settings.size')}
+        footer={t('settings.sizeFooter')}
       >
         {/* One control for the whole interface. It moves the root font size,
             which every rem in the app hangs off - spacing, radii, type, the
@@ -182,12 +187,12 @@ export function Appearance() {
             has been looked at. */}
         <div className="setk-row">
           <SegmentedControl
-            aria-label="Interface size"
+            aria-label={t('settings.interfaceSize')}
             fullWidth
             value={String(clampScale(scale))}
             options={UI_SCALES.map((value) => ({
               value: String(value),
-              label: value === 1 ? 'Default' : `${Math.round(value * 100)}%`,
+              label: value === 1 ? t('settings.sizeDefault') : `${Math.round(value * 100)}%`,
             }))}
             onValueChange={(next) => update({ scale: clampScale(Number(next)) })}
           />
@@ -195,47 +200,47 @@ export function Appearance() {
       </PaneSection>
 
       <PaneSection
-        title="Spacing"
-        footer="How tightly things pack together, at whatever size you have chosen."
+        title={t('settings.spacing')}
+        footer={t('settings.spacingFooter')}
       >
         <div className="setk-row">
           <DensitySelector
-            aria-label="Spacing"
+            aria-label={t('settings.spacing')}
             value={density}
             onValueChange={(next) => update({ density: next })}
           />
         </div>
       </PaneSection>
 
-      <PaneSection title="Now Playing">
+      <PaneSection title={t('settings.nowPlaying')}>
         <SettingRow
-          label="Lyrics in the header"
-          hint="How the song's words are spelled across the artwork behind the header, when the track has synced lyrics. Random draws a new one each song."
+          label={t('settings.headerLyrics')}
+          hint={t('settings.headerLyricsHint')}
           layout="stacked"
           control={
             <Select
-              aria-label="Header lyrics"
+              aria-label={t('settings.headerLyrics')}
               fullWidth
               value={pb.lyricWay}
               onValueChange={(next) => pb.update({ lyricWay: next as typeof pb.lyricWay })}
               options={[
-                { value: 'off', label: 'Off' },
-                { value: 'random', label: 'Random each song' },
-                { value: 'scatter', label: 'Scatter — words drift and dissolve' },
-                { value: 'typewriter', label: 'Typewriter — typed in the corner' },
-                { value: 'poster', label: 'Poster — fills the header, packed' },
-                { value: 'stack', label: 'Stack — a column of capitals' },
+                { value: 'off', label: t('settings.lyricWayOff') },
+                { value: 'random', label: t('settings.lyricWayRandom') },
+                { value: 'scatter', label: t('settings.lyricWayScatter') },
+                { value: 'typewriter', label: t('settings.lyricWayTypewriter') },
+                { value: 'poster', label: t('settings.lyricWayPoster') },
+                { value: 'stack', label: t('settings.lyricWayStack') },
               ]}
             />
           }
         />
         <SettingRow
           id="now-playing-video"
-          label="Video clips on Now Playing"
-          hint="Plays the song's short looping clip behind the full player. Each new song pulls down a few megabytes of video, and your server asks Spotify for it by song title. Off leaves the blurred cover."
+          label={t('settings.videoClips')}
+          hint={t('settings.videoClipsHint')}
           control={
             <Switch
-              aria-label="Video clips on Now Playing"
+              aria-label={t('settings.videoClips')}
               checked={video}
               onCheckedChange={(on: boolean) => {
                 setNowPlayingVideo(on);
@@ -246,7 +251,7 @@ export function Appearance() {
         />
       </PaneSection>
 
-      <PaneSection title="Feel">
+      <PaneSection title={t('settings.feel')}>
         {/*
           * Only where there is a motor.
           *
@@ -259,11 +264,11 @@ export function Appearance() {
         {hapticsAvailable() && (
         <SettingRow
           id="haptics"
-          label="Haptics"
-          hint="Ticks from the Taptic Engine as you tap, play, and spin the disc. Only things you actually press answer - scrolling and loading stay silent."
+          label={t('settings.haptics')}
+          hint={t('settings.hapticsHint')}
           control={
             <Switch
-              aria-label="Haptics"
+              aria-label={t('settings.haptics')}
               checked={hapticsOn}
               onCheckedChange={(on) => {
                 setHapticsPref(on);
@@ -278,11 +283,11 @@ export function Appearance() {
         {motionAvailable() && (
           <SettingRow
             id="shake-flick"
-            label="Shake and flick"
-            hint="On the Now Playing screen: shake to change shuffle, flick left or right to move between songs. Off by default because a gesture that misreads costs you the song you were listening to — walking, running and a pocket are all ignored, but a phone that lives in a bag may still find a way."
+            label={t('settings.shakeFlick')}
+            hint={t('settings.shakeFlickHint')}
             control={
               <Switch
-                aria-label="Shake and flick"
+                aria-label={t('settings.shakeFlick')}
                 checked={motion}
                 onCheckedChange={(on) => {
                   // iOS only grants motion access from inside a real gesture,

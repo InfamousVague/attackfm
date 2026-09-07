@@ -17,6 +17,7 @@ import { titleKey } from '../library/owned.ts';
 import type { Track } from '../core/tauri.ts';
 import { DjCollectionTraitSheet } from '../booth/DjTraitSheet.tsx';
 import { formatTotal } from '../ux/format.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * One record, opened.
@@ -59,6 +60,7 @@ function Cover({ art }: { art: string | null }) {
 }
 
 export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: AlbumPageProps) {
+  const t = useT();
   const { tracks } = useLibrary();
   const { session } = useServerSession();
   const downloads = useDownloadsOptional();
@@ -227,7 +229,7 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
       // The break goes in before the disc's first row, at the seat the next
       // song is about to take.
       if (labelDiscs) {
-        ghosts.push({ key: `disc-${disc}`, kind: 'heading', title: `Disc ${disc}`, at: songs.length });
+        ghosts.push({ key: `disc-${disc}`, kind: 'heading', title: t('library.discNumber', { n: disc }), at: songs.length });
       }
       const owned = list
         .filter((t) => (t.discNo ?? 1) === disc)
@@ -253,7 +255,9 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
     }
     return { ordered: songs, albumGhosts: ghosts };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- gapsByDisc is rebuilt each render from `missing`
-  }, [list, shownDiscs.join(','), labelDiscs, missing]);
+    // `t` is a dependency because the disc break's title is a translated
+    // string: without it a language change leaves "Disc 2" in the old one.
+  }, [list, shownDiscs.join(','), labelDiscs, missing, t]);
 
   /**
    * Pull one missing song. The catalogue's own link is a Deezer one, which
@@ -312,13 +316,13 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
               type="button"
               className="incomingCell__act"
               disabled={!session || state === 'finding' || state === 'added'}
-              aria-label={`Add ${g.title}`}
+              aria-label={t('library.addTrack', { title: g.title })}
               title={
                 state === 'missing'
-                  ? 'Not found to import'
+                  ? t('library.notFoundToImport')
                   : state === 'added'
-                    ? 'Added'
-                    : `Add ${g.title}`
+                    ? t('library.added')
+                    : t('library.addTrack', { title: g.title })
               }
               onClick={(e) => {
                 e.stopPropagation();
@@ -333,7 +337,7 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
               ) : state === 'missing' ? (
                 <X size={14} />
               ) : state === 'finding' ? (
-                <span className="artistAlbumSpin" aria-label="Finding it" />
+                <span className="artistAlbumSpin" aria-label={t('library.findingIt')} />
               ) : (
                 <Plus size={14} />
               )}
@@ -394,15 +398,17 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
         <Cover art={cover} />
         <div className="albumHead__body">
           <Text tone="muted" size="xs" className="albumHead__kicker">
-            Album
+            {t('library.album')}
           </Text>
           <h2 className="albumHead__name">{album}</h2>
           {/* The credit is a door back to the artist, the same as every other
               artist name in the app. "Various artists" is not one - there is no
               single page behind it. */}
+          {/* The sentinel stays English on purpose - albums.ts produces and
+              compares that exact string, so only the word on screen moves. */}
           {credit === 'Various artists' ? (
             <Text tone="muted" size="sm">
-              Various artists
+              {t('library.variousArtists')}
             </Text>
           ) : (
             <button
@@ -415,25 +421,25 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
           )}
           <Text tone="muted" size="sm">
             {missing.length > 0
-              ? `${list.length} of ${list.length + missing.length} songs`
-              : `${list.length} ${list.length === 1 ? 'song' : 'songs'}`}
+              ? t('library.songCountOfTotal', { count: list.length, total: list.length + missing.length })
+              : t('library.songCount', { count: list.length })}
             {totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}
-            {labelDiscs ? ` · ${shownDiscs.length} discs` : ''}
+            {labelDiscs ? ` · ${t('library.discCount', { count: shownDiscs.length })}` : ''}
             {year ? ` · ${year}` : ''}
           </Text>
           <div className="albumHead__actions">
             <Button variant="solid" size="sm" onClick={playAll}>
               <Play size={15} fill="currentColor" />
-              Play
+              {t('player.play')}
             </Button>
             <Button variant="ghost" size="sm" onClick={shuffleAll}>
               <Shuffle size={15} />
-              Shuffle
+              {t('player.shuffle')}
             </Button>
             {session && list.length > 0 && (
               <Button variant="ghost" size="sm" onClick={() => setMixing(true)}>
                 <Sparkles size={15} />
-                AI DJ
+                {t('booth.aiDj')}
               </Button>
             )}
           </div>

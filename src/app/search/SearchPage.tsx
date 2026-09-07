@@ -66,6 +66,7 @@ import {
   type Section,
 } from './searchModel.tsx';
 import { GenreArt, Heading } from './SearchBits.tsx';
+import { Trans, useSongCount, useT } from '../i18n/LocaleShell.tsx';
 import { TopCard } from './TopCard.tsx';
 import { RecentTile } from './RecentTile.tsx';
 import { useCatalogSearch } from './useCatalogSearch.ts';
@@ -135,6 +136,8 @@ export function SearchPage({
    *  bar rather than swapping text as the page arrives. */
   placeholder?: string;
 }) {
+  const t = useT();
+  const songCount = useSongCount();
   const { tracks, books, isFavorite, toggleFavorite } = useLibrary();
   const { playlists } = usePlaylists();
   // Results, genre tiles and recents wave in as they meet the view, landing
@@ -346,7 +349,11 @@ export function SearchPage({
             kind: 'artist',
             key: item.artist.name,
             title: item.artist.name,
-            subtitle: 'Artist',
+            /* Blank on purpose. A recent is written to storage and to the
+               server, and it outlives the language it was opened in - the only
+               thing this subtitle ever said was "artist", so the tile says that
+               word itself, in whatever language is on screen when it is drawn. */
+            subtitle: '',
             cover: null,
             url: '',
           });
@@ -392,7 +399,7 @@ export function SearchPage({
             kind: 'playlist',
             key: item.playlist.id,
             title: item.playlist.name,
-            subtitle: 'Playlist',
+            subtitle: '',
             cover: null,
             url: '',
           });
@@ -404,7 +411,7 @@ export function SearchPage({
             kind: 'genre',
             key: item.genre.name,
             title: item.genre.name,
-            subtitle: 'Genre',
+            subtitle: '',
             cover: null,
             url: '',
           });
@@ -426,7 +433,7 @@ export function SearchPage({
               kind: 'artist',
               key: item.result.title,
               title: item.result.title,
-              subtitle: 'Artist',
+              subtitle: '',
               cover: null,
               url: '',
             });
@@ -560,8 +567,10 @@ export function SearchPage({
     commandItems.push({
       t: 'action',
       id: 'open-shared-playlist',
-      label: named ? `Open “${named.name}” shared by ${named.by}` : 'Open shared playlist',
-      group: 'Actions',
+      label: named
+        ? t('search.openSharedNamed', { name: named.name, by: named.by })
+        : t('search.openShared'),
+      group: t('search.actions'),
       run: () => openPlaylistCode(sharedRef.code),
     });
   }
@@ -571,8 +580,8 @@ export function SearchPage({
     commandItems.push({
       t: 'action',
       id: 'open-in-spotify',
-      label: 'Open in Spotify',
-      group: 'Actions',
+      label: t('search.openInSpotify'),
+      group: t('search.actions'),
       run: () => void openExternal(spotifyWeb),
     });
   }
@@ -586,7 +595,7 @@ export function SearchPage({
     if (commandItems.length > 0) {
       out.push({
         key: 'all',
-        title: 'Actions',
+        titleKey: 'search.actions',
         icon: <Plus size={15} />,
         total: commandItems.length,
         items: commandItems,
@@ -600,7 +609,7 @@ export function SearchPage({
     if (!heroed && on('songs') && lib.songs.length > 0) {
       out.push({
         key: 'songs',
-        title: 'Songs',
+        titleKey: 'search.songs',
         icon: <Music size={15} />,
         total: lib.songs.length,
         items: lib.songs
@@ -614,7 +623,7 @@ export function SearchPage({
     if (on('books') && bookHits.length > 0) {
       out.push({
         key: 'books',
-        title: 'Books',
+        titleKey: 'search.books',
         icon: <BookAudio size={15} />,
         total: bookHits.length,
         items: bookHits
@@ -625,7 +634,7 @@ export function SearchPage({
     if (on('artists') && lib.artists.length > 0) {
       out.push({
         key: 'artists',
-        title: 'Artists',
+        titleKey: 'search.artists',
         icon: <User size={15} />,
         total: lib.artists.length,
         items: lib.artists
@@ -636,7 +645,7 @@ export function SearchPage({
     if (on('albums') && lib.albums.length > 0) {
       out.push({
         key: 'albums',
-        title: 'Albums',
+        titleKey: 'search.albums',
         icon: <Disc3 size={15} />,
         total: lib.albums.length,
         items: lib.albums
@@ -647,7 +656,7 @@ export function SearchPage({
     if (on('playlists') && lists.length > 0) {
       out.push({
         key: 'playlists',
-        title: 'Playlists',
+        titleKey: 'search.playlists',
         icon: <ListMusic size={15} />,
         total: lists.length,
         items: lists
@@ -658,7 +667,7 @@ export function SearchPage({
     if (on('genres') && lib.genres.length > 0) {
       out.push({
         key: 'genres',
-        title: 'Genres',
+        titleKey: 'search.genres',
         icon: <Tag size={15} />,
         total: lib.genres.length,
         items: lib.genres
@@ -669,7 +678,7 @@ export function SearchPage({
     if (on('friends') && people.length > 0) {
       out.push({
         key: 'friends',
-        title: 'Friends',
+        titleKey: 'search.friends',
         icon: <Users size={15} />,
         total: people.length,
         items: people
@@ -680,7 +689,7 @@ export function SearchPage({
     if (on('catalog') && outside.length > 0) {
       out.push({
         key: 'catalog',
-        title: 'To add',
+        titleKey: 'search.toAdd',
         icon: <Compass size={15} />,
         total: outside.length,
         items: outside.slice(0, filter === 'catalog' ? EXPANDED : COLLAPSED + 2).map<Item>((r) => ({
@@ -814,6 +823,8 @@ export function SearchPage({
   // renderer itself lives in SearchRows.tsx - still a plain call, never a
   // component, for the reason documented there.
   const rowCtx: RowCtx = {
+    t,
+    songs: songCount,
     position,
     cursor,
     setCursor,
@@ -899,8 +910,11 @@ export function SearchPage({
         value={query}
         onValueChange={setQuery}
         onKeyDown={onFieldKey}
-        placeholder={placeholder ?? 'Songs, artists, albums, lyrics — or artist: album: genre:'}
-        aria-label="Search"
+        /* The operators inside the placeholder are the query language, not
+           words: `artist:` is what the parser matches, so the catalogue entry
+           carries them verbatim and only the prose around them is translated. */
+        placeholder={placeholder ?? t('search.fieldPlaceholder')}
+        aria-label={t('search.fieldLabel')}
         role="combobox"
         aria-expanded={walk.length > 0}
         aria-controls="searchResults"
@@ -926,20 +940,20 @@ export function SearchPage({
       {searching && !claimed && (
         <SegmentedControl
           className="searchScope"
-          aria-label="Where to search"
+          aria-label={t('search.scopeLabel')}
           size="sm"
           fullWidth
           value={discover ? 'discover' : 'mine'}
           options={[
-            { value: 'mine', label: 'Your library' },
-            { value: 'discover', label: 'Discover' },
+            { value: 'mine', label: t('library.yourLibrary') },
+            { value: 'discover', label: t('nav.discover') },
           ]}
           onValueChange={(v) => setDiscover(v === 'discover')}
         />
       )}
 
       {searching && !claimed && available.some((f) => f.group === 'kind') && (
-        <div className="searchFilters" role="tablist" aria-label="Narrow these results">
+        <div className="searchFilters" role="tablist" aria-label={t('search.narrow')}>
           {available.map((f, i) => (
             <span key={f.id} className="searchChipWrap">
               {i > 0 && available[i - 1]!.group !== f.group && (
@@ -956,7 +970,7 @@ export function SearchPage({
                 <span className="searchChip__glyph" aria-hidden>
                   {f.icon}
                 </span>
-                {f.label}
+                {t(f.labelKey)}
               </button>
             </span>
           ))}
@@ -965,7 +979,7 @@ export function SearchPage({
 
       {searching && lib.approximate && (
         <Text tone="muted" size="sm" className="searchNote">
-          Nothing matches “{parsed.raw}” exactly — this is the closest your library has.
+          <Trans i18nKey="search.approximate" values={{ query: parsed.raw }} />
         </Text>
       )}
 
@@ -977,10 +991,10 @@ export function SearchPage({
         <StationFromQuery query={parsed.raw} session={server} tracks={tracks} onPlay={onPlay} />
       )}
 
-      <div id="searchResults" role={searching ? 'listbox' : undefined} aria-label="Results">
+      <div id="searchResults" role={searching ? 'listbox' : undefined} aria-label={t('search.results')}>
         {/* Already on the wire: a song the query matches that is downloading
             right now, so it is never added twice. Self-hides otherwise. */}
-        <IncomingRows scope="all" query={query} heading="Already downloading" />
+        <IncomingRows scope="all" query={query} heading={t('search.alreadyDownloading')} />
         {!searching && (
           <>
             {recents.items.length > 0 && (
@@ -989,9 +1003,9 @@ export function SearchPage({
                   <span className="searchSection__glyph" aria-hidden>
                     <Search size={15} />
                   </span>
-                  Recent
+                  {t('library.recent')}
                   <button type="button" className="searchSeeAll" onClick={recents.clear}>
-                    Clear
+                    {t('search.clearRecents')}
                   </button>
                 </h2>
                 <div className="searchRecents">
@@ -1012,7 +1026,7 @@ export function SearchPage({
             {browse.length > 0 && (
               <section className="searchSection searchSection--browse">
                 <Heading icon={<Tag size={15} />} count={browse.length}>
-                  Browse
+                  {t('search.browse')}
                 </Heading>
                 <div className="searchBrowse">
                   {browse.map((g) => {
@@ -1038,7 +1052,7 @@ export function SearchPage({
                       )}
                       <span className="searchGenre__name">{g.name}</span>
                       <span className="searchGenre__count">
-                        {g.count === 1 ? '1 song' : `${g.count} songs`}
+                        {songCount(g.count)}
                       </span>
                     </button>
                     );
@@ -1050,10 +1064,7 @@ export function SearchPage({
             {recents.items.length === 0 && browse.length === 0 && (
               <div className="emptyState">
                 <EmptyArt name="search" />
-                <p className="emptyState__text">
-                  Search your songs, your artists, your albums, your friends and the wider
-                  catalogue — all at once.
-                </p>
+                <p className="emptyState__text">{t('search.empty')}</p>
               </div>
             )}
           </>
@@ -1062,7 +1073,7 @@ export function SearchPage({
         {searching && !claimed && heroed && top && (
           <section className="searchTop">
             <div className="searchTop__hero">
-              <Heading icon={<Search size={15} />}>Top result</Heading>
+              <Heading icon={<Search size={15} />}>{t('search.topResult')}</Heading>
               {(() => {
                 const card = (
                   <TopCard
@@ -1101,7 +1112,7 @@ export function SearchPage({
                   count={lib.songs.length}
                   onSeeAll={lib.songs.length > beside.length ? () => setFilter('songs') : undefined}
                 >
-                  Songs
+                  {t('search.songs')}
                 </Heading>
                 <div className="searchRows">{beside.map((i) => renderRow(i, rowCtx))}</div>
               </div>
@@ -1110,7 +1121,12 @@ export function SearchPage({
         )}
 
         {sections.map((s) => (
-          <section key={`${s.key}:${s.title}`} className="searchSection" role="group" aria-label={s.title}>
+          <section
+            key={`${s.key}:${s.titleKey}`}
+            className="searchSection"
+            role="group"
+            aria-label={t(s.titleKey)}
+          >
             <Heading
               icon={s.icon}
               count={s.total}
@@ -1118,16 +1134,16 @@ export function SearchPage({
                 s.total > s.items.length && s.key !== 'all' ? () => setFilter(s.key) : undefined
               }
             >
-              {s.title}
+              {t(s.titleKey)}
             </Heading>
             <div className="searchRows">{s.items.map((i) => renderRow(i, rowCtx))}</div>
           </section>
         ))}
 
         {searching && spoken.length > 0 && (
-          <section className="searchSection" role="group" aria-label="Heard in your library">
+          <section className="searchSection" role="group" aria-label={t('search.spoken')}>
             <Heading icon={<Quote size={15} />} count={spoken.length}>
-              Heard in your library
+              {t('search.spoken')}
             </Heading>
             <div className="searchRows">
               {spoken.map((h, i) => (
@@ -1161,14 +1177,16 @@ export function SearchPage({
 
         {searching && !claimed && on('catalog') && catalog === null && server && (
           <p className="searchNote" role="status">
-            Searching Spotify and Deezer…
+            {t('search.searchingCatalog')}
           </p>
         )}
 
         {nothing && (
           <div className="emptyState">
             <EmptyArt name="search" />
-            <p className="emptyState__text">Nothing found for “{parsed.raw}”.</p>
+            <p className="emptyState__text">
+              <Trans i18nKey="search.nothingFound" values={{ query: parsed.raw }} />
+            </p>
           </div>
         )}
       </div>
@@ -1196,6 +1214,7 @@ function StationFromQuery({
   tracks: Track[];
   onPlay: (track: Track, queue: Track[]) => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const { toast } = useToast();
@@ -1220,14 +1239,14 @@ function StationFromQuery({
       }
       const opener = queue[0];
       if (!opener) {
-        setNote('Nothing in your library answers to that yet.');
+        setNote(t('search.stationEmpty'));
         return;
       }
       fireNativeHaptic('light');
-      toast({ message: `Station on: ${query.trim()}` });
+      toast({ message: t('search.stationOn', { query: query.trim() }) });
       onPlay(opener, queue);
     } catch {
-      setNote('The station could not start — the server did not answer.');
+      setNote(t('search.stationFailed'));
     } finally {
       setBusy(false);
     }
@@ -1240,8 +1259,10 @@ function StationFromQuery({
           {busy ? <Spinner size="sm" aria-label="" /> : <Radio size={16} />}
         </span>
         <span className="searchStation__text">
-          <span className="searchStation__title">Start a station</span>
-          <span className="searchStation__sub">Your library, tuned to “{query.trim()}”</span>
+          <span className="searchStation__title">{t('search.startStation')}</span>
+          <span className="searchStation__sub">
+            <Trans i18nKey="search.stationSub" values={{ query: query.trim() }} />
+          </span>
         </span>
       </button>
       {note && (

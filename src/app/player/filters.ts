@@ -71,17 +71,41 @@ export interface FilterNode {
   params: Record<string, number>;
 }
 
+/**
+ * The drawer a filter files itself under. An id rather than the drawer's own
+ * name, because the rail compares this against the segment that is selected -
+ * and a comparison against a word that changes with the language is a rail
+ * that shows an empty shelf in French.
+ */
+export type FilterFamily = 'speed' | 'tape' | 'broadcast' | 'rooms' | 'colour' | 'stereo' | 'movement';
+
 export interface Filter {
   id: string;
-  name: string;
-  blurb: string;
-  family: string;
+  /**
+   * Catalogue keys, not the words. This whole table is evaluated at import,
+   * long before a language has been chosen, so text sitting here would be
+   * frozen in whatever the app booted in - see i18n/CONVENTIONS.md. The room
+   * resolves both at render, which is also what lets the search box match
+   * against the names somebody is actually reading.
+   */
+  nameKey: string;
+  blurbKey: string;
+  family: FilterFamily;
   icon: LucideIcon;
   /** Signal order, first to last. */
   nodes: FilterNode[];
 }
 
-export const FAMILIES = ['Speed', 'Tape & lofi', 'Broadcast', 'Rooms', 'Colour', 'Stereo', 'Movement'] as const;
+/** The rail's drawers, in the order it lists them. */
+export const FAMILIES: readonly { id: FilterFamily; labelKey: string }[] = [
+  { id: 'speed', labelKey: 'player.filterFamilySpeed' },
+  { id: 'tape', labelKey: 'player.filterFamilyTape' },
+  { id: 'broadcast', labelKey: 'player.filterFamilyBroadcast' },
+  { id: 'rooms', labelKey: 'player.filterFamilyRooms' },
+  { id: 'colour', labelKey: 'player.filterFamilyColour' },
+  { id: 'stereo', labelKey: 'player.filterFamilyStereo' },
+  { id: 'movement', labelKey: 'player.filterFamilyMovement' },
+];
 
 export const FILTERS: Filter[] = [
   // --- Speed ----------------------------------------------------------------
@@ -92,17 +116,17 @@ export const FILTERS: Filter[] = [
   // chainRate() in fxChain.ts.
   {
     id: 'slowed',
-    name: 'Slowed',
-    blurb: 'Dragged below speed, pitch falling with it',
-    family: 'Speed',
+    nameKey: 'player.filterSlowed',
+    blurbKey: 'player.filterSlowedBlurb',
+    family: 'speed',
     icon: Turtle,
     nodes: [{ t: 'speed', params: { rate: 0.85 } }],
   },
   {
     id: 'slowedverb',
-    name: 'Slowed + reverb',
-    blurb: 'Slowed, with the room turned up',
-    family: 'Speed',
+    nameKey: 'player.filterSlowedReverb',
+    blurbKey: 'player.filterSlowedReverbBlurb',
+    family: 'speed',
     icon: Snowflake,
     nodes: [
       { t: 'speed', params: { rate: 0.82 } },
@@ -113,17 +137,17 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'spedup',
-    name: 'Sped up',
-    blurb: 'Pushed above speed, pitch rising with it',
-    family: 'Speed',
+    nameKey: 'player.filterSpedUp',
+    blurbKey: 'player.filterSpedUpBlurb',
+    family: 'speed',
     icon: Rabbit,
     nodes: [{ t: 'speed', params: { rate: 1.25 } }],
   },
   {
     id: 'nightcore',
-    name: 'Nightcore',
-    blurb: 'Faster and higher, with the top end lifted',
-    family: 'Speed',
+    nameKey: 'player.filterNightcore',
+    blurbKey: 'player.filterNightcoreBlurb',
+    family: 'speed',
     icon: FastForward,
     nodes: [
       { t: 'speed', params: { rate: 1.35 } },
@@ -133,17 +157,17 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'halfspeed',
-    name: 'Half speed',
-    blurb: 'An octave down, at half the pace',
-    family: 'Speed',
+    nameKey: 'player.filterHalfSpeed',
+    blurbKey: 'player.filterHalfSpeedBlurb',
+    family: 'speed',
     icon: Hourglass,
     nodes: [{ t: 'speed', params: { rate: 0.5 } }],
   },
   {
     id: 'quick',
-    name: 'Faster, same pitch',
-    blurb: 'Quicker without the chipmunk',
-    family: 'Speed',
+    nameKey: 'player.filterQuick',
+    blurbKey: 'player.filterQuickBlurb',
+    family: 'speed',
     icon: Gauge,
     nodes: [{ t: 'tempo', params: { rate: 1.25 } }],
   },
@@ -151,9 +175,9 @@ export const FILTERS: Filter[] = [
   // --- Tape & lofi ----------------------------------------------------------
   {
     id: 'lofi',
-    name: 'Lofi',
-    blurb: 'Soft top end, a little grit, tape wobble',
-    family: 'Tape & lofi',
+    nameKey: 'player.filterLofi',
+    blurbKey: 'player.filterLofiBlurb',
+    family: 'tape',
     icon: Disc3,
     nodes: [
       { t: 'lp', params: { f: 3200 } },
@@ -167,9 +191,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'tape',
-    name: 'Tape',
-    blurb: 'Gentle saturation and a rolled-off top',
-    family: 'Tape & lofi',
+    nameKey: 'player.filterTape',
+    blurbKey: 'player.filterTapeBlurb',
+    family: 'tape',
     icon: Rewind,
     nodes: [
       { t: 'od', params: { drive: 4, lvl: -2, tone: 6000 } },
@@ -180,9 +204,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'vinyl',
-    name: 'Vinyl',
-    blurb: 'Rumble cut, warm mids, a room behind it',
-    family: 'Tape & lofi',
+    nameKey: 'player.filterVinyl',
+    blurbKey: 'player.filterVinylBlurb',
+    family: 'tape',
     icon: Disc,
     nodes: [
       { t: 'hp', params: { f: 60 } },
@@ -194,9 +218,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'cassette',
-    name: 'Cassette',
-    blurb: 'Dull, bassy and slightly seasick',
-    family: 'Tape & lofi',
+    nameKey: 'player.filterCassette',
+    blurbKey: 'player.filterCassetteBlurb',
+    family: 'tape',
     icon: Music4,
     nodes: [
       { t: 'lp', params: { f: 8000 } },
@@ -208,9 +232,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'bit',
-    name: '8-bit',
-    blurb: 'Crushed to a handful of bits',
-    family: 'Tape & lofi',
+    nameKey: 'player.filterEightBit',
+    blurbKey: 'player.filterEightBitBlurb',
+    family: 'tape',
     icon: Binary,
     nodes: [
       { t: 'crush', params: { bits: 4, mix: 1 } },
@@ -222,9 +246,9 @@ export const FILTERS: Filter[] = [
   // --- Broadcast ------------------------------------------------------------
   {
     id: 'am',
-    name: 'AM radio',
-    blurb: 'Narrow band, squashed flat',
-    family: 'Broadcast',
+    nameKey: 'player.filterAmRadio',
+    blurbKey: 'player.filterAmRadioBlurb',
+    family: 'broadcast',
     icon: Radio,
     nodes: [
       { t: 'hp', params: { f: 350 } },
@@ -234,9 +258,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'phone',
-    name: 'Telephone',
-    blurb: 'The voice band and nothing else',
-    family: 'Broadcast',
+    nameKey: 'player.filterTelephone',
+    blurbKey: 'player.filterTelephoneBlurb',
+    family: 'broadcast',
     icon: Phone,
     nodes: [
       { t: 'hp', params: { f: 400 } },
@@ -246,9 +270,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'mega',
-    name: 'Megaphone',
-    blurb: 'Shouted through a cone',
-    family: 'Broadcast',
+    nameKey: 'player.filterMegaphone',
+    blurbKey: 'player.filterMegaphoneBlurb',
+    family: 'broadcast',
     icon: Megaphone,
     nodes: [
       { t: 'hp', params: { f: 500 } },
@@ -261,9 +285,9 @@ export const FILTERS: Filter[] = [
   // --- Rooms ----------------------------------------------------------------
   {
     id: 'under',
-    name: 'Underwater',
-    blurb: 'Muffled and swaying',
-    family: 'Rooms',
+    nameKey: 'player.filterUnderwater',
+    blurbKey: 'player.filterUnderwaterBlurb',
+    family: 'rooms',
     icon: Droplets,
     nodes: [
       // The low-pass floor is 1000Hz, so the muffling cannot come from cutoff
@@ -277,9 +301,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'cathedral',
-    name: 'Cathedral',
-    blurb: 'Long stone reverb',
-    family: 'Rooms',
+    nameKey: 'player.filterCathedral',
+    blurbKey: 'player.filterCathedralBlurb',
+    family: 'rooms',
     icon: Church,
     nodes: [
       { t: 'spring', params: { mix: 0.8, size: 1 } },
@@ -289,9 +313,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'stadium',
-    name: 'Stadium',
-    blurb: 'Big room, slap off the far wall',
-    family: 'Rooms',
+    nameKey: 'player.filterStadium',
+    blurbKey: 'player.filterStadiumBlurb',
+    family: 'rooms',
     icon: Users,
     nodes: [
       { t: 'echo', params: { time: 420, fb: 0.35, mix: 0.35 } },
@@ -301,9 +325,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'cave',
-    name: 'Cave',
-    blurb: 'Dark, and it keeps answering',
-    family: 'Rooms',
+    nameKey: 'player.filterCave',
+    blurbKey: 'player.filterCaveBlurb',
+    family: 'rooms',
     icon: Mountain,
     nodes: [
       { t: 'echo', params: { time: 700, fb: 0.55, mix: 0.5 } },
@@ -313,9 +337,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'dream',
-    name: 'Dream',
-    blurb: 'Soft, wide and a little unreal',
-    family: 'Rooms',
+    nameKey: 'player.filterDream',
+    blurbKey: 'player.filterDreamBlurb',
+    family: 'rooms',
     icon: Cloud,
     nodes: [
       { t: 'chorus', params: { depth: 3, rate: 0.5 } },
@@ -326,9 +350,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'night',
-    name: 'Night drive',
-    blurb: 'Low end, soft top, room around it',
-    family: 'Rooms',
+    nameKey: 'player.filterNightDrive',
+    blurbKey: 'player.filterNightDriveBlurb',
+    family: 'rooms',
     icon: Moon,
     nodes: [
       { t: 'bass', params: { f: 90, g: 5 } },
@@ -341,9 +365,9 @@ export const FILTERS: Filter[] = [
   // --- Colour ---------------------------------------------------------------
   {
     id: 'bass',
-    name: 'Bass boost',
-    blurb: 'Weight, held steady',
-    family: 'Colour',
+    nameKey: 'player.filterBassBoost',
+    blurbKey: 'player.filterBassBoostBlurb',
+    family: 'colour',
     icon: Speaker,
     nodes: [
       { t: 'bass', params: { f: 90, g: 8 } },
@@ -353,9 +377,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'sub',
-    name: 'Sub',
-    blurb: 'An octave under the bass line',
-    family: 'Colour',
+    nameKey: 'player.filterSub',
+    blurbKey: 'player.filterSubBlurb',
+    family: 'colour',
     icon: Waves,
     nodes: [
       { t: 'sub', params: { cutoff: 110, wet: 0.8 } },
@@ -364,9 +388,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'crisp',
-    name: 'Crisp',
-    blurb: 'Detail lifted at the top',
-    family: 'Colour',
+    nameKey: 'player.filterCrisp',
+    blurbKey: 'player.filterCrispBlurb',
+    family: 'colour',
     icon: Sun,
     nodes: [
       { t: 'treble', params: { f: 9000, g: 5 } },
@@ -376,9 +400,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'air',
-    name: 'Air',
-    blurb: 'Open, breathy top end',
-    family: 'Colour',
+    nameKey: 'player.filterAir',
+    blurbKey: 'player.filterAirBlurb',
+    family: 'colour',
     icon: Wind,
     nodes: [
       { t: 'sparkle', params: { amt: 4 } },
@@ -388,9 +412,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'warm',
-    name: 'Warm',
-    blurb: 'Rounded and easy to sit with',
-    family: 'Colour',
+    nameKey: 'player.filterWarm',
+    blurbKey: 'player.filterWarmBlurb',
+    family: 'colour',
     icon: Flame,
     nodes: [
       { t: 'bass', params: { f: 140, g: 4 } },
@@ -400,9 +424,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'vocal',
-    name: 'Vocal focus',
-    blurb: 'The voice pulled forward',
-    family: 'Colour',
+    nameKey: 'player.filterVocalFocus',
+    blurbKey: 'player.filterVocalFocusBlurb',
+    family: 'colour',
     icon: Mic,
     nodes: [
       { t: 'hp', params: { f: 120 } },
@@ -412,9 +436,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'crunch',
-    name: 'Crunch',
-    blurb: 'Driven, with the edges held',
-    family: 'Colour',
+    nameKey: 'player.filterCrunch',
+    blurbKey: 'player.filterCrunchBlurb',
+    family: 'colour',
     icon: Zap,
     nodes: [
       { t: 'od', params: { drive: 16, lvl: -4, tone: 5000 } },
@@ -424,9 +448,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'fuzz',
-    name: 'Fuzz',
-    blurb: 'Torn apart on purpose',
-    family: 'Colour',
+    nameKey: 'player.filterFuzz',
+    blurbKey: 'player.filterFuzzBlurb',
+    family: 'colour',
     icon: Activity,
     nodes: [
       { t: 'fuzz', params: { drive: 20, lvl: -6, tone: 4000 } },
@@ -437,9 +461,9 @@ export const FILTERS: Filter[] = [
   // --- Stereo ---------------------------------------------------------------
   {
     id: 'wide',
-    name: 'Wide',
-    blurb: 'Pushed out past the speakers',
-    family: 'Stereo',
+    nameKey: 'player.filterWide',
+    blurbKey: 'player.filterWideBlurb',
+    family: 'stereo',
     icon: MoveHorizontal,
     nodes: [
       { t: 'width', params: { amt: 2 } },
@@ -448,9 +472,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'phones',
-    name: 'Headphones',
-    blurb: 'Crossfeed, so hard-panned parts stop splitting',
-    family: 'Stereo',
+    nameKey: 'player.filterHeadphones',
+    blurbKey: 'player.filterHeadphonesBlurb',
+    family: 'stereo',
     icon: Headphones,
     nodes: [
       { t: 'xfeed', params: { amt: 0.7 } },
@@ -459,9 +483,9 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'double',
-    name: 'Doubled',
-    blurb: 'A second take, a hair behind',
-    family: 'Stereo',
+    nameKey: 'player.filterDoubled',
+    blurbKey: 'player.filterDoubledBlurb',
+    family: 'stereo',
     icon: Copy,
     nodes: [
       { t: 'doubler', params: { amt: 1.2 } },
@@ -472,9 +496,9 @@ export const FILTERS: Filter[] = [
   // --- Movement -------------------------------------------------------------
   {
     id: 'leslie',
-    name: 'Leslie',
-    blurb: 'A speaker going round',
-    family: 'Movement',
+    nameKey: 'player.filterLeslie',
+    blurbKey: 'player.filterLeslieBlurb',
+    family: 'movement',
     icon: Fan,
     nodes: [
       { t: 'rotary', params: { rate: 2.2, width: 1.3 } },
@@ -483,25 +507,25 @@ export const FILTERS: Filter[] = [
   },
   {
     id: 'wobble',
-    name: 'Wobble',
-    blurb: 'Volume pulsing in time',
-    family: 'Movement',
+    nameKey: 'player.filterWobble',
+    blurbKey: 'player.filterWobbleBlurb',
+    family: 'movement',
     icon: AudioWaveform,
     nodes: [{ t: 'trem', params: { depth: 0.5, rate: 4.5 } }],
   },
   {
     id: 'jet',
-    name: 'Jet',
-    blurb: 'A flanger sweep overhead',
-    family: 'Movement',
+    nameKey: 'player.filterJet',
+    blurbKey: 'player.filterJetBlurb',
+    family: 'movement',
     icon: Plane,
     nodes: [{ t: 'flanger', params: { depth: 5, rate: 0.4, regen: 45 } }],
   },
   {
     id: 'sweep',
-    name: 'Sweep',
-    blurb: 'Slow phase, drifting',
-    family: 'Movement',
+    nameKey: 'player.filterSweep',
+    blurbKey: 'player.filterSweepBlurb',
+    family: 'movement',
     icon: Waypoints,
     nodes: [{ t: 'phaser', params: { depth: 0.7, rate: 0.35 } }],
   },

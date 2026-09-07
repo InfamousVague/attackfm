@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { noteDjAsk } from './djAsks.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import type { ConversationViewProps } from '@glacier/react';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -41,8 +42,11 @@ export type DjEmbed =
    *  hub that gave none. */
   | { kind: 'set'; trackIds: number[]; why?: Record<number, string> }
   /** Steering pills. Tapping one posts it as an ordinary user turn, so the
-   *  transcript reads the same whether you tapped or typed. */
-  | { kind: 'chips'; options: { label: string; send: string }[] }
+   *  transcript reads the same whether you tapped or typed. The pill's word
+   *  is a catalogue key - the only chips there are seeded below, before any
+   *  provider exists - while `send` is the sentence the hub embeds and stays
+   *  in the language the model was tuned on. */
+  | { kind: 'chips'; options: { labelKey: string; send: string }[] }
   /** The playlist being built, editable until it is saved. */
   | { kind: 'draft'; draftId: string; name: string; trackIds: number[]; saved?: boolean }
   /** What was actually written to the library. Terminal, never edits. */
@@ -52,6 +56,12 @@ export type DjEmbed =
 
 export interface DjMessage extends KitMessage {
   embed?: DjEmbed;
+  /** Carried instead of `text` by anything built outside a render - which is
+   *  only the opening below, and only because a greeting composed at import
+   *  time would still be in the boot language after the picker moved. The
+   *  view resolves it; everything the DJ says later is already a live
+   *  string. */
+  textKey?: string;
 }
 
 export const DJ_AUTHOR = 'dj';
@@ -90,7 +100,7 @@ const OPENING: DjMessage[] = [
     id: nextId(),
     authorId: DJ_AUTHOR,
     at: OPENED_AT,
-    text: "I'm the DJ. I know what you play — tell me what you're after and I'll put something on, or we can build a playlist together.",
+    textKey: 'booth.chatOpening',
   },
   {
     id: nextId(),
@@ -100,9 +110,9 @@ const OPENING: DjMessage[] = [
     embed: {
       kind: 'chips',
       options: [
-        { label: 'Put something on', send: 'Put something on' },
-        { label: 'Something mellow', send: 'Something mellow for a rainy morning' },
-        { label: 'Late and low', send: 'Something for driving at night' },
+        { labelKey: 'booth.chatChipStart', send: 'Put something on' },
+        { labelKey: 'booth.chatChipMellow', send: 'Something mellow for a rainy morning' },
+        { labelKey: 'booth.chatChipNight', send: 'Something for driving at night' },
       ],
     },
   },
@@ -116,6 +126,7 @@ export function DjChatProvider({
   /** How the cards actually start music - the app's own playFrom. */
   onPlay: (track: Track, queue: Track[]) => void;
 }) {
+  const t = useT();
   const { session } = useServerSession();
   const { tracks } = useLibrary();
   const { create } = usePlaylists();
@@ -173,7 +184,7 @@ export function DjChatProvider({
         say('', {
           kind: 'notice',
           tone: 'warn',
-          text: 'The DJ runs on your server — connect one under Settings → Server and I can dig through your library.',
+          text: t('booth.needServer'),
         });
         return;
       }
@@ -181,7 +192,7 @@ export function DjChatProvider({
         say('', {
           kind: 'notice',
           tone: 'info',
-          text: 'There is nothing in your library yet. Add some music and I will have something to work with.',
+          text: t('booth.needLibrary'),
         });
         return;
       }
@@ -218,7 +229,7 @@ export function DjChatProvider({
             say('', {
               kind: 'notice',
               tone: 'info',
-              text: "I could not find anything for that in what you own. Try a different mood, or an artist you have.",
+              text: t('booth.noMatches'),
             });
           }
         })
@@ -226,12 +237,12 @@ export function DjChatProvider({
           say('', {
             kind: 'notice',
             tone: 'warn',
-            text: err instanceof Error ? err.message : 'The DJ could not answer just then.',
+            text: err instanceof Error ? err.message : t('booth.couldNotAnswer'),
           });
         })
         .finally(() => setBusy(false));
     },
-    [append, busy, resolve, say, session, tracks.length],
+    [append, busy, resolve, say, session, t, tracks.length],
   );
 
   // --- the draft ----------------------------------------------------------
@@ -267,19 +278,22 @@ export function DjChatProvider({
         });
         // The count is ours, counted here - the DJ never quotes a number it
         // did not work out itself.
-        say(added > 0 ? `Added ${added}. Tell me what to change.` : 'Those are already in it.');
+        say(added > 0 ? t('booth.draftAdded', { count: added }) : t('booth.draftAlreadyIn'));
         return;
       }
       const draftId = nextId();
       liveDraft.current = draftId;
-      say('Here it is so far. Rename it, drop what you do not want, then save it.', {
+      say(t('booth.draftIntro'), {
         kind: 'draft',
         draftId,
-        name: 'New playlist',
+        // The name the listener will see in the field, and the one that goes
+        // to the library if they never touch it - so it is theirs, in their
+        // language, not the app's boot language.
+        name: t('library.newPlaylist'),
         trackIds: [...trackIds],
       });
     },
-    [patchDraft, say],
+    [patchDraft, say, t],
   );
 
   const renameDraft = useCallback(
@@ -299,7 +313,7 @@ export function DjChatProvider({
         (m) => m.embed?.kind === 'draft' && m.embed.draftId === draftId,
       )?.embed;
       if (!card || card.kind !== 'draft' || card.saved) return;
-      const name = card.name.trim() || 'New playlist';
+      const name = card.name.trim() || t('library.newPlaylist');
       const ids = [...card.trackIds];
       if (ids.length === 0) return;
       // Frozen before the write, not after: two live editors for one playlist
@@ -308,7 +322,7 @@ export function DjChatProvider({
       liveDraft.current = null;
       void create(name, ids.map((id) => remotePath(id)))
         .then((playlistId) => {
-          say('Filed. It is in your playlists.', {
+          say(t('booth.draftSaved'), {
             kind: 'receipt',
             playlistId,
             name,
@@ -318,10 +332,10 @@ export function DjChatProvider({
         .catch(() => {
           patchDraft(draftId, (e) => ({ ...e, saved: false }));
           liveDraft.current = draftId;
-          say('', { kind: 'notice', tone: 'warn', text: 'That would not save. Try again?' });
+          say('', { kind: 'notice', tone: 'warn', text: t('booth.draftSaveFailed') });
         });
     },
-    [create, messages, patchDraft, say],
+    [create, messages, patchDraft, say, t],
   );
 
   const clear = useCallback(() => {

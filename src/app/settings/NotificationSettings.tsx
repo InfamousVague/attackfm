@@ -8,6 +8,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { PaneSection, SettingRow, SettingsEmpty } from './kit/settingsKit.tsx';
 import { discoveryNoticesEnabled, osNoticesEnabled, setDiscoveryNotices, setOsNotices, setVerboseNotices, verboseNoticesEnabled } from './behaviourPrefs.ts';
 import { ensureOsNotifyPermission, sendTestNotification } from '../notify/osNotify.ts';
+import { translate, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * What the app is allowed to interrupt you for.
@@ -29,7 +30,14 @@ import { ensureOsNotifyPermission, sendTestNotification } from '../notify/osNoti
  * the list's priming fetch both write it; whoever runs first wins, and they
  * cannot disagree because they read the same endpoint.
  */
-let summaryCache: { key: string; text: string; at: number } | null = null;
+let summaryCache: { key: string; on: number; total: number; at: number } | null = null;
+
+/** The cache holds the two NUMBERS, not the sentence they make. A sentence
+ *  cached here would be cached in whichever language it was first written in
+ *  and would survive the picker; the numbers do not care. */
+function summaryText(on: number, total: number): string {
+  return translate('settings.notifyOnCount', { on, total });
+}
 
 /** Which account on which box wrote the cache - a multi-server app must not
  *  show one server's counts on another's row. */
@@ -40,15 +48,16 @@ function summaryKey(session: ServerSession): string {
 function writeSummary(session: ServerSession, prefs: Record<string, boolean>): string {
   const kinds = Object.keys(prefs);
   const on = kinds.filter((k) => prefs[k] !== false).length;
-  const text = `${on} of ${kinds.length} on`;
-  summaryCache = { key: summaryKey(session), text, at: Date.now() };
-  return text;
+  summaryCache = { key: summaryKey(session), on, total: kinds.length, at: Date.now() };
+  return summaryText(on, kinds.length);
 }
 
 /** What the list shows now, or null before anything has been fetched FOR THIS
  *  session - another account's counts are worse than the worded fallback. */
 export function notificationsSummaryCached(session: ServerSession): string | null {
-  return summaryCache && summaryCache.key === summaryKey(session) ? summaryCache.text : null;
+  return summaryCache && summaryCache.key === summaryKey(session)
+    ? summaryText(summaryCache.on, summaryCache.total)
+    : null;
 }
 
 /** The list's light fetch on open. A minute of trust between fetches: opening
@@ -59,7 +68,7 @@ export async function primeNotificationsSummary(session: ServerSession): Promise
     summaryCache.key === summaryKey(session) &&
     Date.now() - summaryCache.at < 60_000
   ) {
-    return summaryCache.text;
+    return summaryText(summaryCache.on, summaryCache.total);
   }
   try {
     const r = await fetchPushPrefs(session);
@@ -78,6 +87,7 @@ export async function primeNotificationsSummary(session: ServerSession): Promise
  * markup for that reason; one component keeps them one thing.
  */
 function DeviceSection() {
+  const t = useT();
   const [verbose, setVerbose] = useState(verboseNoticesEnabled);
   const [discovery, setDiscovery] = useState(discoveryNoticesEnabled);
   const [osOn, setOsOn] = useState(osNoticesEnabled);
@@ -90,17 +100,13 @@ function DeviceSection() {
 
   return (
     <PaneSection
-      title="On this device"
-      description="Where the app's news is put, and how much of it there is. Both are about this phone rather than your account, so another device can answer differently."
+      title={t('settings.notifyDevice')}
+      description={t('settings.notifyDeviceHint')}
     >
       <SettingRow
         id="notify-os"
-        label="Show them on this device"
-        hint={
-          refused
-            ? 'Your device is refusing notifications from AttackFM. Turn them back on for this app in the system settings, then flip this again.'
-            : "Puts the same news in the notification tray, so it reaches you without the app open. Skipped while you are already looking at the app."
-        }
+        label={t('settings.notifyOs')}
+        hint={refused ? t('settings.notifyRefusedFlip') : t('settings.notifyOsHint')}
         control={
           <Switch
             checked={osOn}
@@ -114,7 +120,7 @@ function DeviceSection() {
               if (v) void ensureOsNotifyPermission().then((ok) => setRefused(!ok));
               else setRefused(false);
             }}
-            aria-label="Show notifications on this device"
+            aria-label={t('settings.notifyOsAria')}
           />
         }
       />
@@ -125,30 +131,27 @@ function DeviceSection() {
       {osOn && (
         <SettingRow
           id="notify-os-test"
-          label="Send a test one"
-          hint={
-            tested ??
-            'Puts one in the tray now, so you can see what arriving looks like before you rely on it.'
-          }
+          label={t('settings.notifyTest')}
+          hint={tested ?? t('settings.notifyTestHint')}
           control={
             <Button
               variant="soft"
               size="sm"
               onClick={() => {
-                setTested('Sending…');
+                setTested(t('settings.notifyTestSending'));
                 void sendTestNotification().then((r) => {
                   setTested(
                     r === 'sent'
-                      ? 'Sent — look at your notifications.'
+                      ? t('settings.notifyTestSent')
                       : r === 'refused'
-                        ? 'Your device is refusing notifications from AttackFM. Turn them back on for this app in the system settings.'
-                        : 'This build cannot reach the notification tray. Desktop and older installs need a fresh version of the app itself, not just an update.',
+                        ? t('settings.notifyRefused')
+                        : t('settings.notifyTestUnsupported'),
                   );
                   if (r === 'refused') setRefused(true);
                 });
               }}
             >
-              Send
+              {t('settings.notifyTestSend')}
             </Button>
           }
         />
@@ -160,8 +163,8 @@ function DeviceSection() {
           is not in the account's switch list above. */}
       <SettingRow
         id="notify-discovery"
-        label="Discovery notifications"
-        hint="New music picked for your taste, and songs the collector has queued up for a date."
+        label={t('settings.notifyDiscovery')}
+        hint={t('settings.notifyDiscoveryHint')}
         control={
           <Switch
             checked={discovery}
@@ -169,7 +172,7 @@ function DeviceSection() {
               setDiscovery(v);
               setDiscoveryNotices(v);
             }}
-            aria-label="Discovery notifications"
+            aria-label={t('settings.notifyDiscovery')}
           />
         }
       />
@@ -177,8 +180,8 @@ function DeviceSection() {
           by the client's own watchers; the server never sees them. */}
       <SettingRow
         id="notify-verbose"
-        label="Verbose notifications"
-        hint="Downloads starting, songs being pulled into stems, and the AI's background passes starting and finishing."
+        label={t('settings.notifyVerbose')}
+        hint={t('settings.notifyVerboseHint')}
         control={
           <Switch
             checked={verbose}
@@ -186,7 +189,7 @@ function DeviceSection() {
               setVerbose(v);
               setVerboseNotices(v);
             }}
-            aria-label="Verbose notifications"
+            aria-label={t('settings.notifyVerbose')}
           />
         }
       />
@@ -195,6 +198,7 @@ function DeviceSection() {
 }
 
 export function NotificationSettings() {
+  const t = useT();
   const { session } = useServerSession();
   const [prefs, setPrefs] = useState<Record<string, boolean> | null>(null);
   const [devices, setDevices] = useState(0);
@@ -211,10 +215,10 @@ export function NotificationSettings() {
         writeSummary(session, r.prefs);
       })
       .catch((e: unknown) => {
-        if (!ac.signal.aborted) setError(e instanceof Error ? e.message : 'could not load');
+        if (!ac.signal.aborted) setError(e instanceof Error ? e.message : t('settings.notifyLoadFailed'));
       });
     return () => ac.abort();
-  }, [session]);
+  }, [session, t]);
 
   const flip = useCallback(
     (kind: string, enabled: boolean) => {
@@ -232,18 +236,18 @@ export function NotificationSettings() {
           writeSummary(session, next);
           return next;
         });
-        setError('that did not save');
+        setError(t('settings.notifySaveFailed'));
       });
     },
-    [session],
+    [session, t],
   );
 
   if (!session) {
     return (
       <div className="prefsBody">
         <SettingsEmpty
-          title="Notifications come from your server"
-          body="Sign in and the switches appear — each kind is a per-account choice the server honours for every device at once."
+          title={t('settings.notifySignedOut')}
+          body={t('settings.notifySignedOutBody')}
         />
       <DeviceSection />
       </div>
@@ -267,14 +271,14 @@ export function NotificationSettings() {
    */
   const pipeline =
     devices > 0
-      ? `Arriving on ${devices} registered ${devices === 1 ? 'device' : 'devices'}.`
-      : 'No device is registered yet, so nothing can arrive however these are set.';
+      ? t('settings.notifyArriving', { count: devices })
+      : t('settings.notifyNoDevices');
 
   return (
     <div className="prefsBody">
       <PaneSection
-        title="What you are told about"
-        description="Only a few things are worth interrupting somebody for. Each one switches off on its own, and it switches off for every device you have at once."
+        title={t('settings.notifyKinds')}
+        description={t('settings.notifyKindsHint')}
         footer={pipeline}
       >
         {error && (
@@ -287,20 +291,25 @@ export function NotificationSettings() {
         {prefs === null && !error ? (
           <div className="setk-row">
             <Text size="sm" tone="subtle">
-              Loading…
+              {t('common.loading')}
             </Text>
           </div>
         ) : (
           kinds.map((kind) => {
-            const copy = COPY[kind] ?? { label: kind, hint: '' };
+            // The table names each kind by KEY, so the words are picked here,
+            // in a render that re-runs when the language does. A kind the
+            // table has never heard of still shows its own id, as before.
+            const copy = COPY[kind];
+            const label = copy ? t(copy.labelKey) : kind;
+            const hint = copy ? t(copy.hintKey) : '';
             return (
               <SettingRow
                 key={kind}
-                label={copy.label}
-                hint={copy.hint || undefined}
+                label={label}
+                hint={hint || undefined}
                 control={
                   <Switch
-                    aria-label={copy.label}
+                    aria-label={label}
                     checked={prefs?.[kind] ?? true}
                     onCheckedChange={(v: boolean) => flip(kind, v)}
                   />

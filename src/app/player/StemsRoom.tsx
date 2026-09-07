@@ -9,6 +9,7 @@ import { useStems } from './stemsReady.ts';
 import { chainRate, useFxChain } from './fxChain.ts';
 import { ENV_HZ, envelopeMeter, loadStemEnvelopes, type StemEnvelopes } from './stemLevels.ts';
 import { autoDownloadAllowed } from '../settings/behaviourPrefs.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The part's own shape across the whole song, thinned to something a bar can
@@ -82,6 +83,7 @@ function StemPart({
 }) {
   // A part turned down to nothing is "off" for the meter and the row's still
   // look; the fader still shows exactly how far down it is.
+  const t = useT();
   const on = gain > 0;
   const meter = useMemo(() => envelopeMeter(env, fileNow), [env, fileNow]);
   // A part that is out of the song is not sounding, so it does not move -
@@ -107,7 +109,7 @@ function StemPart({
       </span>
       <Slider
         className="stemsRoom__fader"
-        aria-label={`${label} level`}
+        aria-label={t('player.stemLevel', { part: label })}
         min={0}
         max={100}
         value={Math.round(gain * 100)}
@@ -155,13 +157,19 @@ function StemPart({
  * and the player reloads where it stands. The transport never learns about it.
  */
 
+/**
+ * The six parts demucs hands back, in the order the rack lists them. The ids
+ * are the server's and the icons are ours; the names are catalogue keys
+ * because this table is built at import, before the app knows what language
+ * it is in - see i18n/CONVENTIONS.md.
+ */
 const PARTS = [
-  { id: 'vocals', label: 'Vocals', Icon: Mic },
-  { id: 'drums', label: 'Drums', Icon: Drum },
-  { id: 'bass', label: 'Bass', Icon: Waves },
-  { id: 'guitar', label: 'Guitar', Icon: Guitar },
-  { id: 'piano', label: 'Keys', Icon: Piano },
-  { id: 'other', label: 'Strings & horns', Icon: AudioWaveform },
+  { id: 'vocals', labelKey: 'player.stemVocals', Icon: Mic },
+  { id: 'drums', labelKey: 'player.stemDrums', Icon: Drum },
+  { id: 'bass', labelKey: 'player.stemBass', Icon: Waves },
+  { id: 'guitar', labelKey: 'player.stemGuitar', Icon: Guitar },
+  { id: 'piano', labelKey: 'player.stemKeys', Icon: Piano },
+  { id: 'other', labelKey: 'player.stemOther', Icon: AudioWaveform },
 ] as const;
 
 type State =
@@ -173,6 +181,7 @@ type State =
   | { kind: 'problem'; why: string };
 
 export function StemsRoom() {
+  const t = useT();
   const { session, settings } = useServerSession();
   const { track, meter, audible, position } = useNowPlayingMotion();
   const drop = useStemDrop();
@@ -330,14 +339,14 @@ export function StemsRoom() {
   if (!session) {
     return (
       <Text tone="muted" size="sm">
-        Taking a song apart happens on your server. Sign in to one to use this.
+        {t('player.stemsNeedServer')}
       </Text>
     );
   }
   if (id === null) {
     return (
       <Text tone="muted" size="sm">
-        Play a song from your server and its parts turn up here.
+        {t('player.stemsNoSong')}
       </Text>
     );
   }
@@ -349,18 +358,15 @@ export function StemsRoom() {
     <div className="stemsRoom">
       {state.kind === 'checking' && (
         <Text tone="muted" size="sm">
-          Looking for this song's parts…
+          {t('player.stemsChecking')}
         </Text>
       )}
 
       {state.kind === 'none' && (
         <div className="stemsRoom__ask">
-          <Text size="sm">
-            This song has not been taken apart yet. Your server does it once, and it is instant
-            every time after.
-          </Text>
+          <Text size="sm">{t('player.stemsOffer')}</Text>
           <Button variant="solid" size="sm" onClick={() => void separate()}>
-            Take it apart
+            {t('player.stemsSeparate')}
           </Button>
         </div>
       )}
@@ -374,12 +380,20 @@ export function StemsRoom() {
               style={state.percent === null ? undefined : { width: `${state.percent}%` }}
             />
           </div>
+          {/* One key per phase rather than a stem plus appended clauses: the
+              percentage sits in the middle of the sentence in English and will
+              not in every language, and only a whole sentence can be moved. */}
           <Text tone="muted" size="xs">
             {state.phase === 'packing'
-              ? `Writing the parts · ${state.filed} of 6`
+              ? t('player.stemsPacking', { filed: state.filed, total: PARTS.length })
               : state.phase === 'queued'
-                ? `Waiting for the separator · ${state.seconds}s`
-                : `Taking the song apart${state.percent === null ? '' : ` · ${state.percent}%`} · ${state.seconds}s`}
+                ? t('player.stemsQueued', { seconds: state.seconds })
+                : state.percent === null
+                  ? t('player.stemsWorking', { seconds: state.seconds })
+                  : t('player.stemsWorkingPercent', {
+                      percent: state.percent,
+                      seconds: state.seconds,
+                    })}
           </Text>
         </div>
       )}
@@ -390,7 +404,7 @@ export function StemsRoom() {
             {state.why}
           </Text>
           <Button variant="ghost" size="sm" onClick={() => void separate()}>
-            Try again
+            {t('common.tryAgain')}
           </Button>
         </div>
       )}
@@ -398,11 +412,11 @@ export function StemsRoom() {
       {state.kind === 'ready' && (
         <>
           <ul className="stemsRoom__parts">
-            {PARTS.filter((p) => available.includes(p.id)).map(({ id: part, label, Icon }) => (
+            {PARTS.filter((p) => available.includes(p.id)).map(({ id: part, labelKey, Icon }) => (
               <StemPart
                 key={part}
                 part={part}
-                label={label}
+                label={t(labelKey)}
                 Icon={Icon}
                 gain={drop.gains[part] ?? 1}
                 env={envelopes.get(part)}
@@ -419,12 +433,12 @@ export function StemsRoom() {
           <div className="stemsRoom__foot">
             <Text tone="muted" size="xs">
               {dropped.length === 0
-                ? 'Turn a part off and the song plays without it.'
-                : `${dropped.length} part${dropped.length === 1 ? '' : 's'} out · the song reloads where it is`}
+                ? t('player.stemsHint')
+                : t('player.stemsOut', { count: dropped.length })}
             </Text>
             {dropped.length > 0 && (
               <Button variant="ghost" size="sm" onClick={clearStemDrop}>
-                Put them all back
+                {t('player.stemsRestore')}
               </Button>
             )}
           </div>

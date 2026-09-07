@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { SegmentedControl } from '@glacier/react';
 import { StorageOverview } from './StorageOverview.tsx';
 import { FilesOnDevice } from './FilesOnDevice.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * What this device is holding, and what it costs.
@@ -20,21 +21,25 @@ import { FilesOnDevice } from './FilesOnDevice.tsx';
 
 type Chunk = 'overview' | 'files';
 
-const CHUNKS: { value: Chunk; label: string }[] = [
-  { value: 'overview', label: 'Overview' },
-  { value: 'files', label: 'Files' },
+// Keys, not words: this pair is built when the module is imported, before any
+// language has been chosen, so a translated label here would be the one the
+// app booted with for the rest of the session.
+const CHUNKS: { value: Chunk; labelKey: string }[] = [
+  { value: 'overview', labelKey: 'downloads.chunkOverview' },
+  { value: 'files', labelKey: 'downloads.chunkFiles' },
 ];
 
 export function DeviceStorageSettings() {
+  const t = useT();
   const [chunk, setChunk] = useState<Chunk>('overview');
 
   return (
     <div className="prefsBody deviceStorage">
       <SegmentedControl
-        aria-label="Downloads and space"
+        aria-label={t('downloads.deviceStorage')}
         fullWidth
         value={chunk}
-        options={CHUNKS}
+        options={CHUNKS.map((c) => ({ value: c.value, label: t(c.labelKey) }))}
         onValueChange={(next) => setChunk(next as Chunk)}
       />
       {chunk === 'overview' ? <StorageOverview /> : <FilesOnDevice />}

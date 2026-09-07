@@ -41,6 +41,7 @@ import { VolumeRow } from './VolumeControl.tsx';
 import { LyricsPanel } from './LyricsPanel.tsx';
 import { fetchLyrics, type SyncedLine } from './lyrics.ts';
 import { useTrackShape } from './waveform.ts';
+import { translate, useT } from '../i18n/LocaleShell.tsx';
 import type { PauseStyle } from './playback.tsx';
 import {
   FADE_DOWN_MS,
@@ -94,6 +95,15 @@ function codecLabel(track: Track): string | null {
   }
 }
 
+/** The repeat mode's own word. A key per mode rather than the mode itself
+ *  poured into the label: `repeat` is a protocol value the deck compares on,
+ *  and it was being read out to a screen reader as-is. */
+const REPEAT_WORD: Record<PlayerRepeat, string> = {
+  off: 'player.repeatOff',
+  all: 'player.repeatAll',
+  one: 'player.repeatOne',
+};
+
 /**
  * One menu, three doorways: the strip's square, the sheet's art, and the
  * Canvas clip itself all open this same chooser, so the setting stays one
@@ -112,6 +122,12 @@ export function npArtMenuItems(
    *  the Visualizer face is worth offering. Absent the plugin the item is
    *  hidden rather than leading to an empty square. */
   visualizer = false,
+  /** The translator, when the caller has one. It defaults to the non-reactive
+   *  `translate` because this is a plain function, not a component, and cannot
+   *  hold a hook of its own - which is safe here only because every caller
+   *  builds these items inside a render that itself subscribes to the
+   *  language, so the menu is rebuilt when the picker moves. */
+  t: (key: string) => string = translate,
 ) {
   return (
     <>
@@ -120,14 +136,14 @@ export function npArtMenuItems(
         shortcut={artView === 'cd' ? <Check size={14} /> : undefined}
         onSelect={() => chooseArtView('cd')}
       >
-        Spinning CD
+        {t('player.artSpinningCd')}
       </MenuItem>
       <MenuItem
         icon={<ImageIcon size={15} />}
         shortcut={artView === 'cover' ? <Check size={14} /> : undefined}
         onSelect={() => chooseArtView('cover')}
       >
-        Album cover
+        {t('player.artAlbumCover')}
       </MenuItem>
       {book && (
         <MenuItem
@@ -135,7 +151,7 @@ export function npArtMenuItems(
           shortcut={artView === 'chapters' ? <Check size={14} /> : undefined}
           onSelect={() => chooseArtView('chapters')}
         >
-          Chapters
+          {t('books.chapters')}
         </MenuItem>
       )}
       {!book && lyrics && (
@@ -144,7 +160,7 @@ export function npArtMenuItems(
           shortcut={artView === 'lyrics' ? <Check size={14} /> : undefined}
           onSelect={() => chooseArtView('lyrics')}
         >
-          Lyrics
+          {t('player.lyrics')}
         </MenuItem>
       )}
       <MenuItem
@@ -152,7 +168,7 @@ export function npArtMenuItems(
         shortcut={artView === 'analyser' ? <Check size={14} /> : undefined}
         onSelect={() => chooseArtView('analyser')}
       >
-        Analyser
+        {t('player.artAnalyser')}
       </MenuItem>
       {visualizer && (
         <MenuItem
@@ -160,7 +176,7 @@ export function npArtMenuItems(
           shortcut={artView === 'visualizer' ? <Check size={14} /> : undefined}
           onSelect={() => chooseArtView('visualizer')}
         >
-          Visualizer
+          {t('player.artVisualizer')}
         </MenuItem>
       )}
       <MenuItem
@@ -168,7 +184,7 @@ export function npArtMenuItems(
         shortcut={artView === 'hidden' ? <Check size={14} /> : undefined}
         onSelect={() => chooseArtView('hidden')}
       >
-        Hidden
+        {t('player.artHidden')}
       </MenuItem>
     </>
   );
@@ -456,7 +472,7 @@ function BookWords({
             <Tag
               key={i}
               ref={i === at ? (nowRef as never) : undefined}
-              className={l.kind === 'title' ? 'npBookWords__title' : 'npBookWords__line'}
+              className={`npBookWords__${l.kind === 'title' ? 'title' : 'line'}`}
               data-state={state}
               role="button"
               tabIndex={0}
@@ -521,6 +537,7 @@ function BookWords({
  * takes the vocal out at once rather than on the next reload.
  */
 function KaraokeToggle({ session, trackId }: { session: ServerSession | null; trackId: number | null }) {
+  const t = useT();
   const [hasVocals, setHasVocals] = useState(false);
   // Subscribe so the button re-renders (and the icon flips) when the drop does,
   // including from the sound console's own faders.
@@ -554,8 +571,8 @@ function KaraokeToggle({ session, trackId }: { session: ServerSession | null; tr
       className="npKaraoke"
       data-on={off || undefined}
       aria-pressed={off}
-      aria-label={off ? 'Karaoke on - vocals off; tap to bring them back' : 'Karaoke - drop the vocals to sing'}
-      title={off ? 'Vocals off - karaoke' : 'Karaoke: drop the vocals'}
+      aria-label={off ? t('player.karaokeOnAria') : t('player.karaokeOffAria')}
+      title={off ? t('player.karaokeOnTitle') : t('player.karaokeOffTitle')}
       onClick={(e) => {
         // The lyrics area is itself a press-target for the artwork chooser -
         // keep a tap on the toggle from opening that.
@@ -609,6 +626,7 @@ function ChapterArt({
   items: ChapterFace[];
   runFraction: number;
 }) {
+  const t = useT();
   const hereAt = items.findIndex((c) => c.here);
   const hereRef = useRef<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -629,7 +647,7 @@ function ChapterArt({
         ref={listRef}
         className="npChapterArt__list"
         role="list"
-        aria-label="Chapters"
+        aria-label={t('books.chapters')}
         onPointerDown={() => {
           browsing.current = true;
         }}
@@ -833,6 +851,7 @@ export function NowPlayingSheet({
    * the sound, and threading it down as one more prop through a component that
    * already takes fifty would be the worse of the two.
    */
+  const t = useT();
   const { analyser } = useNowPlayingMotion();
   // The action strip runs off the side of a narrow phone; it scrolls, and
   // fades at whichever end still has a button on it.
@@ -1041,11 +1060,11 @@ export function NowPlayingSheet({
       const n = nums[i] ?? null;
       // Front matter keeps its own name and takes no number - or is named for
       // what it is, where the name it came with was a number it has no claim to.
-      if (n === null) return frontMatterTitle(fallback, i) || `Chapter ${i + 1}`;
+      if (n === null) return frontMatterTitle(fallback, i) || t('books.chapterN', { n: i + 1 });
       // Whatever number the tag states comes off, not only a matching one:
       // "Chapter 9 — Chapter 10" is the heading that made this obvious.
       const bare = chapterTitleWords(fallback);
-      return bare ? `Chapter ${n} — ${bare}` : `Chapter ${n}`;
+      return bare ? t('books.chapterNamed', { n, title: bare }) : t('books.chapterN', { n });
     };
     const heads: ReadingItem[] =
       chapters.length > 0
@@ -1146,7 +1165,7 @@ export function NowPlayingSheet({
           n,
           title:
             (n === null ? frontMatterTitle(bare, i) : bare) ||
-            (n === null ? `Chapter ${i + 1}` : `Chapter ${n}`),
+            t('books.chapterN', { n: n === null ? i + 1 : n }),
           blurb: note?.blurb?.trim() || null,
           opening: chapterPreview(markerOpenings?.[i]?.opening ?? ''),
           at: formatClock(c.startMs / 1000),
@@ -1166,23 +1185,23 @@ export function NowPlayingSheet({
       sections.map((t) => noteFor(t.path, 0)?.name?.trim() || t.title),
       spokenAnchor,
     );
-    return sections.map((t, i) => {
-      const note = noteFor(t.path, 0);
+    return sections.map((section, i) => {
+      const note = noteFor(section.path, 0);
       const n = nums[i] ?? null;
       // Same reason as the marked branch above: the row prints the number, so
       // a title that opens with its own "Chapter N" would say it twice.
-      const raw = (note?.name?.trim() || t.title || '').trim();
+      const raw = (note?.name?.trim() || section.title || '').trim();
       const bare = n === null ? raw : chapterTitleWords(raw);
       return {
         n,
-        title: bare || (n === null ? `Chapter ${i + 1}` : `Chapter ${n}`),
+        title: bare || t('books.chapterN', { n: n === null ? i + 1 : n }),
         blurb: note?.blurb?.trim() || null,
         // A sectioned book is one transcript per FILE, and only the one playing
         // has been fetched - there is nothing to quote for the others.
         opening: null,
-        at: t.duration != null ? formatClock(t.duration) : null,
-        here: t.path === track.path,
-        jump: () => onTrackChange?.(t),
+        at: section.duration != null ? formatClock(section.duration) : null,
+        here: section.path === track.path,
+        jump: () => onTrackChange?.(section),
       };
     });
   })();
@@ -1277,8 +1296,13 @@ export function NowPlayingSheet({
     const title = bookFaces[here]?.title ?? '';
     // Front matter is not "Chapter -1 of 50" - it is the Preamble, by name.
     if (n === null) return title || chapterLabel;
-    const ord = `Chapter ${n} of ${bookFaces.length}`;
-    return title && title.toLowerCase() !== `chapter ${n}` ? `${ord} · ${title}` : ord;
+    // The title is dropped when it only repeats the number, and the thing it
+    // is compared against has to be the SAME sentence the row would print -
+    // so it is built from the catalogue too, not from the English.
+    const bare = t('books.chapterN', { n });
+    return title && title.toLowerCase() !== bare.toLowerCase()
+      ? t('books.chapterOfCountNamed', { n, total: bookFaces.length, title })
+      : t('books.chapterOfCount', { n, total: bookFaces.length });
   })();
 
   const chapterWin = (() => {
@@ -1454,6 +1478,27 @@ export function NowPlayingSheet({
   // Falls back to the live meter exactly as the strip does.
   const shape = useTrackShape(track);
   const levels = shape ?? live;
+
+  // Lifted out of the JSX because a chain of class-name literals inside a
+  // conditional is indistinguishable, to anything reading the file, from a
+  // chain of English.
+  const coverReading =
+    (artView === 'chapters' && readingFlow.length > 0) ||
+    (artView === 'lyrics' && lyricFlow.length > 0);
+  let coverTargetClass = 'npScreen__coverTarget';
+  if (coverReading) coverTargetClass += ' npScreen__coverTarget--reading';
+  else if (artView === 'chapters' && bookFaces.length > 0) {
+    coverTargetClass += ' npScreen__coverTarget--chapters';
+  }
+
+  // Where the room is heard from this seat, as one phrase the line below can
+  // put inside a longer one.
+  const hearFrom = following
+    ? following.mode === 'speaker'
+      ? t('player.onHostSpeaker', { host: following.hostName })
+      : t('player.onThisDevice')
+    : '';
+
   return createPortal(
     <>
       {/* What is behind the sheet, while the sheet is being pushed off it.
@@ -1475,7 +1520,7 @@ export function NowPlayingSheet({
         undefined
       }
       role="dialog"
-      aria-label="Now playing"
+      aria-label={t('player.nowPlaying')}
       // Always the dark palette, whatever the app wears: this surface lives
       // over album art and its own backdrop, where light-theme ink is
       // unreadable and the lyric layers (white + screen-blend) vanish.
@@ -1511,7 +1556,7 @@ export function NowPlayingSheet({
           'hidden' leaves the clip as the only thing to press. */}
       {npCanvas ? (
         <ContextMenu
-          aria-label="Artwork style"
+          aria-label={t('player.artworkStyle')}
           className="npScreen__canvasWrap"
           content={npArtMenu}
         >
@@ -1544,7 +1589,7 @@ export function NowPlayingSheet({
         // press-and-hold, so 'hidden' is never a state you need the mini
         // strip to climb back out of.
         <ContextMenu
-          aria-label="Artwork style"
+          aria-label={t('player.artworkStyle')}
           className="npScreen__canvasWrap"
           content={npArtMenu}
         />
@@ -1563,7 +1608,7 @@ export function NowPlayingSheet({
       <header className="npScreen__head">
         <IconButton
           variant="ghost"
-          aria-label="Close now playing"
+          aria-label={t('player.closeNowPlaying')}
           onClick={() => {
             setNpOpen(false);
             setNpLyrics(false);
@@ -1574,9 +1619,9 @@ export function NowPlayingSheet({
         <span className="npScreen__source">
           {following
             ? following.hosting
-              ? 'Your groove'
-              : `${following.hostName}'s groove`
-            : track?.album || 'Now playing'}
+              ? t('player.yourGroove')
+              : t('player.hostGroove', { host: following.hostName })
+            : track?.album || t('player.nowPlaying')}
         </span>
         {/* Where the close button's counterweight was: filing the song is
             the one action worth a permanent seat up here, and this sheet
@@ -1590,7 +1635,7 @@ export function NowPlayingSheet({
              the same button lifts it again. */
           <IconButton
             variant="ghost"
-            aria-label={markHere ? 'Remove the bookmark here' : 'Bookmark this place'}
+            aria-label={markHere ? t('books.removeBookmarkHere') : t('books.bookmarkThisPlace')}
             aria-pressed={!!markHere}
             onClick={toggleMarkHere}
           >
@@ -1599,7 +1644,7 @@ export function NowPlayingSheet({
         ) : track ? (
           <IconButton
             variant="ghost"
-            aria-label="Add to playlist"
+            aria-label={t('player.addToPlaylist')}
             onClick={() => setFiling(track)}
           >
             <ListPlus size={20} />
@@ -1656,15 +1701,8 @@ export function NowPlayingSheet({
           )
         ) : (
         <ContextMenu
-          aria-label="Artwork style"
-          className={`npScreen__coverTarget${
-            (artView === 'chapters' && readingFlow.length > 0) ||
-            (artView === 'lyrics' && lyricFlow.length > 0)
-              ? ' npScreen__coverTarget--reading'
-              : artView === 'chapters' && bookFaces.length > 0
-                ? ' npScreen__coverTarget--chapters'
-                : ''
-          }`}
+          aria-label={t('player.artworkStyle')}
+          className={coverTargetClass}
           content={npArtMenu}
         >
           {artView === 'lyrics' && lyricFlow.length > 0 ? (
@@ -1755,7 +1793,9 @@ export function NowPlayingSheet({
           {!(track?.kind === 'book' && track.title === track.album) && (
             <MarqueeText
               className="npScreen__title"
-              text={following ? (following.trackTitle ?? 'Nothing playing yet') : (track?.title ?? '')}
+              text={
+                following ? (following.trackTitle ?? t('player.nothingPlayingYet')) : (track?.title ?? '')
+              }
             />
           )}
           {/* A BOOK'S AUTHOR IS NOT A LINK.
@@ -1780,7 +1820,9 @@ export function NowPlayingSheet({
             <span className="npScreen__artist">
               {following
                 ? (following.trackArtist ??
-                  (following.hosting ? 'Your player sets the pace' : `${following.hostName} sets the pace`))
+                  (following.hosting
+                    ? t('player.yourPlayerSetsPace')
+                    : t('player.hostSetsPace', { host: following.hostName })))
                 : (track?.artist ?? '')}
             </span>
           )}
@@ -1788,8 +1830,10 @@ export function NowPlayingSheet({
               arrival, changeable in the deck. A host hears their own deck. */}
           {following && !following.hosting && (
             <span className="npScreen__codec" data-hear={following.mode}>
-              {following.mode === 'speaker' ? `On ${following.hostName}'s speaker` : 'On this device'}
-              {following.controls > 0 ? ' · sent' : ''}
+              {/* One sentence with the place in it: " · sent" tacked on as a
+                  second fragment could not be moved to where a language wants
+                  it. */}
+              {following.controls > 0 ? t('player.hearingSent', { where: hearFrom }) : hearFrom}
             </span>
           )}
           {/* A song the library lacks: the transport still speaks to the
@@ -1797,7 +1841,7 @@ export function NowPlayingSheet({
               once, quietly, and only when there is a song to be missing. */}
           {following && !following.hosting && following.trackTitle && following.trackMissing && (
             <span className="npScreen__notHere" role="status">
-              Not in your library
+              {t('player.notInLibrary')}
             </span>
           )}
           {/* Which server this song lives on - shown only with more than one
@@ -1810,7 +1854,7 @@ export function NowPlayingSheet({
               was silent. */}
           {activeElsewhere && !following && (
             <span className="npScreen__codec">
-              Playing on {activeDeviceName ?? 'another device'}
+              {t('player.playingOn', { device: activeDeviceName ?? t('player.anotherDevice') })}
             </span>
           )}
           {/* What the file IS - FLAC, MP3, ALAC - because on a self-hosted
@@ -1828,14 +1872,16 @@ export function NowPlayingSheet({
               no room to hang it off the end of a chapter title - which clipped
               the title and then the number with it. */}
           {!following && (chapterLabel || bookFaces.length > 0) && bookRemaining != null && (
-            <span className="npScreen__left">{formatTotal(bookRemaining)} left in the book</span>
+            <span className="npScreen__left">
+              {t('books.leftInBook', { time: formatTotal(bookRemaining) })}
+            </span>
           )}
           {/* A downloading placeholder says so; otherwise only while the
               buffer is actually dry - silence with the transport still
               showing play is the mystery this whole path exists to end. */}
           {!following && (downloading || buffering) && (
             <span className="npScreen__buffering" role="status">
-              {downloading ? 'Downloading…' : 'Buffering…'}
+              {downloading ? t('player.downloading') : t('player.buffering')}
             </span>
           )}
         </div>
@@ -1848,14 +1894,14 @@ export function NowPlayingSheet({
         {track?.kind === 'book' && (
           <Popover
             placement="bottom-end"
-            aria-label="Reading speed"
+            aria-label={t('books.readingSpeed')}
             className="npSpeed"
             trigger={
               <IconButton
                 variant="ghost"
                 className="npScreen__speedBtn"
                 data-on={bookSpeed !== 1 || undefined}
-                aria-label={`Reading speed - ${bookSpeedLabel(bookSpeed)}`}
+                aria-label={t('books.readingSpeedAt', { rate: bookSpeedLabel(bookSpeed) })}
               >
                 <Gauge size={22} />
                 {bookSpeed !== 1 && (
@@ -1877,7 +1923,7 @@ export function NowPlayingSheet({
                   onClick={() => chooseBookSpeed(r)}
                 >
                   <span className="npSpeed__rate">{bookSpeedLabel(r)}</span>
-                  {r === 1 && <span className="npSpeed__note">normal</span>}
+                  {r === 1 && <span className="npSpeed__note">{t('books.speedNormal')}</span>}
                   {r === bookSpeed && <Check size={14} aria-hidden />}
                 </button>
               ))}
@@ -1887,7 +1933,7 @@ export function NowPlayingSheet({
         {!following && (
         <IconButton
           variant="ghost"
-          aria-label={favorite ? 'Remove from favourites' : 'Add to favourites'}
+          aria-label={favorite ? t('player.removeFromFavourites') : t('player.addToFavourites')}
           aria-pressed={favorite}
           className="npScreen__heart"
           onClick={toggleFavoriteFelt}
@@ -1911,7 +1957,7 @@ export function NowPlayingSheet({
         <SeekBar
           duration={barDuration}
           value={barValue}
-          aria-label="Seek"
+          aria-label={t('player.seek')}
           shape="swell"
           tone="accent"
           fill="solid"
@@ -1954,7 +2000,7 @@ export function NowPlayingSheet({
         <IconButton
           variant="ghost"
           className="npShuffle"
-          aria-label={shuffle && smart ? SMART_SHUFFLE_LABEL : 'Shuffle'}
+          aria-label={shuffle && smart ? SMART_SHUFFLE_LABEL : t('player.shuffle')}
           aria-pressed={shuffle}
           data-on={shuffle || undefined}
           data-smart={(shuffle && smart) || undefined}
@@ -1966,7 +2012,7 @@ export function NowPlayingSheet({
           </span>
         </IconButton>
         )}
-        <IconButton variant="ghost" aria-label="Previous" disabled={!canSkip} onClick={skipBack}>
+        <IconButton variant="ghost" aria-label={t('player.previous')} disabled={!canSkip} onClick={skipBack}>
           <SkipBack size={26} fill="currentColor" />
         </IconButton>
         {/* `dispPlaying`, not `playing`: while this device mirrors another the
@@ -1977,13 +2023,15 @@ export function NowPlayingSheet({
         <button
           type="button"
           className="npScreen__play"
-          aria-label={downloading ? 'Downloading' : dispPlaying ? 'Pause' : 'Play'}
+          aria-label={
+            downloading ? t('player.downloading') : dispPlaying ? t('player.pause') : t('player.play')
+          }
           disabled={downloading}
           onClick={() => setPlayingState(!dispPlaying)}
         >
           {dispPlaying ? <Pause size={30} fill="currentColor" /> : <Play size={30} fill="currentColor" />}
         </button>
-        <IconButton variant="ghost" aria-label="Next" disabled={!canSkip} onClick={skipForward}>
+        <IconButton variant="ghost" aria-label={t('player.next')} disabled={!canSkip} onClick={skipForward}>
           <SkipForward size={26} fill="currentColor" />
         </IconButton>
         {following ? (
@@ -1995,10 +2043,10 @@ export function NowPlayingSheet({
              truthful names, blurbs, jump on tap. */
           <Popover
             placement="top"
-            aria-label="Chapters"
+            aria-label={t('books.chapters')}
             className="npChapters"
             trigger={
-              <IconButton variant="ghost" aria-label="Chapters" disabled={bookFaces.length === 0}>
+              <IconButton variant="ghost" aria-label={t('books.chapters')} disabled={bookFaces.length === 0}>
                 <TableOfContents size={20} />
               </IconButton>
             }
@@ -2014,7 +2062,7 @@ export function NowPlayingSheet({
                 there are none, rather than an empty heading. */}
             {bookMarks.length > 0 && (
               <div className="npMarks">
-                <span className="npMarks__title">Bookmarks</span>
+                <span className="npMarks__title">{t('books.bookmarks')}</span>
                 <div className="npMarks__list" role="list">
                   {bookMarks.map((b) => (
                     <div key={`${b.trackId}-${b.positionMs}`} className="npMarks__row" role="listitem">
@@ -2022,7 +2070,10 @@ export function NowPlayingSheet({
                         type="button"
                         className="npMarks__go"
                         onClick={() => jumpToMark(b)}
-                        aria-label={`Go to ${b.label} at ${formatClock(b.positionMs / 1000)}`}
+                        aria-label={t('books.goToMark', {
+                          label: b.label,
+                          time: formatClock(b.positionMs / 1000),
+                        })}
                       >
                         <Bookmark size={13} aria-hidden />
                         <span className="npMarks__label">{b.label}</span>
@@ -2035,7 +2086,9 @@ export function NowPlayingSheet({
                         type="button"
                         className="npMarks__drop"
                         onClick={() => removeBookmark(b)}
-                        aria-label={`Remove the bookmark at ${formatClock(b.positionMs / 1000)}`}
+                        aria-label={t('books.removeMarkAt', {
+                          time: formatClock(b.positionMs / 1000),
+                        })}
                       >
                         <Trash2 size={13} aria-hidden />
                       </button>
@@ -2073,7 +2126,7 @@ export function NowPlayingSheet({
         ) : (
         <IconButton
           variant="ghost"
-          aria-label={`Repeat: ${repeat}`}
+          aria-label={t('player.repeatMode', { mode: t(REPEAT_WORD[repeat]) })}
           data-on={repeat !== 'off' || undefined}
           onClick={cycleRepeat}
         >
@@ -2112,7 +2165,7 @@ export function NowPlayingSheet({
           with nothing left to take. Same slots, same instance, every time. */}
       {(following || track?.kind !== 'book' || !isMobile) && (
       <div className="npScreen__actions edgeScroll" ref={actionsRef}>
-        <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
+        <IconButton variant="ghost" aria-label={t('player.queue')} onClick={() => setNpQueue(true)}>
           <ListMusic size={20} />
         </IconButton>
         {!following && (
@@ -2128,7 +2181,7 @@ export function NowPlayingSheet({
             keeps the panel, which is the one surface that can show them. */}
         <IconButton
           variant="ghost"
-          aria-label="Lyrics"
+          aria-label={t('player.lyrics')}
           aria-pressed={artView === 'lyrics'}
           data-on={artView === 'lyrics' || undefined}
           onClick={() => {
@@ -2185,7 +2238,7 @@ export function NowPlayingSheet({
             never reachable at all. */}
         <Popover
           placement="top"
-          aria-label="Equalizer"
+          aria-label={t('player.equalizer')}
           className="popoverSheet eqPopoverPanel"
           /* The badge is the only thing outside the console that says the sound
              has been moved. Everything the rooms count is behind this one
@@ -2221,10 +2274,10 @@ export function NowPlayingSheet({
         {!isMobile && (
           <Popover
             placement="top"
-            aria-label="Volume"
+            aria-label={t('player.volume')}
             className="morePopoverPanel"
             trigger={
-              <IconButton variant="ghost" aria-label="Volume">
+              <IconButton variant="ghost" aria-label={t('player.volume')}>
                 <Volume2 size={20} />
               </IconButton>
             }
@@ -2252,10 +2305,10 @@ export function NowPlayingSheet({
         />
       )}
       {npLyrics && (
-        <div className="npScreen__lyricsView" role="dialog" aria-label="Lyrics">
+        <div className="npScreen__lyricsView" role="dialog" aria-label={t('player.lyrics')}>
           <header className="npScreen__lyricsHead">
-            <span className="npScreen__lyricsTitle">{track?.title ?? 'Lyrics'}</span>
-            <IconButton variant="ghost" aria-label="Close lyrics" onClick={() => setNpLyrics(false)}>
+            <span className="npScreen__lyricsTitle">{track?.title ?? t('player.lyrics')}</span>
+            <IconButton variant="ghost" aria-label={t('player.closeLyrics')} onClick={() => setNpLyrics(false)}>
               <ChevronDown size={22} />
             </IconButton>
           </header>

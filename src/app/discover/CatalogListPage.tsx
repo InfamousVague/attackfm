@@ -9,6 +9,7 @@ import { useLibrary } from '../library/library.tsx';
 import { titleKey } from '../library/owned.ts';
 import type { Suggestion } from '../api/curator.ts';
 import type { Track } from '../core/tauri.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * A catalogue list, opened as a page: what is actually on it, before you
@@ -45,6 +46,7 @@ export function CatalogListPage({
   /** Where the list has got to, read from the download queue. */
   adding: 'idle' | 'adding' | 'added';
 }) {
+  const t = useT();
   const { tracks } = useLibrary();
 
   /*
@@ -88,8 +90,10 @@ export function CatalogListPage({
   const have = useMemo(() => owned.filter((t): t is Track => t !== null), [owned]);
   const count = suggestion.trackCount ?? rows.length;
   const kicker = suggestion.source
-    ? `${suggestion.source[0]!.toUpperCase()}${suggestion.source.slice(1)} playlist`
-    : 'Playlist';
+    ? t('discover.sourcePlaylist', {
+        source: `${suggestion.source[0]!.toUpperCase()}${suggestion.source.slice(1)}`,
+      })
+    : t('playlists.playlist');
 
   /*
    * The songs on this list that are not here, seated where they belong.
@@ -131,9 +135,9 @@ export function CatalogListPage({
         const at = rows.findIndex((_, i) => owned[i]?.path === t.path);
         return at === -1 ? '' : at + 1;
       },
-      empty: 'This server did not send the songs on this list.',
+      empty: t('discover.listSongsMissing'),
     }),
-    [rows, owned],
+    [rows, owned, t],
   );
 
   return (
@@ -156,8 +160,8 @@ export function CatalogListPage({
           </Text>
           <h2 className="playlistHead__name">{suggestion.title}</h2>
           <Text tone="muted" size="sm">
-            {count} {count === 1 ? 'song' : 'songs'}
-            {rows.length > 0 ? ` · ${have.length} already yours` : ''}
+            {t('library.songCount', { count })}
+            {rows.length > 0 ? ` · ${t('discover.alreadyYours', { count: have.length })}` : ''}
           </Text>
 
           <EdgeScrollRow className="playlistHead__actions">
@@ -168,7 +172,7 @@ export function CatalogListPage({
             {have.length > 0 && (
               <Button variant="solid" size="sm" onClick={() => have[0] && onPlay(have[0], have)}>
                 <Play size={15} />
-                {have.length === rows.length ? 'Play' : 'Play yours'}
+                {have.length === rows.length ? t('player.play') : t('discover.playYours')}
               </Button>
             )}
             <Button
@@ -179,10 +183,10 @@ export function CatalogListPage({
             >
               {adding === 'added' ? <Check size={15} /> : <Plus size={15} />}
               {adding === 'added'
-                ? 'In your library'
+                ? t('discover.inYourLibrary')
                 : adding === 'adding'
-                  ? 'Adding…'
-                  : 'Add the list'}
+                  ? t('discover.adding')
+                  : t('discover.addTheList')}
             </Button>
           </EdgeScrollRow>
         </div>
@@ -192,7 +196,7 @@ export function CatalogListPage({
         <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name="search" />
           <Text tone="muted">
-            This server did not send the songs on this list. It can still be added whole.
+            {t('discover.listSongsMissingWhole')}
           </Text>
         </div>
       ) : (
