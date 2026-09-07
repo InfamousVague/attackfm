@@ -74,7 +74,7 @@ export function NotifyBell({
     // items is deliberately absent: this must run when the panel OPENS, not
     // every time a row lands while it is open - the second would keep
     // re-marking and repaint the dots under the reader's eyes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- items is deliberately absent: this must run when the panel OPENS, not every time a row lands while it is open - the second would keep re-marking…
   }, [open]);
 
   // One number across every sized job; jobs that do not know their total

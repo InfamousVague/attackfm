@@ -914,7 +914,7 @@ export function NowPlayingSheet({
     };
     // The track OBJECT changes identity every library refresh; the path is
     // the book's identity, and the notes only depend on that.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- The track OBJECT changes identity every library refresh; the path is the book's identity, and the notes only depend on that
   }, [bookPath]);
 
   /*
@@ -943,7 +943,7 @@ export function NowPlayingSheet({
     };
     // Keyed on the path: the track object is a fresh identity every library
     // refresh, but its lyrics only change when the song does.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Keyed on the path: the track object is a fresh identity every library refresh, but its lyrics only change when the song does
   }, [track?.path]);
 
   /** The lyrics as a reading flow: one line item per synced line, carrying
@@ -1085,7 +1085,7 @@ export function NowPlayingSheet({
     // A heading sorts ahead of the first line spoken at the same moment.
     flow.sort((a, b) => a.time - b.time || (a.kind === 'title' ? -1 : 1));
     return flow;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the book's own inputs: the chapter list and the transcript are replaced wholesale when the book changes, and the reader object around them is fresh on every tick
   }, [bookWords, bookNotes, chapters, bookPath, spokenAnchor]);
 
   /*

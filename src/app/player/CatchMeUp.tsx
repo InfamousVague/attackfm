@@ -165,7 +165,7 @@ export function CatchMeUp({
     void run(false);
     // Deliberately not re-run as the position ticks: a recap being written
     // while the book plays on must not restart itself every second.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Deliberately not re-run as the position ticks: a recap being written while the book plays on must not restart itself every second
   }, [open]);
 
   if (!track || track.kind !== 'book') return null;

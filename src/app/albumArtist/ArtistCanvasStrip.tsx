@@ -66,7 +66,7 @@ export function ArtistCanvasStrip({
     // By artist: the same page re-renders as the library and catalogue fill in,
     // and re-probing on every one of those would restart the lookups. `tracks`
     // is the owned set, stable for a given artist within a visit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- By artist: the same page re-renders as the library and catalogue fill in, and re-probing on every one of those would restart the lookups. `tracks`…
   }, [session?.url, artist]);
 
   const clipCount = clips.length;

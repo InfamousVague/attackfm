@@ -140,7 +140,7 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
     for (const p of readInstalled()) meta.set(p.id, { version: p.version, source: p.source });
     return meta;
     // Re-read alongside the evaluated set - same store, same trigger.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Re-read alongside the evaluated set - same store, same trigger
   }, [remoteState]);
 
   const setEnabled = useCallback((id: string, on: boolean) => {

@@ -91,7 +91,7 @@ export function GigsPage() {
   // One sweep on first open, unless the hour cache already answered.
   useEffect(() => {
     if (Object.keys(gigs).length === 0) void sweep();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on first open: `sweep` and `gigs` are both rebuilt every render, so listing either would re-sweep the network on every render
   }, []);
 
   const upcoming = useMemo(() => {

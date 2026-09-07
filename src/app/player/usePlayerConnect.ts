@@ -530,7 +530,7 @@ export function usePlayerConnect({
     if (live.playing !== room.playing) live.setPlayingState(room.playing);
     // Keyed on updatedAt so this runs once per report from the host rather
     // than on every render of this component.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Keyed on updatedAt so this runs once per report from the host rather than on every render of this component
   }, [jam?.current?.updatedAt, jam?.current?.trackId, jam?.hosting, silent]);
 
   // Apply a pending cross-track resume once the handed track has loaded.

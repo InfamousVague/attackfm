@@ -251,7 +251,7 @@ export function ShareServer({ iconSize = 20 }: { iconSize?: number }) {
   useEffect(() => {
     if (open && !invite && !minting && identity && session) void mint();
     // Fire on open only; the guards above keep it from double-minting.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Fire on open only; the guards above keep it from double-minting
   }, [open, identity, session]);
 
   // The QR carries the invite LINK - the same string the share button in

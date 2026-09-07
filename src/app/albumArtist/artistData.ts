@@ -58,7 +58,7 @@ export function useArtistTop(
     // tracks intentionally read once per artist/session change: the library is
     // already synced by the time this page opens, and re-resolving on every
     // delta would re-render the list for nothing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tracks intentionally read once per artist/session change: the library is already synced by the time this page opens, and re-resolving on every…
   }, [artist, session]);
   return top;
 }

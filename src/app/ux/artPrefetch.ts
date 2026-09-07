@@ -81,6 +81,6 @@ export function usePrefetchArt(urls: readonly (string | null | undefined)[]): vo
   useEffect(() => {
     prefetchArt(urls);
     // `key` is the honest dependency here; `urls` is a fresh array each render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` is the honest dependency here; `urls` is a fresh array each render
   }, [key]);
 }

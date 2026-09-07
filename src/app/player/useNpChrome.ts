@@ -69,7 +69,6 @@ export function useNpChrome({
       }
       void setIdleTimerDisabled(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- pokeNpDim only touches refs
   }, [keepAwake]);
 
   /**

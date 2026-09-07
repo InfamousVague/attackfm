@@ -31,7 +31,7 @@ export function UndercurrentPage() {
   // context needs a gesture), so the first toggle wakes everything saved.
   useEffect(() => {
     applyMix(mix);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount, as the note above says: listing `mix` would re-apply the whole layer set on every toggle, which is the opposite of converging once
   }, []);
 
   const update = (next: Mix) => {

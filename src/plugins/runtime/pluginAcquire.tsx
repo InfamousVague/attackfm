@@ -177,7 +177,6 @@ export function AcquireProvider({ children }: { children: ReactNode }) {
       acquire,
     }),
     // signature is a dep so a changed handler set re-gates every consumer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [handlersFor, acquire, signature],
   );
 

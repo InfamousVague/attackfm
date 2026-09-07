@@ -598,7 +598,7 @@ export function Player({
     return () => {
       stale = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the song's PATH, not the track object: the object gets a fresh identity on every library tick, and re-running would redo the load mid-song
   }, [track?.path]);
   // One menu, three doorways: the strip's square, the sheet's art, and the
   // Canvas clip itself all open this same chooser, so the setting stays one
@@ -2207,7 +2207,6 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // now-playing card to lose; at any later moment there usually is.
   useLayoutEffect(() => {
     claimDecks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
   }, []);
 
   // Opening a track points the active deck at its file; the canplay handler
@@ -2305,7 +2304,6 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       // Asset-protocol URLs are not object URLs; only a blob needs releasing.
       if (created?.startsWith('blob:')) URL.revokeObjectURL(created);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the track only
   }, [track]);
 
   // Tapping a song you do not own opens Now Playing straight onto it, downloading
@@ -3017,7 +3015,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       void warmQueue(queue, path, loadAudioUrl);
     }, 2500);
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the path, the queue signature and shuffle: those are the three things that change what should be warmed next; the queue array itself is a fresh identity every render
   }, [track?.path, queueSig, shuffle]);
 
   /*

@@ -68,7 +68,7 @@ export function LocaleShell({ children }: { children: ReactNode }) {
     if (locale === 'en') return;
     void loadLocale(locale).then(() => i18next.changeLanguage(locale));
     // Deliberately once, for the STARTING locale.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Deliberately once, for the STARTING locale
   }, []);
 
   const setLocale = useCallback(async (next: Locale) => {

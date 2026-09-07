@@ -667,7 +667,6 @@ export function DatePage() {
       });
     }, 10_000);
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the card alone
   }, [current?.path]);
 
   // The active element's clock, wired by hand because the element is not in

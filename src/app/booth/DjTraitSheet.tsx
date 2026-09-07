@@ -105,7 +105,7 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
     void generate(automatic);
     // `generate` deliberately closes over the current library/session. This
     // effect is gated by quickStarted, so those changing cannot double-launch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `generate` deliberately closes over the current library/session. This effect is gated by quickStarted, so those changing cannot double-launch
   }, [analysis, busy, quick]);
 
   return (
@@ -234,7 +234,7 @@ export function DjCollectionTraitSheet({ source, name, seedTracks, open, onClose
       .finally(() => { if (!ctrl.signal.aborted) setBusy(false); });
     return () => ctrl.abort();
     // seedKey is the stable identity; seedIds itself is rebuilt during render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seedKey is the stable identity; seedIds itself is rebuilt during render
   }, [open, session, source, name, seedKey]);
 
   const chosen = analysis?.traits.filter((trait) => selected.has(trait.id)) ?? [];

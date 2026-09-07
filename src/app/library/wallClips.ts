@@ -108,7 +108,7 @@ export function useWallClipsState(
     };
     // The session's token can rotate without the URL changing; the wall is
     // keyed on the URL and scope, which is what the cache is keyed on too.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- The session's token can rotate without the URL changing; the wall is keyed on the URL and scope, which is what the cache is keyed on too
   }, [key]);
 
   return { clips, settled };

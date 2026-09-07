@@ -171,7 +171,7 @@ export function ShareJamSheet({
     // `t` is deliberately not a dependency: it changes identity when the
     // language does, and re-minting the link because somebody switched to
     // German would be a network call for a string.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` is deliberately not a dependency: it changes identity when the language does, and re-minting the link because somebody switched to German…
   }, [open, token, session, jamId, where]);
 
   useEffect(() => {

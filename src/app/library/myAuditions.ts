@@ -77,7 +77,7 @@ export function useMyAuditions(): { mine: Track[]; status: CollectorStatus | nul
       })
       .sort((a, b) => b.addedAt - a.addedAt);
     // passedVersion is not read here, but a change to it must recompute this.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- passedVersion is not read here, but a change to it must recompute this
   }, [forYou, status, isFavorite, passedVersion()]);
 
   return { mine, status };

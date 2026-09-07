@@ -69,7 +69,7 @@ export function JamLinkBridge() {
     // `t` is left out on purpose: it changes identity with the language, and
     // looking the link up again because somebody switched to German would be
     // a network round trip for a sentence nobody is reading yet.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` is left out on purpose: it changes identity with the language, and looking the link up again because somebody switched to German would be a…
   }, [code]);
 
   if (!code) return null;

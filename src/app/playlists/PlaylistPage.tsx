@@ -236,7 +236,6 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       settleAsked.current.add(k);
       settleWant(playlistId, k);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- landedKeys is the stable stand-in for the landed wants
   }, [playlistId, landedKeys, settleWant]);
 
   // The header's artwork: the list's first distinct covers, sized and deduped

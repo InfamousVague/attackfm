@@ -312,7 +312,7 @@ export function FilesOnDevice() {
     // alone keeps the tree from rebuilding on every render. `t` is here because
     // every label in the tree came out of it: without it the tree keeps the
     // language it was built in until the folder next changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- requestDelete is stable in spirit (setState + module calls); listing rows alone keeps the tree from rebuilding on every render. `t` is here…
   }, [rows, t]);
 
   /*
@@ -368,7 +368,7 @@ export function FilesOnDevice() {
           </IconButton>
         ),
       }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the rows and the language: requestDelete is rebuilt every render, and listing it would rebuild every row's delete button on every render of this pane
   }, [rows, t]);
 
   if (!isTauri() && !fixture) {
