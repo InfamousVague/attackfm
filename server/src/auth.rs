@@ -81,9 +81,7 @@ pub fn mint_stream_token(secret: &[u8], user_id: i64, epoch: i64) -> String {
 /// checked against the clock, and the epoch is checked against the account -
 /// so a token survives only while all three still agree.
 pub fn verify_stream_token(db: &Db, secret: &[u8], token: &str) -> Option<i64> {
-    let mut parts = token.rsplitn(2, '.');
-    let signature = parts.next()?;
-    let payload = parts.next()?;
+    let (payload, signature) = token.rsplit_once('.')?;
 
     let expected = sign(secret, payload);
     // Constant-time: a byte-by-byte early return would leak the signature one
@@ -202,9 +200,7 @@ pub fn verify_stream_token_cached(
 ) -> Option<i64> {
     // Signature and expiry first, unconditionally: a cache hit must never
     // outlive the token itself or bless bytes we did not sign.
-    let mut parts = token.rsplitn(2, '.');
-    let signature = parts.next()?;
-    let payload = parts.next()?;
+    let (payload, signature) = token.rsplit_once('.')?;
     if !constant_time_eq(signature.as_bytes(), sign(secret, payload).as_bytes()) {
         return None;
     }

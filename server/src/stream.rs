@@ -173,7 +173,7 @@ fn if_none_match(headers: &HeaderMap, candidates: &[&str]) -> bool {
         // Weak comparison is the right one for GET revalidation, and a cached
         // entity either is this content hash or is not.
         let entry = entry.strip_prefix("W/").unwrap_or(entry).trim_matches('"');
-        candidates.iter().any(|c| *c == entry)
+        candidates.contains(&entry)
     })
 }
 

@@ -55,6 +55,9 @@ pub struct AlbumGap {
     pub missing: Vec<MissingTrack>,
 }
 
+/// One album as the catalogue lists it: `(deezer id, title, cover url)`.
+type CatalogueAlbum = (u64, String, Option<String>);
+
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(12))
@@ -74,13 +77,13 @@ fn client() -> reqwest::Client {
 /// listener who owns all of the standard then hears "nothing missing" about
 /// an edition with a whole bonus disc.
 fn best_title_match<'a>(
-    catalogue: &'a [(u64, String, Option<String>)],
+    catalogue: &'a [CatalogueAlbum],
     want: &str,
-) -> Option<&'a (u64, String, Option<String>)> {
+) -> Option<&'a CatalogueAlbum> {
     if want.is_empty() {
         return None;
     }
-    let mut best: Option<(usize, &(u64, String, Option<String>))> = None;
+    let mut best: Option<(usize, &CatalogueAlbum)> = None;
     for entry in catalogue {
         let f = crate::discovery::fold(&entry.1);
         if f.is_empty() {
@@ -114,9 +117,9 @@ async fn deezer_search_albums(
     c: &reqwest::Client,
     artist: &str,
     album: &str,
-) -> Vec<(u64, String, Option<String>)> {
+) -> Vec<CatalogueAlbum> {
     let artist_fold = crate::discovery::fold(artist);
-    let mut out: Vec<(u64, String, Option<String>)> = Vec::new();
+    let mut out: Vec<CatalogueAlbum> = Vec::new();
     for q in [format!("artist:\"{artist}\" album:\"{album}\""), format!("{artist} {album}")] {
         let Ok(reply) = c
             .get("https://api.deezer.com/search/album")
@@ -151,7 +154,7 @@ async fn deezer_search_albums(
 }
 
 /// The artist's albums as the catalogue lists them: id, title, cover.
-async fn deezer_albums(c: &reqwest::Client, artist_id: u64) -> Vec<(u64, String, Option<String>)> {
+async fn deezer_albums(c: &reqwest::Client, artist_id: u64) -> Vec<CatalogueAlbum> {
     let Ok(reply) = c
         .get(format!("https://api.deezer.com/artist/{artist_id}/albums"))
         .query(&[("limit", "60")])
@@ -385,7 +388,7 @@ pub async fn tracks(
     // The artist's own catalogue page first - the cheap, usually-right path -
     // then a direct album search for the records that page does not list.
     let want = crate::discovery::fold(&album);
-    let mut hit: Option<(u64, String, Option<String>)> = None;
+    let mut hit: Option<CatalogueAlbum> = None;
     if let Some(artist_id) = crate::discovery::deezer_artist_id_public(&c, &artist).await {
         tokio::time::sleep(GAP).await;
         hit = best_title_match(&deezer_albums(&c, artist_id).await, &want).cloned();

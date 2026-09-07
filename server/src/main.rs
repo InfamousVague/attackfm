@@ -288,7 +288,9 @@ fn handle_cli_flags() {
     if args.first().map(String::as_str) == Some("--set-password") {
         set_password_cli(args.get(1).map(String::as_str));
     }
-    for arg in args {
+    // Every arm below ends in `std::process::exit`, so at most one argument is
+    // ever examined - a loop here only looked like it iterated.
+    if let Some(arg) = args.first() {
         match arg.as_str() {
             "-V" | "--version" => {
                 println!("attackfm-server {}", env!("CARGO_PKG_VERSION"));
@@ -1020,11 +1022,12 @@ async fn main() {
 /// Waits for whichever stop actually arrives.
 ///
 /// Only Ctrl-C was handled here, which meant the one signal this server really
-/// receives - systemd's SIGTERM on every `systemctl restart`, so every redeploy
-/// - was never caught. The default action for an unhandled SIGTERM is immediate
-/// termination, so each restart cut every in-flight audio body mid-byte. With
-/// it caught, axum stops accepting and lets the responses already on the wire
-/// finish (bounded by the unit's TimeoutStopSec) instead of dropping them.
+/// receives - systemd's SIGTERM on every `systemctl restart`, so every
+/// redeploy - was never caught. The default action for an unhandled SIGTERM is
+/// immediate termination, so each restart cut every in-flight audio body
+/// mid-byte. With it caught, axum stops accepting and lets the responses
+/// already on the wire finish (bounded by the unit's TimeoutStopSec) instead
+/// of dropping them.
 async fn shutdown_signal() {
     #[cfg(unix)]
     {

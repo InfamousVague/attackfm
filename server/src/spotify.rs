@@ -321,7 +321,7 @@ fn item_from_track(track: &serde_json::Value, added_at: i64, position: i64) -> d
 fn added_at_ms(item: &serde_json::Value) -> i64 {
     item.get("added_at")
         .and_then(|v| v.as_str())
-        .and_then(|s| chrono_ish(s))
+        .and_then(chrono_ish)
         .unwrap_or(0)
 }
 

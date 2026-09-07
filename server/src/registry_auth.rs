@@ -12,9 +12,10 @@
 //!   - otherwise → they need an invite to this server, checked with the
 //!     registry, and joining binds their registry id to a fresh local account.
 //!
-//! That last part is the whole point: an invited friend gets THEIR OWN user row
-//! - their own playlists, favourites and history - instead of landing inside the
-//! owner's account, which is what happened before any of this existed.
+//! That last part is the whole point: an invited friend gets THEIR OWN user
+//! row - their own playlists, favourites and history - instead of landing
+//! inside the owner's account, which is what happened before any of this
+//! existed.
 
 use crate::{auth, AppState};
 use afm_identity::Verifier2;

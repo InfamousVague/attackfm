@@ -609,6 +609,41 @@ pub fn spawn(state: Arc<AppState>) {
     });
 }
 
+async fn cycle(state: &Arc<AppState>) -> bool {
+    let due = state.db.spotify_mirrors_due(now_ms(), ENUMERATIONS_PER_CYCLE as i64);
+    let mut worked = false;
+    for (user_id, key) in due {
+        if sync_one(state, user_id, &key, false).await {
+            worked = true;
+        }
+    }
+
+    // Mirrors that are mid-flight still need their download window refilled and
+    // their playlist topped up as tracks land, without paying for a poll.
+    for user_id in state.db.spotify_users() {
+        for head in state.db.spotify_mirrors(user_id) {
+            if !head.watch || head.state == "synced" {
+                continue;
+            }
+            let has_room = head.queued < DOWNLOAD_WINDOW as i64;
+            // New files may satisfy an unresolved entry for free.
+            let library_moved = state.db.current_rev() > head.resolved_rev;
+            if !has_room && !library_moved {
+                continue;
+            }
+            if library_moved {
+                let _ = resolve_pass(state, user_id, &head.key).await;
+                let _ = materialize(state, user_id, &head.key);
+            }
+            if enqueue_missing(state, user_id, &head.key).await.unwrap_or(0) > 0 {
+                worked = true;
+            }
+            let _ = state.db.spotify_mirror_recount(user_id, &head.key);
+        }
+    }
+    worked
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,39 +781,4 @@ mod tests {
         assert!(split_key("playlist:").is_err());
         assert!(split_key("nonsense").is_err());
     }
-}
-
-async fn cycle(state: &Arc<AppState>) -> bool {
-    let due = state.db.spotify_mirrors_due(now_ms(), ENUMERATIONS_PER_CYCLE as i64);
-    let mut worked = false;
-    for (user_id, key) in due {
-        if sync_one(state, user_id, &key, false).await {
-            worked = true;
-        }
-    }
-
-    // Mirrors that are mid-flight still need their download window refilled and
-    // their playlist topped up as tracks land, without paying for a poll.
-    for user_id in state.db.spotify_users() {
-        for head in state.db.spotify_mirrors(user_id) {
-            if !head.watch || head.state == "synced" {
-                continue;
-            }
-            let has_room = head.queued < DOWNLOAD_WINDOW as i64;
-            // New files may satisfy an unresolved entry for free.
-            let library_moved = state.db.current_rev() > head.resolved_rev;
-            if !has_room && !library_moved {
-                continue;
-            }
-            if library_moved {
-                let _ = resolve_pass(state, user_id, &head.key).await;
-                let _ = materialize(state, user_id, &head.key);
-            }
-            if enqueue_missing(state, user_id, &head.key).await.unwrap_or(0) > 0 {
-                worked = true;
-            }
-            let _ = state.db.spotify_mirror_recount(user_id, &head.key);
-        }
-    }
-    worked
 }

@@ -9,6 +9,34 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
+// --- wide row tuples ---------------------------------------------------------
+//
+// A handful of reads answer with a tuple as wide as the SELECT that produced
+// it. Naming each one is what keeps `clippy::type_complexity` quiet, but the
+// real payoff is that the column order lives in one documented place instead of
+// being re-derived from the query every time somebody destructures it.
+
+/// One album this library holds by some artist: the album name as tagged, and
+/// `(title, track number)` for every track of it on disk.
+type AlbumWithTracks = (String, Vec<(String, Option<i64>)>);
+
+/// A playlist head off the union in [`Db::playlists`]: `(id, name, updated_at,
+/// description, folder, cover, auto_stem, owner_id, owner_name, role)`. Widened
+/// into a [`PlaylistRow`] once its track ids have been read.
+type PlaylistHeadRow = (i64, String, i64, String, String, String, i64, i64, String, String);
+
+/// One Subsonic album row: `(album_artist, album, year, songs, duration_ms,
+/// added_at, art_id, genre)`.
+type SubsonicAlbumRow = (String, String, Option<i64>, i64, i64, i64, String, String);
+
+/// A queued delegated pull: `(id, user_id, job_id, url, title, artist,
+/// created_at, ext_id, kind)`.
+type DelegatedPullRow = (i64, i64, String, String, String, String, i64, String, String);
+
+/// One playlist in a backup export: its name, and `(rel_path, title, artist,
+/// album)` per track, in playlist order.
+type ExportedPlaylist = (String, Vec<(String, String, String, String)>);
+
 /// The single connection, behind a mutex.
 ///
 /// One writer is the right shape for this: a music server's writes are the
@@ -1758,9 +1786,9 @@ fn comma_terms(raw: String) -> Vec<String> {
 ///
 /// "Listened to twice" cannot just mean two rows in `plays`: that table
 /// records a song STARTING, so a track skipped past every time it came up
-/// looks identical to one played through. Where the listen log has an opinion
-/// - a completion or an abandonment - it wins, and a song with nothing but
-/// abandonments is out however often it started. Where it has no opinion
+/// looks identical to one played through. Where the listen log has an
+/// opinion - a completion or an abandonment - it wins, and a song with nothing
+/// but abandonments is out however often it started. Where it has no opinion
 /// (history older than the log, or a client that never reported), the play
 /// count stands as it always did.
 pub fn hot_enough(r: &HotRow, min_plays: i64) -> bool {
@@ -2899,7 +2927,7 @@ impl Db {
     /// Grouped case-insensitively, because one album's worth of files is often
     /// tagged three slightly different ways, and an album split in two by its
     /// own capitalisation would read as two half-empty records.
-    pub fn albums_by_artist(&self, artist: &str) -> Vec<(String, Vec<(String, Option<i64>)>)> {
+    pub fn albums_by_artist(&self, artist: &str) -> Vec<AlbumWithTracks> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             // EITHER credit, because a record with a guest on two songs has
@@ -2920,7 +2948,7 @@ impl Db {
             })
             .map(|r| r.filter_map(Result::ok).collect())
             .unwrap_or_default();
-        let mut out: Vec<(String, Vec<(String, Option<i64>)>)> = Vec::new();
+        let mut out: Vec<AlbumWithTracks> = Vec::new();
         for (album, title, no) in rows {
             let key = album.trim().to_lowercase();
             match out.last_mut() {
@@ -3246,7 +3274,7 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        let heads: Vec<(i64, String, i64, String, String, String, i64, i64, String, String)> = stmt
+        let heads: Vec<PlaylistHeadRow> = stmt
             .query_map(params![user_id], |r| {
                 Ok((
                     r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?,
@@ -3697,7 +3725,6 @@ impl Db {
 
     // --- the listening log --------------------------------------------------
 
-    /// Appends one qualifying play.
     // --- the Subsonic door (subsonic.rs) ---------------------------------------
 
     pub fn subsonic_secret(&self, user_id: i64) -> Option<String> {
@@ -3841,7 +3868,7 @@ impl Db {
     /// (the track artist where none is tagged) and album, case-blind - with
     /// the numbers a Subsonic album row carries.
     /// (album_artist, album, year, songs, duration_ms, added_at, art_id, genre)
-    pub fn subsonic_albums(&self) -> Vec<(String, String, Option<i64>, i64, i64, i64, String, String)> {
+    pub fn subsonic_albums(&self) -> Vec<SubsonicAlbumRow> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT MAX(COALESCE(NULLIF(album_artist, ''), artist)) AS aa, MAX(album), MIN(year), COUNT(*),
@@ -3876,6 +3903,7 @@ impl Db {
             .unwrap_or_default()
     }
 
+    /// Appends one qualifying play.
     pub fn record_play(&self, user_id: i64, track_id: i64) -> rusqlite::Result<()> {
         self.lock().execute(
             "INSERT INTO plays (user_id, track_id, played_at) VALUES (?1, ?2, ?3)",
@@ -4351,11 +4379,11 @@ impl Db {
              VALUES (?1, ?2, ?3)",
             params![from, to, now_ms()],
         )?;
-        Ok(conn.query_row(
+        conn.query_row(
             "SELECT id FROM friend_requests WHERE from_user = ?1 AND to_user = ?2",
             params![from, to],
             |r| r.get(0),
-        )?)
+        )
     }
 
     /// A pending request by id: (from, to). None once it has been answered.
@@ -4846,8 +4874,7 @@ impl Db {
         // Chunked rather than one giant IN list: SQLite's variable limit is
         // 999 by default and a big playlist blows straight past it.
         for chunk in ext_ids.chunks(400) {
-            let holes = std::iter::repeat("?")
-                .take(chunk.len())
+            let holes = std::iter::repeat_n("?", chunk.len())
                 .collect::<Vec<_>>()
                 .join(",");
             let sql = format!(
@@ -4965,6 +4992,10 @@ impl Db {
 
     /// Create the mirror head if it is new, otherwise leave every field the
     /// sync engine owns alone and refresh only what the listing knows.
+    // Nine arguments because eight of them ARE the eight columns of the
+    // `spotify_mirrors` row this seeds. A struct would put a name in front of the
+    // same eight values and every caller would still fill them in one at a time.
+    #[allow(clippy::too_many_arguments)]
     pub fn spotify_mirror_seed(
         &self,
         user_id: i64,
@@ -5829,6 +5860,11 @@ impl Db {
         serde_json::from_str(&raw).ok()
     }
 
+    // The three profile layers plus the provenance the caller must state about
+    // them. Folding them into one struct would create a second shape for
+    // `SemanticProfile` to drift from, which is the thing this table exists to
+    // stop.
+    #[allow(clippy::too_many_arguments)]
     pub fn save_layered_profile(
         &self,
         track_id: i64,
@@ -5983,6 +6019,11 @@ impl Db {
         ).optional().ok().flatten().and_then(|raw| serde_json::from_str(&raw).ok())
     }
 
+    // Eighteen arguments, one per column of the `track_features` row the enricher
+    // writes. The width belongs to the table, not to this function; a parameter
+    // struct would be the same eighteen fields with an extra name to keep in step
+    // with the schema.
+    #[allow(clippy::too_many_arguments)]
     pub fn save_ai_enrichment(
         &self,
         track_id: i64,
@@ -7899,6 +7940,8 @@ impl Db {
     /// Records one opened result, bumping it to the top when it was already
     /// there - and prunes the tail past the newest forty while the write is
     /// here anyway, so the list can never grow without bound.
+    // Seven columns of one `search_recents` row, plus the user they belong to.
+    #[allow(clippy::too_many_arguments)]
     pub fn touch_recent(
         &self,
         user_id: i64,
@@ -7982,6 +8025,10 @@ impl Db {
             .unwrap_or_default()
     }
 
+    // One listen event's columns. The grouping clippy is asking for has already
+    // happened twice here - the four tags arrive as a tuple and the interaction
+    // counters as a `ListenShape` - and what is left is the event itself.
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_listen(
         &self,
         user_id: i64,
@@ -8293,10 +8340,6 @@ impl Db {
             .flatten()
     }
 
-    /// Records what the analyser measured, without disturbing the curator's
-    /// half of the row: an existing tempo always wins over the analyser's
-    /// (and keeps its bpm_source), a vector is never touched, and a fresh row
-    /// leaves checked_at at 0 so the enricher still gets its turn.
     // --- stems ------------------------------------------------------------
 
     /// Ask for a track's stems. Idempotent: a track already queued, running or
@@ -8538,8 +8581,7 @@ impl Db {
         if track_ids.is_empty() {
             return Vec::new();
         }
-        let marks = std::iter::repeat("?")
-            .take(track_ids.len())
+        let marks = std::iter::repeat_n("?", track_ids.len())
             .collect::<Vec<_>>()
             .join(",");
         let sql = format!(
@@ -8692,8 +8734,7 @@ impl Db {
         if track_ids.is_empty() {
             return Vec::new();
         }
-        let marks = std::iter::repeat("?")
-            .take(track_ids.len())
+        let marks = std::iter::repeat_n("?", track_ids.len())
             .collect::<Vec<_>>()
             .join(",");
         let sql = format!(
@@ -9693,6 +9734,13 @@ impl Db {
             .unwrap_or_default()
     }
 
+    /// Records what the analyser measured, without disturbing the curator's
+    /// half of the row: an existing tempo always wins over the analyser's
+    /// (and keeps its bpm_source), a vector is never touched, and a fresh row
+    /// leaves checked_at at 0 so the enricher still gets its turn.
+    // The analyser's seven measurements, the track they were taken from, and the
+    // fingerprint. One argument per column of the row this upserts.
+    #[allow(clippy::too_many_arguments)]
     pub fn save_audio_features(
         &self,
         track_id: i64,
@@ -9791,6 +9839,9 @@ impl Db {
 
     /// Remembers a pull the moment it is chosen. Err on a duplicate (user,
     /// ext_id) is the dedupe working, not a failure.
+    // Nine columns of one `curator_pulls` row plus its owner. Every caller builds
+    // these from a different source, so there is no natural struct to pass.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_pull(
         &self,
         user_id: i64,
@@ -10178,7 +10229,7 @@ impl Db {
     /// collector's own picks, 'import' for a member's delegated link).
     pub fn delegated_pulls(
         &self,
-    ) -> Vec<(i64, i64, String, String, String, String, i64, String, String)> {
+    ) -> Vec<DelegatedPullRow> {
         let conn = self.lock();
         let mut stmt = match conn.prepare(
             "SELECT id, user_id, job_id, url, title, artist, created_at, ext_id, kind
@@ -10808,7 +10859,7 @@ impl Db {
     pub fn export_playlists(
         &self,
         user_id: i64,
-    ) -> Vec<(String, Vec<(String, String, String, String)>)> {
+    ) -> Vec<ExportedPlaylist> {
         let conn = self.lock();
         let Ok(mut heads) =
             conn.prepare("SELECT id, name FROM playlists WHERE user_id = ?1 ORDER BY name")
@@ -12649,7 +12700,7 @@ mod wall_of_mine {
         let db = Db::open(&d.join("t.sqlite")).unwrap();
         let me = db.create_user("me", "x", true).unwrap();
         let other = db.create_user("other", "x", false).unwrap();
-        let mut add = |rel: &str, art: &str, kind: &str, owner: Option<i64>, promoted: bool| {
+        let add = |rel: &str, art: &str, kind: &str, owner: Option<i64>, promoted: bool| {
             db.lock()
                 .execute(
                     "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind,
@@ -12982,15 +13033,15 @@ mod listen_shape {
         ingest(&db, me, &[
             event(loved, now - 6 * day, 150_000, false),
             event(loved, now - 2 * day, 150_000, false),
-            event(loved, now - 1 * day, 150_000, false),
+            event(loved, now - day, 150_000, false),
             event(bailed, now - 3 * day, 12_000, true),
             event(bailed, now - 2 * day, 11_000, true),
-            event(once, now - 1 * day, 150_000, false),
+            event(once, now - day, 150_000, false),
             // Outside the window: does not count.
             event(once, now - 20 * day, 150_000, false),
         ]);
         // Somebody else returning to it is their taste, not mine.
-        ingest(&db, you, &[event(bailed, now - 2 * day, 150_000, false), event(bailed, now - 1 * day, 150_000, false)]);
+        ingest(&db, you, &[event(bailed, now - 2 * day, 150_000, false), event(bailed, now - day, 150_000, false)]);
 
         let mine = db.recent_repeats(me, now - 7 * day);
         assert_eq!(mine.get(&loved), Some(&3), "three returns in a week");

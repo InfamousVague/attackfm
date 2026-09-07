@@ -99,9 +99,9 @@ impl DlnaState {
 /// Asked of the routing table rather than by listing interfaces: connecting a
 /// UDP socket sends nothing, but it makes the kernel pick the interface it
 /// would really use to reach that address, and `local_addr` then reports it.
-/// That is the answer we want - the address on the network the speakers are on
-/// - and it costs one syscall with no packets and no guessing about which of
-/// `en0`, a VPN and a bridge is the real one.
+/// That is the answer we want - the address on the network the speakers are
+/// on - and it costs one syscall with no packets and no guessing about which
+/// of `en0`, a VPN and a bridge is the real one.
 async fn lan_address() -> Option<Ipv4Addr> {
     let sock = UdpSocket::bind(("0.0.0.0", 0)).await.ok()?;
     sock.connect(SSDP_ADDR).await.ok()?;

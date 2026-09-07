@@ -1235,7 +1235,7 @@ mod tests {
     fn caps_hold() {
         let many = format!(
             "[{}]",
-            std::iter::repeat(r#"{"t":"pre","g":1}"#).take(50).collect::<Vec<_>>().join(",")
+            std::iter::repeat_n(r#"{"t":"pre","g":1}"#, 50).collect::<Vec<_>>().join(",")
         );
         let chain = wire(&many).unwrap();
         // 16 nodes + the limiter.

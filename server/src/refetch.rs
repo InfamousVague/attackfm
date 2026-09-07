@@ -539,8 +539,7 @@ fn explain(stderr: &[u8]) -> String {
         .filter(|l| !l.is_empty())
         // tqdm bars, and the carriage-return redraws of one.
         .filter(|l| !l.contains('\u{2588}') && !l.contains("%|") && !l.starts_with("Progress:"))
-        .filter(|l| !l.starts_with("Downloading") && !l.starts_with("Searching"))
-        .next_back()
+        .rfind(|l| !l.starts_with("Downloading") && !l.starts_with("Searching"))
         .unwrap_or("");
     if line.is_empty() {
         "this provider did not have it".to_string()

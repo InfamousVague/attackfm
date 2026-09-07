@@ -376,11 +376,6 @@ pub async fn scan_now(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
     Ok(Json(json!({ "started": true })))
 }
 
-/// The volume the music lives on, asked of `df` - dependency-free, and the
-/// server already shells out for heavier things (ffmpeg, the importer). POSIX
-/// `-kP` output is two lines: a header, then
-/// `filesystem 1024-blocks used available capacity mount`. Best-effort: a
-/// container without `df` just reports no disk numbers rather than an error.
 /*
  * How hard the box is working, for the Server pane.
  *
@@ -473,6 +468,11 @@ fn memory() -> Option<(i64, i64)> {
     None
 }
 
+/// The volume the music lives on, asked of `df` - dependency-free, and the
+/// server already shells out for heavier things (ffmpeg, the importer). POSIX
+/// `-kP` output is two lines: a header, then
+/// `filesystem 1024-blocks used available capacity mount`. Best-effort: a
+/// container without `df` just reports no disk numbers rather than an error.
 fn disk_space(path: &std::path::Path) -> Option<(i64, i64)> {
     let out = std::process::Command::new("df")
         .arg("-kP")

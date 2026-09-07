@@ -409,7 +409,7 @@ impl Jam {
         // once this one has been quiet a while, or if it is the one now playing
         // while the clock device reports nothing of the sort.
         let other_device = !self.clock_device.is_empty() && self.clock_device != body.device_id;
-        if other_device && now - self.clock_at < CLOCK_HANDOVER_MS && !(body.playing && !self.playing) {
+        if other_device && now - self.clock_at < CLOCK_HANDOVER_MS && (self.playing || !body.playing) {
             return json!({ "ok": true, "additions": [], "additionsNext": [], "commands": [], "clock": false });
         }
         self.clock_device = body.device_id;

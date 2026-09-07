@@ -293,7 +293,7 @@ impl Owned {
         let candidates = self.by_song.get(&format!("{}\u{1}{}", fold(&s.title), fold(&s.artist)))?;
         candidates
             .iter()
-            .find(|(_, d)| s.duration_ms <= 0 || d.map_or(true, |d| (d - s.duration_ms).abs() <= 3000))
+            .find(|(_, d)| s.duration_ms <= 0 || d.is_none_or(|d| (d - s.duration_ms).abs() <= 3000))
             .map(|(id, _)| *id)
     }
 }

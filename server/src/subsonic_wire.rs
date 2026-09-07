@@ -14,6 +14,14 @@ pub const API_VERSION: &str = "1.16.1";
 pub const SERVER_TYPE: &str = "AttackFM";
 
 /// The protocol's error codes, by name.
+///
+/// The whole table, not just the codes this server currently sends. The
+/// discriminants ARE the numbers that go on the wire, and a partial list is a
+/// list nobody can check against the spec - `20`, `30` and `60` are as much a
+/// part of the contract as the five we do emit, and are what a future
+/// version-negotiation or licence answer would use. Complete on purpose;
+/// `dead_code` is allowed here for exactly that reason and nothing else.
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub enum SubsonicError {
     Generic = 0,

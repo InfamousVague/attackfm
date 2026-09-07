@@ -756,11 +756,13 @@ mod empty_scan_guard {
 
         // A library holding one track whose file is NOT on disk - the exact
         // shape an unmounted drive presents to the walk.
-        let mut track = crate::db::ScannedTrack::default();
-        track.rel_path = "Artist/Album/song.flac".to_string();
-        track.title = "Song".to_string();
-        track.artist = "Artist".to_string();
-        track.album = "Album".to_string();
+        let track = crate::db::ScannedTrack {
+            rel_path: "Artist/Album/song.flac".to_string(),
+            title: "Song".to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            ..Default::default()
+        };
         db.upsert_track(&track, 1).unwrap();
         assert_eq!(db.live_track_count(), 1, "setup: the track should be live");
 
@@ -942,14 +944,16 @@ mod missing_art_is_refetched {
 
         // Indexed, unchanged on disk, and claiming a cover that is NOT cached -
         // exactly the state a database-only restore leaves behind.
-        let mut track = crate::db::ScannedTrack::default();
-        track.rel_path = rel.to_string();
-        track.title = "Song".into();
-        track.artist = "Artist".into();
-        track.album = "Album".into();
-        track.mtime = mtime;
-        track.size_bytes = meta.len() as i64;
-        track.art_id = Some("aCoverThatIsGone".into());
+        let track = crate::db::ScannedTrack {
+            rel_path: rel.to_string(),
+            title: "Song".into(),
+            artist: "Artist".into(),
+            album: "Album".into(),
+            mtime,
+            size_bytes: meta.len() as i64,
+            art_id: Some("aCoverThatIsGone".into()),
+            ..Default::default()
+        };
         db.upsert_track(&track, 1).unwrap();
 
         let fp = db.scan_fingerprints();

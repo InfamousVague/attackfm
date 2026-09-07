@@ -116,7 +116,7 @@ pub(crate) fn free_bytes(path: &std::path::Path) -> Option<u64> {
                 return None;
             }
             // f_bavail: blocks an unprivileged process may actually use.
-            Some(stat.f_bavail as u64 * stat.f_frsize as u64)
+            Some(stat.f_bavail as u64 * stat.f_frsize)
         }
     }
     #[cfg(not(unix))]

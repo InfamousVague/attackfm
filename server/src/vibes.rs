@@ -16,6 +16,18 @@
 //! behind the reply - by request, "pre-fetch each of the vibes and re-fetch
 //! whenever we use them up".
 
+// The banking path the header above parks is unreferenced BY DESIGN, and this
+// is the one attribute that says so. It covers exactly eight items - STALE_MS, building,
+// claim, release, take, rebuild, rebuild_for_seed and cycle - which are the
+// whole retired path and thread through the module rather than sitting in one
+// block, so a narrower attribute would mean eight copies of this paragraph.
+// The rest of the file is LIVE (key_for_seed, new_music_ids,
+// build_charts_reply and build_new_music_reply all have callers in dj.rs and
+// chartlists.rs). If a reviewer finds a NINTH dead item here, it is a mistake
+// this attribute hid, not more parked work: check it against the header above
+// and against curator.rs's own note at the retired call site.
+#![allow(dead_code)]
+
 use crate::AppState;
 use serde_json::Value;
 use std::collections::HashSet;

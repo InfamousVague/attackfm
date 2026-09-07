@@ -623,8 +623,8 @@ async fn handle(state: &AppState, user: &crate::db::User, method: &str, p: &Para
             let artist_offset = p.i64("artistOffset").unwrap_or(0).max(0) as usize;
             let album_count = p.i64("albumCount").unwrap_or(20).clamp(0, 500) as usize;
             let album_offset = p.i64("albumOffset").unwrap_or(0).max(0) as usize;
-            let song_count = p.i64("songCount").unwrap_or(20).clamp(0, 500) as i64;
-            let song_offset = p.i64("songOffset").unwrap_or(0).max(0) as i64;
+            let song_count = p.i64("songCount").unwrap_or(20).clamp(0, 500);
+            let song_offset = p.i64("songOffset").unwrap_or(0).max(0);
             let ix = index(state);
             let person = me();
             let (artists, albums, songs): (Vec<Value>, Vec<Value>, Vec<Value>) = if q.is_empty() || q == "*" {
@@ -889,7 +889,11 @@ async fn handle(state: &AppState, user: &crate::db::User, method: &str, p: &Para
             Ok(wire::ok(Some((key, v))))
         }
         "getAlbumInfo" | "getAlbumInfo2" => {
-            let key = if method == "getAlbumInfo2" { "albumInfo" } else { "albumInfo" };
+            // Both spellings answer with an `albumInfo` element - unlike
+            // getArtistInfo2 above, the Subsonic spec does NOT rename this one
+            // to `albumInfo2`. The branch that used to be here had identical
+            // arms and said nothing; this comment says it instead.
+            let key = "albumInfo";
             Ok(wire::ok(Some((key, json!({})))))
         }
         "getTopSongs" => {
@@ -932,7 +936,11 @@ fn user_json(user: &crate::db::User) -> Value {
 }
 
 fn playlist_json(state: &AppState, pl: &crate::db::PlaylistRow, with_entries: bool, person: Option<&Person>) -> Value {
-    let rows = if with_entries || true { tracks_by_ids(state, &pl.tracks) } else { Vec::new() };
+    // Always resolved, even when the caller did not ask for entries: the
+    // summary fields below (duration, and the cover art taken from the first
+    // track) are computed from the rows too. This was written `if with_entries
+    // || true` and clippy is right that the condition never mattered.
+    let rows = tracks_by_ids(state, &pl.tracks);
     let duration: i64 = rows.iter().map(|(t, _)| t.duration.unwrap_or(0.0).round() as i64).sum();
     let mut v = json!({
         "id": pl.id.to_string(),

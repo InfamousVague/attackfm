@@ -275,10 +275,12 @@ mod reconcile_tests {
         let user = db.create_user("stem-test", "x", true).unwrap();
         assert!(user > 0);
 
-        let mut track = crate::db::ScannedTrack::default();
-        track.rel_path = "A/B/song.flac".to_string();
-        track.title = "Song".to_string();
-        track.artist = "A".to_string();
+        let track = crate::db::ScannedTrack {
+            rel_path: "A/B/song.flac".to_string(),
+            title: "Song".to_string(),
+            artist: "A".to_string(),
+            ..Default::default()
+        };
         db.upsert_track(&track, 1).unwrap();
         assert!(db.all_stem_paths().is_empty(), "setup: no stems indexed");
 
@@ -1440,7 +1442,10 @@ mod block_tests {
         // ask for a number that puts that past what a phone will give it.
         let resident = MAX_BLOCK * 44_100.0 * 2.0 * 4.0 * 6.0 * 2.0;
         assert!(resident < 220_000_000.0, "two block-sets is {resident} bytes");
-        assert!(MIN_BLOCK > 0.0 && MIN_BLOCK < MAX_BLOCK);
+        // Ordering of the two bounds is a property of the constants, so it is
+        // checked where they are defined - at compile time - rather than only
+        // when this test happens to run.
+        const _: () = assert!(MIN_BLOCK > 0.0 && MIN_BLOCK < MAX_BLOCK);
     }
 }
 

@@ -1126,7 +1126,7 @@ async fn run_job(
                     let newest = files
                         .iter()
                         .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
-                        .last();
+                        .next_back();
                     manager
                         .update(id, |j| {
                             j.completed = count;
@@ -1295,7 +1295,7 @@ async fn run_job(
         return Ok((0, Vec::new(), Vec::new(), skipped, owned));
     }
 
-    let reason = failure_reason(&*stderr_diag.lock().await, &*stderr_tail.lock().await);
+    let reason = failure_reason(&stderr_diag.lock().await, &stderr_tail.lock().await);
     // Keep the reason on its own line: it is usually several provider errors, and
     // running it onto the end of a sentence is what made these unreadable.
     let detail = if reason.is_empty() {
@@ -1417,7 +1417,7 @@ fn failure_reason(diag: &[String], tail: &[String]) -> String {
             .map(|(i, _)| i)
             .unwrap_or(text.len());
         text.truncate(cut);
-        text.push_str("\u{2026}");
+        text.push('\u{2026}');
     }
     match out_of_date_hint(&text) {
         Some(hint) if text.is_empty() => hint.to_string(),
@@ -1551,7 +1551,7 @@ pub(crate) async fn land_delegated(state: &Arc<AppState>, job_id: &str, track_id
             j.state = "done".to_string();
             j.error = None;
             j.completed = n;
-            if j.total.map_or(true, |t| t < n) {
+            if j.total.is_none_or(|t| t < n) {
                 j.total = Some(n);
             }
             j.current_track = None;

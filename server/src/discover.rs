@@ -309,37 +309,6 @@ async fn build_suggestions() -> Vec<Suggestion> {
     out
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Hits the live Deezer API - run explicitly with `--ignored`.
-    #[tokio::test]
-    #[ignore]
-    async fn deezer_genre_returns_importable_albums() {
-        let client = reqwest::Client::new();
-        let albums = build_deezer_genre(&client, 132, "Pop").await;
-        assert!(albums.len() >= 5, "expected several albums, got {}", albums.len());
-        for a in &albums {
-            assert_eq!(a.source, "deezer");
-            assert_eq!(a.kind, "album");
-            assert!(a.url.contains("deezer.com/album/"), "bad url: {}", a.url);
-            assert!(!a.title.is_empty());
-        }
-        eprintln!("Pop: {} albums, e.g. {} — {}", albums.len(), albums[0].title, albums[0].blurb);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn full_build_is_ten_x() {
-        let all = build_suggestions().await;
-        let deezer = all.iter().filter(|s| s.source == "deezer").count();
-        let spotify = all.iter().filter(|s| s.source == "spotify").count();
-        eprintln!("total {}: spotify {}, deezer {}", all.len(), spotify, deezer);
-        assert!(all.len() >= 200, "expected 10x content, got {}", all.len());
-    }
-}
-
 /// `GET /api/discover` - the suggested playlists, cached a day and refreshed
 /// in the background so a caller never waits on the embed round-trips.
 pub async fn feed(
@@ -381,4 +350,35 @@ pub async fn feed(
         });
     }
     Ok(Json(json!({ "suggestions": cached })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Hits the live Deezer API - run explicitly with `--ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn deezer_genre_returns_importable_albums() {
+        let client = reqwest::Client::new();
+        let albums = build_deezer_genre(&client, 132, "Pop").await;
+        assert!(albums.len() >= 5, "expected several albums, got {}", albums.len());
+        for a in &albums {
+            assert_eq!(a.source, "deezer");
+            assert_eq!(a.kind, "album");
+            assert!(a.url.contains("deezer.com/album/"), "bad url: {}", a.url);
+            assert!(!a.title.is_empty());
+        }
+        eprintln!("Pop: {} albums, e.g. {} — {}", albums.len(), albums[0].title, albums[0].blurb);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn full_build_is_ten_x() {
+        let all = build_suggestions().await;
+        let deezer = all.iter().filter(|s| s.source == "deezer").count();
+        let spotify = all.iter().filter(|s| s.source == "spotify").count();
+        eprintln!("total {}: spotify {}, deezer {}", all.len(), spotify, deezer);
+        assert!(all.len() >= 200, "expected 10x content, got {}", all.len());
+    }
 }
