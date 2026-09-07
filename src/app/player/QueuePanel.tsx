@@ -445,8 +445,10 @@ export function QueuePanel({
                         <span className="queueRow__title">{p.track.title}</span>
                         <span className="queueRow__artist">
                           <ArtistLink artist={p.track.artist} beforeOpen={onClose} />
-                          {credit}
                         </span>
+                        {/* Its own line, not a tail on the artist's: that span
+                            ellipsises, and a long artist name ate the pill. */}
+                        {credit}
                       </div>
                       {/* Your own ask, taken back before the host's player
                           picks it up. Gone here at once; the hub is told. */}

@@ -122,6 +122,11 @@ export interface JamsFeed {
    *  gets them in its beat reply instead). Top-level on the wire, beside
    *  `additions`; absent from an older hub. */
   commands: JamCommand[];
+  /** The members' sends the hub drained into THIS poll - only to a host
+   *  whose clock has gone quiet (a beating host gets them in its beat
+   *  reply). Top-level, beside commands; absent from an older hub. */
+  additions: number[];
+  additionsNext: number[];
 }
 
 export async function fetchJams(session: ServerSession): Promise<JamsFeed> {
@@ -134,6 +139,8 @@ export async function fetchJams(session: ServerSession): Promise<JamsFeed> {
     nearby: (Array.isArray(out.nearby) ? out.nearby : []).map((r) => ({ ...r, nearby: true })),
     invites: (out.invites ?? []).map((i) => ({ ...i, kind: i.kind === 'jam' ? 'jam' : 'along' })),
     commands: Array.isArray(out.commands) ? out.commands : [],
+    additions: Array.isArray(out.additions) ? out.additions.filter((n): n is number => typeof n === 'number') : [],
+    additionsNext: Array.isArray(out.additionsNext) ? out.additionsNext.filter((n): n is number => typeof n === 'number') : [],
   };
 }
 

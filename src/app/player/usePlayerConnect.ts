@@ -357,7 +357,9 @@ export function usePlayerConnect({
       const queued = new Set(now.queue.map((t: Track) => trackIdFromPath(t.path)));
       // A song asked for twice in one reply keeps its first ask of each
       // kind; asked for both ways, "next" is the ask that wins.
-      const front = additionsNext.filter((aid, i) => !queued.has(aid) && additionsNext.indexOf(aid) === i);
+      // A "next" for a song ALREADY in the line is a move, not a no-op - so
+      // the front list keeps queued ids; the row loop below pulls them up.
+      const front = additionsNext.filter((aid, i) => additionsNext.indexOf(aid) === i);
       const back = additions.filter(
         (aid, i) => !queued.has(aid) && additions.indexOf(aid) === i && !front.includes(aid),
       );
@@ -369,13 +371,27 @@ export function usePlayerConnect({
         const have = new Set(deck.queue.map((t: Track) => trackIdFromPath(t.path)));
         const soon: Track[] = [];
         const later: Track[] = [];
+        const moved = new Set<string>();
+        const curId = deck.track ? trackIdFromPath(deck.track.path) : null;
         rows.forEach((row, i) => {
           const aid = wanted[i]!;
           if (row === null) {
             recordDiag('jam', `a member sent #${aid}, which neither this library nor the hub has`);
             return;
           }
-          if (!row || have.has(aid)) return;
+          if (!row) return;
+          if (i < front.length && have.has(aid)) {
+            // Already in the line: pull it up behind the song on (the song on
+            // itself has nowhere to go). The row that is already queued is
+            // the one that moves, so nothing about it is re-resolved.
+            if (aid === curId) return;
+            const standing = deck.queue.find((t: Track) => trackIdFromPath(t.path) === aid);
+            if (!standing) return;
+            moved.add(standing.path);
+            soon.push(standing);
+            return;
+          }
+          if (have.has(aid)) return;
           have.add(aid);
           (i < front.length ? soon : later).push(row);
         });
@@ -386,9 +402,10 @@ export function usePlayerConnect({
         // after); the front when nothing is on at all - what plays first
         // once the host presses play.
         const cur = deck.track;
-        const after = cur ? deck.queue.findIndex((t: Track) => t.path === cur.path) + 1 : 0;
-        const at = !cur ? 0 : after === 0 ? deck.queue.length : after;
-        deck.onQueueChange?.([...deck.queue.slice(0, at), ...soon, ...deck.queue.slice(at), ...later]);
+        const line = moved.size ? deck.queue.filter((t: Track) => !moved.has(t.path)) : deck.queue;
+        const after = cur ? line.findIndex((t: Track) => t.path === cur.path) + 1 : 0;
+        const at = !cur ? 0 : after === 0 ? line.length : after;
+        deck.onQueueChange?.([...line.slice(0, at), ...soon, ...line.slice(at), ...later]);
       });
     };
     beat();

@@ -337,6 +337,11 @@ export function JamProvider({ children }: { children: ReactNode }) {
   // Commands the host's own POLL carried (the hub drains them there only when
   // the host's clock has gone quiet); handed to the next beat to apply.
   const polledCommands = useRef<JamCommand[]>([]);
+  // ... and the members' SENDS it carried the same way. The skeptic proved
+  // a send made while the host's beats were not reaching the hub was lost:
+  // the hub drained it into the poll reply and the client threw it away.
+  const polledAdditions = useRef<number[]>([]);
+  const polledNext = useRef<number[]>([]);
 
   const refresh = useCallback(async () => {
     if (!session) {
@@ -379,6 +384,10 @@ export function JamProvider({ children }: { children: ReactNode }) {
       // The hub hands them at the TOP of the feed (beside additions), not on
       // the room - read both, so an older shape is not silently dropped.
       const handed = [...feed.commands, ...(room?.commands ?? [])];
+      if (room && isHost(room, session.username)) {
+        if (feed.additions.length) polledAdditions.current.push(...feed.additions);
+        if (feed.additionsNext.length) polledNext.current.push(...feed.additionsNext);
+      }
       if (room && handed.length > 0 && isHost(room, session.username)) {
         polledCommands.current.push(...handed);
       }
@@ -862,16 +871,21 @@ export function JamProvider({ children }: { children: ReactNode }) {
       // Whatever the poll carried while the player was quiet goes first: it
       // was asked for earlier than anything this beat brings back.
       const carried = polledCommands.current.splice(0);
+      const carriedAdds = polledAdditions.current.splice(0);
+      const carriedNext = polledNext.current.splice(0);
       try {
         const { pushJamState } = await import('../server.ts');
         const reply = await pushJamState(session, jam.id, state);
         return {
-          additions: reply.additions,
-          additionsNext: reply.additionsNext,
+          additions: [...carriedAdds, ...reply.additions],
+          additionsNext: [...carriedNext, ...reply.additionsNext],
           commands: [...carried, ...reply.commands],
         };
       } catch {
-        // The room may have ended under us; the next poll notices.
+        // The room may have ended under us; the next poll notices. What the
+        // poll carried is not lost with the beat: it goes back on the shelf.
+        polledAdditions.current.unshift(...carriedAdds);
+        polledNext.current.unshift(...carriedNext);
         return { additions: [], additionsNext: [], commands: carried };
       }
     },

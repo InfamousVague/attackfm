@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.132
+
+- In a groove you can "Play next" as well as add: your song lands right after
+  the one that is on, in the order people asked, and the waiting list shows
+  which sends are next. Play next on a song already in the line moves it up.
+  The album menu and the multi-select bar say the same.
+- A send made while the host's player had gone quiet is no longer lost.
+
 ## 0.5.131
 
 - When someone on your network starts a groove, a drawer asks if you'd like

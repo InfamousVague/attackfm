@@ -413,3 +413,13 @@
   gap: var(--glacier-space-3);
   min-block-size: 2.75rem;
 }
+
+/* A pending row's credit stands on its own line under the artist: inside the
+   artist span it shared that span's ellipsis, and a long name clipped it
+   away on a phone. */
+.queueRow__meta > .queueRow__credit--pending {
+  display: inline-flex;
+  align-self: flex-start;
+  max-inline-size: 100%;
+  margin-block-start: 2px;
+}

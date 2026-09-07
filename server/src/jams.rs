@@ -286,12 +286,28 @@ impl Jam {
     /// asked either way, so the room reads "Kayla wanted this" even when the
     /// host already had it lined up.
     fn ask(&mut self, who: &Member, track_id: i64, next: bool, now: i64) -> Result<(), ApiError> {
-        if !self.queue.contains(&track_id) && !self.additions.iter().any(|a| a.track_id == track_id) {
-            if self.additions.len() >= ADDITIONS_CAP {
-                return Err((StatusCode::TOO_MANY_REQUESTS, "the groove's queue is full for now".into()));
+        // Asked again while still waiting: a plain ask changes nothing, a NEXT
+        // ask promotes the waiting row (the skeptic's "Play next on a song I
+        // already sent does nothing and lies").
+        if let Some(waiting) = self.additions.iter_mut().find(|a| a.track_id == track_id) {
+            if next && !waiting.next {
+                waiting.next = true;
+                waiting.at = now;
             }
-            self.additions.push(Addition { track_id, by_id: who.id, by: who.name.clone(), at: now, next });
+            self.added_by.insert(track_id, who.name.clone());
+            return Ok(());
         }
+        // Already in the host's line: a plain ask is a no-op (it is coming),
+        // a NEXT ask is a MOVE - handed to the host like any next-send, whose
+        // deck pulls the song up behind the one on.
+        if self.queue.contains(&track_id) && !next {
+            self.added_by.insert(track_id, who.name.clone());
+            return Ok(());
+        }
+        if self.additions.len() >= ADDITIONS_CAP {
+            return Err((StatusCode::TOO_MANY_REQUESTS, "the groove's queue is full for now".into()));
+        }
+        self.additions.push(Addition { track_id, by_id: who.id, by: who.name.clone(), at: now, next });
         self.added_by.insert(track_id, who.name.clone());
         Ok(())
     }
@@ -1363,6 +1379,36 @@ mod tests {
         let err = jam.ask(&ana, 5_000, false, 99).unwrap_err();
         assert_eq!(err.0, StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(err.1, "the groove's queue is full for now");
+    }
+
+    #[test]
+    fn a_next_re_ask_promotes_a_waiting_plain_row() {
+        let mut jam = room();
+        let ana = person(2, "ana");
+        jam.ask(&ana, 200, false, 1_000).unwrap();
+        // "Add", then "Play next" on the same song: the waiting row is
+        // promoted, not duplicated, not ignored.
+        jam.ask(&ana, 200, true, 2_000).unwrap();
+        let j = jam.to_json();
+        let pending = j["pending"].as_array().unwrap();
+        assert_eq!(pending.len(), 1, "{pending:?}");
+        assert_eq!(pending[0]["next"], json!(true));
+        let (adds, next) = jam.drain();
+        assert_eq!((adds, next), (vec![], vec![200]));
+    }
+
+    #[test]
+    fn a_next_ask_for_a_song_already_in_the_line_is_handed_as_a_move() {
+        let mut jam = room();
+        let ana = person(2, "ana");
+        jam.queue = vec![100, 200, 300];
+        // A plain ask for a song that is coming anyway waits for nothing.
+        jam.ask(&ana, 300, false, 1_000).unwrap();
+        assert!(jam.additions.is_empty());
+        // A NEXT ask for it is a move: handed to the host as a next-send.
+        jam.ask(&ana, 300, true, 2_000).unwrap();
+        let (adds, next) = jam.drain();
+        assert_eq!((adds, next), (vec![], vec![300]));
     }
 
     #[test]
