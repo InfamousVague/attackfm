@@ -121,11 +121,14 @@ export function rememberLocale(locale: Locale): void {
  * So this is kept for two smaller reasons rather than the big one:
  *
  *   - the non-OTA builds DO split, and pay only for the language in use;
- *   - the seam is where it belongs. At 32KB for eight catalogues the inlining
- *     costs nothing worth discussing, but these grow with every string that
- *     gets translated, and the day eight of them is real weight the fix is to
- *     serve them from the hub (`/api/i18n/{locale}.json`) - which is an edit
- *     to loadLocale and nothing else, because every caller already awaits it.
+ *   - the seam is where it belongs, and it is now load-bearing. Measured with
+ *     the catalogues full: 1.9 MB of JSON across eight languages takes app.js
+ *     from 7.27 MB to 8.59 MB, which is +8% GZIPPED (3.78 -> 4.09 MB) because
+ *     UI strings compress extremely well. That is a fair price for an app
+ *     somebody can read, so they stay inlined. If it ever stops being fair,
+ *     the fix is to serve them from the hub (`/api/i18n/{locale}.json`) - an
+ *     edit to loadLocale and nothing else, because every caller already
+ *     awaits it.
  *
  * What must NOT happen is somebody "simplifying" these into eight static
  * imports at the top of the file. That is the same bytes today and forecloses
