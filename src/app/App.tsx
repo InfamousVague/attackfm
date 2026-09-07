@@ -44,6 +44,7 @@ import { SharedPlaylistBridge } from './playlists/SharedPlaylistBridge.tsx';
 import { JamLinkBridge } from './player/JamLinkBridge.tsx';
 import { JoinGrooveSheet } from './player/JoinGrooveSheet.tsx';
 import { GrooveHearSheet } from './player/GrooveHearSheet.tsx';
+import { NearbyGrooveSheet } from './player/NearbyGrooveSheet.tsx';
 import { FriendPicker } from './profile/FriendPicker.tsx';
 import { NewPlaylistSheet } from './playlists/NewPlaylistSheet.tsx';
 import { ProfileLinkBridge } from './profile/ProfileLinkBridge.tsx';
@@ -971,6 +972,11 @@ export function App() {
                 plays - hoisted here for the same reason: the join that asks
                 it can come from anywhere, and the landing waits on the answer. */}
             <GrooveHearSheet />
+            {/* "Leo started a groove nearby" - the offer to join a room on
+                this network, raised by the provider's poll once per room. Up
+                here because the poll does not care what page is up, and Join
+                hands on to the sheet above. */}
+            <NearbyGrooveSheet />
             {/* The friend picker and the New-playlist sheet, hoisted for the
                 same reason again: their seats are popovers, drawers and
                 menus, and a sheet inside one of those dies with it. */}

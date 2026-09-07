@@ -2,7 +2,7 @@ import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { HomeStatsCards } from '../library/HomeStatsCards.tsx';
 import { ShareProfileSheet } from './ShareProfile.tsx';
 import { Button, ContextMenu, Heading, IconButton, MenuItem, Text } from '@glacier/react';
-import { Camera, Copy, Crop, ImagePlus, LogOut, Trash2, Users } from '@glacier/icons';
+import { Camera, Copy, Crop, ImagePlus, LogOut, Trash2, Users, Wifi } from '@glacier/icons';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { MenuStop } from '../ux/MenuStop.tsx';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -113,7 +113,9 @@ function LiveNow() {
   const trackOf = (trackId: number | null) =>
     trackId != null ? (tracks.find((t) => t.path === remotePath(trackId)) ?? null) : null;
 
-  const liveRooms = jam.friendJams.filter((room) => room.id !== jam.current?.id);
+  // Friends' rooms, and the nearby ones hosted by people who are not friends
+  // (the provider keeps the room this listener is in out of the list).
+  const liveRooms = jam.liveJams;
   const currentTrack = jam.current ? trackOf(jam.current.trackId) : null;
   if (!session) return null;
 
@@ -222,8 +224,9 @@ function LiveNow() {
             </div>
           )}
 
-          {/* Friends' rooms: cards you can walk into, each wearing its host and
-              whatever is on in there. */}
+          {/* Friends' and nearby rooms: cards you can walk into, each wearing
+              its host and whatever is on in there - and the network mark when
+              the host is on yours. */}
           {liveRooms.length > 0 && (
             <div className="jamRooms">
               {liveRooms.map((room) => {
@@ -242,9 +245,15 @@ function LiveNow() {
                     </span>
                     <span className="jamRoom__name">{room.hostName}</span>
                     <span className="jamRoom__meta">
-                      {playing ? playing.title : 'Listening'}
+                      {playing ? playing.title : (room.trackTitle ?? 'Listening')}
                       {` · ${room.memberCount} inside`}
                     </span>
+                    {room.nearby && (
+                      <span className="jamNearby" title="On your network">
+                        <Wifi size={11} aria-hidden />
+                        <span>on your network</span>
+                      </span>
+                    )}
                     <Button variant="solid" size="sm" onClick={() => void jam.join(room.id)}>
                       Join
                     </Button>

@@ -85,6 +85,11 @@ export interface Jam {
   /** This device's clock when this arrived - stamped by the provider, so a
    *  follower can add the time since without any cross-machine skew. */
   receivedAt?: number;
+  /** The host is on THIS caller's network - the hub compared the addresses
+   *  it saw them both arrive from (the same one, or the same private /24).
+   *  The addresses themselves never leave the hub. Absent from an older hub,
+   *  which is read as false. */
+  nearby?: boolean;
 }
 
 /** A friend has asked you into a room. `kind` is the direction:
@@ -102,6 +107,11 @@ export interface JamsFeed {
   current: Jam | null;
   /** Jams your friends are hosting that you could join. */
   friends: Jam[];
+  /** Rooms you are NOT in whose host is on your network - a friend's or
+   *  not (a hub is already a circle: "someone on the same network" is the
+   *  whole test). Each is flagged `nearby: true`. A friend's room can stand
+   *  in both lists. Absent from an older hub, which is read as none. */
+  nearby: Jam[];
   /** People asking to listen along with you, waiting to be answered. */
   invites: JamInvite[];
   /** The members' transport presses the hub handed THIS poll - only to the
@@ -115,7 +125,10 @@ export async function fetchJams(session: ServerSession): Promise<JamsFeed> {
   const out = await request<Partial<JamsFeed>>(session.url, '/api/jams', { token: session.token });
   return {
     current: out.current ?? null,
-    friends: out.friends ?? [],
+    friends: (out.friends ?? []).map((r) => ({ ...r, nearby: r.nearby === true })),
+    // The list IS the flag: a room the hub put here is on this network,
+    // whether or not it remembered to say so on the row.
+    nearby: (Array.isArray(out.nearby) ? out.nearby : []).map((r) => ({ ...r, nearby: true })),
     invites: (out.invites ?? []).map((i) => ({ ...i, kind: i.kind === 'jam' ? 'jam' : 'along' })),
     commands: Array.isArray(out.commands) ? out.commands : [],
   };

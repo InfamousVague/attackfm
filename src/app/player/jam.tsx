@@ -109,6 +109,39 @@ function writeHearMap(map: Record<string, HearMode>): void {
   }
 }
 
+/** Nearby rooms this device has already been offered, `{[roomId]: at}`.
+ *  Client-only. A room is offered ONCE per device: answered or not, put down
+ *  or joined, it is never raised again - only a NEW room (a new id, after
+ *  this one ended) is. */
+const NEARBY_SEEN_KEY = 'attackfm-groove-nearby-seen';
+/** Entries older than this that no longer stand in the feed are let go, so
+ *  the map does not grow one row per room the household ever opened. */
+const NEARBY_SEEN_TTL_MS = 7 * 86_400_000;
+
+function readNearbySeen(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(NEARBY_SEEN_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out: Record<string, number> = {};
+    for (const [id, at] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof at === 'number' && Number.isFinite(at)) out[id] = at;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function writeNearbySeen(map: Record<string, number>): void {
+  try {
+    localStorage.setItem(NEARBY_SEEN_KEY, JSON.stringify(map));
+  } catch {
+    // Storage refused: the offer is remembered for the session (the ref),
+    // and a relaunch may raise it once more - the worst this can cost.
+  }
+}
+
 /** A follower's own press, held over the hub's word until the room has had
  *  time to honour it. See CONTROL_HOLD_MS. */
 interface HeldControl {
@@ -134,6 +167,23 @@ interface JamValue {
   current: Jam | null;
   /** Jams the listener's friends are hosting right now. */
   friendJams: Jam[];
+  /** Rooms on THIS device's network that the listener is not in - hosted
+   *  by a friend or not - each flagged `nearby`. Empty from an older hub. */
+  nearbyJams: Jam[];
+  /** Every room the listener could walk into: friends' rooms first, then the
+   *  nearby ones hosted by people who are not friends. One row per id; the
+   *  room this device is in is never here. */
+  liveJams: Jam[];
+  /**
+   * The nearby room being OFFERED - "Leo started a groove nearby" - waiting
+   * on Join or Not now (player/NearbyGrooveSheet). Raised once per room per
+   * device, never while in a room, never for a room this listener hosts.
+   * Null otherwise.
+   */
+  nearbyOffer: Jam | null;
+  /** Answer the offer: true walks in (the same road `join` takes, listening
+   *  choice and landing included); false puts it down for good. */
+  answerNearby: (join: boolean) => Promise<void>;
   /** Friends asking to listen along with THIS listener, waiting to be answered. */
   invites: JamInvite[];
   /** Whether this device is the one setting the pace. */
@@ -227,7 +277,15 @@ export function JamProvider({ children }: { children: ReactNode }) {
   const registryToken = useRegistryOptional()?.session?.token ?? null;
   const [current, setCurrent] = useState<Jam | null>(null);
   const [friendJams, setFriendJams] = useState<Jam[]>([]);
+  const [nearbyJams, setNearbyJams] = useState<Jam[]>([]);
   const [invites, setInvites] = useState<JamInvite[]>([]);
+  // The nearby room on offer, and a ref of it for the poll (which must not
+  // raise a second offer over one still standing).
+  const [nearbyOffer, setNearbyOffer] = useState<Jam | null>(null);
+  const nearbyOfferRef = useRef<Jam | null>(null);
+  nearbyOfferRef.current = nearbyOffer;
+  // Nearby rooms already offered on this device, mirrored from storage.
+  const nearbySeen = useRef<Record<string, number>>(readNearbySeen());
   // Invite asks already announced, so a re-poll of the same standing ask does
   // not toast it every thirty seconds. Keyed by who + when.
   const toldInvites = useRef<Set<string>>(new Set());
@@ -264,6 +322,8 @@ export function JamProvider({ children }: { children: ReactNode }) {
     if (!session) {
       setCurrent(null);
       setFriendJams([]);
+      setNearbyJams([]);
+      setNearbyOffer(null);
       setInvites([]);
       lastRoom.current = null;
       return;
@@ -351,6 +411,44 @@ export function JamProvider({ children }: { children: ReactNode }) {
         return next.length === prev.length ? prev : next;
       });
       setFriendJams(feed.friends);
+      // On this network: the hub's own list, plus any friend's room it
+      // flagged - one row per id, and never the room we are in.
+      const near: Jam[] = [];
+      for (const r of [...feed.nearby, ...feed.friends]) {
+        if (!r.nearby || (room && r.id === room.id) || near.some((n) => n.id === r.id)) continue;
+        near.push(r);
+      }
+      setNearbyJams(near);
+      /*
+       * THE OFFER - "someone started a groove on the same network".
+       *
+       * Raised from the poll, once per room per device: a room already
+       * offered (answered or not) is never raised again, and only a NEW
+       * room - a new id, after that one ended - is. Never while in a room
+       * (the deck is where rooms are compared), never for a room this
+       * listener hosts, never over an offer still standing. The seen mark
+       * is written the moment the offer goes up, not when it is answered:
+       * an app killed with the sheet open has still had its one ask.
+       */
+      const seen = nearbySeen.current;
+      const now = Date.now();
+      let seenChanged = false;
+      for (const [id, at] of Object.entries(seen)) {
+        if (now - at > NEARBY_SEEN_TTL_MS && !near.some((n) => n.id === id)) {
+          delete seen[id];
+          seenChanged = true;
+        }
+      }
+      if (!room && !nearbyOfferRef.current) {
+        const fresh = near.find((n) => !seen[n.id] && !isHost(n, session.username));
+        if (fresh) {
+          seen[fresh.id] = now;
+          seenChanged = true;
+          nearbyOfferRef.current = fresh;
+          setNearbyOffer(fresh);
+        }
+      }
+      if (seenChanged) writeNearbySeen(seen);
       setInvites(feed.invites);
       // A new ask, said once: "Kayla wants to listen along". The card in Live
       // now is the place to answer it; this is so it is noticed off that page.
@@ -416,6 +514,22 @@ export function JamProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (choosing && (!current || current.id !== choosing.id)) setChoosing(null);
   }, [choosing, current]);
+
+  // Nor can the offer outlive its moment: landing in ANY room (the deck, an
+  // invite, a link) takes it down, and so does the offered room ending or
+  // leaving the network before it was answered.
+  useEffect(() => {
+    if (!nearbyOffer) return;
+    if (current || !nearbyJams.some((n) => n.id === nearbyOffer.id)) setNearbyOffer(null);
+  }, [nearbyOffer, current, nearbyJams]);
+
+  // Friends first, then the nearby strangers - the deck's and the profile's
+  // "Live now" read this one list.
+  const liveJams = useMemo<Jam[]>(() => {
+    const out = friendJams.filter((r) => !current || r.id !== current.id);
+    for (const n of nearbyJams) if (!out.some((r) => r.id === n.id)) out.push(n);
+    return out;
+  }, [friendJams, nearbyJams, current]);
 
   /*
    * LANDING in a room, from this device.
@@ -520,6 +634,17 @@ export function JamProvider({ children }: { children: ReactNode }) {
       }
     },
     [session, refresh, toast, arrive],
+  );
+
+  const answerNearby = useCallback(
+    async (walkIn: boolean) => {
+      const room = nearbyOfferRef.current;
+      nearbyOfferRef.current = null;
+      setNearbyOffer(null);
+      if (!room || !walkIn) return;
+      await join(room.id);
+    },
+    [join],
   );
 
   const invite = useCallback(
@@ -845,6 +970,10 @@ export function JamProvider({ children }: { children: ReactNode }) {
     () => ({
       current,
       friendJams,
+      nearbyJams,
+      liveJams,
+      nearbyOffer,
+      answerNearby,
       invites,
       hosting,
       start,
@@ -871,6 +1000,10 @@ export function JamProvider({ children }: { children: ReactNode }) {
     [
       current,
       friendJams,
+      nearbyJams,
+      liveJams,
+      nearbyOffer,
+      answerNearby,
       invites,
       hosting,
       start,

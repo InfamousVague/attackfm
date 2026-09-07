@@ -946,6 +946,36 @@ button.jamCard:disabled {
   white-space: nowrap;
 }
 
+/* The network mark: a room whose host is on THIS device's network, on the
+   deck's door and on the profile's room card alike. A glyph and three
+   words in the accent, small - it is a reason to walk in, not the room's
+   name. (The hub compares the addresses; the client only ever sees the
+   flag - see api/jams.ts `Jam.nearby`.) */
+.jamNearby {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  max-inline-size: 100%;
+  margin-block-start: 1px;
+  padding: 1px 0.45em;
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-medium);
+  line-height: 1.3;
+  color: var(--glacier-accent-text);
+  background: var(--glacier-accent-soft);
+  border-radius: var(--glacier-radius-full);
+  white-space: nowrap;
+}
+
+.jamNearby > svg {
+  flex: none;
+}
+
+.jamNearby > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ── Light ─────────────────────────────────────────────────────────────
    Dark-first, like the rest of the app: the "system" preset REMOVES
    data-theme from the root (appearance.tsx), so a rule keyed on
@@ -1262,6 +1292,103 @@ button.jamCard:disabled {
   font-size: var(--glacier-font-size-sm);
   line-height: 1.35;
   color: var(--glacier-text-muted);
+}
+
+/* ── Groove nearby ─────────────────────────────────────────────────────
+   The offer (player/NearbyGrooveSheet): the host's face with the network
+   mark riding its corner, the line, the song, the count - and the deck's
+   own two-button row underneath (jamActions: 44px targets, accent yes). */
+.nearSheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+  padding-block-end: var(--glacier-space-2);
+}
+
+.nearSheet__who {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.nearSheet__face {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* The mark on the face, ringed in the surface so it reads over the
+   gradient the same way the pulse does on a door. */
+.nearSheet__wifi {
+  position: absolute;
+  inset-block-end: -3px;
+  inset-inline-end: -3px;
+  display: grid;
+  place-items: center;
+  inline-size: 1.35rem;
+  block-size: 1.35rem;
+  border-radius: 50%;
+  color: var(--glacier-accent-contrast);
+  background: var(--glacier-accent-solid);
+  box-shadow: 0 0 0 2px var(--glacier-surface-raised);
+}
+
+.nearSheet__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-inline-size: 0;
+}
+
+.nearSheet__line {
+  font-size: var(--glacier-font-size-md);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.25;
+  color: var(--glacier-text);
+}
+
+.nearSheet__song {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  max-inline-size: 100%;
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.3;
+  color: var(--glacier-accent-text);
+}
+
+.nearSheet__song > svg {
+  flex: none;
+}
+
+.nearSheet__song > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nearSheet__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.3;
+  color: var(--glacier-text-muted);
+}
+
+.nearSheet__meta > svg {
+  flex: none;
+}
+
+.nearSheet__dot {
+  opacity: 0.6;
+}
+
+/* Stacked on every shape, on purpose - "Join Leo's groove" and "Not now"
+   side by side clipped the name on a narrow phone. */
+.nearSheet__actions > * {
+  flex: 1 1 100%;
 }
 
 /* The sheet's transport for a room: shuffle and repeat are the host's, so

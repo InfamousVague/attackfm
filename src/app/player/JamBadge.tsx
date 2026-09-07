@@ -19,6 +19,7 @@ import {
   UserPlus,
   Users,
   Waves,
+  Wifi,
   X,
 } from '@glacier/icons';
 import { hostWaiting, useJamOptional, type PendingAdd } from './jam.tsx';
@@ -311,7 +312,9 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
    * one, answer a friend who asked you in, or walk into a friend's.
    */
   if (!room) {
-    const joinable = jam.friendJams;
+    // Friends' rooms, and the nearby ones hosted by people who are not
+    // friends - on this network is reason enough to be offered the door.
+    const joinable = jam.liveJams;
     const invites = jam.invites;
     const playingArt = playing && playing.kind !== 'book' ? artSized(playing.artwork, 160) : null;
     const startJam = async () => {
@@ -520,7 +523,8 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
             </Section>
           )}
 
-          {/* 9. Live now: friends' rooms as doors, the whole card the Join. */}
+          {/* 9. Live now: friends' and nearby rooms as doors, the whole card
+              the Join. A room on this network wears the network mark. */}
           {joinable.length > 0 && (
             <Section label="Live now">
               <EdgeScrollRow className="jamDoors">
@@ -541,6 +545,12 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                     <span className="jamDoor__meta">
                       {r.memberCount > 1 ? `${r.memberCount} inside` : 'alone so far'}
                     </span>
+                    {r.nearby && (
+                      <span className="jamNearby" title="On your network">
+                        <Wifi size={11} aria-hidden />
+                        <span>on your network</span>
+                      </span>
+                    )}
                     {r.trackTitle && (
                       <span className="jamDoor__song">
                         <Music size={11} aria-hidden />
