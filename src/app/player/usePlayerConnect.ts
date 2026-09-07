@@ -81,6 +81,7 @@ export function usePlayerConnect({
   repeat,
   volume,
   queue,
+  upNext,
   seekTick,
   duration,
   commitSeek,
@@ -99,6 +100,9 @@ export function usePlayerConnect({
   repeat: PlayerRepeat;
   volume: number;
   queue: Track[];
+  /** The songs queued BY HAND. A separate lane from the context list, played
+   *  before it - and the one a listener means by "the queue". */
+  upNext: Track[];
   seekTick: number;
   duration: number;
   commitSeek: (to: number) => void;
@@ -542,6 +546,48 @@ export function usePlayerConnect({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the load that satisfies the resume
   }, [track, duration]);
 
+  /*
+   * A REMOTE MIRRORS THE SEAT HOLDER'S QUEUE.
+   *
+   * The hub has always carried the queue in its session, and this device has
+   * always applied it in exactly one place: `becomeActive`, when the seat is
+   * handed over. So a device merely WATCHING another one play showed its own
+   * local queue - usually empty - and a song added on the active device never
+   * appeared on it. Half the report was missing (above) and half the receiver
+   * was missing; fixing either alone would still have looked broken.
+   *
+   * Keyed on the ids as a string rather than the array: the session is a fresh
+   * object on every state frame (one a second while playing), and an array dep
+   * would re-run this effect against an identical queue every time.
+   *
+   * Ids this library cannot resolve are dropped rather than blanking the list,
+   * the same rule `becomeActive` uses - the other device may be playing
+   * something this one has never seen. An all-unresolvable queue therefore
+   * leaves what is here alone instead of emptying it.
+   *
+   * Never while `silent` (following a groove on somebody's speaker): that deck
+   * is deliberately not taking the room's playback over, and its queue is not
+   * this seam's to rewrite.
+   */
+  const isRemote =
+    connect.connected &&
+    connect.activeDeviceId !== null &&
+    connect.activeDeviceId !== connect.thisDeviceId;
+  const sharedQueueKey = isRemote ? (connect.session?.queue ?? []).join(',') : '';
+  useEffect(() => {
+    if (!isRemote || silent || sharedQueueKey === '') return;
+    const rows = sharedQueueKey
+      .split(',')
+      .map((n) => Number(n))
+      .map((id) => liveRef.current.allTracks.find((t) => trackIdFromPath(t.path) === id) ?? null)
+      .filter((t): t is Track => t != null);
+    if (rows.length === 0) return;
+    const now = liveRef.current.queue;
+    const same = now.length === rows.length && now.every((t, i) => t.path === rows[i]!.path);
+    if (!same) liveRef.current.onQueueChange?.(rows);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the ids ARE the identity; the rest rides liveRef
+  }, [isRemote, silent, sharedQueueKey]);
+
   // Publish this device's state to the hub on each discontinuity - but only
   // while it is the one playing (or already holds the seat). A mere app-open
   // never claims the seat; pressing play does, which is how playback starts
@@ -563,6 +609,10 @@ export function usePlayerConnect({
       connect.transfer(connect.thisDeviceId);
     }
     const id = trackIdFromPath(track.path);
+    // Where the playing song sits in the context, so the tail after it can be
+    // appended behind the hand-queued lane. -1 when the song came from that
+    // lane itself and was never in the context.
+    const at = queue.findIndex((t) => t.path === track.path);
     connect.reportState({
       trackId: id,
       positionMs: Math.round(positionRef.current * 1000),
@@ -574,12 +624,50 @@ export function usePlayerConnect({
       shuffle,
       repeat,
       volume,
-      queue: queue
-        .map((t) => trackIdFromPath(t.path))
-        .filter((x): x is number => x !== null),
-      queueIndex: Math.max(0, queue.findIndex((t) => t.path === track.path)),
+      /*
+       * WHAT WILL ACTUALLY PLAY, IN ORDER - which is not the context list.
+       *
+       * A song added with "Add to queue" or "Play next" goes into `upNext`,
+       * a lane of its own that is consumed BEFORE the context (see pickNext).
+       * This report only ever carried the context, so a song queued by hand
+       * was never on the wire at all: it showed on the device that queued it
+       * and could not reach any other, however many times the state was
+       * republished. That is the whole of "the queue does not sync".
+       *
+       * So the wire carries the play order the listener would recite: what is
+       * on now, then what they queued, then the rest of the list it came from.
+       * A device handed the seat rebuilds exactly that order (becomeActive),
+       * and a device merely watching can show it.
+       */
+      queue: (() => {
+        // The hand-queued lane wins its songs. A track queued by hand is
+        // usually still sitting in the context list at its own place, and
+        // reporting both put it on the wire twice - measured: queueing Song 5
+        // while its album played sent [6,5,7,8,4,5,2,3,1], and a watching
+        // device would have drawn it twice in one list.
+        const lane = new Set(upNext.map((t) => t.path));
+        const tail = (at >= 0 ? queue.slice(at + 1) : []).filter((t) => !lane.has(t.path));
+        return [track, ...upNext, ...tail]
+          .map((t) => trackIdFromPath(t.path))
+          .filter((x): x is number => x !== null);
+      })(),
+      // The playing track leads the list it reports, so its index is its head.
+      queueIndex: 0,
     });
+    /*
+     * `queue` IS a discontinuity, and its absence here was the whole of "the
+     * queue does not sync". Everything else a queue edit touches stays the
+     * same - same song, same playing, same shuffle - so none of the other deps
+     * changed and this effect never ran again. The report above has always
+     * CARRIED the queue; it was simply never sent after the one that happened
+     * to go out for some other reason. Adding a song on one device left the
+     * hub holding the queue from the last track change.
+     *
+     * Safe as a dep because it is React state on the host, so its identity
+     * changes only when somebody actually edits the queue - not per render and
+     * never per position tick.
+     */
     // eslint-disable-next-line react-hooks/exhaustive-deps -- discontinuities only; position rides refs
-  }, [shouldReport, track, playing, shuffle, repeat, volume, seekTick]);
+  }, [shouldReport, track, playing, shuffle, repeat, volume, seekTick, queue, upNext]);
 
 }

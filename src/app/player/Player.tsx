@@ -3943,6 +3943,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     repeat,
     volume,
     queue,
+    upNext,
     seekTick,
     duration,
     commitSeek,
