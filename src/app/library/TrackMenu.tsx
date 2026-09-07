@@ -79,17 +79,25 @@ export function TrackMenu({
    *  the menu still reads as one song's menu with a preface. */
   lead?: ReactNode;
 }) {
-  const { playNext, addToQueue, following } = useQueueControls();
+  const { playNext, addToQueue, following, inJam, hostName } = useQueueControls();
   const { isFavorite, toggleFavorite } = useLibrary();
   const { toast } = useToast();
-  /** One queue verb, said once. See the note at the menu items. */
+  /** One queue verb, said once. See the note at the menu items. Hosting a
+   *  groove, the deck's line IS the room's, and the word says so. */
   const queued = (t: Track, next: boolean) => {
     if (next) playNext(t);
     else addToQueue(t);
     fireNativeHaptic('light');
-    toast({
-      message: `“${t.title}” ${following ? 'sent to the groove' : next ? 'playing next' : 'added to the queue'}`,
-    });
+    const said = following
+      ? 'sent to the groove'
+      : inJam
+        ? next
+          ? 'playing next in the groove'
+          : 'added to the groove'
+        : next
+          ? 'playing next'
+          : 'added to the queue';
+    toast({ message: `“${t.title}” ${said}` });
   };
   // The station: a song is the most natural thing to start one from, and the
   // menu is where "do something with this song" already lives.
@@ -270,9 +278,18 @@ export function TrackMenu({
                 rows that do the same thing read as a choice that is not
                 there. */}
             {following ? (
-              <MenuItem icon={<Users size={15} />} onSelect={() => queued(track, false)}>
-                Add to the groove
-              </MenuItem>
+              <>
+                <MenuItem icon={<Users size={15} />} onSelect={() => queued(track, false)}>
+                  Add to the groove
+                </MenuItem>
+                {/* No "play next" for a guest: the hub appends, and the
+                    host's line - their deck's own order - decides where a
+                    send lands. Said here so the one verb is not read as a
+                    choice withheld. */}
+                <div className="trackMenu__hint" role="note">
+                  {hostName ? `${hostName}’s` : 'The host’s'} line decides the order
+                </div>
+              </>
             ) : (
               <>
                 <MenuItem icon={<ListStart size={15} />} onSelect={() => queued(track, true)}>

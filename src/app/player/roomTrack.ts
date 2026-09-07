@@ -77,6 +77,31 @@ export function roomTrack(session: ServerSession, id: number): Promise<RoomTrack
   return ask;
 }
 
+/**
+ * A line-up of ids to rows, outside React - for the host's fold
+ * (usePlayerConnect), where a member's send names an id the HOST's library
+ * may never have listed (a guest's own collector pull, say). The library's
+ * row first, the hub's second, one ask per id shared with every hook below
+ * and with whatever the deck already asked. Answers in the ids' order: the
+ * row, null for a hub 404 (no such track anywhere), undefined for an ask
+ * that could not be made or failed (held back RETRY_MS, then askable again).
+ */
+export function resolveRoomTracks(
+  session: ServerSession | null,
+  ids: readonly number[],
+  tracks: Track[],
+): Promise<(Track | null | undefined)[]> {
+  const index = indexOf(tracks);
+  return Promise.all(
+    ids.map((id): Promise<Track | null | undefined> => {
+      const own = index.get(id);
+      if (own) return Promise.resolve(own);
+      if (!session) return Promise.resolve(undefined);
+      return roomTrack(session, id).catch(() => undefined);
+    }),
+  );
+}
+
 /** Test seam: forget every answer. */
 export function forgetRoomTracks(): void {
   answers.clear();
@@ -111,12 +136,16 @@ function indexOf(tracks: Track[]): Map<number, Track> {
  */
 export function useRoomTrack(id: number | null): RoomTrackAnswer | undefined {
   const { session } = useServerSession();
-  const { allTracks } = useLibrary();
+  // A library still being read for the first time (nothing on the shelf
+  // yet, the first sync in flight) lists nothing - and asking the hub then
+  // would ask about every song the library is about to list. Held until it
+  // has been read; the effect re-runs when it has.
+  const { allTracks, scanning } = useLibrary();
   const own = id != null ? indexOf(allTracks).get(id) : undefined;
   const fetched = session && id != null && !own ? peekRoomTrack(session, id) : undefined;
   const [tries, setTries] = useState(0);
   useEffect(() => {
-    if (!session || id == null || own || fetched !== undefined) return;
+    if (!session || id == null || own || fetched !== undefined || scanning) return;
     let live = true;
     let retry = 0;
     roomTrack(session, id).then(
@@ -136,7 +165,7 @@ export function useRoomTrack(id: number | null): RoomTrackAnswer | undefined {
       window.clearTimeout(retry);
     };
     // `tries` re-runs this after an answer (to read it) or a hold (to retry).
-  }, [session, id, own, fetched, tries]);
+  }, [session, id, own, fetched, scanning, tries]);
   return own ?? fetched;
 }
 
@@ -148,7 +177,9 @@ export function useRoomTrack(id: number | null): RoomTrackAnswer | undefined {
  */
 export function useRoomTracks(ids: readonly number[]): Map<number, RoomTrackAnswer> {
   const { session } = useServerSession();
-  const { allTracks } = useLibrary();
+  // Held while the library is still being read for the first time - see
+  // useRoomTrack.
+  const { allTracks, scanning } = useLibrary();
   const index = indexOf(allTracks);
   const out = new Map<number, RoomTrackAnswer>();
   const pending: number[] = [];
@@ -165,7 +196,7 @@ export function useRoomTracks(ids: readonly number[]): Map<number, RoomTrackAnsw
   const pendingKey = pending.join(',');
   const [tries, setTries] = useState(0);
   useEffect(() => {
-    if (!session || !pendingKey) return;
+    if (!session || !pendingKey || scanning) return;
     let live = true;
     let retry = 0;
     void Promise.allSettled(pendingKey.split(',').map((s) => roomTrack(session, Number(s)))).then((settled) => {
@@ -181,6 +212,6 @@ export function useRoomTracks(ids: readonly number[]): Map<number, RoomTrackAnsw
       live = false;
       window.clearTimeout(retry);
     };
-  }, [session, pendingKey, tries]);
+  }, [session, pendingKey, scanning, tries]);
   return out;
 }

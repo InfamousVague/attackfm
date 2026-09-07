@@ -583,13 +583,11 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
   const nowArt = onTrack ? artSized(onTrack.artwork, 160) : null;
   const nowBy = room.trackId != null ? room.addedBy?.[String(room.trackId)] : undefined;
 
-  // The queue, and the adds still waiting on the host's player. A host has
-  // no pending of its own (the provider's list is a follower's), so the
-  // room's own rows stand in, none of them withdrawable from here.
+  // The queue, and the adds still waiting on the host's player - the
+  // provider's list either way (the room's own rows for the host, none of
+  // them withdrawable from here; a follower's own sends marked as such).
   const queue = room.queue.slice(0, 6);
-  const pend: PendingAdd[] = hosting
-    ? (room.pending ?? []).map((p) => ({ ...p, mine: false }))
-    : jam.pending;
+  const pend: PendingAdd[] = jam.pending;
   const pendNames = [...new Set(pend.map((p) => (p.mine ? 'you' : p.by)))];
   const mine = pend.filter((p) => p.mine);
 

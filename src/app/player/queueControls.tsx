@@ -28,6 +28,9 @@ export interface QueueControls {
    *  groove, not hosting. A surface then offers "Add to the groove" as the
    *  one queue verb and says "sent to the groove" when it lands. */
   following: boolean;
+  /** Who sets the pace, while in a groove ('' outside one) - a string, not
+   *  the room, so the value only changes on a hand-off. */
+  hostName: string;
 }
 
 const QueueControlsContext = createContext<QueueControls | null>(null);
@@ -58,21 +61,23 @@ export function QueueControlsBridge({
   const inRoom = (jam?.current ?? null) !== null;
   const following = inRoom && !jam?.hosting;
   const addToRoom = jam?.addToRoom;
+  const hostName = jam?.current?.hostName ?? '';
 
   const value = useMemo<QueueControls>(() => {
     if (following && addToRoom) {
       const toRoom = (track: Track) => {
         void addToRoom(track);
       };
-      return { playNext: toRoom, addToQueue: toRoom, inJam: true, following: true };
+      return { playNext: toRoom, addToQueue: toRoom, inJam: true, following: true, hostName };
     }
     return {
       playNext: localPlayNext,
       addToQueue: localAddToQueue,
       inJam: inRoom,
       following: false,
+      hostName: inRoom ? hostName : '',
     };
-  }, [following, addToRoom, inRoom, localPlayNext, localAddToQueue]);
+  }, [following, addToRoom, inRoom, hostName, localPlayNext, localAddToQueue]);
 
   return <QueueControlsProvider value={value}>{children}</QueueControlsProvider>;
 }
@@ -89,6 +94,7 @@ export function useQueueControls(): QueueControls {
       addToQueue: () => {},
       inJam: false,
       following: false,
+      hostName: '',
     }
   );
 }

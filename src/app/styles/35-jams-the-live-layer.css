@@ -305,11 +305,64 @@
   margin-inline-start: auto;
 }
 
+/* The sender's name wears an hourglass: this row is waiting on the host's
+   player, not in the line yet. Same pill as "added by", so the two credits
+   read as one family with one difference. */
+.queueRow__credit--pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  vertical-align: middle;
+}
+
+.queueRow__credit--pending > svg {
+  flex: none;
+}
+
+/* A row the hub is still being asked about holds its place (the line must
+   not shuffle under a reader's eye); one the hub denied says so, quietly -
+   it is a fact about this library, not an alarm. */
+.queueRow[data-asking] .queueRow__title,
+.queueRow[data-missing] .queueRow__title {
+  color: var(--glacier-text-muted);
+}
+
+.queueRow[data-missing] .queueRow__title {
+  font-style: italic;
+}
+
+.queueRow[data-asking] .queueRow__cover {
+  background: color-mix(in oklab, var(--glacier-text-muted) 12%, var(--glacier-surface-2, transparent));
+}
+
+/* Every row in the groove's list is a touch target: the room's rows have no
+   play button to carry the height, so the row carries it itself - and the
+   controls on the row's end (withdraw, remove) fill a fingertip. */
+.queueRow[data-static] {
+  min-block-size: 2.75rem;
+}
+
+.queueRow__act {
+  min-inline-size: 2.75rem;
+  min-block-size: 2.75rem;
+}
+
 /* "Waiting for Matt's player" - the host's beat has stopped arriving, said
    under the label rather than as an alarm. */
 .queueUp__note {
   display: block;
   margin-block: calc(-1 * var(--glacier-space-1)) var(--glacier-space-2);
+}
+
+/* The one line under a guest's one queue verb (TrackMenu): why there is no
+   "play next" - the host's line decides. A note, not a row: no hover, no
+   focus, the menu's own padding. */
+.trackMenu__hint {
+  padding: 0 var(--glacier-space-3) var(--glacier-space-2);
+  margin-block-start: calc(-1 * var(--glacier-space-1));
+  font-size: var(--glacier-font-size-xs, 0.75rem);
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
 }
 
 /* ── The People shelf's groove card ─────────────────────────────────────────

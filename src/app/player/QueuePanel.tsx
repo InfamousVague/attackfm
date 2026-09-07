@@ -15,15 +15,13 @@ import { SayNoItems, Thumbs, useSayNo } from '../booth/sayNo.tsx';
 import { deckNext } from './mediaSession.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { trackIdFromPath } from '../server.ts';
-import { useMemo } from 'react';
 import { Button, IconButton, Slider, SortableList, Text, useToast } from '@glacier/react';
-import { ChevronDown, Music, Radio, Sparkles, X } from '@glacier/icons';
-import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, Hourglass, Music, Radio, Sparkles, X } from '@glacier/icons';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { artSized } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
-import { hostWaiting, useJamOptional } from './jam.tsx';
-import { useLibrary } from '../library/library.tsx';
-import { remotePath } from '../server.ts';
+import { hostWaiting, useJamOptional, type PendingAdd } from './jam.tsx';
+import { useRoomTracks, type RoomTrackAnswer } from './roomTrack.ts';
 import { useRadioOptional } from './radio.tsx';
 import { enhancerLabel } from './smartShuffle.ts';
 import { TrackMenu } from '../library/TrackMenu.tsx';
@@ -84,43 +82,69 @@ export function QueuePanel({
   const { position } = useNowPlayingMotion();
   const { down } = useSayNo();
 
-  // In a groove, the queue on screen is the ROOM's - the host's list, which
-  // everyone's additions flow into. A guest's own device queue is not what
-  // anyone in the room is listening to, so showing it here would be a lie.
-  // The host is already playing that list, so for them this only adds the
-  // attribution: whose taste each song is.
+  /*
+   * ONE queue in a groove.
+   *
+   * The room has a single line: the host's deck's play order, carried out in
+   * every beat, which every member's send flows into. The host reads that
+   * list off its own deck (the sortable rows below - a reorder here is a
+   * reorder for everyone); a guest reads it off the room. Either way the
+   * panel draws the same thing: the members' sends the host's player has
+   * not folded in yet, ahead of the line, and then the line itself - and
+   * says whose taste each song is.
+   *
+   * A guest's rows are resolved by hub id through roomTrack.ts: this
+   * library first, then the hub's own row for anything it never listed (a
+   * song the host adopted from a collector pull is on the host's shelf and
+   * nobody else's, but the hub knows it - and streams it). One request per
+   * missing id, shared with the deck, so the queue that used to read
+   * "Nothing queued yet" when every song on it was the host's private find
+   * now reads the songs. Only an id the hub has never heard of shows as
+   * "Not in your library".
+   */
   const jam = useJamOptional();
-  const { tracks: libraryTracks } = useLibrary();
   const room = jam?.current ?? null;
-  const following = room !== null && !jam?.hosting;
+  const inRoom = room !== null;
+  const hosting = inRoom && !!jam?.hosting;
+  const following = inRoom && !hosting;
   const addedBy = room?.addedBy ?? {};
-  const byId = useMemo(() => {
-    const map = new Map<string, Track>();
-    for (const t of libraryTracks) map.set(t.path, t);
-    return map;
-  }, [libraryTracks]);
-  /** Who asked for this track, when somebody in the room did. */
-  const creditFor = (track: Track): string | null => {
-    const id = Object.keys(addedBy).find((key) => remotePath(Number(key)) === track.path);
-    return id ? (addedBy[id] ?? null) : null;
-  };
-  // A guest reads the room's list; nobody else's device can reorder it.
-  const roomRows: Track[] = following
-    ? room.queue.map((id) => byId.get(remotePath(id))).filter((t): t is Track => t !== undefined)
-    : [];
-  // Adds the host's player has not folded in yet, drawn AHEAD of the line:
-  // they are the newest thing in the room and the one thing a guest is
-  // waiting on. A send from this device carries its own Track; the hub's
-  // rows resolve against the library like the queue does.
-  const pendingRows = following
-    ? (jam?.pending ?? [])
-        .map((p) => ({ ...p, track: p.track ?? byId.get(remotePath(p.trackId)) }))
-        .filter((p): p is typeof p & { track: Track } => p.track !== undefined)
-    : [];
+  /** Who asked for a track, when somebody in the room did. */
+  const creditOf = (id: number | null): string | null => (id == null ? null : (addedBy[String(id)] ?? null));
+  const creditFor = (track: Track): string | null => creditOf(trackIdFromPath(track.path));
+  // The room's line PAST what is on. The host's list is the whole play
+  // order - what played, what is on, what is next - and only the last of
+  // those is a queue; the host's own panel cuts it at the song playing (see
+  // `upcoming`), so a guest's cuts it at the same place, by the room's word.
+  const roomIds: number[] = (() => {
+    if (!room || !following) return [];
+    const at = room.trackId != null ? room.queue.indexOf(room.trackId) : -1;
+    return at >= 0 ? room.queue.slice(at + 1) : room.queue;
+  })();
+  // The members' sends the host's player has not folded in yet - the room's
+  // rows for the host, the hub's plus this device's own for a guest. A send
+  // from this device carries its own Track; the rest resolve like the line.
+  const pendingAdds: PendingAdd[] = inRoom ? (jam?.pending ?? []) : [];
+  // One ask for the lot (the hook keys on the ids themselves, so a poll that
+  // changes nothing asks nothing).
+  const asked = useRoomTracks([...roomIds, ...pendingAdds.filter((p) => !p.track).map((p) => p.trackId)]);
+  /** The room's line, row by row: a Track, null once the hub has said there
+   *  is no such track, undefined while it is still being asked. */
+  const lineRows: { id: number; track: RoomTrackAnswer | undefined }[] = roomIds.map((id) => ({
+    id,
+    track: asked.get(id),
+  }));
+  const pendingRows = pendingAdds.map((p) => ({ ...p, track: p.track ?? asked.get(p.trackId) }));
   // The host's player has gone quiet: nothing pending will land until it is
   // back, and the room should say so rather than leave a guest wondering
-  // why the song they sent has not moved.
-  const waiting = following && room !== null && hostWaiting(room);
+  // why the song they sent has not moved - or the host wondering why the
+  // room is not hearing their deck.
+  const waiting = inRoom && hostWaiting(room);
+  /** The room's own name for an id it plays, for a row the hub could not
+   *  answer: better a title than a shrug, when the room gave one. */
+  const roomNames = (id: number): { title: string; artist: string } | null =>
+    room && room.trackId === id && room.trackTitle
+      ? { title: room.trackTitle, artist: room.trackArtist ?? '' }
+      : null;
   // Who else is in the house, so a station can belong to two people. Asked
   // only while one is on - it is a question about this room, not about the app.
   const { session } = useServerSession();
@@ -337,63 +361,117 @@ export function QueuePanel({
           </div>
         )}
 
-        {following ? (
-          <div className="queueUp">
-            <span className="queueUp__label">Next up in the groove</span>
-            {waiting && (
-              <Text tone="muted" size="xs" className="queueUp__note">
-                Waiting for {room?.hostName ?? 'the host'}&rsquo;s player
-              </Text>
+        <div className="queueUp">
+          <div className="queueUp__head">
+            <span className="queueUp__label">{inRoom ? 'Next up in the groove' : 'Next up'}</span>
+            {!following && rows.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearUpcoming}>
+                Clear
+              </Button>
             )}
-            {pendingRows.length > 0 && (
-              <div className="queueRows queueRows--pending" aria-label="Waiting to be added">
-                {pendingRows.map((p) => (
+          </div>
+          {waiting && (
+            <Text tone="muted" size="xs" className="queueUp__note">
+              {hosting
+                ? 'Waiting on your player — nothing lands until it reports'
+                : `Waiting for ${room?.hostName ?? 'the host'}’s player`}
+            </Text>
+          )}
+          {/* The members' sends, ahead of the line: the newest thing in the
+              room and the one thing everybody is waiting on. Drawn for the
+              host too - a send is invisible to the host's deck until its
+              player folds it in, and a paused deck folds nothing. */}
+          {pendingRows.length > 0 && (
+            <div
+              className="queueRows queueRows--pending"
+              role="list"
+              aria-label={`${pendingRows.length} waiting ${hosting ? 'on your player' : 'for the host'}`}
+            >
+              {pendingRows.map((p) => {
+                const who = p.mine ? 'you' : p.by;
+                const credit = (
+                  <span className="queueRow__credit queueRow__credit--pending">
+                    <Hourglass size={11} aria-hidden />
+                    by {who}
+                  </span>
+                );
+                const withdraw = p.mine && (
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    className="queueRow__withdraw queueRow__act"
+                    aria-label={`Withdraw ${p.track?.title ?? 'your add'} from the groove`}
+                    onClick={() => void jam?.withdraw(p.trackId)}
+                  >
+                    <X size={16} />
+                  </IconButton>
+                );
+                if (!p.track) {
+                  return (
+                    <AskedRow
+                      key={`pending:${p.trackId}`}
+                      answer={p.track}
+                      named={roomNames(p.trackId)}
+                      note={`waiting, sent by ${who}`}
+                      chip={credit}
+                      action={withdraw}
+                      pending
+                    />
+                  );
+                }
+                return (
                   <TrackMenu key={`pending:${p.trackId}`} track={p.track} className="queueRowMenu">
-                    <div className="queueRow" data-static data-pending>
+                    <div
+                      className="queueRow"
+                      data-static
+                      data-pending
+                      role="listitem"
+                      aria-label={`${p.track.title} by ${p.track.artist}, waiting, sent by ${who}`}
+                    >
                       <Cover track={p.track} />
                       <div className="queueRow__meta">
                         <span className="queueRow__title">{p.track.title}</span>
                         <span className="queueRow__artist">
                           <ArtistLink artist={p.track.artist} beforeOpen={onClose} />
-                          <span className="queueRow__credit">by {p.mine ? 'you' : p.by}</span>
+                          {credit}
                         </span>
                       </div>
                       {/* Your own ask, taken back before the host's player
                           picks it up. Gone here at once; the hub is told. */}
-                      {p.mine && (
-                        <IconButton
-                          variant="ghost"
-                          size="sm"
-                          className="queueRow__withdraw"
-                          aria-label={`Withdraw ${p.track.title} from the groove`}
-                          onClick={() => void jam?.withdraw(p.trackId)}
-                        >
-                          <X size={16} />
-                        </IconButton>
-                      )}
+                      {withdraw}
                     </div>
                   </TrackMenu>
-                ))}
-              </div>
-            )}
-            {roomRows.length === 0 && pendingRows.length === 0 ? (
+                );
+              })}
+            </div>
+          )}
+          {following ? (
+            lineRows.length === 0 && pendingRows.length === 0 ? (
               <Text tone="muted" size="sm" className="queueUp__empty">
                 Nothing queued yet. Tap a song anywhere and it goes to the
                 groove - {room?.hostName ?? 'the host'} plays it for everyone.
               </Text>
-            ) : roomRows.length === 0 ? null : (
-              <div className="queueRows">
-                {roomRows.map((t) => {
-                  const credit = creditFor(t);
+            ) : lineRows.length === 0 ? null : (
+              // A guest reads the room's list; nobody else's device can
+              // reorder it.
+              <div className="queueRows" role="list" aria-label="The groove's queue">
+                {lineRows.map(({ id, track: t }, i) => {
+                  const credit = creditOf(id);
+                  const chip = credit ? <span className="queueRow__credit">added by {credit}</span> : null;
+                  if (!t) {
+                    return (
+                      <AskedRow key={`${id}-${i}`} answer={t} named={roomNames(id)} note={credit ? `added by ${credit}` : ''} chip={chip} />
+                    );
+                  }
                   return (
                     <TrackMenu key={t.path} track={t} className="queueRowMenu">
-                      <div className="queueRow" data-static>
+                      <div className="queueRow" data-static role="listitem">
                         <Cover track={t} />
                         <div className="queueRow__meta">
                           <span className="queueRow__title">{t.title}</span>
                           <span className="queueRow__artist">
                             <ArtistLink artist={t.artist} beforeOpen={onClose} />
-                            {credit && <span className="queueRow__credit">added by {credit}</span>}
+                            {chip}
                           </span>
                         </div>
                       </div>
@@ -401,23 +479,15 @@ export function QueuePanel({
                   );
                 })}
               </div>
-            )}
-          </div>
-        ) : (
-        <div className="queueUp">
-          <div className="queueUp__head">
-            <span className="queueUp__label">Next up</span>
-            {rows.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={clearUpcoming}>
-                Clear
-              </Button>
-            )}
-          </div>
-          {rows.length === 0 ? (
-            <Text tone="muted" size="sm" className="queueUp__empty">
-              Nothing queued. Add songs from anywhere with “Add to queue,” and
-              they line up here.
-            </Text>
+            )
+          ) : rows.length === 0 ? (
+            pendingRows.length > 0 ? null : (
+              <Text tone="muted" size="sm" className="queueUp__empty">
+                {inRoom
+                  ? 'Nothing queued yet. Add songs from anywhere - yours and your guests’ line up here, and the groove plays them in this order.'
+                  : 'Nothing queued. Add songs from anywhere with “Add to queue,” and they line up here.'}
+              </Text>
+            )
           ) : (
             <SortableList
               items={rows}
@@ -486,6 +556,7 @@ export function QueuePanel({
                   <IconButton
                     variant="ghost"
                     size="sm"
+                    className="queueRow__act"
                     aria-label={`Remove ${r.track.title} from the queue`}
                     onClick={() => remove(r.track.path)}
                   >
@@ -498,14 +569,66 @@ export function QueuePanel({
           )}
           {/* Everything past the drawn rows still plays; it just is not worth
               five thousand rows to say so. */}
-          {hiddenCount > 0 && (
+          {!following && hiddenCount > 0 && (
             <Text tone="muted" size="sm" className="queueUp__more">
               and {hiddenCount.toLocaleString()} more
             </Text>
           )}
         </div>
-        )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A row for an id this library does not list, in the two states the hub
+ * leaves it in: still being asked (an ellipsis over a shimmering sleeve -
+ * the row holds its place rather than vanishing), or denied - "Not in your
+ * library", with the room's own name for the song when it gave one. Never
+ * for a row the hub answered: that one is a Track and draws like any other.
+ */
+function AskedRow({
+  answer,
+  named,
+  note,
+  chip,
+  action,
+  pending = false,
+}: {
+  answer: null | undefined;
+  named: { title: string; artist: string } | null;
+  /** Read out with the row, so the state is heard as well as seen. */
+  note: string;
+  /** The credit, on the artist line. */
+  chip?: ReactNode;
+  /** A control at the row's end (a withdraw). */
+  action?: ReactNode;
+  pending?: boolean;
+}) {
+  const asking = answer === undefined;
+  const title = asking ? '…' : (named?.title ?? 'Not in your library');
+  const sub = asking ? '' : named ? [named.artist, 'Not in your library'].filter(Boolean).join(' · ') : '';
+  return (
+    <div
+      className="queueRow"
+      data-static
+      data-asking={asking || undefined}
+      data-missing={!asking || undefined}
+      data-pending={pending || undefined}
+      role="listitem"
+      aria-label={`${asking ? 'Still looking up a song' : `${title}${sub ? `, ${sub}` : ''}`}${note ? `, ${note}` : ''}`}
+    >
+      <span className="queueRow__cover" aria-hidden>
+        <Music size={16} />
+      </span>
+      <div className="queueRow__meta">
+        <span className="queueRow__title">{title}</span>
+        <span className="queueRow__artist">
+          {sub}
+          {chip}
+        </span>
+      </div>
+      {action}
     </div>
   );
 }

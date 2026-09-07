@@ -8,7 +8,7 @@ import { usePlayback } from './playback.tsx';
 import { recordDiag } from '../diag/diagLog.ts';
 import { setNowPlayingBeat } from '../profile/presence.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { peekRoomTrack, roomTrack } from './roomTrack.ts';
+import { peekRoomTrack, resolveRoomTracks, roomTrack } from './roomTrack.ts';
 import { deviceId } from './connect.ts';
 import type { Track } from '../core/tauri.ts';
 import type { JamCommand } from '../server.ts';
@@ -255,8 +255,16 @@ export function usePlayerConnect({
   // overlapped a slow reply) cannot apply the same press twice, and one
   // older than the hub's own cut-off is let go.
   const applied = useRef<string[]>([]);
+  // The hub, for the fold below: read through a ref so a session change
+  // does not restart the beat.
+  const { session } = useServerSession();
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   useEffect(() => {
     if (!jam?.current || !jam.hosting) return;
+    // Cleared on teardown, so a fold or a reply that lands after the room
+    // ended (or changed hands) touches nothing.
+    let alive = true;
     const apply = (commands: JamCommand[]) => {
       const live = liveRef.current;
       const now = Date.now();
@@ -318,26 +326,56 @@ export function usePlayerConnect({
             .filter((n): n is number => n != null),
         })
         .then(({ additions, commands }) => {
-          // Fold in what the room asked for. Resolve each id against this
-          // library (host and members share the server's, so they land), drop
-          // anything already queued, and append - the next beat carries the
-          // grown queue back out to everyone.
-          if (additions.length) {
-            const now = liveRef.current;
-            const have = new Set(now.queue.map((t: Track) => t.path));
-            const add = additions
-              .map((aid) => now.allTracks.find((t: Track) => trackIdFromPath(t.path) === aid))
-              .filter((t): t is Track => !!t && !have.has(t.path));
-            if (add.length) now.onQueueChange?.([...now.queue, ...add]);
-          }
-          // Then the presses, in the order they were made - after the adds,
-          // so a "next" sent right behind an add can land on it.
-          if (commands.length) apply(commands);
+          // Fold in what the room asked for, then the presses in the order
+          // they were made - after the adds, so a "next" sent right behind
+          // an add can land on it.
+          void fold(additions).then(() => {
+            if (alive && commands.length) apply(commands);
+          });
         });
+    };
+    /**
+     * A member's send, into this deck's line. Each id is resolved against
+     * this library first and the hub second (roomTrack.ts - the same door
+     * the deck's own surfaces use, so an id asked here is never asked
+     * again): the library is scoped per member, and a guest can send a song
+     * the host's shelf never listed - their own collector pull - which used
+     * to be dropped on the floor here, the row silently missing from the
+     * queue the guest was watching for it. Anything already queued is left
+     * where it is; the rest is appended in the order it was asked, and the
+     * next beat carries the grown queue back out to everyone. Only what the
+     * hub has never heard of is let go, and that is said in the diag log.
+     */
+    const fold = (additions: number[]): Promise<void> => {
+      if (additions.length === 0) return Promise.resolve();
+      const now = liveRef.current;
+      const queued = new Set(now.queue.map((t: Track) => trackIdFromPath(t.path)));
+      const wanted = additions.filter((aid, i) => !queued.has(aid) && additions.indexOf(aid) === i);
+      if (wanted.length === 0) return Promise.resolve();
+      return resolveRoomTracks(sessionRef.current, wanted, now.allTracks).then((rows) => {
+        if (!alive) return;
+        const deck = liveRef.current;
+        const have = new Set(deck.queue.map((t: Track) => trackIdFromPath(t.path)));
+        const add: Track[] = [];
+        rows.forEach((row, i) => {
+          const aid = wanted[i]!;
+          if (row === null) {
+            recordDiag('jam', `a member sent #${aid}, which neither this library nor the hub has`);
+            return;
+          }
+          if (!row || have.has(aid)) return;
+          have.add(aid);
+          add.push(row);
+        });
+        if (add.length) deck.onQueueChange?.([...deck.queue, ...add]);
+      });
     };
     beat();
     const timer = window.setInterval(beat, 2500);
-    return () => window.clearInterval(timer);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
   }, [jam?.current?.id, jam?.hosting]);
 
   // Following: steer to the host. A different song loads and resumes at their
@@ -358,7 +396,6 @@ export function usePlayerConnect({
   // song, because the silent deck unloaded it and only a change of track
   // makes the load effect run (the same clone the Connect hand-off makes).
   const wasSilent = useRef(silent);
-  const { session } = useServerSession();
   useEffect(() => {
     const room = jam?.current;
     const live = liveRef.current;

@@ -216,8 +216,10 @@ interface JamValue {
   /** Take back one of your own pending adds. Gone locally at once; an older
    *  hub without the route is tolerated. */
   withdraw: (trackId: number) => Promise<void>;
-  /** Adds the host has not folded in yet - the hub's list, with this device's
-   *  own unconfirmed sends ahead of the poll. Empty when hosting. */
+  /** Adds the host has not folded in yet. A follower's: the hub's list, with
+   *  this device's own unconfirmed sends ahead of the poll, its own rows
+   *  marked `mine`. The host's: the room's list as the hub reports it - the
+   *  members' sends its player has not picked up yet, none of them its own. */
   pending: PendingAdd[];
   /**
    * Where this device hears the room it follows: on its own deck, in time
@@ -954,7 +956,10 @@ export function JamProvider({ children }: { children: ReactNode }) {
   );
 
   const pending = useMemo<PendingAdd[]>(() => {
-    if (!current || !session || hosting) return [];
+    if (!current || !session) return [];
+    // The host reads the room's own list: what its player has yet to fold
+    // in. It never sent any of them, so none are its to withdraw here.
+    if (hosting) return (current.pending ?? []).map((p) => ({ ...p, mine: false }));
     const me = session.username.toLowerCase();
     const hub: PendingAdd[] = (current.pending ?? [])
       .filter((p) => !withdrawn.current.has(p.trackId))
