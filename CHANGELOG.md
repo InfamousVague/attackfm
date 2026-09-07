@@ -15,6 +15,20 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.130
+
+- Adding people to a playlist is one flow now. The share sheet's Members
+  face shows who has the list and their roles, and "Add people…" opens a
+  picker where you tick several friends at once and add them as editors or
+  viewers. Anyone on your server can be added; a friend on another server is
+  offered the link instead.
+- New playlists can be collaborative from the start: a proper New playlist
+  sheet with a Collaborative switch and "Choose people", from every place a
+  playlist gets made.
+- Grooves: "Invite friends…" in the groove panel and "Start with friends…"
+  outside a room pick several at once, with one note saying who was invited.
+  The Friends tab has the same picker in its header.
+
 ## 0.5.129
 
 - In a groove, the room's song plays and shows on your device even when your
