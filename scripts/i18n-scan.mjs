@@ -36,6 +36,7 @@
  *   node scripts/i18n-scan.mjs --kind plural   one category
  *   node scripts/i18n-scan.mjs --file X        one file
  *   node scripts/i18n-scan.mjs --work-list     the fan-out plan, as JSON
+ *   node scripts/i18n-scan.mjs --keys         every t('…') in source resolves
  *   node scripts/i18n-scan.mjs --catalogues    every language has every key
  *   node scripts/i18n-scan.mjs --json          the whole thing, for a diff
  *   node scripts/i18n-scan.mjs --max 1200      fail if the count went UP
@@ -252,6 +253,60 @@ function checkCatalogues() {
   return bad;
 }
 if (flag('--catalogues')) { console.log('Catalogues:'); process.exit(checkCatalogues() ? 1 : 0); }
+
+/**
+ * Does every key the source asks for actually exist?
+ *
+ * This is the check that matters most, and the one a type system cannot make:
+ * `t('settings.crossfaed')` compiles, ships, and puts a raw key on somebody's
+ * screen. It is also exactly the mistake a large parallel sweep produces -
+ * an agent converts a call site, reports the key, and a typo or a dropped
+ * entry means the two never meet.
+ *
+ * Matched on the BASE key: i18next appends _one/_other itself, so a source
+ * reference to 'library.songCount' is satisfied by 'library.songCount_other'.
+ */
+if (flag('--keys')) {
+  const dir = join(SRC, 'app/i18n/locales');
+  const flat = (obj, prefix = '', out = new Set()) => {
+    for (const [k, v] of Object.entries(obj)) {
+      if (v && typeof v === 'object') flat(v, `${prefix}${k}.`, out);
+      else out.add(`${prefix}${k}`);
+    }
+    return out;
+  };
+  const have = new Set([...flat(JSON.parse(readFileSync(join(dir, 'en.json'), 'utf8')))]
+    .map((k) => k.replace(/_(zero|one|two|few|many|other)$/, '')));
+
+  const asked = new Map();   // key -> [file:line]
+  for (const file of walkFiles(SRC)) {
+    const rel = relative(ROOT, file);
+    if (rel.startsWith('src/app/i18n/')) continue;
+    const text = readFileSync(file, 'utf8');
+    const lines = text.split('\n');
+    lines.forEach((line, i) => {
+      // t('a.b'), translate('a.b'), i18nKey="a.b", labelKey: 'a.b'
+      const re = /(?:\bt|\btranslate)\(\s*['"`]([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)['"`]|i18nKey=["'`]([a-zA-Z0-9_.]+)["'`]|[A-Za-z]*[Kk]ey:\s*['"`]([a-z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+)['"`]/g;
+      let m;
+      while ((m = re.exec(line))) {
+        const key = m[1] ?? m[2] ?? m[3];
+        if (!asked.has(key)) asked.set(key, []);
+        asked.get(key).push(`${rel}:${i + 1}`);
+      }
+    });
+  }
+
+  const missing = [...asked.keys()].filter((k) => !have.has(k)).sort();
+  console.log(`${asked.size} keys referenced in source, ${have.size} in en.json`);
+  if (missing.length) {
+    console.log(`\n${missing.length} REFERENCED BUT MISSING — these render as a raw key:`);
+    for (const k of missing.slice(0, 60)) console.log(`  ${k}   ${asked.get(k)[0]}`);
+    if (missing.length > 60) console.log(`  … and ${missing.length - 60} more`);
+  } else {
+    console.log('\nEvery key the source asks for exists.');
+  }
+  process.exit(missing.length ? 1 : 0);
+}
 
 // ---------------------------------------------------------------------- scan
 const only = val('--file');
