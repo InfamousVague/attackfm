@@ -81,8 +81,12 @@ for (const file of files) {
       if (have.join() !== want.join()) {
         errs.push(`FORMS    ${base}  has [${have.join(', ') || '-'}] wants [${want.join(', ')}]`);
       }
-      // The English `other` is the reference for what must be interpolated.
-      const ref = holes(u.forms.other ?? Object.values(u.forms)[0]);
+      // The UNION across English's forms, not just `other`. English often
+      // interpolates different things per form - `_one` is "Added {{name}}"
+      // where `_other` is "Added {{count}} files" - and a translation is
+      // entitled to either. Comparing against `other` alone reported every
+      // one of those as an unknown placeholder.
+      const ref = [...new Set(Object.values(u.forms).flatMap(holes))];
       for (const [cat, text] of Object.entries(g.forms ?? {})) {
         const mine = holes(text);
         // A form may legitimately DROP the count (Arabic "أغنيتان" names two
