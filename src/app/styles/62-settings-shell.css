@@ -218,6 +218,30 @@ body [class*='_panel_']:has(.settingsTitleRow) [class*='_rail_']::-webkit-scroll
   display: none;
 }
 
+/* ── And the PANE gets the height too ───────────────────────────────────────
+   The rail was taught to scroll above; the pane beside it was still capped.
+   The kit sets `max-block-size: 28rem` on it - 448px, a sensible default for a
+   dialog that sizes itself to its content, and wrong for one stretched to a
+   window. The grid row grows with the modal (measured at 464px in a 650px-tall
+   window, and more in a taller one) while the pane stayed 448 forever: the
+   scroll view ended short of the modal's floor, so the last row on screen was
+   cut in half with empty glass underneath it, and no amount of scrolling ever
+   showed what sat in that gap. The taller the window, the wider the band of
+   nothing.
+
+   Found by asking the pane which rules actually set its height rather than by
+   reading the kit: its computed max-block-size said 448px while the row it
+   sits in said 463.586px.
+
+   `none`, not a bigger number - the grid row already knows the right height,
+   and any number written here would be wrong at some window size. Scoped to
+   the pane inside the settings layout, and reached through the same
+   `:has(.settingsTitleRow)` idiom as its neighbours rather than by naming a
+   hashed class that changes with every kit build. */
+body [class*='_panel_']:has(.settingsTitleRow) [class*='_layout_'] > [class*='_pane_'] {
+  max-block-size: none;
+}
+
 /* Nothing in the list may shrink to fit it.
    A flex column that scrolls will still compress its items first - shrinking
    is a flex item's default - so with more sections than fit, the groups gave
