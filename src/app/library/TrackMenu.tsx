@@ -47,9 +47,10 @@ import { artistDoorOpen, openArtist } from '../nav/artistDoor.ts';
  * phrase for it. The first level is the handful a person reaches for from a
  * row: the queue verb(s), the playlist, the heart, the artist. Everything
  * else is still here, one row further in, behind "More…": nothing was
- * removed, only folded. Following a groove the queue verbs collapse to ONE -
- * "Add to the groove" - because a follower has no line of their own for a
- * song to be next in.
+ * removed, only folded. Following a groove the two queue verbs keep their
+ * places and change their object - "Play next in the groove", "Add to the
+ * groove" - because the groove's queue is the one queue (0.5.131), and a
+ * member's "next" lands right after the song on, as the host's own does.
  *
  * Every surface that draws a track should wear this, because the alternative is
  * what the app had - the menu on the song table and nowhere else, so filing a
@@ -79,17 +80,20 @@ export function TrackMenu({
    *  the menu still reads as one song's menu with a preface. */
   lead?: ReactNode;
 }) {
-  const { playNext, addToQueue, following, inJam, hostName } = useQueueControls();
+  const { playNext, addToQueue, following, inJam } = useQueueControls();
   const { isFavorite, toggleFavorite } = useLibrary();
   const { toast } = useToast();
   /** One queue verb, said once. See the note at the menu items. Hosting a
-   *  groove, the deck's line IS the room's, and the word says so. */
+   *  groove, the deck's line IS the room's, and the word says so; following
+   *  one, the song was SENT - the host's player folds it in. */
   const queued = (t: Track, next: boolean) => {
     if (next) playNext(t);
     else addToQueue(t);
     fireNativeHaptic('light');
     const said = following
-      ? 'sent to the groove'
+      ? next
+        ? 'sent to play next in the groove'
+        : 'sent to the groove'
       : inJam
         ? next
           ? 'playing next in the groove'
@@ -273,22 +277,19 @@ export function TrackMenu({
                 so one song getting silence while three got a sentence was an
                 oversight rather than a decision. Same wording, singular.
 
-                Following a groove there is ONE verb. Play next and Add to
-                queue both landed on the room anyway (queueControls), and two
-                rows that do the same thing read as a choice that is not
-                there. */}
+                Following a groove the same two verbs, on the groove: the
+                hub remembers a send's "next" and the host's fold puts it
+                right after the song on (queueControls, usePlayerConnect).
+                Both are named for where they land, so a member never has to
+                wonder whose queue "the queue" is. */}
             {following ? (
               <>
+                <MenuItem icon={<ListStart size={15} />} onSelect={() => queued(track, true)}>
+                  Play next in the groove
+                </MenuItem>
                 <MenuItem icon={<Users size={15} />} onSelect={() => queued(track, false)}>
                   Add to the groove
                 </MenuItem>
-                {/* No "play next" for a guest: the hub appends, and the
-                    host's line - their deck's own order - decides where a
-                    send lands. Said here so the one verb is not read as a
-                    choice withheld. */}
-                <div className="trackMenu__hint" role="note">
-                  {hostName ? `${hostName}’s` : 'The host’s'} line decides the order
-                </div>
               </>
             ) : (
               <>

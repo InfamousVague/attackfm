@@ -33,7 +33,9 @@ export const SongSelectionContext = createContext<{
  * Liking is a SET, not a toggle: `toggleFavorite` on an already-liked song
  * would un-like it, and "like these nine" must never subtract (the
  * importable() lesson, in miniature). Play next walks the list in reverse so
- * the songs land in the order they were selected, not inverted.
+ * the songs land in the order they were selected, not inverted - on this
+ * deck, where each one slots in front of the last; sent to a groove they go
+ * in selection order, because the host keeps the order they were asked in.
  *
  * "Keep on device" is deliberately NOT here: the single-track keep in
  * TrackMenu carries corruption guards (the stale-fragment Range trap, per-
@@ -82,15 +84,18 @@ export function SelectionBar({
 
   const queueAll = (next: boolean) => {
     if (next) {
-      // Reversed, so the first selected song plays first.
-      for (const t of [...chosen].reverse()) playNext(t);
+      // Reversed, so the first selected song plays first - locally; the
+      // groove keeps ask order, so there the first selected is sent first.
+      for (const t of following ? chosen : [...chosen].reverse()) playNext(t);
     } else {
       for (const t of chosen) addToQueue(t);
     }
     toast({
       message: `${chosen.length} ${chosen.length === 1 ? 'song' : 'songs'} ${
         following
-          ? 'sent to the groove'
+          ? next
+            ? 'sent to play next in the groove'
+            : 'sent to the groove'
           : inJam
             ? next
               ? 'playing next in the groove'
@@ -121,10 +126,20 @@ export function SelectionBar({
         <CheckCheck size={16} />
       </IconButton>
       <span className="selectBar__spring" />
-      <IconButton variant="ghost" size="sm" aria-label="Play next" onClick={() => queueAll(true)}>
+      <IconButton
+        variant="ghost"
+        size="sm"
+        aria-label={following ? 'Play next in the groove' : 'Play next'}
+        onClick={() => queueAll(true)}
+      >
         <ListStart size={16} />
       </IconButton>
-      <IconButton variant="ghost" size="sm" aria-label="Add to queue" onClick={() => queueAll(false)}>
+      <IconButton
+        variant="ghost"
+        size="sm"
+        aria-label={following ? 'Add to the groove' : 'Add to queue'}
+        onClick={() => queueAll(false)}
+      >
         <ListEnd size={16} />
       </IconButton>
       <IconButton variant="ghost" size="sm" aria-label="Add to Liked" onClick={likeAll}>

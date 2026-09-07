@@ -50,7 +50,9 @@ export function GroovePlayRouter({
         return true;
       }
       fireNativeHaptic('light');
-      toast({ message: `Sent to the groove - ${hostName} plays it next` });
+      // An add, not a "next": the tap joins the end of the line, and the
+      // menu's "Play next in the groove" is the word for the front of it.
+      toast({ message: `“${track.title}” sent to the groove - ${hostName} plays it for everyone` });
       void addToRoom(track);
       return true;
     };

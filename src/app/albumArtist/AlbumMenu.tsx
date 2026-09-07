@@ -1,8 +1,9 @@
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { MenuStop } from '../ux/MenuStop.tsx';
-import { ContextMenu, MenuItem } from '@glacier/react';
+import { ContextMenu, MenuItem, useToast } from '@glacier/react';
 import { ListEnd, ListStart, Play, Shuffle, User, Users } from '@glacier/icons';
 import type { ReactNode } from 'react';
+import { fireNativeHaptic } from '../core/haptics.ts';
 import { useQueueControls } from '../player/queueControls.tsx';
 import { useJamOptional } from '../player/jam.tsx';
 import { shuffled } from '../ux/shuffle.ts';
@@ -39,6 +40,7 @@ export function AlbumMenu({
 }) {
   const { playNext, addToQueue, following } = useQueueControls();
   const inJam = !!useJamOptional()?.current;
+  const { toast } = useToast();
   /*
    * The same hold TrackMenu carries, for the same two reasons: the kit only
    * answers a touch long-press and does nothing about the release - so on a
@@ -56,6 +58,32 @@ export function AlbumMenu({
     const order = shuffled(tracks);
     onPlay(order[0]!, order);
   };
+  /** The whole record into the line, front of it or back, and a sentence
+   *  for it - the same one the selection bar says for a batch, since a
+   *  menu that closes on a silent verb reads as a verb that did nothing. */
+  const queued = (next: boolean) => {
+    if (next) {
+      // Reversed so the record lands in running order: each local playNext
+      // slots in front of the last. A groove keeps ask order, so there the
+      // record is sent front to back.
+      for (const track of following ? tracks : [...tracks].reverse()) playNext(track);
+    } else {
+      for (const track of tracks) addToQueue(track);
+    }
+    fireNativeHaptic('light');
+    const said = following
+      ? next
+        ? 'sent to play next in the groove'
+        : 'sent to the groove'
+      : inJam
+        ? next
+          ? 'playing next in the groove'
+          : 'added to the groove'
+        : next
+          ? 'playing next'
+          : 'added to the queue';
+    toast({ message: `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'} ${said}` });
+  };
 
   return (
     <ContextMenu
@@ -71,26 +99,11 @@ export function AlbumMenu({
             Shuffle
           </MenuItem>
           {/* The whole record into the line, in order - front of it or back.
-              Following a groove there is no "next" of your own: one verb, the
-              record to the room. */}
-          {!following && (
-            <MenuItem
-              icon={<ListStart size={15} />}
-              onSelect={() => {
-                // Reversed so the record lands in running order: each playNext
-                // slots in front of the last.
-                for (const track of [...tracks].reverse()) playNext(track);
-              }}
-            >
-              {inJam ? 'Play next in the groove' : 'Play next'}
-            </MenuItem>
-          )}
-          <MenuItem
-            icon={following ? <Users size={15} /> : <ListEnd size={15} />}
-            onSelect={() => {
-              for (const track of tracks) addToQueue(track);
-            }}
-          >
+              In a groove, hosting or following, the line is the groove's. */}
+          <MenuItem icon={<ListStart size={15} />} onSelect={() => queued(true)}>
+            {inJam ? 'Play next in the groove' : 'Play next'}
+          </MenuItem>
+          <MenuItem icon={following ? <Users size={15} /> : <ListEnd size={15} />} onSelect={() => queued(false)}>
             {following ? 'Add to the groove' : inJam ? 'Add to the groove queue' : 'Add to queue'}
           </MenuItem>
           {onOpenArtist && artistName && (

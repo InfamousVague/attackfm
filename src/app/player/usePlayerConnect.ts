@@ -325,11 +325,11 @@ export function usePlayerConnect({
             .map((t: Track) => trackIdFromPath(t.path))
             .filter((n): n is number => n != null),
         })
-        .then(({ additions, commands }) => {
+        .then(({ additions, additionsNext, commands }) => {
           // Fold in what the room asked for, then the presses in the order
           // they were made - after the adds, so a "next" sent right behind
           // an add can land on it.
-          void fold(additions).then(() => {
+          void fold(additions, additionsNext).then(() => {
             if (alive && commands.length) apply(commands);
           });
         });
@@ -342,21 +342,33 @@ export function usePlayerConnect({
      * the host's shelf never listed - their own collector pull - which used
      * to be dropped on the floor here, the row silently missing from the
      * queue the guest was watching for it. Anything already queued is left
-     * where it is; the rest is appended in the order it was asked, and the
-     * next beat carries the grown queue back out to everyone. Only what the
-     * hub has never heard of is let go, and that is said in the diag log.
+     * where it is. The rest lands where it was asked for: the play-next
+     * sends go in right AFTER the song on, in the order they were asked
+     * (the first asker's song plays first - one slice, not a run of
+     * front-inserts), and the appends join the end of the line in ask
+     * order; the next beat carries the grown queue back out to everyone.
+     * An older hub sends no `additionsNext`, and the fold is the append it
+     * always was. Only what the hub has never heard of is let go, and that
+     * is said in the diag log.
      */
-    const fold = (additions: number[]): Promise<void> => {
-      if (additions.length === 0) return Promise.resolve();
+    const fold = (additions: number[], additionsNext: number[] = []): Promise<void> => {
+      if (additions.length === 0 && additionsNext.length === 0) return Promise.resolve();
       const now = liveRef.current;
       const queued = new Set(now.queue.map((t: Track) => trackIdFromPath(t.path)));
-      const wanted = additions.filter((aid, i) => !queued.has(aid) && additions.indexOf(aid) === i);
+      // A song asked for twice in one reply keeps its first ask of each
+      // kind; asked for both ways, "next" is the ask that wins.
+      const front = additionsNext.filter((aid, i) => !queued.has(aid) && additionsNext.indexOf(aid) === i);
+      const back = additions.filter(
+        (aid, i) => !queued.has(aid) && additions.indexOf(aid) === i && !front.includes(aid),
+      );
+      const wanted = [...front, ...back];
       if (wanted.length === 0) return Promise.resolve();
       return resolveRoomTracks(sessionRef.current, wanted, now.allTracks).then((rows) => {
         if (!alive) return;
         const deck = liveRef.current;
         const have = new Set(deck.queue.map((t: Track) => trackIdFromPath(t.path)));
-        const add: Track[] = [];
+        const soon: Track[] = [];
+        const later: Track[] = [];
         rows.forEach((row, i) => {
           const aid = wanted[i]!;
           if (row === null) {
@@ -365,9 +377,18 @@ export function usePlayerConnect({
           }
           if (!row || have.has(aid)) return;
           have.add(aid);
-          add.push(row);
+          (i < front.length ? soon : later).push(row);
         });
-        if (add.length) deck.onQueueChange?.([...deck.queue, ...add]);
+        if (soon.length === 0 && later.length === 0) return;
+        // "Right after the song on" by the deck's own rule (App's playNext):
+        // the slot after the current row; the end of the line when the song
+        // on is not in it (the honest "next" with no known place to insert
+        // after); the front when nothing is on at all - what plays first
+        // once the host presses play.
+        const cur = deck.track;
+        const after = cur ? deck.queue.findIndex((t: Track) => t.path === cur.path) + 1 : 0;
+        const at = !cur ? 0 : after === 0 ? deck.queue.length : after;
+        deck.onQueueChange?.([...deck.queue.slice(0, at), ...soon, ...deck.queue.slice(at), ...later]);
       });
     };
     beat();

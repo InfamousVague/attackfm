@@ -8,9 +8,10 @@
 //!   - addToQueue: put it at the end of the line.
 //! With nothing playing, either one just starts it.
 //!
-//! Following a groove there is only ONE verb - "add to the groove" - because a
-//! follower has no line of their own to put a song next in; both handles land
-//! on the room, and surfaces read `following` to say so.
+//! Following a groove both verbs land on the ROOM instead of this deck - the
+//! host's line is the groove's queue - and keep their meaning: playNext asks
+//! for right after the song on, addToQueue for the end of the line. Surfaces
+//! read `following` to say "the groove" instead of "the queue".
 
 import { createContext, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
@@ -25,8 +26,11 @@ export interface QueueControls {
   /** True when in a groove at all - hosting or following. */
   inJam: boolean;
   /** True when the two verbs land on the ROOM rather than this device: in a
-   *  groove, not hosting. A surface then offers "Add to the groove" as the
-   *  one queue verb and says "sent to the groove" when it lands. */
+   *  groove, not hosting. A surface then offers "Play next in the groove" /
+   *  "Add to the groove" and says "sent ... to the groove" when it lands.
+   *  A batch sent "next" goes in ASK order there (the host keeps it; the
+   *  first asked plays first) - the reverse of the local trick, where each
+   *  playNext slots in front of the last. */
   following: boolean;
   /** Who sets the pace, while in a groove ('' outside one) - a string, not
    *  the room, so the value only changes on a hand-off. */
@@ -42,7 +46,8 @@ const QueueControlsProvider = QueueControlsContext.Provider;
  * hosting a groove, where your deck IS the room's) they edit locally through
  * the handlers App hands down. Following someone else's groove, your own deck
  * is silent - so an add goes to the ROOM instead (jam.tsx's addToRoom, which
- * shows it as pending at once), and the host folds it in on its next beat.
+ * shows it as pending at once), and the host folds it in on its next beat -
+ * right after the song on for playNext, the end of the line for addToQueue.
  * Local-only files (no server id) cannot cross to the room and are quietly
  * skipped there.
  */
@@ -65,10 +70,17 @@ export function QueueControlsBridge({
 
   const value = useMemo<QueueControls>(() => {
     if (following && addToRoom) {
-      const toRoom = (track: Track) => {
-        void addToRoom(track);
+      return {
+        playNext: (track: Track) => {
+          void addToRoom(track, { next: true });
+        },
+        addToQueue: (track: Track) => {
+          void addToRoom(track);
+        },
+        inJam: true,
+        following: true,
+        hostName,
       };
-      return { playNext: toRoom, addToQueue: toRoom, inJam: true, following: true, hostName };
     }
     return {
       playNext: localPlayNext,

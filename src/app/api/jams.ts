@@ -41,6 +41,9 @@ export interface JamPending {
   by: string;
   /** Hub ms. */
   at: number;
+  /** Asked to PLAY NEXT - right after the song on - rather than to join the
+   *  end of the line. Absent from an older hub, which is read as false. */
+  next?: boolean;
 }
 
 export interface Jam {
@@ -190,10 +193,16 @@ export async function endJam(session: ServerSession, id: string): Promise<void> 
   await request(session.url, `/api/jams/${id}/end`, { token: session.token, method: 'POST' });
 }
 
-/** What the host's beat brings back: the adds to fold in, and the members'
+/** What the host's beat brings back: the adds to fold in - the play-next
+ *  sends apart from the appends, each oldest first - and the members'
  *  transport commands to apply, oldest first. */
 export interface JamBeatReply {
+  /** Sends for the END of the line. */
   additions: number[];
+  /** Sends for right AFTER the song on, in the order they were asked (the
+   *  first asker's song plays first). A send never stands in both lists.
+   *  Empty from an older hub, which appends everything. */
+  additionsNext: number[];
   commands: JamCommand[];
 }
 
@@ -214,7 +223,7 @@ export async function pushJamState(
     deviceId?: string;
   },
 ): Promise<JamBeatReply> {
-  const out = await request<{ additions?: number[]; commands?: JamCommand[] }>(
+  const out = await request<{ additions?: number[]; additionsNext?: number[]; commands?: JamCommand[] }>(
     session.url,
     `/api/jams/${id}/state`,
     {
@@ -223,7 +232,11 @@ export async function pushJamState(
       body: JSON.stringify(state),
     },
   );
-  return { additions: out.additions ?? [], commands: out.commands ?? [] };
+  return {
+    additions: Array.isArray(out.additions) ? out.additions : [],
+    additionsNext: Array.isArray(out.additionsNext) ? out.additionsNext : [],
+    commands: out.commands ?? [],
+  };
 }
 
 /**
@@ -251,16 +264,21 @@ export async function controlJam(
 }
 
 /** A member drops a track into the groove's queue; the host folds it in on
- *  its next beat, and until then it stands in the room's `pending`. */
+ *  its next beat, and until then it stands in the room's `pending`. With
+ *  `next` it is asked for right after the song on rather than the end of the
+ *  line - the hub remembers, and hands it back in the beat's `additionsNext`.
+ *  The key is only sent when asked, so an older hub (which ignores it and
+ *  appends) sees the exact request it always did. */
 export async function addToJamQueue(
   session: ServerSession,
   id: string,
   trackId: number,
+  next = false,
 ): Promise<void> {
   await request(session.url, `/api/jams/${id}/queue`, {
     token: session.token,
     method: 'POST',
-    body: JSON.stringify({ trackId }),
+    body: JSON.stringify(next ? { trackId, next: true } : { trackId }),
   });
 }
 

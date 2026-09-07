@@ -140,7 +140,7 @@ function MixTile({
   onPlay: (track: Track, queue: Track[]) => void;
   onTune?: (mix: { title: string; tracks: Track[] }) => void;
 }) {
-  const { playNext, addToQueue } = useQueueControls();
+  const { playNext, addToQueue, following } = useQueueControls();
   const mixHold = useHoldToMenu((from) => from.closest('.mixCardMenuTarget'));
   return (
     <ContextMenu
@@ -170,12 +170,14 @@ function MixTile({
           )}
           <MenuItem
             icon={<ListStart size={15} />}
-            onSelect={() => [...mix.tracks].reverse().forEach((t) => playNext(t))}
+            // Reversed so the mix lands in running order (each local playNext
+            // slots in front of the last); a groove keeps ask order instead.
+            onSelect={() => (following ? mix.tracks : [...mix.tracks].reverse()).forEach((t) => playNext(t))}
           >
-            Play next
+            {following ? 'Play next in the groove' : 'Play next'}
           </MenuItem>
           <MenuItem icon={<ListEnd size={15} />} onSelect={() => mix.tracks.forEach((t) => addToQueue(t))}>
-            Add to queue
+            {following ? 'Add to the groove' : 'Add to queue'}
           </MenuItem>
         </>
       }

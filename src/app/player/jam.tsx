@@ -162,6 +162,17 @@ export interface PendingAdd extends JamPending {
   track?: Track;
 }
 
+/** The pending rows in the order they will LAND: the play-next sends first
+ *  (they go in right after the song on, oldest ask first), then the appends
+ *  (the end of the line, oldest first) - the strip reads like the line it
+ *  is about to become. Stable, so within each kind the ask order holds. */
+function byLanding(rows: PendingAdd[]): PendingAdd[] {
+  return rows
+    .map((row, i) => ({ row, i }))
+    .sort((a, b) => Number(b.row.next === true) - Number(a.row.next === true) || a.i - b.i)
+    .map(({ row }) => row);
+}
+
 interface JamValue {
   /** The room, or null when not in one. */
   current: Jam | null;
@@ -211,8 +222,10 @@ interface JamValue {
   leave: () => Promise<void>;
   /** A follower's add: the song goes to the ROOM for the host to fold in.
    *  Shown as pending here at once; the hub's next poll takes over the row.
-   *  Resolves false (silently) for a song with no server id, or off a room. */
-  addToRoom: (track: Track) => Promise<boolean>;
+   *  `next` asks for it right after the song on rather than the end of the
+   *  line (the host's fold keeps the order the asks were made in). Resolves
+   *  false (silently) for a song with no server id, or off a room. */
+  addToRoom: (track: Track, opts?: { next?: boolean }) => Promise<boolean>;
   /** Take back one of your own pending adds. Gone locally at once; an older
    *  hub without the route is tolerated. */
   withdraw: (trackId: number) => Promise<void>;
@@ -251,9 +264,9 @@ interface JamValue {
   refresh: () => Promise<void>;
   /** The host's Player calls this as it plays; a follower's never does.
    *  Resolves with any track ids the room has asked to add since the last
-   *  beat, for the host to fold into its queue, and the members' transport
-   *  commands since, oldest first, for the host's deck to apply (both empty
-   *  when throttled). */
+   *  beat - the play-next sends apart from the appends - for the host to
+   *  fold into its queue, and the members' transport commands since, oldest
+   *  first, for the host's deck to apply (all empty when throttled). */
   hostBeat: (state: {
     trackId: number | null;
     trackTitle?: string;
@@ -308,6 +321,11 @@ export function JamProvider({ children }: { children: ReactNode }) {
   // Withdrawn adds, hidden until a poll that ran AFTER the delete has been
   // read - a poll in flight during the delete can still carry the row.
   const withdrawn = useRef<Set<number>>(new Set());
+  // This device's sends go to the hub ONE AT A TIME, in the order they were
+  // made: the hub stamps a send on arrival, and "play next" lands in ask
+  // order, so a record sent as twelve concurrent posts could arrive - and
+  // play - shuffled. The rows show at once regardless; only the wire waits.
+  const sendChain = useRef<Promise<unknown>>(Promise.resolve());
   // Where each room is heard, mirrored from storage so the choice survives a
   // relaunch and a room asked once is never asked again.
   const [hearMap, setHearMap] = useState<Record<string, HearMode>>(readHearMap);
@@ -836,7 +854,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
       deviceId?: string;
     }): Promise<JamBeatReply> => {
       const jam = jamRef.current;
-      const none: JamBeatReply = { additions: [], commands: [] };
+      const none: JamBeatReply = { additions: [], additionsNext: [], commands: [] };
       if (!session || !jam || !isHost(jam, session.username)) return none;
       const now = Date.now();
       if (now - lastPost.current < 2500) return none;
@@ -847,10 +865,14 @@ export function JamProvider({ children }: { children: ReactNode }) {
       try {
         const { pushJamState } = await import('../server.ts');
         const reply = await pushJamState(session, jam.id, state);
-        return { additions: reply.additions, commands: [...carried, ...reply.commands] };
+        return {
+          additions: reply.additions,
+          additionsNext: reply.additionsNext,
+          commands: [...carried, ...reply.commands],
+        };
       } catch {
         // The room may have ended under us; the next poll notices.
-        return { additions: [], commands: carried };
+        return { additions: [], additionsNext: [], commands: carried };
       }
     },
     [session],
@@ -908,21 +930,28 @@ export function JamProvider({ children }: { children: ReactNode }) {
   // A follower's add, local-first. The row is on screen before the request
   // has returned: the tap landed, and the panel should say so now rather
   // than after a poll. The hub's own list takes over on the next refresh.
+  // A send asked again with the other word (added, then "play next") keeps
+  // one row, wearing the latest ask; the hub's row says what it settled on.
   const addToRoom = useCallback(
-    async (track: Track): Promise<boolean> => {
+    async (track: Track, opts?: { next?: boolean }): Promise<boolean> => {
       const room = jamRef.current;
       if (!session || !room || isHost(room, session.username)) return false;
       const id = trackIdFromPath(track.path);
       if (id == null) return false;
+      const next = opts?.next === true;
       const me = session.username;
       withdrawn.current.delete(id);
-      setLocalPending((prev) =>
-        prev.some((p) => p.trackId === id && p.roomId === room.id)
-          ? prev
-          : [...prev, { trackId: id, by: me, at: Date.now(), mine: true, track, roomId: room.id }],
-      );
+      setLocalPending((prev) => {
+        const row = { trackId: id, by: me, at: Date.now(), mine: true, next, track, roomId: room.id };
+        const i = prev.findIndex((p) => p.trackId === id && p.roomId === room.id);
+        if (i < 0) return [...prev, row];
+        if (prev[i]!.next === next) return prev;
+        return prev.map((p, j) => (j === i ? { ...p, next } : p));
+      });
+      const send = sendChain.current.then(() => addToJamQueue(session, room.id, id, next));
+      sendChain.current = send.catch(() => undefined);
       try {
-        await addToJamQueue(session, room.id, id);
+        await send;
         return true;
       } catch {
         // The room may have ended, or the hub is briefly away. The row goes
@@ -959,16 +988,16 @@ export function JamProvider({ children }: { children: ReactNode }) {
     if (!current || !session) return [];
     // The host reads the room's own list: what its player has yet to fold
     // in. It never sent any of them, so none are its to withdraw here.
-    if (hosting) return (current.pending ?? []).map((p) => ({ ...p, mine: false }));
+    if (hosting) return byLanding((current.pending ?? []).map((p) => ({ ...p, next: p.next === true, mine: false })));
     const me = session.username.toLowerCase();
     const hub: PendingAdd[] = (current.pending ?? [])
       .filter((p) => !withdrawn.current.has(p.trackId))
-      .map((p) => ({ ...p, mine: p.by.toLowerCase() === me }));
+      .map((p) => ({ ...p, next: p.next === true, mine: p.by.toLowerCase() === me }));
     const known = new Set(hub.map((p) => p.trackId));
     const local = localPending
       .filter((p) => p.roomId === current.id && !known.has(p.trackId))
       .map(({ roomId: _roomId, ...p }) => p);
-    return [...hub, ...local];
+    return byLanding([...hub, ...local]);
   }, [current, session, hosting, localPending]);
 
   const value = useMemo<JamValue>(

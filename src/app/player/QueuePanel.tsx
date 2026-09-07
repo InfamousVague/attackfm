@@ -16,7 +16,7 @@ import { deckNext } from './mediaSession.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { trackIdFromPath } from '../server.ts';
 import { Button, IconButton, Slider, SortableList, Text, useToast } from '@glacier/react';
-import { ChevronDown, Hourglass, Music, Radio, Sparkles, X } from '@glacier/icons';
+import { ArrowUpToLine, ChevronDown, Hourglass, Music, Radio, Sparkles, X } from '@glacier/icons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { artSized } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
@@ -380,7 +380,10 @@ export function QueuePanel({
           {/* The members' sends, ahead of the line: the newest thing in the
               room and the one thing everybody is waiting on. Drawn for the
               host too - a send is invisible to the host's deck until its
-              player folds it in, and a paused deck folds nothing. */}
+              player folds it in, and a paused deck folds nothing. In the
+              order they will land (jam.tsx byLanding): a send asked to play
+              NEXT wears an arrow-to-top and says so, and stands ahead of the
+              appends - it goes in right after the song on. */}
           {pendingRows.length > 0 && (
             <div
               className="queueRows queueRows--pending"
@@ -389,7 +392,14 @@ export function QueuePanel({
             >
               {pendingRows.map((p) => {
                 const who = p.mine ? 'you' : p.by;
-                const credit = (
+                const next = p.next === true;
+                const state = next ? 'playing next' : 'waiting';
+                const credit = next ? (
+                  <span className="queueRow__credit queueRow__credit--pending queueRow__credit--next">
+                    <ArrowUpToLine size={11} aria-hidden />
+                    playing next · by {who}
+                  </span>
+                ) : (
                   <span className="queueRow__credit queueRow__credit--pending">
                     <Hourglass size={11} aria-hidden />
                     by {who}
@@ -412,10 +422,11 @@ export function QueuePanel({
                       key={`pending:${p.trackId}`}
                       answer={p.track}
                       named={roomNames(p.trackId)}
-                      note={`waiting, sent by ${who}`}
+                      note={`${state}, sent by ${who}`}
                       chip={credit}
                       action={withdraw}
                       pending
+                      next={next}
                     />
                   );
                 }
@@ -425,8 +436,9 @@ export function QueuePanel({
                       className="queueRow"
                       data-static
                       data-pending
+                      data-next={next || undefined}
                       role="listitem"
-                      aria-label={`${p.track.title} by ${p.track.artist}, waiting, sent by ${who}`}
+                      aria-label={`${p.track.title} by ${p.track.artist}, ${state}, sent by ${who}`}
                     >
                       <Cover track={p.track} />
                       <div className="queueRow__meta">
@@ -594,6 +606,7 @@ function AskedRow({
   chip,
   action,
   pending = false,
+  next = false,
 }: {
   answer: null | undefined;
   named: { title: string; artist: string } | null;
@@ -604,6 +617,8 @@ function AskedRow({
   /** A control at the row's end (a withdraw). */
   action?: ReactNode;
   pending?: boolean;
+  /** A pending send asked to play next (the mark rides on the row). */
+  next?: boolean;
 }) {
   const asking = answer === undefined;
   const title = asking ? '…' : (named?.title ?? 'Not in your library');
@@ -615,6 +630,7 @@ function AskedRow({
       data-asking={asking || undefined}
       data-missing={!asking || undefined}
       data-pending={pending || undefined}
+      data-next={next || undefined}
       role="listitem"
       aria-label={`${asking ? 'Still looking up a song' : `${title}${sub ? `, ${sub}` : ''}`}${note ? `, ${note}` : ''}`}
     >
