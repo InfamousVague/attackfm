@@ -15,6 +15,18 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.133
+
+- AttackFM speaks eight languages. Settings → Appearance → Language, each one
+  written in itself: English, Español, Français, Deutsch, 日本語, Português,
+  中文, العربية. It follows your account, so picking it once picks it
+  everywhere you listen.
+- Choose Arabic and the whole app turns round to read right to left — the nav,
+  the shelves, the covers, the way a long title scrolls.
+- Some of the app is still in English. What is translated is translated
+  properly: "one song", "two songs" and "five songs" are different words in
+  most languages, and now they are different words here.
+
 ## 0.5.132
 
 - In a groove you can "Play next" as well as add: your song lands right after
