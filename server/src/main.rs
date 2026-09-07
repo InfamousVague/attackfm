@@ -74,6 +74,7 @@ mod hot;
 mod imports;
 mod listenbrainz;
 mod jams;
+mod netaddr;
 mod library_search;
 mod listens;
 mod pair;
@@ -1003,7 +1004,12 @@ async fn main() {
         }
     );
 
-    if let Err(e) = axum::serve(listener, app)
+    // Served with connect info so a handler can read the peer's address: a
+    // home hub with nothing in front sees its LAN callers directly, which is
+    // how a groove started on the same Wi-Fi is offered (jams.rs `nearby`,
+    // netaddr.rs). Behind Caddy the peer is loopback and the forwarded header
+    // carries the caller; both are read by netaddr::client_addr.
+    if let Err(e) = axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await
     {

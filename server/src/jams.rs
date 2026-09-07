@@ -23,7 +23,14 @@
 //! host who goes quiet, or leaves, hands the room to whoever has been in it
 //! longest - the music was playing for them too, and a room that vanished
 //! mid-song the moment the host's phone locked was the loudest complaint.
+//!
+//! And where its people are, on the network (netaddr.rs): the host's address
+//! and each member's last one. A room whose host is on the same network as
+//! you - one Wi-Fi, one NAT - is a room started in the room you are sitting
+//! in, and the feed offers it as `nearby` whether or not the host is a friend:
+//! a hub is already a circle. Addresses are compared and never sent.
 use crate::auth;
+use crate::netaddr;
 use crate::AppState;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -32,6 +39,7 @@ use rand::Rng;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -76,6 +84,8 @@ pub struct Member {
     pub name: String,
     pub joined_at: i64,
     pub seen_at: i64,
+    /// Where they last called from (join, poll, beat). Compared, never sent.
+    pub addr: Option<IpAddr>,
 }
 
 #[derive(Clone)]
@@ -193,6 +203,10 @@ pub struct Jam {
     pub clock_at: i64,
     pub events: VecDeque<Event>,
     pub created_at: i64,
+    /// Where the host calls from: set when the room opens, refreshed on each
+    /// of their beats and polls, carried to the next host on a hand-off.
+    /// What `nearby` is measured against. Compared, never sent.
+    pub host_addr: Option<IpAddr>,
 }
 
 impl Jam {
@@ -210,6 +224,35 @@ impl Jam {
         if let Some(m) = self.members.iter_mut().find(|m| m.id == id) {
             m.seen_at = now;
         }
+    }
+
+    /// `id` just called from `addr`. A member's address is wherever they
+    /// were last heard from; the host's is also the room's.
+    fn seen_from(&mut self, id: i64, addr: Option<IpAddr>) {
+        let Some(addr) = addr else { return };
+        if let Some(m) = self.members.iter_mut().find(|m| m.id == id) {
+            m.addr = Some(addr);
+        }
+        if self.host_id == id {
+            self.host_addr = Some(addr);
+        }
+    }
+
+    /// Whether this room's host is on `viewer`'s network. Nobody is near an
+    /// address the hub never learned.
+    fn near(&self, viewer: Option<IpAddr>) -> bool {
+        match (self.host_addr, viewer) {
+            (Some(h), Some(v)) => netaddr::same_network(h, v),
+            _ => false,
+        }
+    }
+
+    /// The wire shape as `viewer` reads it: the room, stamped with whether
+    /// its host is on their network.
+    fn to_json_for(&self, viewer: Option<IpAddr>) -> serde_json::Value {
+        let mut v = self.to_json();
+        v["nearby"] = json!(self.near(viewer));
+        v
     }
 
     /// When the host was last heard - a clock post or a poll, whichever came
@@ -381,6 +424,7 @@ impl Jam {
         if let Some(next) = self.members.iter().min_by_key(|m| m.joined_at).cloned() {
             self.host_id = next.id;
             self.host_name = next.name.clone();
+            self.host_addr = next.addr;
             self.clock_device = String::new();
             self.clock_at = 0;
             self.updated_at = now_ms();
@@ -476,6 +520,7 @@ impl JamState {
                     if let Some(next) = others.iter().min_by_key(|m| m.joined_at).cloned().cloned() {
                         jam.host_id = next.id;
                         jam.host_name = next.name.clone();
+                        jam.host_addr = next.addr;
                         jam.clock_device = String::new();
                         jam.clock_at = 0;
                         jam.updated_at = now;
@@ -505,6 +550,36 @@ impl JamState {
             }
         }
         jams.retain(|_, j| !j.members.is_empty());
+    }
+}
+
+/// What the feed shows one caller: the room they are in, their friends'
+/// rooms, and the rooms started on their network.
+#[derive(Default)]
+struct Feed {
+    current: Option<serde_json::Value>,
+    friends: Vec<serde_json::Value>,
+    nearby: Vec<serde_json::Value>,
+}
+
+/// Build the feed for `caller_id`, calling from `viewer`. `friends` are the
+/// friends' rooms as ever, each stamped `nearby`; `nearby` is every room the
+/// caller is NOT in whose host is on the caller's network - a friend's room
+/// on the network appears in both, the same JSON, the same stamp. The room
+/// the caller is in is never nearby: it is where they are. Pure, so the
+/// tests can read it without a database or a socket.
+fn feed(jams: &HashMap<String, Jam>, caller_id: i64, friend_ids: &[i64], viewer: Option<IpAddr>) -> Feed {
+    // Stable order, so two polls do not reshuffle the cards: oldest room first.
+    let mut rooms: Vec<&Jam> = jams.values().filter(|j| !j.has(caller_id)).collect();
+    rooms.sort_by_key(|j| (j.created_at, j.id.clone()));
+    Feed {
+        current: jams.values().find(|j| j.has(caller_id)).map(|j| j.to_json()),
+        friends: rooms
+            .iter()
+            .filter(|j| friend_ids.contains(&j.host_id))
+            .map(|j| j.to_json_for(viewer))
+            .collect(),
+        nearby: rooms.iter().filter(|j| j.near(viewer)).map(|j| j.to_json_for(viewer)).collect(),
     }
 }
 
@@ -538,11 +613,13 @@ fn jam_id(taken: &HashMap<String, Jam>) -> String {
 /// `POST /api/jams` - start one, hosted by the caller. Starting again while
 /// already hosting returns the jam you already have rather than a second one;
 /// starting while following another room leaves that room first.
-pub async fn create(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+pub async fn create(State(state): State<Arc<AppState>>, peer: netaddr::Peer, headers: HeaderMap) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let addr = netaddr::from_request(&headers, &peer);
     let mut jams = state.jams.lock();
     state.jams.sweep(&mut jams);
-    if let Some(existing) = jams.values().find(|j| j.host_id == caller.id) {
+    if let Some(existing) = jams.values_mut().find(|j| j.host_id == caller.id) {
+        existing.seen_from(caller.id, addr);
         return Ok(Json(existing.to_json()));
     }
     state.jams.withdraw(&mut jams, caller.id, None);
@@ -551,7 +628,7 @@ pub async fn create(State(state): State<Arc<AppState>>, headers: HeaderMap) -> A
         id: jam_id(&jams),
         host_id: caller.id,
         host_name: caller.username.clone(),
-        members: vec![Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now }],
+        members: vec![Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now, addr }],
         track_id: None,
         track_title: String::new(),
         track_artist: String::new(),
@@ -566,6 +643,7 @@ pub async fn create(State(state): State<Arc<AppState>>, headers: HeaderMap) -> A
         clock_at: 0,
         events: VecDeque::new(),
         created_at: now,
+        host_addr: addr,
     };
     jam.note("joined", &caller.username);
     let out = jam.to_json();
@@ -573,32 +651,30 @@ pub async fn create(State(state): State<Arc<AppState>>, headers: HeaderMap) -> A
     Ok(Json(out))
 }
 
-/// `GET /api/jams` - the jam you are in, and every jam your FRIENDS are
-/// hosting. Only friends': a jam is not a public room, and the friend list is
-/// the whole guest list. Reading is also the member's heartbeat, and for a
+/// `GET /api/jams` - the jam you are in, every jam your FRIENDS are hosting,
+/// and every jam started on your NETWORK (`nearby`) - a groove begun in the
+/// room you are sitting in is yours to be offered, friend or not, since a hub
+/// is already a circle. Reading is also the member's heartbeat, and for a
 /// host whose player has stopped beating it carries the room's pending asks
 /// as `additions` and its transport presses as `commands`, exactly as the
 /// clock post does - whichever of the host's reads gets there first takes
 /// them, and nobody's song (or pause) is lost to a paused player.
-pub async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+pub async fn list(State(state): State<Arc<AppState>>, peer: netaddr::Peer, headers: HeaderMap) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let addr = netaddr::from_request(&headers, &peer);
     let friend_ids: Vec<i64> = state.db.friends_of(caller.id).into_iter().map(|(id, _)| id).collect();
     let mut jams = state.jams.lock();
     let now = now_ms();
     for jam in jams.values_mut() {
         jam.touch(caller.id, now);
+        jam.seen_from(caller.id, addr);
     }
     state.jams.sweep(&mut jams);
     // The host's poll takes the room's asks once its clock has gone quiet -
     // a paused player must not leave a friend's song waiting - and `current`
     // is read AFTER, so what the host folds in is no longer shown pending.
     let polled = jams.values_mut().find(|j| j.has(caller.id)).map(|j| j.poll(caller.id, now)).unwrap_or_default();
-    let mine = jams.values().find(|j| j.has(caller.id)).map(|j| j.to_json());
-    let friends: Vec<_> = jams
-        .values()
-        .filter(|j| friend_ids.contains(&j.host_id) && !j.has(caller.id))
-        .map(|j| j.to_json())
-        .collect();
+    let Feed { current: mine, friends, nearby } = feed(&jams, caller.id, &friend_ids, addr);
     // Listen-along asks addressed to this caller, freshest kept. Reading the
     // feed is where a friend discovers someone wants to hear along with them.
     let invites: Vec<_> = {
@@ -612,6 +688,7 @@ pub async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Api
     Ok(Json(json!({
         "current": mine,
         "friends": friends,
+        "nearby": nearby,
         "invites": invites,
         "additions": polled.additions,
         "commands": polled.commands,
@@ -748,10 +825,12 @@ pub struct FromBody {
 /// just adds them to it.
 pub async fn accept_invite(
     State(state): State<Arc<AppState>>,
+    peer: netaddr::Peer,
     headers: HeaderMap,
     Json(body): Json<FromBody>,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let addr = netaddr::from_request(&headers, &peer);
     let Some((from_id, from_name)) = resolve_friend(&state, caller.id, &body.from) else {
         return Err((StatusCode::NOT_FOUND, "no such invite".into()));
     };
@@ -779,18 +858,20 @@ pub async fn accept_invite(
         state.jams.withdraw(&mut jams, caller.id, Some(&jid));
         let jam = jams.get_mut(&jid).expect("just found it");
         if !jam.has(caller.id) {
-            jam.members.push(Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now });
+            jam.members.push(Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now, addr });
             jam.note("joined", &caller.username);
         }
+        jam.seen_from(caller.id, addr);
         return Ok(Json(jam.to_json()));
     }
 
     // "along": the CALLER hosts (their player is the music), asker follows.
     if let Some(jam) = jams.values_mut().find(|j| j.host_id == caller.id) {
         if !jam.has(from_id) {
-            jam.members.push(Member { id: from_id, name: from_name.clone(), joined_at: now, seen_at: now });
+            jam.members.push(Member { id: from_id, name: from_name.clone(), joined_at: now, seen_at: now, addr: None });
             jam.note("joined", &from_name);
         }
+        jam.seen_from(caller.id, addr);
         return Ok(Json(jam.to_json()));
     }
     // Neither of us stays in another room: the asker leaves whatever they were
@@ -802,8 +883,8 @@ pub async fn accept_invite(
         host_id: caller.id,
         host_name: caller.username.clone(),
         members: vec![
-            Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now },
-            Member { id: from_id, name: from_name.clone(), joined_at: now, seen_at: now },
+            Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now, addr },
+            Member { id: from_id, name: from_name.clone(), joined_at: now, seen_at: now, addr: None },
         ],
         track_id: None,
         track_title: String::new(),
@@ -819,6 +900,7 @@ pub async fn accept_invite(
         clock_at: 0,
         events: VecDeque::new(),
         created_at: now,
+        host_addr: addr,
     };
     jam.note("joined", &caller.username);
     jam.note("joined", &from_name);
@@ -852,10 +934,12 @@ pub async fn decline_invite(
 /// in a car, where the people beside you may not be in your friends list.
 pub async fn join(
     State(state): State<Arc<AppState>>,
+    peer: netaddr::Peer,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let addr = netaddr::from_request(&headers, &peer);
     let id = id.trim().to_lowercase();
     let mut jams = state.jams.lock();
     state.jams.sweep(&mut jams);
@@ -873,9 +957,10 @@ pub async fn join(
     if let Some(m) = jam.members.iter_mut().find(|m| m.id == caller.id) {
         m.seen_at = now;
     } else {
-        jam.members.push(Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now });
+        jam.members.push(Member { id: caller.id, name: caller.username.clone(), joined_at: now, seen_at: now, addr });
         jam.note("joined", &caller.username);
     }
+    jam.seen_from(caller.id, addr);
     Ok(Json(jam.to_json()))
 }
 
@@ -941,6 +1026,7 @@ pub struct HostState {
 /// could write would drag the room to wherever their own player drifted.
 pub async fn set_state(
     State(state): State<Arc<AppState>>,
+    peer: netaddr::Peer,
     headers: HeaderMap,
     Path(id): Path<String>,
     Json(body): Json<HostState>,
@@ -954,6 +1040,9 @@ pub async fn set_state(
     if jam.host_id != caller.id {
         return Err((StatusCode::FORBIDDEN, "only the host sets the pace".into()));
     }
+    // The beat is where the host is calling from now - a phone that walked
+    // from Wi-Fi to cellular has moved the room with it.
+    jam.seen_from(caller.id, netaddr::from_request(&headers, &peer));
     // The beat hands the host anything the room has asked to add since its
     // last one, and clears it: the host folds these into its real queue, which
     // comes back to everyone on the next post.
@@ -1056,7 +1145,11 @@ mod tests {
     use super::*;
 
     fn person(id: i64, name: &str) -> Member {
-        Member { id, name: name.into(), joined_at: 0, seen_at: 0 }
+        Member { id, name: name.into(), joined_at: 0, seen_at: 0, addr: None }
+    }
+
+    fn ip(s: &str) -> Option<IpAddr> {
+        Some(s.parse().unwrap())
     }
 
     /// matt hosts; ana and kayla are in the room. Nobody has been heard from
@@ -1082,7 +1175,28 @@ mod tests {
             clock_at: 0,
             events: VecDeque::new(),
             created_at: 0,
+            host_addr: None,
         }
+    }
+
+    /// A room `host` opened from `addr`, alone, at `created_at`.
+    fn opened(id: &str, host: i64, name: &str, addr: Option<IpAddr>, created_at: i64) -> Jam {
+        let mut jam = room();
+        jam.id = id.into();
+        jam.host_id = host;
+        jam.host_name = name.into();
+        jam.members = vec![Member { id: host, name: name.into(), joined_at: created_at, seen_at: created_at, addr }];
+        jam.host_addr = addr;
+        jam.created_at = created_at;
+        jam
+    }
+
+    fn rooms(list: Vec<Jam>) -> HashMap<String, Jam> {
+        list.into_iter().map(|j| (j.id.clone(), j)).collect()
+    }
+
+    fn ids(list: &[serde_json::Value]) -> Vec<&str> {
+        list.iter().map(|v| v["id"].as_str().unwrap()).collect()
     }
 
     fn clock(playing: bool, queue: Option<Vec<i64>>) -> HostState {
@@ -1342,5 +1456,146 @@ mod tests {
         for a in ["play", "pause", "toggle", "next", "prev"] {
             assert!(validate_control(a, None).is_ok(), "{a}");
         }
+    }
+
+    #[test]
+    fn a_strangers_room_on_the_callers_network_is_nearby() {
+        // kim (7) is nobody's friend here. Her room was opened from the
+        // address ana (2) is calling from - one NAT, seen from outside.
+        let jams = rooms(vec![opened("kimkim", 7, "kim", ip("203.0.113.9"), 1_000)]);
+        let f = feed(&jams, 2, &[], ip("203.0.113.9"));
+        assert!(f.current.is_none());
+        assert!(f.friends.is_empty(), "not a friend's room");
+        assert_eq!(ids(&f.nearby), vec!["kimkim"]);
+        assert_eq!(f.nearby[0]["nearby"], json!(true));
+        assert_eq!(f.nearby[0]["hostName"], json!("kim"));
+
+        // The next public address over is another household.
+        let f = feed(&jams, 2, &[], ip("203.0.113.10"));
+        assert!(f.nearby.is_empty());
+
+        // Seen from inside a LAN: one /24 is one network, the next is not.
+        let jams = rooms(vec![opened("kimkim", 7, "kim", ip("10.0.0.5"), 1_000)]);
+        assert_eq!(ids(&feed(&jams, 2, &[], ip("10.0.0.9")).nearby), vec!["kimkim"]);
+        assert!(feed(&jams, 2, &[], ip("10.0.1.9")).nearby.is_empty());
+    }
+
+    #[test]
+    fn a_friends_room_off_the_network_is_listed_and_says_nearby_false() {
+        let jams = rooms(vec![opened("mattsm", 1, "matt", ip("10.0.0.5"), 1_000)]);
+        // ana (2) is matt's friend, calling from another network.
+        let f = feed(&jams, 2, &[1], ip("10.0.1.9"));
+        assert_eq!(ids(&f.friends), vec!["mattsm"]);
+        assert_eq!(f.friends[0]["nearby"], json!(false));
+        assert!(f.nearby.is_empty());
+
+        // The same friend on matt's network: the friends' card says so, and
+        // the room is offered as nearby too - the same room, the same stamp.
+        let f = feed(&jams, 2, &[1], ip("10.0.0.9"));
+        assert_eq!(f.friends[0]["nearby"], json!(true));
+        assert_eq!(ids(&f.nearby), vec!["mattsm"]);
+        assert_eq!(f.nearby[0]["nearby"], json!(true));
+        let (mut a, mut b) = (f.friends[0].clone(), f.nearby[0].clone());
+        // `now` is the hub's clock at serialisation; the rest is the room.
+        a["now"] = json!(0);
+        b["now"] = json!(0);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn the_callers_own_room_is_never_nearby() {
+        let mut mine = opened("mattsm", 1, "matt", ip("10.0.0.5"), 1_000);
+        mine.members.push(Member { id: 2, name: "ana".into(), joined_at: 2_000, seen_at: 2_000, addr: ip("10.0.0.9") });
+        let jams = rooms(vec![mine, opened("kimkim", 7, "kim", ip("10.0.0.7"), 3_000)]);
+
+        // The host, calling from where they opened it: their room is
+        // `current`, and only kim's - the other room on this LAN - is nearby.
+        let f = feed(&jams, 1, &[], ip("10.0.0.5"));
+        assert_eq!(f.current.as_ref().unwrap()["id"], json!("mattsm"));
+        assert_eq!(ids(&f.nearby), vec!["kimkim"]);
+        // A member of the room, likewise: they are in it, not near it.
+        let f = feed(&jams, 2, &[1], ip("10.0.0.9"));
+        assert_eq!(f.current.as_ref().unwrap()["id"], json!("mattsm"));
+        assert!(f.friends.is_empty(), "the room you are in is not a friend's room to join");
+        assert_eq!(ids(&f.nearby), vec!["kimkim"]);
+    }
+
+    #[test]
+    fn leaving_refreshes_who_is_near_what() {
+        let mut jam = opened("mattsm", 1, "matt", ip("10.0.0.5"), 1_000);
+        jam.members.push(Member { id: 2, name: "ana".into(), joined_at: 2_000, seen_at: 2_000, addr: ip("192.168.1.20") });
+        let mut jams = rooms(vec![jam]);
+
+        // ana leaves: the room is now one she is NOT in, on matt's network
+        // (she is home, on hers) - so it is nowhere near her...
+        jams.get_mut("mattsm").unwrap().remove(2);
+        let f = feed(&jams, 2, &[], ip("192.168.1.20"));
+        assert!(f.current.is_none());
+        assert!(f.nearby.is_empty());
+        // ...but a stranger on matt's LAN is offered it.
+        assert_eq!(ids(&feed(&jams, 9, &[], ip("10.0.0.9")).nearby), vec!["mattsm"]);
+
+        // The host leaves: the room passes to the next member, and with it
+        // the address `nearby` is measured against.
+        let mut jam = opened("mattsm", 1, "matt", ip("10.0.0.5"), 1_000);
+        jam.members.push(Member { id: 2, name: "ana".into(), joined_at: 2_000, seen_at: 2_000, addr: ip("192.168.1.20") });
+        assert!(jam.remove(1), "ana is still in it");
+        assert_eq!(jam.host_id, 2);
+        assert_eq!(jam.host_addr, ip("192.168.1.20"));
+        let jams = rooms(vec![jam]);
+        assert!(feed(&jams, 9, &[], ip("10.0.0.9")).nearby.is_empty(), "matt's LAN no longer hosts it");
+        assert_eq!(ids(&feed(&jams, 9, &[], ip("192.168.1.30")).nearby), vec!["mattsm"]);
+    }
+
+    #[test]
+    fn a_call_from_somewhere_moves_the_member_and_the_host_with_them() {
+        let mut jam = opened("mattsm", 1, "matt", ip("10.0.0.5"), 1_000);
+        jam.members.push(person(2, "ana"));
+        // A member's poll from an address the hub had not seen.
+        jam.seen_from(2, ip("10.0.0.9"));
+        assert_eq!(jam.member(2).unwrap().addr, ip("10.0.0.9"));
+        assert_eq!(jam.host_addr, ip("10.0.0.5"), "a member's poll is not the host's");
+        // The host's beat from cellular moves the room.
+        jam.seen_from(1, ip("203.0.113.9"));
+        assert_eq!(jam.host_addr, ip("203.0.113.9"));
+        assert_eq!(jam.member(1).unwrap().addr, ip("203.0.113.9"));
+        // A call with no address known changes nothing.
+        jam.seen_from(1, None);
+        assert_eq!(jam.host_addr, ip("203.0.113.9"));
+        // Somebody not in the room leaves no trace.
+        jam.seen_from(9, ip("10.0.0.1"));
+        assert!(jam.members.iter().all(|m| m.id != 9));
+    }
+
+    #[test]
+    fn nobody_is_near_an_address_the_hub_never_learned() {
+        let known = opened("kimkim", 7, "kim", ip("10.0.0.5"), 1_000);
+        let unknown = opened("unkown", 8, "lee", None, 2_000);
+        let jams = rooms(vec![known, unknown]);
+        // A caller the hub cannot place sees nothing nearby, and every
+        // friend's card says so.
+        let f = feed(&jams, 2, &[7, 8], None);
+        assert!(f.nearby.is_empty());
+        assert_eq!(f.friends.len(), 2);
+        assert!(f.friends.iter().all(|r| r["nearby"] == json!(false)));
+        // A placed caller is near the placed room only.
+        assert_eq!(ids(&feed(&jams, 2, &[], ip("10.0.0.9")).nearby), vec!["kimkim"]);
+    }
+
+    #[test]
+    fn no_address_ever_reaches_the_wire() {
+        let mut jam = opened("mattsm", 1, "matt", ip("203.0.113.9"), 1_000);
+        jam.members.push(Member { id: 2, name: "ana".into(), joined_at: 2_000, seen_at: 2_000, addr: ip("10.0.0.9") });
+        let jams = rooms(vec![jam]);
+        let f = feed(&jams, 9, &[1], ip("203.0.113.9"));
+        for v in f.friends.iter().chain(f.nearby.iter()) {
+            let text = v.to_string();
+            assert!(!text.contains("203.0.113.9"), "{text}");
+            assert!(!text.contains("10.0.0.9"), "{text}");
+            assert!(!text.contains("addr"), "{text}");
+            assert_eq!(v["nearby"], json!(true));
+        }
+        let text = feed(&jams, 1, &[], ip("203.0.113.9")).current.unwrap().to_string();
+        assert!(!text.contains("203.0.113.9") && !text.contains("10.0.0.9") && !text.contains("addr"), "{text}");
     }
 }
