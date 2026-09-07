@@ -1,5 +1,4 @@
 import { Button, Modal, Text } from '@glacier/react';
-import { UserRound } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { clearProfileLink, onProfileLink } from '../servers/deepLink.ts';
 import { fetchProfileCard, sendFriendRequest, type ProfileCard } from '../servers/registry.ts';

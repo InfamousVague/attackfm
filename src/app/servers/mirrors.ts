@@ -329,7 +329,7 @@ export function pickSource(session: ServerSession, trackId: number): Source | nu
   // An unprobed session server is treated as near rather than far: without a
   // measurement the incumbent keeps the song.
   let bestUrl = session.url;
-  let bestLatency = home?.ok === false ? Number.POSITIVE_INFINITY : (home?.latencyMs ?? 0);
+  const homeLatency = home?.ok === false ? Number.POSITIVE_INFINITY : (home?.latencyMs ?? 0);
   let bestId = trackId;
   let bestToken = session.streamToken;
   let bestIsPrimary = true;
@@ -339,7 +339,7 @@ export function pickSource(session: ServerSession, trackId: number): Source | nu
   const priorUrl = stuck.get(key);
   const score = (url: string, latency: number) => (url === priorUrl ? latency * SWITCH_MARGIN : latency);
 
-  let bestScore = score(bestUrl, bestLatency);
+  let bestScore = score(bestUrl, homeLatency);
   for (const mirror of mirrors) {
     const id = loadHoldings(mirror.url).get(key);
     if (id === undefined) continue;
@@ -349,7 +349,6 @@ export function pickSource(session: ServerSession, trackId: number): Source | nu
     if (candidate < bestScore) {
       bestScore = candidate;
       bestUrl = mirror.url;
-      bestLatency = h.latencyMs;
       bestId = id;
       bestToken = mirror.streamToken;
       bestIsPrimary = false;

@@ -18,7 +18,7 @@ import { AccountForm } from './AccountForm.tsx';
 import { JoinServer } from './JoinServer.tsx';
 import { parsePairPayload } from './pairing.ts';
 import { QrScanner } from './QrScanner.tsx';
-import { hasLocalLibrary, isMobile } from '../core/platform.ts';
+import { hasLocalLibrary } from '../core/platform.ts';
 import wordmark from '../../assets/attack-white.png';
 import { ArtWall } from './ArtWall.tsx';
 import { Trans, useT } from '../i18n/LocaleShell.tsx';

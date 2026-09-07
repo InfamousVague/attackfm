@@ -17,11 +17,8 @@ import {
   Bot,
   CircleCheck,
   CircleX,
-  CloudDownload,
   Compass,
   HeartHandshake,
-  Hourglass,
-  Play,
   RotateCcw,
   Shuffle,
   Sparkles,
@@ -459,7 +456,7 @@ export function LocalAiPane() {
       if (e instanceof ServerError && e.status === 404) setMissing(true);
       else setError(e instanceof Error ? e.message : t('settings.aiReportFailed'));
     }
-  }, [session]);
+  }, [session, t]);
 
   useEffect(() => { void load(); }, [load]);
 

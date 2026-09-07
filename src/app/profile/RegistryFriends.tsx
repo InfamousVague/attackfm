@@ -21,7 +21,6 @@ import { fetchShares, setShareGrant, settleShare, type Share } from '../servers/
 import { addPendingLike } from '../api/likes.ts';
 import {
   Button,
-  Field,
   IconButton,
   Input,
   Modal,
@@ -239,7 +238,6 @@ export type VisitServer = (friend: RegistryFriend) => void;
 
 export function FriendsSection({
   token,
-  me,
   onVisit,
   onOpen,
 }: {

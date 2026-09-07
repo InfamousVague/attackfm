@@ -120,7 +120,7 @@ export function StatsPage({
       if (id !== null) map.set(id, track);
     }
     return map;
-  }, [tracks]);
+  }, [tracks, session]);
 
   // Albums arrive as name strings only, so their covers are joined here: the
   // first track in the library wearing that album name lends its art. A name

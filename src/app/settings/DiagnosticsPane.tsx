@@ -79,6 +79,7 @@ export function DiagnosticsPane() {
       }),
     // Rebuilt on every recorded entry: `entries` is the ring itself, so its
     // identity changing is the signal that there is something new to say.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- entries is the ring's identity, standing in for the log diagReport() reads inside
     [session, health, entries, pushToken, t],
   );
 

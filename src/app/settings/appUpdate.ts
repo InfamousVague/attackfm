@@ -134,7 +134,7 @@ export function notesFor(version: string | null): string | null {
  */
 export function unseenNotes(): { version: string; notes: string } | null {
   const version = currentVersion();
-  let seen: string | null = null;
+  let seen: string | null;
   try {
     seen = localStorage.getItem(SEEN_KEY);
   } catch {

@@ -288,18 +288,21 @@ export function orphanedImportChoice(session: ServerSession | null): string | nu
 export function useOrphanedImportChoice(): string | null {
   const { session } = useServerSession();
   const v = useSyncExternalStore(subscribeImportServer, snapshot, snapshot);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- v is the store's version; the pinned choice it stands for is module state read inside the memo
   return useMemo(() => orphanedImportChoice(session), [session, v]);
 }
 
 export function useImportServer(): ServerSession | null {
   const { session } = useServerSession();
   const v = useSyncExternalStore(subscribeImportServer, snapshot, snapshot);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- v is the store's version; the pinned choice it stands for is module state read inside the memo
   return useMemo(() => resolveImportServer(session), [session, v]);
 }
 
 export function useImportTargets(): ImportTarget[] {
   const { session } = useServerSession();
   const v = useSyncExternalStore(subscribeImportServer, snapshot, snapshot);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- v is the store's version; the pinned choice it stands for is module state read inside the memo
   return useMemo(() => importTargets(session), [session, v]);
 }
 

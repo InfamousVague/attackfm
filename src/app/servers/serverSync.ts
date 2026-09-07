@@ -39,16 +39,6 @@ function registryToken(): string | null {
   }
 }
 
-function lastPushed(): string[] {
-  try {
-    const raw = localStorage.getItem(PUSHED_KEY);
-    const list = raw ? (JSON.parse(raw) as string[]) : [];
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];
-  }
-}
-
 function rememberPushed(urls: string[]): void {
   try {
     localStorage.setItem(PUSHED_KEY, JSON.stringify(urls));

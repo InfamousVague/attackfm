@@ -119,6 +119,7 @@ export function ServersPanel() {
     if (!session) return keys;
     for (const t of loadCachedIndex(session.url).tracks) keys.add(trackKey(t.artist, t.title));
     return keys;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tick is the redraw signal: the cached index is module state written outside React, so it is not a dependency React can see
   }, [session, tick]);
 
   const refresh = useCallback(async () => {
@@ -188,6 +189,7 @@ export function ServersPanel() {
     // `tick` is the redraw signal after a probe: latency lives in a module map
     // rather than state, deliberately (the heartbeat writes it from outside
     // React), so the page asks to be re-read rather than being told.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tick is the redraw signal for the module-level health and holdings maps, which React cannot depend on
   }, [session, mirrors, stats, libraryKeys, tick, t]);
 
   // Which box would actually serve a song right now, by the same rule the

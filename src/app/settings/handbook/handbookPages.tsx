@@ -663,7 +663,7 @@ export const myPlugin: Plugin = {
     chapterKey: CH_PLUGINS,
     icon: <FolderTree size={GLYPH} />,
     titleKey: 'settings.handbookAnatomyTitle',
-    body: (t) => (
+    body: (_t) => (
       <>
         <P>
           <Spans

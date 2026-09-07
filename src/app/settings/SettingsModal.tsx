@@ -92,7 +92,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   // read - the array below must re-render the instant the seventeenth tap
   // lands. See developerMode.ts.
   const devMode = useDeveloperMode();
-  const { connected, devices } = useConnect();
+  const { devices } = useConnect();
   const { all: allPlugins, isEnabled } = usePlugins();
   const { source, tracks } = useLibrary();
 
