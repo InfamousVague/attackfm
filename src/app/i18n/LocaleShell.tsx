@@ -2,6 +2,7 @@ import { LocaleProvider, type Locale } from '@glacier/react';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { directionOf, i18next, initialLocale, loadLocale, rememberLocale, startI18n } from './index.ts';
+import { setFormatLocale } from '../ux/format.ts';
 
 /**
  * ONE ANSWER TO "WHAT LANGUAGE IS THIS".
@@ -43,6 +44,10 @@ function stampDocument(locale: Locale): void {
   const html = document.documentElement;
   html.lang = locale;
   html.dir = directionOf(locale);
+  // Numbers, dates, byte sizes and "3 days ago" come from Intl rather than
+  // the catalogue, so ux/format.ts needs telling too. Same breath as the
+  // document, so there is no window where the two disagree.
+  setFormatLocale(locale);
 }
 
 export function LocaleShell({ children }: { children: ReactNode }) {
@@ -135,3 +140,22 @@ export function useSongCount() {
 export function translate(key: string, options?: Record<string, unknown>): string {
   return i18next.t(key, { ns: 'app', ...options });
 }
+
+/**
+ * A sentence with something LIVE in the middle of it.
+ *
+ *     <Trans i18nKey="library.stillReading" values={{ n }} components={{ b: <strong /> }} />
+ *
+ * The app builds 172 sentences by putting text and `{expressions}` next to
+ * each other as JSX siblings:
+ *
+ *     Still reading your library — {count} songs.
+ *
+ * Wrapping each fragment in its own t() would hand a translator three pieces
+ * with no way to reorder them, and word order is the first thing that changes
+ * between languages - German puts the verb last, Arabic runs the other way
+ * entirely. So the whole sentence becomes ONE catalogue entry with the hole
+ * named inside it, and the translator moves the hole where their language
+ * wants it.
+ */
+export { Trans } from 'react-i18next';
