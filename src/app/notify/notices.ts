@@ -21,7 +21,7 @@
 //! sync down even if we wanted to. The day there is an `/api/notices`, this
 //! becomes the local mirror in front of it.
 
-import { useCallback, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { mirrorNoticeToOs } from './osNotify.ts';
 
 const KEY_BASE = 'attackfm-notify-v1';

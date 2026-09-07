@@ -123,15 +123,16 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
   // token renewal does not churn the list. Remote plugins append after the
   // compiled-in set, in install order, and a remote id colliding with a
   // compiled-in one is dropped - the compiled-in plugin is authoritative.
+  const connected = session !== null;
   const plugins = useMemo<readonly Plugin[]>(() => {
-    const compiled = localizePlugins(availablePlugins(session !== null), t);
+    const compiled = localizePlugins(availablePlugins(connected), t);
     const taken = registeredIds();
     const remote = filterAvailable(
       remoteState.plugins.filter((p) => !taken.has(p.id)),
-      session !== null,
+      connected,
     );
     return [...compiled, ...remote];
-  }, [session !== null, remoteState, t]);
+  }, [connected, remoteState, t]);
 
   // What the marketplace shows against a card that came from a repository.
   const remoteInstalled = useMemo(() => {

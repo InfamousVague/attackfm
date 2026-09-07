@@ -304,6 +304,7 @@ export function useTileArt(urls: readonly (string | null)[]): {
         img.onerror = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- session is read only inside the error handler, at mirror-fallback time; naming it would re-arm the whole preload (every cover, off-DOM) on each token renewal.
   }, [key, near]);
   return { loaded, hostRef: setHost };
 }

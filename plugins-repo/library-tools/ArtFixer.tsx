@@ -7,7 +7,7 @@
  * delta sync - the note under the button says as much.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Input, Spinner, Text, useHaptics } from '@glacier/react';
+import { Input, Spinner, Text, useHaptics } from '@glacier/react';
 import { Image, Search } from '@glacier/icons';
 import {
   MissingEndpointError,
@@ -117,6 +117,7 @@ export function ArtFixer({ session, onBack }: { session: ServerSession; onBack: 
       stale = true;
     };
     // selectedKey rather than selected: the group object churns with rows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedKey stands in for `selected`: the group object is rebuilt on every row change, so depending on it would refetch candidates constantly.
   }, [session, selectedKey, fetchNonce]);
 
   const apply = (candidate: ArtCandidate) => {

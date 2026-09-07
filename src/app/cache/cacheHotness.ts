@@ -103,7 +103,7 @@ export async function rankHotness(session: ServerSession): Promise<Hotness> {
   });
 
   // Liked songs are the one signal the listener stated out loud.
-  let liked = 0;
+  let liked: number;
   try {
     const favorites = await fetchRemoteFavorites(session);
     liked = favorites.length;

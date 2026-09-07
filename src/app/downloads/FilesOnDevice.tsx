@@ -142,7 +142,10 @@ export function FilesOnDevice() {
     for (const tr of loadCachedIndex(session.url).tracks) m.set(remotePath(tr.id), toTrack(session, tr));
     return m;
   }, [session]);
-  const resolve = (key: string): Track | null => byPath.get(key) ?? byIndex.get(key) ?? null;
+  const resolve = useCallback(
+    (key: string): Track | null => byPath.get(key) ?? byIndex.get(key) ?? null,
+    [byPath, byIndex],
+  );
 
   const rows: Row[] = useMemo(() => {
     if (fixture) return fixture;
@@ -153,7 +156,7 @@ export function FilesOnDevice() {
       auto: owned.has(e.key),
       file: e.path,
     }));
-  }, [entries, byPath, owned, fixture]);
+  }, [entries, resolve, owned, fixture]);
 
   const remove = (batch: Row[]) => {
     if (fixture) {

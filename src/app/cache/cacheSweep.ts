@@ -543,7 +543,7 @@ export async function sweepCache(
         await unpinTrack(key);
       }
       setManifestState(key, 'downloading');
-      let host = '';
+      let host: string;
       try {
         host = new URL(from.url).host;
       } catch {

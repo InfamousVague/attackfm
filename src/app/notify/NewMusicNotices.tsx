@@ -99,7 +99,6 @@ export function NewMusicNotices() {
       // one carries the cover the row will wear.
       const items = lists.flatMap((l) => l.items);
       const currentIds = items.map((t) => t.id);
-      const current = new Set(currentIds);
 
       const seen = readSeen(key);
       if (seen === null) {

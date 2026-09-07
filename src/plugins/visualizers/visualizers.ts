@@ -155,9 +155,9 @@ function hueOf(css: string): number | null {
   const s = css.trim();
   const hsl = /hsla?\(\s*([\d.]+)/.exec(s);
   if (hsl) return parseFloat(hsl[1] ?? '0');
-  let r = -1;
-  let g = -1;
-  let b = -1;
+  let r: number;
+  let g: number;
+  let b: number;
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(s);
   if (hex) {
     const v = hex[1] ?? '';
@@ -182,7 +182,7 @@ function hueOf(css: string): number | null {
   const min = Math.min(r, g, b);
   const d = max - min;
   if (d === 0) return null;
-  let h = 0;
+  let h: number;
   if (max === r) h = ((g - b) / d) % 6;
   else if (max === g) h = (b - r) / d + 2;
   else h = (r - g) / d + 4;

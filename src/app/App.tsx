@@ -6,7 +6,7 @@
 // (current/queue) and the queue verbs stay HERE - they close over live state
 // through refs and everything else threads off them.
 import { IconButton, TitleBar } from '@glacier/react';
-import { ArrowLeft, ArrowRight, ChevronLeft, RefreshCw, Search, Settings } from '@glacier/icons';
+import { ArrowLeft, ArrowRight, ChevronLeft, RefreshCw, Settings } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import { PluginHookScope } from '../plugins/runtime.tsx';

@@ -10,7 +10,6 @@ import { chapterNumbers, frontMatterTitle } from '../../app/player/chapterNumber
 import {
   isFavouriteBook,
   shelve,
-  type Chapter,
   type ShelfBook,
 } from '../../app/library/bookShelf.ts';
 import { fetchPlayStates } from '../../app/api/listening.ts';
@@ -1172,6 +1171,9 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
   const pageRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(false);
+  // The sentinel only exists once the shelf has books, so the observer re-arms
+  // on that flip and nothing else.
+  const shelfEmpty = books.length === 0;
   useEffect(() => {
     const root = pageRef.current;
     const mark = sentinelRef.current;
@@ -1182,7 +1184,7 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
     });
     observer.observe(mark);
     return () => observer.disconnect();
-  }, [books.length === 0]);
+  }, [shelfEmpty]);
   // The cover the header wears when the page's own head scrolls away.
   const [marks, setMarks] = useState<Map<number, { positionMs: number; updatedAt: number }>>(
     new Map(),

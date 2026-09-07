@@ -150,7 +150,7 @@ export function StorageOverview() {
     void offlineSpace().then(setSpace);
     setReport(lastSweep());
     setPlan([...sweepManifest()]);
-  }, []);
+  }, [books]);
   useEffect(() => {
     refresh();
     const offA = onCacheChange(refresh);

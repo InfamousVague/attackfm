@@ -378,7 +378,9 @@ let total = 0, done = 0;
 for (const file of files) {
   const rel = relative(ROOT, file);
   if (denied(rel) && !only) continue;
-  let { findings, translated } = scanFile(file);
+  const scanned = scanFile(file);
+  const { translated } = scanned;
+  let findings = scanned.findings;
   if (kindWanted) findings = findings.filter((f) => f.kind.startsWith(kindWanted));
   total += findings.length;
   done += translated;

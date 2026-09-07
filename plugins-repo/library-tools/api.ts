@@ -138,6 +138,7 @@ export function useLibraryRows(session: ServerSession): LibraryRows {
       stale = true;
     };
     // The token stands in for the session: reconnecting mints a new one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- url+token are the whole of the session that this fetch reads; the object identity churns without the connection changing.
   }, [session.url, session.token, nonce]);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
