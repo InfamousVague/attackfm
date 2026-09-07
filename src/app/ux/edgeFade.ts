@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { scrolledFromStart, scrollRoom } from './inlineScroll.ts';
 
 /**
  * A row that runs off the edge of a narrow screen scrolls sideways, and says
@@ -44,11 +45,17 @@ export function useEdgeFade<T extends HTMLElement>() {
       // sub-pixel layout puts it at a fraction rather than 0 on some widths -
       // hence the 1px floor rather than a `> 0` test, which would leave a
       // permanent hairline fade on a row with nothing to scroll.
-      const room = el.scrollWidth - el.clientWidth;
-      const left = room <= 1 ? 0 : Math.min(FADE_PX, el.scrollLeft);
-      const right = room <= 1 ? 0 : Math.min(FADE_PX, room - el.scrollLeft);
-      el.style.setProperty('--edge-start', `${left}px`);
-      el.style.setProperty('--edge-end', `${right}px`);
+      // Measured from the START edge. The properties are already named
+      // start/end rather than left/right, and in RTL `el.scrollLeft` is
+      // NEGATIVE - taking it raw made `--edge-start` negative and pinned
+      // `--edge-end` to its maximum, so both fades were on the wrong side of
+      // an Arabic shelf and neither ever cleared.
+      const room = scrollRoom(el);
+      const from = scrolledFromStart(el);
+      const start = room <= 1 ? 0 : Math.min(FADE_PX, from);
+      const end = room <= 1 ? 0 : Math.min(FADE_PX, room - from);
+      el.style.setProperty('--edge-start', `${start}px`);
+      el.style.setProperty('--edge-end', `${end}px`);
     };
 
     measure();

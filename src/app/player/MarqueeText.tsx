@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { resolveDirection } from '@glacier/react';
 
 /** How long the text rests at each end before setting off again. */
 const DWELL_MS = 1000;
@@ -68,6 +69,10 @@ export function MarqueeText({ text, className = '', as: Tag = 'span' }: MarqueeT
       track.setAttribute('data-scrolling', 'true');
 
       const travel = Math.max((overflow / PIXELS_PER_SECOND) * 1000, 600);
+      // Which way the text has to go to reveal its own end. In Arabic the
+      // overflow hangs off the LEFT, so the same negative translate slides the
+      // title further away from the reader instead of bringing it back.
+      const away = resolveDirection(content) === 'rtl' ? overflow : -overflow;
       const total = travel * 2 + DWELL_MS * 2;
       const at = (ms: number) => ms / total;
 
@@ -75,9 +80,9 @@ export function MarqueeText({ text, className = '', as: Tag = 'span' }: MarqueeT
         [
           { transform: 'translateX(0)', offset: 0, easing: 'ease-in-out' },
           { transform: 'translateX(0)', offset: at(DWELL_MS), easing: 'ease-in-out' },
-          { transform: `translateX(${-overflow}px)`, offset: at(DWELL_MS + travel) },
+          { transform: `translateX(${away}px)`, offset: at(DWELL_MS + travel) },
           {
-            transform: `translateX(${-overflow}px)`,
+            transform: `translateX(${away}px)`,
             offset: at(DWELL_MS * 2 + travel),
             easing: 'ease-in-out',
           },

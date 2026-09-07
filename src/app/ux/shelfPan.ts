@@ -24,6 +24,7 @@
  * shelves today and the next one should not have to remember. One listener
  * set, and any element matching SHELF finds itself scrollable.
  */
+import { inlineSign, scrollLeftFor, scrolledFromStart, scrollRoom } from './inlineScroll.ts';
 
 /** The ScrollArea viewport inside a horizontal shelf - the element that
  *  actually scrolls. Matches app.css's own rule. */
@@ -49,7 +50,7 @@ export function installShelfPan(): () => void {
   let touchId: number | null = null;
   let startX = 0;
   let startY = 0;
-  let startLeft = 0;
+  let startFrom = 0;
   /** null while undecided; 'x' once ours; the tracking stops dead on 'y'. */
   let axis: 'x' | 'y' | null = null;
   /** Finger speed in px/ms, from the last two samples - recent, so the flick
@@ -64,8 +65,10 @@ export function installShelfPan(): () => void {
     glide = 0;
   };
 
-  const clamp = (el: HTMLElement, left: number) =>
-    Math.max(0, Math.min(left, el.scrollWidth - el.clientWidth));
+  /* Measured from the START edge, not from the left one. In Arabic a shelf's
+     scrollLeft runs [-room, 0], and the `Math.max(0, …)` this used to be
+     clamped every legal position to zero - the shelves did not drag at all. */
+  const clampFrom = (el: HTMLElement, from: number) => Math.max(0, Math.min(from, scrollRoom(el)));
 
   const onStart = (event: TouchEvent) => {
     // A second finger means a pinch or a two-finger gesture; neither is ours.
@@ -80,7 +83,7 @@ export function installShelfPan(): () => void {
     touchId = touch.identifier;
     startX = touch.clientX;
     startY = touch.clientY;
-    startLeft = found.scrollLeft;
+    startFrom = scrolledFromStart(found);
     axis = null;
     velocity = 0;
     lastX = touch.clientX;
@@ -110,7 +113,9 @@ export function installShelfPan(): () => void {
     // Ours. preventDefault stops the engine starting a vertical pan off the
     // gesture's drift - without it a mostly-sideways drag creeps the page.
     if (event.cancelable) event.preventDefault();
-    shelf.scrollLeft = clamp(shelf, startLeft - dx);
+    // The finger goes one way and the content the other - and in RTL that
+    // relationship is itself reversed, hence the sign.
+    shelf.scrollLeft = scrollLeftFor(shelf, clampFrom(shelf, startFrom - inlineSign(shelf) * dx));
 
     const dt = event.timeStamp - lastAt;
     if (dt > 0) {
@@ -130,7 +135,7 @@ export function installShelfPan(): () => void {
     axis = null;
 
     // The finger moves one way, the content the other.
-    let speed = -velocity;
+    let speed = -inlineSign(el) * velocity;
     if (Math.abs(speed) < STILL) return;
 
     let previous = performance.now();
@@ -139,7 +144,7 @@ export function installShelfPan(): () => void {
       const frames = Math.max(0.5, Math.min(3, (now - previous) / 16.67));
       previous = now;
       speed *= Math.pow(FRICTION, frames);
-      const next = clamp(el, el.scrollLeft + speed * 16.67 * frames);
+      const next = scrollLeftFor(el, clampFrom(el, scrolledFromStart(el) + speed * 16.67 * frames));
       // Hitting an end stops it: no rubber-band here, because the engine is
       // not the one moving this and a fake bounce reads as a stutter.
       if (next === el.scrollLeft || Math.abs(speed) < STILL) {

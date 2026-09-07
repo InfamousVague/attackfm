@@ -257,7 +257,17 @@ body:has(.npScreen[data-docked]) .appNavScrim {
 .appNavBarPill {
   position: absolute;
   inset-block-start: 0;
-  inset-inline-start: 0;
+  /* `left`, NOT `inset-inline-start`, and this is the one place in the app
+     where the physical property is the correct one.
+     
+     The plate is placed by a transform whose x comes from summing
+     `offsetLeft` (useNavPill.ts), and offsetLeft is measured from the left
+     edge in every direction - there is no logical counterpart to it. Anchor
+     the plate logically and in Arabic the two halves disagree: the origin
+     moves to the right edge while the offset still counts rightward from the
+     left, and the plate leaves the bar entirely on its first placement.
+     Neither file is wrong by itself, which is why this needs saying here. */
+  left: 0;
   /* Behind the tabs, which sit above it on z-index below. Without a stacking
      order a positioned element paints OVER its static siblings, and the plate
      would cover the very glyph it is meant to light. */
@@ -578,6 +588,28 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
   );
   mask-image: linear-gradient(
     to right,
+    transparent 0,
+    #000 var(--edge-start),
+    #000 calc(100% - var(--edge-end)),
+    transparent 100%
+  );
+}
+
+/* The mask above is `to right`, because a gradient has no logical direction -
+   there is no `to inline-end` to write. The two custom properties it reads ARE
+   logical (edgeFade.ts measures them from the start edge), so in Arabic the
+   gradient has to be turned round to meet them, or the fade that belongs at
+   the start of the row is painted at its end. */
+[dir='rtl'] .edgeScroll {
+  -webkit-mask-image: linear-gradient(
+    to left,
+    transparent 0,
+    #000 var(--edge-start),
+    #000 calc(100% - var(--edge-end)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to left,
     transparent 0,
     #000 var(--edge-start),
     #000 calc(100% - var(--edge-end)),

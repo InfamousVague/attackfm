@@ -42,6 +42,7 @@ export const SYNCED_KEYS = [
   'attackfm-appearance-v2',
   'attackfm-plugins-disabled',
   'attackfm-card-style',      // which face the four library doors wear
+  'attackfm-locale',          // what language the app is in, and which way it runs
   // Sound. NOTE: the fx chain is rendered per-server and servers implement
   // different node vocabularies, so a chain can arrive somewhere that cannot
   // play all of it. That is survivable - the UI already greys what the server
