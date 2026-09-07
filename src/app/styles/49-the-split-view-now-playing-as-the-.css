@@ -20,6 +20,9 @@
      and positions against this. Trimmed from 4.5rem once the square's inner
      padding came down - the plate hugs its glyph and name now. */
   --app-nav-island-height: 4rem;
+  /* The desktop title bar's height, read by the docked player so it can start
+     underneath rather than beside it. Measured at 52px and declared here. */
+  --app-titlebar-height: 3.25rem;
 }
 
 /* Wide enough for two rooms, and this is mobile chrome (the nav bar is its
@@ -30,8 +33,30 @@
   /* Keyed on the DOCK itself, not merely on a strip existing: while the strip
      only mirrors a remote device the sheet stays unmounted, and the app must
      keep the whole width rather than hold an empty right gutter open. */
-  body:has(.npScreen[data-docked]) .appWindow {
-    inline-size: calc(100% - var(--np-dock-width));
+  /*
+   * The BODY gives up the column, not the whole window.
+   *
+   * This shrank `.appWindow`, which is the flex column holding the title bar,
+   * the body and the player. That took the title bar with it: the bar stopped
+   * dead at the dock's leading edge, so the window looked sawn off along a
+   * vertical line with the wordmark and the window buttons crammed into what
+   * was left. The dock is a panel INSIDE the app, not a second window beside
+   * it, and the chrome that names the app should run the whole way across
+   * above it.
+   *
+   * Reserved as padding rather than a width so the rail and the content pane
+   * inside keep sizing themselves off one box; `.appBody` is `display: flex`
+   * and its children already divide what they are given.
+   */
+  body:has(.npScreen[data-docked]) .appBody {
+    padding-inline-end: var(--np-dock-width);
+  }
+
+  /* The strip is absolute against `.appWindow` with `inset-inline: 0`, so it
+     spanned the full window the moment the window stopped being the narrow
+     one. It stops where the dock starts. */
+  body:has(.npScreen[data-docked]) .appPlayer {
+    inset-inline-end: var(--np-dock-width);
   }
 }
 
@@ -43,8 +68,11 @@
    sheet does; overflow:hidden (from the base rule) is what lets the radius
    clip the backdrop art. */
 .npScreen[data-docked] {
-  inset: max(var(--glacier-space-3), env(safe-area-inset-top, 0px)) var(--glacier-space-3)
-    var(--glacier-space-3) auto;
+  /* Below the title bar, not beside it. The bar is the app's own chrome and
+     runs the full width; the dock is a panel under it, which is why its top
+     is the bar's height rather than the top of the window. */
+  inset: calc(max(var(--glacier-space-3), env(safe-area-inset-top, 0px)) + var(--app-titlebar-height, 0px))
+    var(--glacier-space-3) var(--glacier-space-3) auto;
   inline-size: calc(var(--np-dock-width) - var(--glacier-space-3) * 2);
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   border-radius: var(--glacier-radius-2xl, 1.75rem);

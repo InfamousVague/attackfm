@@ -228,6 +228,11 @@
   /* Above the now-playing backdrop, which the chrome must never sit under. */
   position: relative;
   z-index: 1;
+  /* The height is DECLARED, not measured, because the docked player has to
+     start below this bar and CSS cannot ask how tall a flow element turned
+     out. Pinning it here means the token and the bar are the same fact
+     instead of two that drift. It matches what the bar sized itself to. */
+  block-size: var(--app-titlebar-height);
 }
 
 /* The right-click wrapper the strip's artwork square hands its size to. It
