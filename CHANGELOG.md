@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.137
+
+- A song you add to the queue on one device now shows up on your others. What
+  travels is the order you would recite: what is on, then what you queued, then
+  the rest of the list.
+
 ## 0.5.136
 
 - Four screens could crash and no longer do: an album whose songs arrive a
