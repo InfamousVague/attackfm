@@ -244,7 +244,6 @@ pub(crate) async fn spotify_artist(name: &str) -> Option<Value> {
         .ok()
 }
 
-#[allow(dead_code)]
 pub(crate) async fn spotify_search(q: &str) -> Vec<SearchResult> {
     let Some(token) = spotify_token().await else {
         return Vec::new();

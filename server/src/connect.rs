@@ -418,6 +418,9 @@ async fn on_hello(
     }
 }
 
+// One `state` frame off the wire, spread flat: the socket hands these over
+// one field at a time and a parameter struct here would be the same fields
+// with a second name to keep in step with the message the client sends.
 #[allow(clippy::too_many_arguments)]
 async fn on_state(
     state: &Arc<AppState>,

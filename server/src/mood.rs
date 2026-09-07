@@ -215,7 +215,7 @@ pub(crate) fn point_vec(f: &TrackFeatures, sound: bool) -> Option<(&Vec<f32>, bo
 }
 
 /// Weighted median, or None when there is nothing to take one of.
-pub(crate) fn weighted_median(vals: &mut Vec<(f64, f32)>) -> Option<f64> {
+pub(crate) fn weighted_median(vals: &mut [(f64, f32)]) -> Option<f64> {
     if vals.is_empty() {
         return None;
     }
@@ -385,7 +385,7 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64) -> Option<MoodProfile> {
         }
         let mass: f64 = members.iter().map(|&i| f64::from(weights[i])).sum();
         let share = mass / total.max(1e-9);
-        if share < MIN_SHARE && clusters.len() >= 1 {
+        if share < MIN_SHARE && !clusters.is_empty() {
             continue;
         }
 

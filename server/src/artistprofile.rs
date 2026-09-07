@@ -21,12 +21,12 @@
 //!
 //! Four sources, and none of them is required:
 //!   - **Deezer**  fans, album count, a discography, their top songs, and who
-//!                 the catalogue puts near them.
+//!     the catalogue puts near them.
 //!   - **MusicBrainz** where they are from, when they started, person or band,
-//!                 and the curated genre tags.
+//!     and the curated genre tags.
 //!   - **ListenBrainz** how many people actually listen.
 //!   - **Spotify** genres, followers and a 0-100 popularity - only when the hub
-//!                 has its own app credentials.
+//!     has its own app credentials.
 //!
 //! **Rate limits are the real constraint**, not the code. A naive twenty-five
 //! artist build is a hundred-request burst that degrades the harvest, the
@@ -264,7 +264,7 @@ async fn build_full(state: &Arc<AppState>, name: &str) -> (Value, Vec<&'static s
                 body.insert("musicbrainz".into(), facts);
                 sources.push("musicbrainz");
             }
-            let pop = crate::listenbrainz::artist_popularity(&mb_client, &[mbid.clone()]).await;
+            let pop = crate::listenbrainz::artist_popularity(&mb_client, std::slice::from_ref(&mbid)).await;
             if let Some(listeners) = positive(pop.get(&mbid).copied()) {
                 body.insert("listenbrainz".into(), json!({ "listeners": listeners }));
                 sources.push("listenbrainz");

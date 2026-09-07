@@ -475,7 +475,7 @@ pub(crate) fn lanes_of(candidates: &[i64], by_id: &HashMap<i64, &crate::db::Trac
         lanes[assign[i]].push(*id);
     }
     lanes.retain(|l| l.len() >= LANE_MIN);
-    lanes.sort_by(|a, b| b.len().cmp(&a.len()));
+    lanes.sort_by_key(|b| std::cmp::Reverse(b.len()));
     lanes
 }
 

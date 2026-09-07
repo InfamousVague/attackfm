@@ -140,7 +140,7 @@ fn spoken_number(words: &str) -> Option<i64> {
     ];
     let w = words.trim().to_lowercase();
     if let Ok(n) = w.parse::<i64>() {
-        return (n >= 0 && n < 1000).then_some(n);
+        return (0..1000).contains(&n).then_some(n);
     }
     if let Some((_, n)) = ONES.iter().find(|(name, _)| *name == w) {
         return Some(*n);
@@ -392,11 +392,13 @@ pub async fn book(
     let ids: Vec<i64> = siblings.iter().map(|(id, _)| *id).collect();
     let mut by_track: serde_json::Map<String, Value> = serde_json::Map::new();
     for (tid, idx, name, blurb) in state.db.chapter_blurbs(&ids) {
-        by_track
+        if let Some(a) = by_track
             .entry(tid.to_string())
             .or_insert_with(|| Value::Array(Vec::new()))
             .as_array_mut()
-            .map(|a| a.push(json!({ "idx": idx, "name": name, "blurb": blurb })));
+        {
+            a.push(json!({ "idx": idx, "name": name, "blurb": blurb }));
+        }
     }
     Ok(Json(json!({ "blurbs": Value::Object(by_track) })))
 }

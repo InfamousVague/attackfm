@@ -5297,6 +5297,9 @@ impl Db {
             .unwrap_or_default()
     }
 
+    // One row of `spotify_items`, one argument per column, plus the user it
+    // belongs to. A parameter struct would name the same columns twice and
+    // have to be kept in step with the schema by hand.
     #[allow(clippy::too_many_arguments)]
     pub fn spotify_item_set(
         &self,
@@ -5965,6 +5968,9 @@ impl Db {
         out
     }
 
+    // The tag, what was decided about it, and the provenance the decision has
+    // to state - the columns of one `tag_decisions` row. Grouping them would
+    // put a second shape in front of the table this function exists to write.
     #[allow(clippy::too_many_arguments)]
     pub fn record_specific_tag_decision(
         &self,
