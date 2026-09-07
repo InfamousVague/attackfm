@@ -82,7 +82,7 @@ export function SyncToHubSection() {
     t('servers.syncCopied', { count: counts.done, n: formatNumber(counts.done) }),
     counts.skipped > 0 ? t('servers.syncAlreadyThere', { count: counts.skipped, n: formatNumber(counts.skipped) }) : null,
     stuck.length > 0 ? t('servers.syncStruggling', { count: stuck.length, n: formatNumber(stuck.length) }) : null,
-    counts.failed > 0 ? t('servers.syncFailed', { count: counts.failed, n: formatNumber(counts.failed) }) : null,
+    counts.failed > 0 ? t('servers.syncFailedCount', { count: counts.failed, n: formatNumber(counts.failed) }) : null,
   ].filter(Boolean).join(' · ');
 
   return (

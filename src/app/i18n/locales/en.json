@@ -2757,8 +2757,6 @@
     "syncExplain": "{{host}} downloads your imports and then copies each finished song to {{where}}, so both servers end up holding it.",
     "syncFailed": "Sync hit a problem; it will retry.",
     "syncFailedItem": "{{path}} — {{reason}}",
-    "syncFailed_one": "{{n}} failed",
-    "syncFailed_other": "{{n}} failed",
     "syncIdle": "The music folder syncs to the server automatically.",
     "syncInSync": "Folder is in sync (checked {{time}}).",
     "syncNoReason": "no reason given",
@@ -2811,7 +2809,9 @@
     "whereDownloadsRun": "Where downloads run",
     "whereDownloadsRunHint": "Imports are fetched by one server and land in its library. Pick the box with the downloader installed — it copies finished songs across to your library afterwards, so both end up with the file.",
     "youHostThis": "you host this",
-    "yourLibrary": "your library"
+    "yourLibrary": "your library",
+    "syncFailedCount_one": "{{n}} failed",
+    "syncFailedCount_other": "{{n}} failed"
   },
   "settings": {
     "aboutConnection": "Connection",

@@ -55,9 +55,17 @@ for (const [key, value] of Object.entries(en)) {
   const m = key.match(/^(.*)_(zero|one|two|few|many|other)$/);
   if (m) {
     const base = m[1];
-    if (!units.has(base)) units.set(base, { key: base, plural: true, forms: {} });
+    // A key that exists BOTH bare and pluralised is a bug, not a shape - it
+    // means two call sites gave one key two meanings, and i18next silently
+    // picks by whether `count` was passed. Fail loudly rather than translate
+    // the confusion into seven languages.
+    const seen = units.get(base);
+    if (seen && !seen.plural) throw new Error(`"${base}" exists both bare and pluralised — split it`);
+    if (!seen) units.set(base, { key: base, plural: true, forms: {} });
     units.get(base).forms[m[2]] = value;
   } else {
+    const seen = units.get(key);
+    if (seen && seen.plural) throw new Error(`"${key}" exists both bare and pluralised — split it`);
     units.set(key, { key, plural: false, en: value });
   }
 }
