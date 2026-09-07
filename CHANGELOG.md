@@ -15,6 +15,20 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.138
+
+- AttackFM is translated. Español, Français, Deutsch, 日本語, Português,
+  中文 and العربية — the whole app, not a corner of it: every screen, every
+  menu, every message. If your phone is set to one of them, it opens in it;
+  otherwise it is Settings → Appearance → Language, and each one is written
+  in itself so the row you need is the row you can read.
+- Arabic lays the app out right to left — the nav, the shelves, the way a
+  long title scrolls, the fade at the edge of a row.
+- Counting is done properly. "One song", "two songs" and "five songs" are
+  different words in most languages, and Arabic has six ways to count; the
+  app now uses whichever one your language actually wants. Dates, file sizes
+  and "3 days ago" come from your language too.
+
 ## 0.5.137
 
 - A song you add to the queue on one device now shows up on your others. What
