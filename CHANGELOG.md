@@ -15,6 +15,18 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.131
+
+- When someone on your network starts a groove, a drawer asks if you'd like
+  to join it: their face, the song that is on, how many are listening. Once
+  per groove, never while you are already in one. Live now cards say "on
+  your network" for those rooms.
+- One queue in a groove: the host's. Every member sees it whole, songs they
+  never had included, with who added what. What members send waits at the
+  top of everyone's list, with their name, until the host's player takes
+  it in. The host's "Add to queue" and "Play next" say they went to the
+  groove.
+
 ## 0.5.130
 
 - Adding people to a playlist is one flow now. The share sheet's Members

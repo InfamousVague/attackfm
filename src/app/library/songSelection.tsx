@@ -5,6 +5,7 @@ import { Button, IconButton, Text, useToast } from '@glacier/react';
 import type { Track } from '../core/tauri.ts';
 import { useLibrary } from './library.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
+import { useJamOptional } from '../player/jam.tsx';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 
 /**
@@ -54,6 +55,8 @@ export function SelectionBar({
 }) {
   const { isFavorite, toggleFavorite } = useLibrary();
   const { playNext, addToQueue, following } = useQueueControls();
+  // Hosting a groove, the deck's line IS the room's - the word says so.
+  const inJam = !!useJamOptional()?.current;
   const { toast } = useToast();
   const [adding, setAdding] = useState(false);
 
@@ -86,7 +89,15 @@ export function SelectionBar({
     }
     toast({
       message: `${chosen.length} ${chosen.length === 1 ? 'song' : 'songs'} ${
-        following ? 'sent to the groove' : next ? 'playing next' : 'added to the queue'
+        following
+          ? 'sent to the groove'
+          : inJam
+            ? next
+              ? 'playing next in the groove'
+              : 'added to the groove'
+            : next
+              ? 'playing next'
+              : 'added to the queue'
       }`,
     });
     onClear();

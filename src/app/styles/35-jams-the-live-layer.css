@@ -332,7 +332,7 @@
 }
 
 .queueRow[data-asking] .queueRow__cover {
-  background: color-mix(in oklab, var(--glacier-text-muted) 12%, var(--glacier-surface-2, transparent));
+  background: color-mix(in oklab, var(--glacier-text-muted) 12%, var(--glacier-surface-raised));
 }
 
 /* Every row in the groove's list is a touch target: the room's rows have no

@@ -4,6 +4,7 @@ import { ContextMenu, MenuItem } from '@glacier/react';
 import { ListEnd, ListStart, Play, Shuffle, User, Users } from '@glacier/icons';
 import type { ReactNode } from 'react';
 import { useQueueControls } from '../player/queueControls.tsx';
+import { useJamOptional } from '../player/jam.tsx';
 import { shuffled } from '../ux/shuffle.ts';
 import type { Track } from '../core/tauri.ts';
 
@@ -37,6 +38,7 @@ export function AlbumMenu({
   children: ReactNode;
 }) {
   const { playNext, addToQueue, following } = useQueueControls();
+  const inJam = !!useJamOptional()?.current;
   /*
    * The same hold TrackMenu carries, for the same two reasons: the kit only
    * answers a touch long-press and does nothing about the release - so on a
@@ -80,7 +82,7 @@ export function AlbumMenu({
                 for (const track of [...tracks].reverse()) playNext(track);
               }}
             >
-              Play next
+              {inJam ? 'Play next in the groove' : 'Play next'}
             </MenuItem>
           )}
           <MenuItem
@@ -89,7 +91,7 @@ export function AlbumMenu({
               for (const track of tracks) addToQueue(track);
             }}
           >
-            {following ? 'Add to the groove' : 'Add to queue'}
+            {following ? 'Add to the groove' : inJam ? 'Add to the groove queue' : 'Add to queue'}
           </MenuItem>
           {onOpenArtist && artistName && (
             <MenuItem icon={<User size={15} />} onSelect={() => onOpenArtist(artistName)}>
