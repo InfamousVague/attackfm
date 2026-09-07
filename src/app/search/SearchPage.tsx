@@ -27,7 +27,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type KeyboardEvent,
 } from 'react';
@@ -138,7 +137,7 @@ export function SearchPage({
 }) {
   const t = useT();
   const songCount = useSongCount();
-  const { tracks, books, isFavorite, toggleFavorite } = useLibrary();
+  const { tracks, books } = useLibrary();
   const { playlists } = usePlaylists();
   // Results, genre tiles and recents wave in as they meet the view, landing
   // with the same soft ticks the Library's shelves ride - see rippleWave.ts.
@@ -458,7 +457,7 @@ export function SearchPage({
         }
       }
     },
-    [acquire, onOpenArtist, onOpenPlaylist, onPlay, songQueue, touch],
+    [acquireResult, onOpenAlbum, onOpenArtist, onOpenPlaylist, onPlay, songQueue, touch],
   );
 
   /** The heart on a catalogue row: same pull as Add, plus the promised

@@ -109,7 +109,7 @@ export function useHomeFeed(
       if (id !== null) map.set(id, t);
     }
     return map;
-  }, [tracks, forYou]);
+  }, [tracks, forYou, session]);
 
   const resolve = useCallback(
     (ids: number[] | undefined): Track[] =>

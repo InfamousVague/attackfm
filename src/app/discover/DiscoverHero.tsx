@@ -141,6 +141,7 @@ export function DiscoverHero({
       if (!ctrl.signal.aborted) setCanvas(url);
     });
     return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the song's name, not the lead object's identity: a re-made lead carrying the same first song must not re-ask for its Canvas.
   }, [session, wall, wallSettled, first?.title, first?.artist]);
 
   const face: 'wall' | 'canvas' | 'mosaic' = wall ? 'wall' : canvas ? 'canvas' : 'mosaic';

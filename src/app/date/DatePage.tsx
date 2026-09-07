@@ -698,11 +698,14 @@ export function DatePage() {
   // Walking into Date mode quiets whatever was playing: two songs at once is
   // not an introduction. Leaving retires the whole pool and the analyser.
   useEffect(() => {
+    // The Map itself is made once and only ever mutated, so holding it here
+    // is the same object the cleanup would have read off the ref.
+    const slots = pool.current;
     for (const el of Array.from(document.querySelectorAll('audio'))) el.pause();
     return () => {
       activeRef.current = null;
-      for (const slot of pool.current.values()) retire(slot);
-      pool.current.clear();
+      for (const slot of slots.values()) retire(slot);
+      slots.clear();
       spares.current = [];
       meterRef.current?.dispose();
       meterRef.current = null;

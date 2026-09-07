@@ -1,7 +1,5 @@
 import { ScrollArea } from '@glacier/react';
-import { Sparkles } from '@glacier/icons';
-import { useState } from 'react';
-import { mosaicArts, useArtLoad, useCardArt, useTileArt } from '../ux/artLoad.ts';
+import { mosaicArts, useCardArt, useTileArt } from '../ux/artLoad.ts';
 import { artworkHue, artworkUrl, cardTexture, mixArtwork } from '../ux/artwork.ts';
 import type { Track } from '../core/tauri.ts';
 import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';

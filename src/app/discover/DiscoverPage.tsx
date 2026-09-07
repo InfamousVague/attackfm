@@ -310,7 +310,7 @@ function SuggestedLists({ onOpen }: { onOpen: (item: Suggestion) => void }) {
     };
   }, [session, canFetchLists, near, refreshNonce]);
 
-  const topArtists = home.feed?.topArtists ?? [];
+  const topArtists = useMemo(() => home.feed?.topArtists ?? [], [home.feed?.topArtists]);
   const genres = useMemo(() => topGenres(tracks), [tracks]);
 
   // Group, keeping only the cards a handler on this box can take; drop the
