@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.136
+
+- Four screens could crash and no longer do: an album whose songs arrive a
+  moment late, a playlist deleted while you have it open, the books page, and
+  the DJ launcher.
+
 ## 0.5.135
 
 - The queue is yours again. Playing a big list no longer fills it with that whole list, so a song you add with “Add to queue” shows up at the top of the queue instead of behind nine hundred others — and it plays next, before the list carries on
