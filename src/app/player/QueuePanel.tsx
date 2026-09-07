@@ -36,6 +36,8 @@ interface QueueRow {
 
 export function QueuePanel({
   queue,
+  upNext,
+  onUpNextChange,
   current,
   onQueueChange,
   onPlayTrack,
@@ -43,6 +45,10 @@ export function QueuePanel({
   inJam = false,
 }: {
   queue: Track[];
+  /** The songs put here by hand. THIS is the queue as far as this panel is
+   *  concerned - see the note on `rows` below. */
+  upNext: Track[];
+  onUpNextChange: (next: Track[]) => void;
   current: Track | null;
   /** The new play order, current track and all. Skips read whatever it holds. */
   onQueueChange: (next: Track[]) => void;
@@ -55,7 +61,6 @@ export function QueuePanel({
   // come. With the current track absent from the queue (a lone DJ pick, say),
   // there is nothing behind it to arrange.
   const curIdx = current ? queue.findIndex((t) => t.path === current.path) : -1;
-  const head = curIdx >= 0 ? queue.slice(0, curIdx + 1) : queue.slice();
   const upcoming = curIdx >= 0 ? queue.slice(curIdx + 1) : [];
   // Only the near horizon is drawn. "Shuffle all" hands this panel the whole
   // library, and a list of five thousand rows is not a queue anyone reads - it
@@ -63,9 +68,26 @@ export function QueuePanel({
   // impossible. The rest is still QUEUED and still plays; it is simply summed
   // up in a line rather than laid out row by row.
   const UP_NEXT_SHOWN = 10;
-  const shown = upcoming.slice(0, UP_NEXT_SHOWN);
-  const hiddenCount = upcoming.length - shown.length;
+  /*
+   * The drawn list is the HAND-PICKED lane, not the list being played through.
+   *
+   * These were one array, so opening Liked songs put nine hundred rows in here
+   * and "add to queue" appended song nine hundred and one - the listener's own
+   * pick, filed somewhere they would never scroll to, behind a wall of songs
+   * they had not chosen individually at all. A queue you cannot find your own
+   * additions in is not a queue; it is the playlist again.
+   *
+   * So this panel shows what you asked for, in the order it will play, and the
+   * list you are playing through is summarised underneath as context. The
+   * empty-state copy - "Add songs from anywhere with Add to queue, and they
+   * line up here" - is finally true.
+   */
+  const shown = upNext.slice(0, UP_NEXT_SHOWN);
+  const hiddenCount = upNext.length - shown.length;
   const rows: QueueRow[] = shown.map((t) => ({ id: t.path, track: t }));
+  /** The next few from the list being played through, for the tail below. */
+  const CONTEXT_SHOWN = 5;
+  const contextNext = upcoming.slice(0, CONTEXT_SHOWN);
 
   // The station, when one is on: the queue is where "what's next" is read, so
   // it is where the dial belongs.
@@ -163,23 +185,25 @@ export function QueuePanel({
   // The tail beyond the drawn rows has to be carried through a reorder, or
   // dragging one of the visible songs would silently discard everything queued
   // behind them.
+  // The tail beyond the drawn rows still has to survive a drag, or reordering
+  // the visible few would silently discard everything queued behind them.
   const reorder = (next: QueueRow[]) =>
-    onQueueChange([...head, ...next.map((r) => r.track), ...upcoming.slice(UP_NEXT_SHOWN)]);
+    onUpNextChange([...next.map((r) => r.track), ...upNext.slice(UP_NEXT_SHOWN)]);
   /*
    * Undo works on the queue AS IT STANDS when pressed, not as it stood when
    * the toast appeared: songs advance and reorders land inside the toast's
    * few seconds, and restoring a stale snapshot would eat them. The ref
    * always holds the latest pair, so the restore splices into the present.
    */
-  const latest = useRef({ queue, onQueueChange });
-  latest.current = { queue, onQueueChange };
+  const latest = useRef({ queue: upNext, onQueueChange: onUpNextChange });
+  latest.current = { queue: upNext, onQueueChange: onUpNextChange };
   const { toast } = useToast();
 
   const remove = (path: string) => {
-    const at = queue.findIndex((t) => t.path === path);
+    const at = upNext.findIndex((t) => t.path === path);
     if (at < 0) return;
-    const track = queue[at]!;
-    onQueueChange(queue.filter((t) => t.path !== path));
+    const track = upNext[at]!;
+    onUpNextChange(upNext.filter((t) => t.path !== path));
     toast({
       message: `Removed “${track.title}” from the queue`,
       action: {
@@ -199,11 +223,11 @@ export function QueuePanel({
    *  list is captured first: this is the panel's one sweeping act, and undo
    *  puts back everything it swept. */
   const clearUpcoming = () => {
-    const before = queue;
-    if (upcoming.length === 0) return;
-    onQueueChange(head);
+    const before = upNext;
+    if (upNext.length === 0) return;
+    onUpNextChange([]);
     toast({
-      message: `Cleared ${upcoming.length} upcoming ${upcoming.length === 1 ? 'song' : 'songs'}`,
+      message: `Cleared ${upNext.length} queued ${upNext.length === 1 ? 'song' : 'songs'}`,
       action: { label: 'Undo', onPress: () => latest.current.onQueueChange(before) },
     });
   };
@@ -587,6 +611,44 @@ export function QueuePanel({
             <Text tone="muted" size="sm" className="queueUp__more">
               and {hiddenCount.toLocaleString()} more
             </Text>
+          )}
+          {/*
+            * What the list itself will play once your own picks run out.
+            *
+            * Read-only, and deliberately short. This is the lane that used to
+            * BE the queue, and putting it back in full is how the panel became
+            * unreadable in the first place - what a listener wants from it is
+            * "what did I ask for, and what happens after that", not nine
+            * hundred rows they never chose one at a time. Removing from here
+            * would mean editing the playlist you are playing, which is a
+            * different act with a different undo.
+            */}
+          {!following && contextNext.length > 0 && (
+            <div className="queueUp__context">
+              <Text tone="muted" size="xs" className="queueUp__contextHead">
+                {upNext.length > 0 ? 'Then, from what you’re playing' : 'Next, from what you’re playing'}
+              </Text>
+              <div className="queueRows" role="list" aria-label="Coming up from the list you are playing">
+                {contextNext.map((t) => (
+                  <TrackMenu key={t.path} track={t} className="queueRowMenu">
+                    <div className="queueRow" data-static role="listitem">
+                      <Cover track={t} />
+                      <div className="queueRow__meta">
+                        <span className="queueRow__title">{t.title}</span>
+                        <span className="queueRow__artist">
+                          <ArtistLink artist={t.artist} beforeOpen={onClose} />
+                        </span>
+                      </div>
+                    </div>
+                  </TrackMenu>
+                ))}
+              </div>
+              {upcoming.length > contextNext.length && (
+                <Text tone="muted" size="xs" className="queueUp__more">
+                  and {(upcoming.length - contextNext.length).toLocaleString()} more in the list
+                </Text>
+              )}
+            </div>
           )}
         </div>
       </div>

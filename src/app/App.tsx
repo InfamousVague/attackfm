@@ -303,6 +303,21 @@ export function App() {
   // way a play context should be: re-sorting the table later reorders the
   // table, not the record already spinning.
   const [queue, setQueue] = useState<Track[]>(handoff?.queue ?? []);
+  /*
+   * The songs YOU put in the line, which is a different thing from the list you
+   * are playing.
+   *
+   * These used to share one array, and starting Liked songs therefore filled
+   * the queue with nine hundred tracks - so "add to queue" appended song nine
+   * hundred and one and the listener never saw it again. The two lanes are not
+   * the same kind of thing: this one is a handful of deliberate picks, the
+   * other is wherever the needle happens to be in a list. So they are held
+   * apart, this one PLAYS FIRST, and the panel shows this one as the queue.
+   *
+   * Kept across a change of context on purpose: a song you asked for by hand
+   * is a promise, and starting another album should not quietly break it.
+   */
+  const [upNext, setUpNext] = useState<Track[]>([]);
   // Stable for the station's refill effect, which lists it as a dependency:
   // a fresh closure each render would re-ask the hub on every paint.
   const extendQueue = useCallback(
@@ -436,21 +451,18 @@ export function App() {
     const cur = currentRef.current;
     if (!cur) return playFromRef.current(track, [track]);
     if (track.path === cur.path) return;
-    setQueue((q) => (q.some((t) => t.path === track.path) ? q : [...q, track]));
+    setUpNext((q) => (q.some((t) => t.path === track.path) ? q : [...q, track]));
   }, []);
   const playNext = useCallback((track: Track) => {
     const cur = currentRef.current;
     if (!cur) return playFromRef.current(track, [track]);
     if (track.path === cur.path) return;
-    setQueue((q) => {
-      const without = q.filter((t) => t.path !== track.path);
-      const at = without.findIndex((t) => t.path === cur.path) + 1;
-      // findIndex -1 (current not in the list) + 1 = 0 would jump it to the
-      // very front; fall to the end instead, which is the honest "next" when
-      // there is no known position to insert after.
-      const insert = at === 0 ? without.length : at;
-      return [...without.slice(0, insert), track, ...without.slice(insert)];
-    });
+    // The front of the explicit lane, which IS "after whatever is playing" now
+    // that the lane is consumed before the context. No index arithmetic left:
+    // the old version hunted for the current track's spot in the context list,
+    // which is exactly the lookup that failed once the playing song had come
+    // from the lane itself and was not in that list at all.
+    setUpNext((q) => [track, ...q.filter((t) => t.path !== track.path)]);
   }, []);
   // The page history - the stack, the go* verbs and the system-back catch-all
   // - lives in useNavStack; the legacy-route redirects land back here as
@@ -922,8 +934,10 @@ export function App() {
             <PlayerHost
               current={current}
               queue={queue}
+              upNext={upNext}
               onTrackChange={setCurrent}
               onQueueChange={setQueue}
+              onUpNextChange={setUpNext}
               onOpenArtist={go}
               autoplay={autoplay}
               deckEngaged={deckEngaged}

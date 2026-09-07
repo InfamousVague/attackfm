@@ -729,7 +729,9 @@ export function NowPlayingSheet({
   setVolumeState,
   setMutedState,
   queue,
+  upNext = [],
   onQueueChange,
+  onUpNextChange,
   onTrackChange,
   setFiling,
   following,
@@ -810,7 +812,10 @@ export function NowPlayingSheet({
   setVolumeState: (next: number) => void;
   setMutedState: (next: boolean) => void;
   queue: Track[];
+  /** The hand-picked lane. This is what the panel calls "the queue". */
+  upNext?: Track[];
   onQueueChange?: (tracks: Track[]) => void;
+  onUpNextChange?: (upNext: Track[]) => void;
   onTrackChange?: (track: Track) => void;
   setFiling: (track: Track | null) => void;
   /** Standing in a groove the deck is not carrying (hearing it on the host's
@@ -2277,6 +2282,8 @@ export function NowPlayingSheet({
         <div className="npScreen__queueView">
           <QueuePanel
             queue={queue}
+            upNext={upNext}
+            onUpNextChange={(next) => onUpNextChange?.(next)}
             current={track}
             inJam={!!jamRoom}
             onQueueChange={(next) => onQueueChange?.(next)}

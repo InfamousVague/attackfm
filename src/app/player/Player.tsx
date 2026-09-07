@@ -110,8 +110,10 @@ import { clearDeckHandoff, deckHandoff, provideDeckSnapshot } from './deckHandof
 export function Player({
   track,
   queue = [],
+  upNext = [],
   onTrackChange,
   onQueueChange,
+  onUpNextChange,
   onOpenArtist,
   autoplay = true,
   deckOwned = true,
@@ -122,6 +124,11 @@ export function Player({
   track: Track | null;
   /** The tracks around the current one, in played order. Empty means no list. */
   queue?: Track[];
+  /** The songs the listener queued by hand. Drained before the context list,
+   *  so a deliberate pick never waits behind nine hundred liked songs. */
+  upNext?: Track[];
+  /** Hands back the lane with the played song lifted out of it. */
+  onUpNextChange?: (upNext: Track[]) => void;
   /** Adopts the track a skip or the end of the current one advanced to. */
   onTrackChange?: (track: Track) => void;
   /** Replaces the play context - used when a remote hands this (active) device
@@ -2554,6 +2561,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // The trail of what has played, newest last. Shuffle manners and the DJ both
   // read it: a song just heard is the last thing either should reach for.
   const recentRef = useRef<string[]>([]);
+  /** The last CONTEXT song that played, by path - see pickNext, which walks
+   *  from here rather than from whatever is currently on. */
+  const contextAnchor = useRef<string | null>(null);
 
   /**
    * The DJ's pick when the queue has nothing left to offer: another track from
@@ -2593,8 +2603,38 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * step instead. Off the end of the queue, the DJ takes over if asked.
    */
   const pickNext = (dir: 1 | -1, wrap: boolean): Track | 'rewind' | null => {
+    // What you asked for beats what the list was going to do - and this sits
+    // ABOVE the empty-context guard on purpose, so a song queued by hand still
+    // plays when nothing else is loaded behind it.
+    if (dir === 1 && upNext.length > 0) return upNext[0]!;
     if (!onTrackChange || queue.length === 0 || !track) return null;
-    const index = queue.findIndex((t) => t.path === track.path);
+    // Remember where the CONTEXT is whenever the playing song is part of it.
+    const inContext = queue.some((t) => t.path === track.path);
+    if (inContext) contextAnchor.current = track.path;
+    /*
+     * Back, from a song you queued by hand, returns to the list.
+     *
+     * The anchor is the last context song that played, so walking one step
+     * further back from it would skip the very song you were listening to when
+     * you queued something - press back and you land two songs earlier than you
+     * were. Going TO the anchor is what "previous" means here.
+     */
+    if (dir === -1 && !inContext) {
+      const back = queue.find((t) => t.path === contextAnchor.current);
+      if (back) return back;
+    }
+    /*
+     * Walk from the anchor, not from the playing track.
+     *
+     * A song taken from the hand-picked lane is not in the context list at all,
+     * so looking it up there returns -1 - which the branch below reads as "the
+     * playing track left the queue" and answers by stopping the music. That is
+     * the bug you would hit the moment the lane drained: your queued songs
+     * play, and then silence, with the album you were listening to abandoned
+     * mid-list. The anchor is the last context song that actually played, so
+     * the list resumes from where it was left.
+     */
+    const index = queue.findIndex((t) => t.path === (contextAnchor.current ?? track.path));
     if (index === -1) {
       // The playing track left the queue (opened from elsewhere, or the DJ's
       // own pick). Forwards, the DJ carries on from it - or nobody does;
@@ -2669,6 +2709,16 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   /** Acts on the pick: hands the track up, replays, or stops. */
   const advance = (dir: 1 | -1, wrap: boolean) => {
     const next = pickNext(dir, wrap);
+    /*
+     * Taking the song OUT of the lane is what makes the lane drain, and it
+     * happens here rather than in pickNext because pickNext is also a QUESTION:
+     * the crossfade and the prefetch both ask it ahead of time to see where the
+     * music is going. Draining there would spend the listener's queue on a peek
+     * that never played anything.
+     */
+    if (dir === 1 && next && next !== 'rewind' && upNext[0]?.path === next.path) {
+      onUpNextChange?.(upNext.slice(1));
+    }
     if (next === null) {
       /*
        * Stopping is sometimes right (the end of a list nobody asked to loop)
@@ -4387,7 +4437,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           setVolumeState={setVolumeState}
           setMutedState={setMutedState}
           queue={queue}
+          upNext={upNext}
           onQueueChange={onQueueChange}
+          onUpNextChange={onUpNextChange}
           onTrackChange={onTrackChange}
           setFiling={setFiling}
         />

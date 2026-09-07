@@ -39,8 +39,10 @@ import type { FollowingRoom } from './deckShared.ts';
 export function PlayerHost({
   current,
   queue,
+  upNext,
   onTrackChange,
   onQueueChange,
+  onUpNextChange,
   onOpenArtist,
   autoplay,
   deckEngaged = false,
@@ -48,8 +50,12 @@ export function PlayerHost({
 }: {
   current: Track | null;
   queue: Track[];
+  /** The songs the listener queued by hand. Played before the context list,
+   *  and the only lane the queue panel calls "the queue". */
+  upNext: Track[];
   onTrackChange: (track: Track) => void;
   onQueueChange: (queue: Track[]) => void;
+  onUpNextChange: (upNext: Track[]) => void;
   /** The Now Playing sheet's artist line opens the artist page through here. */
   onOpenArtist: (artist: string) => void;
   autoplay: boolean;
@@ -205,6 +211,8 @@ export function PlayerHost({
       <Player
         track={shown}
         queue={queue}
+        upNext={upNext}
+        onUpNextChange={onUpNextChange}
         onTrackChange={onTrackChange}
         onQueueChange={onQueueChange}
         onOpenArtist={onOpenArtist}

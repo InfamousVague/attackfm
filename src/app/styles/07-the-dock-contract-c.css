@@ -558,3 +558,20 @@
     animation: none;
   }
 }
+
+/* The list you are playing through, under the songs you queued by hand. Set
+   back and quieter than the lane above it: it is context, not a to-do list -
+   the rows are not yours to reorder and must not invite the attempt. */
+.queueUp__context {
+  margin-block-start: var(--glacier-space-4);
+  padding-block-start: var(--glacier-space-3);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  opacity: 0.72;
+}
+
+.queueUp__contextHead {
+  display: block;
+  margin-block-end: var(--glacier-space-2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
