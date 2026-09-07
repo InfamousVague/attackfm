@@ -1140,6 +1140,10 @@ async fn invite_landing(
 /// bundle itself. One shell for every landing the registry serves, so a
 /// playlist link and an invite link are the same page with different words.
 /// `<` is escaped in the document so no name can close the script tag.
+// Eight parameters because the shell has eight slots and every landing fills
+// all of them; a params struct would be the same list under a second name.
+// They are all &str, so a transposition would compile - what guards it is that
+// all three callers are in this file, within sixty lines of the signature.
 #[allow(clippy::too_many_arguments)]
 fn landing_shell(
     title: &str,

@@ -20,7 +20,6 @@ pub struct Account {
     pub handle: String,
     /// Argon2 hash, or empty for a passwordless (device-key only) account.
     pub pass_hash: String,
-    pub created_at: i64,
 }
 
 /// A friend, with the glance of their library a friends list shows.
@@ -51,13 +50,11 @@ pub struct PendingRequest {
 /// An invitation to join one server.
 #[derive(Debug, Clone)]
 pub struct Invite {
-    pub code: String,
     pub server_url: String,
     pub server_name: String,
     pub created_by: i64,
     pub role: String,
     pub expires_at: i64,
-    pub redeemed_by: Option<i64>,
     /// How many distinct accounts may redeem it (1 = one-time; ignored when
     /// standing, which is unlimited).
     pub max_uses: i64,
@@ -171,7 +168,7 @@ impl Db {
     pub fn account_by_handle(&self, handle: &str) -> Option<Account> {
         let c = self.conn.lock().unwrap();
         c.query_row(
-            "SELECT id, handle, pass_hash, created_at FROM accounts WHERE handle = ?1 COLLATE NOCASE",
+            "SELECT id, handle, pass_hash FROM accounts WHERE handle = ?1 COLLATE NOCASE",
             [handle],
             Self::row_account,
         )
@@ -183,7 +180,7 @@ impl Db {
     pub fn account_by_id(&self, id: i64) -> Option<Account> {
         let c = self.conn.lock().unwrap();
         c.query_row(
-            "SELECT id, handle, pass_hash, created_at FROM accounts WHERE id = ?1",
+            "SELECT id, handle, pass_hash FROM accounts WHERE id = ?1",
             [id],
             Self::row_account,
         )
@@ -202,7 +199,7 @@ impl Db {
             (handle, pass_hash, now),
         )?;
         let id = c.last_insert_rowid();
-        Ok(Account { id, handle: handle.to_string(), pass_hash: pass_hash.to_string(), created_at: now })
+        Ok(Account { id, handle: handle.to_string(), pass_hash: pass_hash.to_string() })
     }
 
     pub fn touch_seen(&self, id: i64, now: i64) {
@@ -306,6 +303,9 @@ impl Db {
 
     // --- playlist links ------------------------------------------------------------
 
+    // Seven parameters for the row's seven columns: this is one INSERT wearing
+    // a function's clothes, so the count is the table's shape rather than a
+    // signature that grew. One caller, in this crate.
     #[allow(clippy::too_many_arguments)]
     pub fn create_playlist_share(
         &self,
@@ -329,21 +329,20 @@ impl Db {
     pub fn playlist_share(&self, code: &str) -> Option<PlaylistShare> {
         let c = self.conn.lock().unwrap();
         c.query_row(
-            "SELECT s.code, s.owner_id, a.handle, s.name, s.description, s.tracks, s.covers, s.created_at, s.opens
+            "SELECT s.code, a.handle, s.name, s.description, s.tracks, s.covers, s.created_at, s.opens
                FROM playlist_shares s JOIN accounts a ON a.id = s.owner_id
               WHERE s.code = ?1",
             [code],
             |r| {
                 Ok(PlaylistShare {
                     code: r.get(0)?,
-                    owner_id: r.get(1)?,
-                    owner_handle: r.get(2)?,
-                    name: r.get(3)?,
-                    description: r.get(4)?,
-                    tracks_json: r.get(5)?,
-                    covers_json: r.get(6)?,
-                    created_at: r.get(7)?,
-                    opens: r.get(8)?,
+                    owner_handle: r.get(1)?,
+                    name: r.get(2)?,
+                    description: r.get(3)?,
+                    tracks_json: r.get(4)?,
+                    covers_json: r.get(5)?,
+                    created_at: r.get(6)?,
+                    opens: r.get(7)?,
                 })
             },
         )
@@ -572,6 +571,8 @@ impl Db {
         .unwrap_or(0)
     }
 
+    // Seven parameters for the row's seven columns - see create_playlist_share.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_share(
         &self,
         from: i64,
@@ -839,6 +840,8 @@ impl Db {
 
     // --- invites & memberships ----------------------------------------------
 
+    // Eight parameters for the row's eight columns - see create_playlist_share.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_invite(
         &self,
         code: &str,
@@ -878,21 +881,19 @@ impl Db {
     pub fn invite(&self, code: &str) -> Option<Invite> {
         let c = self.conn.lock().unwrap();
         c.query_row(
-            "SELECT code, server_url, server_name, created_by, role, expires_at, redeemed_by, max_uses,
+            "SELECT server_url, server_name, created_by, role, expires_at, max_uses,
                     (SELECT COUNT(*) FROM invite_redemptions WHERE code = invites.code)
                FROM invites WHERE code = ?1",
             [code],
             |r| {
                 Ok(Invite {
-                    code: r.get(0)?,
-                    server_url: r.get(1)?,
-                    server_name: r.get(2)?,
-                    created_by: r.get(3)?,
-                    role: r.get(4)?,
-                    expires_at: r.get(5)?,
-                    redeemed_by: r.get(6)?,
-                    max_uses: r.get(7)?,
-                    uses_count: r.get(8)?,
+                    server_url: r.get(0)?,
+                    server_name: r.get(1)?,
+                    created_by: r.get(2)?,
+                    role: r.get(3)?,
+                    expires_at: r.get(4)?,
+                    max_uses: r.get(5)?,
+                    uses_count: r.get(6)?,
                 })
             },
         )
@@ -993,7 +994,6 @@ impl Db {
             id: r.get(0)?,
             handle: r.get(1)?,
             pass_hash: r.get(2)?,
-            created_at: r.get(3)?,
         })
     }
 }
@@ -1001,7 +1001,6 @@ impl Db {
 /// A playlist shared as a link, as the landing page and the app read it.
 pub struct PlaylistShare {
     pub code: String,
-    pub owner_id: i64,
     pub owner_handle: String,
     pub name: String,
     pub description: String,
@@ -1301,9 +1300,20 @@ mod prefs_tests {
         db.create_account(handle, "x", 100).expect("account created").id
     }
 
+    /// A name no other test can be holding. Unique per CALL, not merely per
+    /// instant: these tests run on nine threads at once and the clock's real
+    /// granularity is coarser than its nanoseconds pretend, so two of them
+    /// could read the same instant, build the same path, and one would lose
+    /// the open with "database is locked" (about one run in twelve, measured).
+    /// The counter is what actually makes the name unique; the clock only
+    /// keeps the files sortable by age.
     fn rand_suffix() -> String {
+        use std::sync::atomic::{AtomicU64, Ordering};
         use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().to_string()
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        format!("{nanos}-{seq}")
     }
 
     /// Nothing stored is not the same as stored-and-empty, and the difference

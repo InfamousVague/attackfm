@@ -5,6 +5,25 @@
 members = ["crates/identity", "crates/registry"]
 resolver = "2"
 
+# There is deliberately no [workspace.lints] table. The lint gate is the one
+# command `cargo clippy --workspace --all-targets -- -D warnings`, and that is
+# a considered choice, measured on cargo 1.94.1:
+#   - Clippy's `-D warnings` stops at our own crates. Cargo wraps only
+#     workspace members in clippy-driver, so a build of afm-identity ran its
+#     36 third-party dependencies through plain rustc, undenied.
+#   - RUSTFLAGS="-Dwarnings" does NOT stop there: the same build passed the
+#     flag to all 37 units. A `cargo update`, or a new rustc deprecating
+#     something inside serde or curve25519-dalek, can redden the build on code
+#     this repo neither owns nor can fix.
+#   - Clippy emits every rustc lint too (dead_code and the rest come out of
+#     it), so the clippy line alone proves both halves; the release build does
+#     not need the RUSTFLAGS.
+# A [workspace.lints] table would be either inert (nothing set to deny) or
+# hostile (deny while iterating, so a half-written function will not compile),
+# and either way the clippy line still has to exist. If one is ever added,
+# every member must opt in with a `[lints]` section of its own saying
+# `workspace = true`.
+
 [package]
 name = "attackfm-server"
 version = "0.1.95"
