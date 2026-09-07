@@ -23,7 +23,8 @@ import { CatchMeUp, CatchMeUpButton } from '../../app/player/CatchMeUp.tsx';
 import { removeTracks, uploadFile } from '../../app/api/library.ts';
 import { setHeaderActions } from '../../app/nav/headerActions.ts';
 import { artSized } from '../../app/server.ts';
-import { formatTotal } from '../../app/ux/format.ts';
+import { formatNumber, formatTotal } from '../../app/ux/format.ts';
+import { Trans, useT } from '../../app/i18n/LocaleShell.tsx';
 import { useHoldToMenu } from '../../app/ux/holdToMenu.ts';
 import { fetchBookShapes, type BookShape } from '../../app/api/books.ts';
 import { bookSkips, setSkipsCard, watchSkips } from '../../app/player/bookSkips.ts';
@@ -78,6 +79,7 @@ import { JOB_ACTIVE, transcribeRows, type TranscribeJob } from './transcribeRows
  * nothing at all, so the shelf stays a shelf.
  */
 function ImportDoorway() {
+  const t = useT();
   const { session } = useServerSession();
   const [status, setStatus] = useState<{
     importDir: string;
@@ -168,24 +170,27 @@ function ImportDoorway() {
     } catch (e) {
       // A failed POST makes no job rows, so nothing downstream will ever say
       // why - it has to be said here.
-      setSortErr(e instanceof Error ? e.message : 'that did not go through');
+      setSortErr(e instanceof Error ? e.message : t('books.requestFailed'));
     } finally {
       setAsking(false);
     }
   };
 
+  // The state NAMES are the server's vocabulary and are matched on; only the
+  // words they are shown as go through the catalogue. An unknown state falls
+  // through to the raw name, which is a diagnostic rather than a sentence.
   const stateWord = (j: { state: string }) =>
     j.state === 'reading'
-      ? 'reading the folder'
+      ? t('books.jobReading')
       : j.state === 'thinking'
-        ? 'working out what it is'
+        ? t('books.jobThinking')
         : j.state === 'filing'
-          ? 'filing the chapters'
+          ? t('books.jobFiling')
           : // The pile is still being written to. Saying "waiting" alone
             // reads like the app is stuck; what it is waiting FOR is the
             // copy, and that is the one thing that explains the delay.
             j.state === 'waiting'
-            ? 'waiting for the copy to finish'
+            ? t('books.jobWaiting')
             : j.state;
 
   const errored = jobs.filter((j) => j.state === 'error').length;
@@ -205,25 +210,33 @@ function ImportDoorway() {
   return (
     <section className="discoverSection">
       <div className="booksImport__head">
-        <h2 className="discoverSection__title">Imports</h2>
+        <h2 className="discoverSection__title">{t('books.imports')}</h2>
         {errored > 0 && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => void clearErrors()}
-            title="Clear the failed rows; a fixed folder still in import will be offered again"
+            title={t('books.clearErrorsHint')}
           >
-            <ListX size={14} /> Clear {errored === 1 ? 'error' : 'errors'}
+            {/* The count is not shown, only counted: the button says "error"
+                or "errors", and which of those a language has - and where the
+                boundary sits - is i18next's business, not a ternary's. */}
+            <ListX size={14} /> {t('books.clearErrors', { count: errored })}
           </Button>
         )}
       </div>
       {pending.length > 0 && (
         <div className="booksImport__ask">
           <Text tone="muted" size="sm">
-            {pending.length === 1
-              ? `1 folder is waiting in import: ${pending[0]}`
-              : `${pending.length} folders are waiting in import`}
-            {!status.ai && ' — sorted by their names and tags; connect the local AI for smarter reads'}
+            {/* One sentence, four ways: the count picks the plural form and
+                `context` picks whether the AI clause is on the end. It was two
+                fragments concatenated, which asked a translator to make a
+                sentence out of a clause they could not move. */}
+            {t('books.pendingImport', {
+              count: pending.length,
+              folder: pending[0] ?? '',
+              context: status.ai ? undefined : 'noAi',
+            })}
           </Text>
           <Button
             variant="soft"
@@ -231,7 +244,7 @@ function ImportDoorway() {
             onClick={() => void sort()}
             disabled={active.length > 0 || asking}
           >
-            <BookAudio size={15} /> {asking ? 'Asking…' : 'Sort them in'}
+            <BookAudio size={15} /> {asking ? t('books.sorting') : t('books.sortThemIn')}
           </Button>
         </div>
       )}
@@ -246,7 +259,10 @@ function ImportDoorway() {
             <span className="bookJob__title">{j.folder}</span>
             <span className="bookJob__sub">
               {j.state === 'done'
-                ? `done${j.via === 'ai' ? ' · read by the AI' : ''} — ${j.books.join('; ')}`
+                ? t('books.jobDone', {
+                    books: j.books.join('; '),
+                    context: j.via === 'ai' ? 'ai' : undefined,
+                  })
                 : j.state === 'error'
                   ? j.error
                   : stateWord(j)}
@@ -290,6 +306,7 @@ function BooksHeader({
   /** Picks the book up where it was left - the shelf's one honest verb. */
   onResume?: (() => void) | null;
 }) {
+  const t = useT();
   /*
    * The same hero every collection wears - Liked songs, All songs, a
    * playlist - because this page IS one of those doors, and it was the only
@@ -312,19 +329,26 @@ function BooksHeader({
       </div>
       <div className="playlistHead__body">
         <Text tone="muted" size="xs" className="playlistHead__kicker">
-          Your library
+          {t('books.kicker')}
         </Text>
-        <h2 className="playlistHead__name">Books</h2>
+        <h2 className="playlistHead__name">{t('books.title')}</h2>
         <Text tone="muted" size="sm">
+          {/* "12 books · 4 hr 10 min". The running time is an optional TAIL,
+              and a language may not want it on the end - so it is a context
+              rather than a second string glued on here. */}
           {count > 0
-            ? `${count} ${count === 1 ? 'book' : 'books'}${totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}`
+            ? t('books.shelfCount', {
+                count,
+                time: totalSeconds > 0 ? formatTotal(totalSeconds) : '',
+                context: totalSeconds > 0 ? 'withTime' : undefined,
+              })
             : blurb}
         </Text>
         <div className="playlistHead__actions">
           {onResume && (
             <Button variant="solid" size="sm" onClick={onResume}>
               <Play size={15} fill="currentColor" />
-              Resume
+              {t('books.resume')}
             </Button>
           )}
           <AddBook onAdded={onAdded} />
@@ -351,6 +375,7 @@ function BooksHeader({
  * does not have to say "this is a book"; it only has to hand the file over.
  */
 function AddBook({ onAdded }: { onAdded: () => void }) {
+  const t = useT();
   const { session } = useServerSession();
   const input = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -409,19 +434,18 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
       await onAdded();
       setNote(
         piles === chosen.length
-          ? piles === 1
-            ? 'Unpacked into imports - it reaches the shelf once the filer names it'
-            : `Unpacked ${piles} archives into imports`
+          ? // The single-archive form names what happens next rather than the
+            // count, so the two plural forms are not the same sentence with a
+            // number swapped - which is exactly what _one/_other are for.
+            t('books.unpacked', { count: piles })
           : piles > 0
-            ? `Added ${chosen.length - piles} of ${chosen.length}; the rest went to imports`
-            : chosen.length === 1
-              ? `Added ${chosen[0]!.name}`
-              : `Added ${chosen.length} files`,
+            ? t('books.addedSome', { added: chosen.length - piles, total: chosen.length })
+            : t('books.added', { count: chosen.length, name: chosen[0]!.name }),
       );
     } catch (e) {
       // The server refuses for reasons worth repeating verbatim: a format it
       // does not take, a file over the ceiling, a full library quota.
-      setNote(e instanceof Error ? e.message : 'that upload did not go through');
+      setNote(e instanceof Error ? e.message : t('books.uploadFailed'));
     } finally {
       setBusy(false);
       setFraction(0);
@@ -454,9 +478,9 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
         disabled={busy}
         onClick={() => input.current?.click()}
       >
-        <Upload size={15} /> {busy ? 'Adding…' : 'Add a book'}
+        <Upload size={15} /> {busy ? t('books.adding') : t('books.addBook')}
       </Button>
-      {busy && <ProgressBar value={Math.round(fraction * 100)} aria-label="Uploading" />}
+      {busy && <ProgressBar value={Math.round(fraction * 100)} aria-label={t('books.uploading')} />}
       {note && !busy && (
         <Text tone="muted" size="xs">
           {note}
@@ -594,13 +618,22 @@ function useTranscribeJobs(): TranscribeJob[] {
   return jobsNow;
 }
 
-/** What the server is doing to this file right now, in words. */
-function jobWord(state: string): string {
-  return state === 'queued'
-    ? 'waiting its turn'
-    : state === 'preparing'
-      ? 'decoding the audio'
-      : 'reading it';
+/**
+ * Which form of "what is happening to this book" to draw.
+ *
+ * What the server is doing used to be its own three-word string spliced into
+ * the middle of the sentence - "Chapter 3 of 42 — {decoding the audio}". A
+ * translator was handed "decoding the audio" alone, with no way to know it
+ * lands after an em dash inside a clause, and no way to inflect it to agree
+ * with what came before. So the whole sentence has a form per state instead,
+ * chosen by `context`.
+ *
+ * The state NAMES are the queue's own vocabulary and are matched on, never
+ * shown. `transcribing` is the base form rather than a context of its own, so
+ * a state a newer hub invents still draws a sentence.
+ */
+function jobContext(state: string): string | undefined {
+  return state === 'queued' || state === 'preparing' ? state : undefined;
 }
 
 /**
@@ -618,6 +651,7 @@ function jobWord(state: string): string {
  * The panel is absent when nothing is happening. It is news, not furniture.
  */
 function TranscribeProgress({ shelf }: { shelf: ShelfBook[] }) {
+  const t = useT();
   const jobs = useTranscribeJobs();
 
   const rows = useMemo(
@@ -638,8 +672,8 @@ function TranscribeProgress({ shelf }: { shelf: ShelfBook[] }) {
   if (rows.length === 0) return null;
 
   return (
-    <section className="discoverSection bookProgress" aria-label="Books being transcribed">
-      <h2 className="discoverSection__title">Being transcribed</h2>
+    <section className="discoverSection bookProgress" aria-label={t('books.transcribingLabel')}>
+      <h2 className="discoverSection__title">{t('books.transcribing')}</h2>
       <ul className="bookProgress__list">
         {rows.map((r) => {
           const sectioned = r.total > 1;
@@ -650,7 +684,7 @@ function TranscribeProgress({ shelf }: { shelf: ShelfBook[] }) {
                 <span className="bookProgress__title">{r.title}</span>
                 {sectioned && (
                   <span className="bookProgress__count">
-                    {r.done} of {r.total}
+                    {t('books.doneOfTotal', { done: r.done, total: r.total })}
                   </span>
                 )}
               </div>
@@ -658,18 +692,22 @@ function TranscribeProgress({ shelf }: { shelf: ShelfBook[] }) {
                 value={sectioned ? r.done : undefined}
                 max={sectioned ? r.total : undefined}
                 indeterminate={!sectioned}
-                aria-label={`Transcribing ${r.title}`}
+                aria-label={t('books.transcribingBook', { title: r.title })}
               />
               <Text tone="muted" size="xs">
                 {r.live
                   ? sectioned
-                    ? `Chapter ${at} of ${r.total} — ${jobWord(r.live.state)}`
-                    : `One long file — ${jobWord(r.live.state)}, and it cannot be measured from outside`
+                    ? t('books.transcribingChapter', {
+                        n: at,
+                        total: r.total,
+                        context: jobContext(r.live.state),
+                      })
+                    : t('books.transcribingOneFile', { context: jobContext(r.live.state) })
                   : null}
                 {r.failed > 0 && (
                   <span className="bookProgress__failed">
                     {r.live ? ' · ' : ''}
-                    {r.failed} {r.failed === 1 ? 'file' : 'files'} could not be read
+                    {t('books.filesFailed', { count: r.failed })}
                   </span>
                 )}
               </Text>
@@ -695,6 +733,7 @@ function TranscribeProgress({ shelf }: { shelf: ShelfBook[] }) {
  * lines and those surfaces already draw them.
  */
 function ReadAlong({ book }: { book: ShelfBook }) {
+  const t = useT();
   const { session } = useServerSession();
   const ready = useTranscribeStatus();
   const [state, setState] = useState<'idle' | 'asking' | 'working' | 'done'>('idle');
@@ -739,8 +778,8 @@ function ReadAlong({ book }: { book: ShelfBook }) {
    */
   if (ready === 'noTool') {
     return (
-      <span className="bookCard__readAlong" title="Install whisper.cpp on the server to transcribe books">
-        <BookOpenText size={13} aria-hidden /> No recogniser
+      <span className="bookCard__readAlong" title={t('books.noRecogniserHint')}>
+        <BookOpenText size={13} aria-hidden /> {t('books.noRecogniser')}
       </span>
     );
   }
@@ -749,19 +788,19 @@ function ReadAlong({ book }: { book: ShelfBook }) {
       <span
         className="bookCard__readAlong"
         title={
-          modelDir
-            ? `The recogniser is installed but has nothing to read with. Put a whisper model in ${modelDir} — ggml-small.en.bin is the one to want.`
-            : 'The recogniser is installed but has no model to read with.'
+          // `ggml-small.en.bin` and the path are FILENAMES, not prose - they
+          // are named inside the sentence rather than translated.
+          modelDir ? t('books.noModelHintDir', { dir: modelDir }) : t('books.noModelHint')
         }
       >
-        <BookOpenText size={13} aria-hidden /> No speech model
+        <BookOpenText size={13} aria-hidden /> {t('books.noModel')}
       </span>
     );
   }
   if (ready === 'stale') {
     return (
-      <span className="bookCard__readAlong" title="This server predates reading along - update it and this appears">
-        <BookOpenText size={13} aria-hidden /> Update your hub
+      <span className="bookCard__readAlong" title={t('books.staleHubHint')}>
+        <BookOpenText size={13} aria-hidden /> {t('books.staleHub')}
       </span>
     );
   }
@@ -784,7 +823,7 @@ function ReadAlong({ book }: { book: ShelfBook }) {
       setState('idle');
       // The server explains itself well - no recogniser, no model, not a book.
       // Repeat it rather than replacing it with a word of our own.
-      setProblem(e instanceof Error ? e.message : 'that did not go through');
+      setProblem(e instanceof Error ? e.message : t('books.requestFailed'));
     }
   };
 
@@ -792,14 +831,18 @@ function ReadAlong({ book }: { book: ShelfBook }) {
     // "Already read" meant the RECOGNISER had read it - and sat on the card
     // sounding like a claim about the listener's progress. Say whose reading
     // it is.
-    shown === 'working' ? 'Reading it…' : shown === 'done' ? 'Read along ready' : 'Read along';
+    shown === 'working'
+      ? t('books.readingIt')
+      : shown === 'done'
+        ? t('books.readAlongReady')
+        : t('books.readAlong');
 
   return (
     <span className="bookCard__readAlongWrap">
       <button
         type="button"
         className="bookCard__readAlong"
-        aria-label={`Transcribe ${book.title} so you can read along`}
+        aria-label={t('books.transcribeAria', { title: book.title })}
         disabled={shown !== 'idle' || ready === 'asking'}
         onClick={() => void ask()}
       >
@@ -814,6 +857,28 @@ function ReadAlong({ book }: { book: ShelfBook }) {
   );
 }
 
+/**
+ * The server's word for how fast a narrator reads, in ours.
+ *
+ * `shape.pace` is one of five fixed words the hub picks by wpm band
+ * (`bookshape.rs`), which makes it an identifier that merely happens to read
+ * as English - so it is MATCHED here rather than translated where it is
+ * chosen, and a band a newer hub invents falls through to the server's own
+ * word rather than to a blank beside the number.
+ */
+const PACE_KEYS: Record<string, string> = {
+  unhurried: 'books.paceUnhurried',
+  measured: 'books.paceMeasured',
+  steady: 'books.paceSteady',
+  brisk: 'books.paceBrisk',
+  quick: 'books.paceQuick',
+};
+
+function paceWord(pace: string, t: ReturnType<typeof useT>): string {
+  const key = PACE_KEYS[pace];
+  return key ? t(key) : pace;
+}
+
 /** afm://<id> -> id, the app's remote-path shape, for matching the bookmark
  *  ledger (which is keyed by track id). */
 function serverId(path: string): number | null {
@@ -822,11 +887,14 @@ function serverId(path: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function minutes(ms: number): string {
+/** How far into a chapter the mark sits. The units are Intl's - `formatTotal`
+ *  already draws the same "5 min" / "1 hr 20 min" the rest of the app does,
+ *  and it knows which side of the number a locale puts them on. Only the
+ *  "not far enough to say" case is a sentence, so only it is a key. */
+function minutes(ms: number, t: ReturnType<typeof useT>): string {
   const m = Math.floor(ms / 60_000);
-  if (m < 1) return 'under a minute';
-  if (m < 60) return `${m} min`;
-  return `${Math.floor(m / 60)}h ${m % 60}m`;
+  if (m < 1) return t('books.underAMinute');
+  return formatTotal(m * 60);
 }
 
 /**
@@ -861,6 +929,7 @@ function BookMenu({
   onChanged: () => void | Promise<void>;
   children: ReactNode;
 }) {
+  const t = useT();
   const { session } = useServerSession();
   // The wrapper is the menu's own target, so the hold resolves to itself and
   // the release is swallowed - a long-press to manage a book must not also
@@ -914,12 +983,15 @@ function BookMenu({
       if (done.failed > 0) {
         setProblem(
           done.failed === book.tracks.length
-            ? 'None of it would download. The hub may be unreachable.'
-            : `${done.failed} of ${book.tracks.length} files did not download - try again to fill the gaps.`,
+            ? t('books.keepAllFailed')
+            : // The noun being counted is "files", which agrees with the TOTAL
+              // rather than with how many of them failed - so the total is
+              // what `count` carries.
+              t('books.keepSomeFailed', { count: book.tracks.length, failed: done.failed }),
         );
       }
     } catch (e) {
-      setProblem(e instanceof Error ? e.message : 'that did not go through');
+      setProblem(e instanceof Error ? e.message : t('books.requestFailed'));
     } finally {
       setKeeping(false);
       setStep(null);
@@ -979,7 +1051,7 @@ function BookMenu({
       setConfirming(false);
     } catch (e) {
       // The server's own words: not an admin (403), or nothing left to move.
-      setProblem(e instanceof Error ? e.message : 'that book could not be removed');
+      setProblem(e instanceof Error ? e.message : t('books.removeFailed'));
     } finally {
       setBusy(false);
     }
@@ -990,7 +1062,7 @@ function BookMenu({
       <ContextMenu
         {...hold}
         className={className}
-        aria-label={`${book.title} actions`}
+        aria-label={t('books.cardActions', { title: book.title })}
         content={
           <>
             {/* Offered only when a transcript actually found something, and
@@ -1002,7 +1074,7 @@ function BookMenu({
                 icon={<SkipForward size={15} />}
                 onSelect={() => setSkipsCard(ids, !skipping)}
               >
-                {skipping ? 'Play the card and credits' : 'Skip the card and credits'}
+                {skipping ? t('books.playCard') : t('books.skipCard')}
               </MenuItem>
             )}
             {/* A book is one object twenty hours long that you are halfway
@@ -1019,27 +1091,27 @@ function BookMenu({
               {keeping
                 ? step
                   ? step.words
-                    ? 'Keeping the words…'
-                    : `Keeping ${step.done} of ${step.total}…`
-                  : 'Keeping…'
+                    ? t('books.keepingWords')
+                    : t('books.keepingProgress', { done: step.done, total: step.total })
+                  : t('books.keeping')
                 : allHeld
-                  ? 'Kept on this device'
-                  : 'Keep on this device'}
+                  ? t('books.keptOnDevice')
+                  : t('books.keepOnDevice')}
             </MenuItem>
             )}
             {isTauri() && allHeld && !keeping && (
               <MenuItem icon={<Trash2 size={15} />} onSelect={() => void releaseBook()}>
-                Remove from this device
+                {t('books.removeFromDevice')}
               </MenuItem>
             )}
             {canManage && (
               <MenuItem icon={<BookOpenText size={15} />} onSelect={() => void retranscribe()}>
-                Transcribe again
+                {t('books.transcribeAgain')}
               </MenuItem>
             )}
             {canManage && (
               <MenuItem icon={<Trash2 size={15} />} danger onSelect={() => setConfirming(true)}>
-                Delete book
+                {t('books.deleteBook')}
               </MenuItem>
             )}
           </>
@@ -1054,23 +1126,24 @@ function BookMenu({
             if (!busy) setConfirming(false);
           }}
           size="sm"
-          title={`Delete ${book.title}?`}
+          title={t('books.deleteTitle', { title: book.title })}
           footer={
             <>
               <Button variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>
-                Keep
+                {t('books.deleteKeep')}
               </Button>
               <Button variant="danger" disabled={busy} onClick={() => void remove()}>
-                {busy ? 'Deleting…' : 'Delete book'}
+                {busy ? t('books.deleting') : t('books.deleteBook')}
               </Button>
             </>
           }
         >
           <Text size="sm" tone="muted">
-            {book.tracks.length === 1
-              ? 'This moves the book to the library trash on the server. '
-              : `This moves all ${book.tracks.length} files of this book to the library trash on the server. `}
-            It leaves every device on the next sync, and stays recoverable until the trash is emptied.
+            {/* Both sentences in ONE entry. The reassurance used to be a
+                sibling of the count, which left a translator holding a
+                subordinate clause with nowhere to put it - and languages that
+                lead with the consequence could not. */}
+            {t('books.deleteExplain', { count: book.tracks.length })}
           </Text>
           {problem && (
             <Text as="p" size="sm" tone="danger">
@@ -1084,6 +1157,7 @@ function BookMenu({
 }
 
 export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
+  const t = useT();
   const { session } = useServerSession();
   const { books, rescan, isFavorite, toggleFavorite } = useLibrary();
   /*
@@ -1152,16 +1226,16 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
     useEffect(() => {
     if (!stuck) return;
     setHeaderActions({
-      title: 'Books',
+      title: t('books.title'),
       // The shelf's leading cover, the way a playlist hands up its mosaic:
       // the book being read right now. The glyph stays as the fallback for a
       // shelf with no artwork at all.
       art: headerCover,
       glyph: headerCover ? null : BookAudio,
-      action: { icon: Upload, label: 'Add a book', onPress: () => openBookPicker?.() },
+      action: { icon: Upload, label: t('books.addBook'), onPress: () => openBookPicker?.() },
     });
     return () => setHeaderActions(null);
-  }, [stuck, headerCover]);
+  }, [stuck, headerCover, t]);
   const shelf = useMemo(() => shelve(books), [books]);
 
   /**
@@ -1278,14 +1352,19 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
   /** "Ch 2 of 50" - the book's OWN number for the chapter, the same one the
    *  transport and the chapter list show. Front matter claims no number, so it
    *  is placed rather than numbered. */
-  const chapterFigure = useCallback((book: ShelfBook, index: number) => {
-    const n = chapterNumbers(book.chapters.map((c) => c.title ?? ''))[index] ?? null;
-    if (n !== null) return `Ch ${n} of ${book.chapters.length}`;
-    // Front matter is placed rather than numbered - and the opening section
-    // says what it is, rather than which seat it happens to sit in.
-    const named = frontMatterTitle(book.chapters[index]?.title ?? '', index);
-    return index === 0 && named ? named : `${index + 1} of ${book.chapters.length}`;
-  }, []);
+  const chapterFigure = useCallback(
+    (book: ShelfBook, index: number) => {
+      const n = chapterNumbers(book.chapters.map((c) => c.title ?? ''))[index] ?? null;
+      if (n !== null) return t('books.chapterShort', { n, total: book.chapters.length });
+      // Front matter is placed rather than numbered - and the opening section
+      // says what it is, rather than which seat it happens to sit in.
+      const named = frontMatterTitle(book.chapters[index]?.title ?? '', index);
+      return index === 0 && named
+        ? named
+        : t('books.chapterPlace', { n: index + 1, total: book.chapters.length });
+    },
+    [t],
+  );
 
   /**
    * Every book with a place kept, most recently read first.
@@ -1344,7 +1423,7 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
         {/* The toggle sits under the EMPTY shelf's header too: it is the only
             way back to Music, and a shelf with no books is exactly where you
             want it. */}
-        <BooksHeader blurb="Your audiobook shelf." onAdded={rescan} />
+        <BooksHeader blurb={t('books.blurbEmpty')} onAdded={rescan} />
         {headerSlot}
         <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
         <ImportDoorway />
@@ -1354,11 +1433,16 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
               plugin - withdrawn 2026-08-24, so that sentence would now point at
               a page nobody has. The drop folder is the one route that needs no
               plugin at all, so it leads. */}
-          No audiobooks yet. Add one you already own with the button above &mdash; a single file,
-          or a whole book <strong>zipped</strong>, which is the only way a phone can hand over a
-          folder of chapters. You can also drop files into the library&rsquo;s{' '}
-          <strong>Audiobooks</strong> folder and they will be shelved here with their chapters.
-          Downloaders live in Settings, under their own plugins.
+          {/* One entry, three sentences, two emphasised words inside it. The
+              FOLDER NAME is handed in as a value rather than written into the
+              catalogue: `Audiobooks/` is a real path on the server's disk and
+              is what makes a file a book, so a translated one would name a
+              folder that does not exist. */}
+          <Trans
+            i18nKey="books.emptyShelf"
+            values={{ folder: 'Audiobooks' }}
+            components={{ b: <strong /> }}
+          />
         </Text>
       </div>
     );
@@ -1378,7 +1462,14 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
         <button
           type="button"
           className="bookCard__heart"
-          aria-label={`${isFav(book) ? 'Remove' : 'Add'} ${book.title} ${isFav(book) ? 'from' : 'to'} favourites`}
+          // Two labels for two states, not one sentence with holes: "remove
+          // from" and "add to" are one verb each in most languages, and
+          // splicing the preposition in separately makes neither.
+          aria-label={
+            isFav(book)
+              ? t('books.unfavouriteAria', { title: book.title })
+              : t('books.favouriteAria', { title: book.title })
+          }
           aria-pressed={isFav(book)}
           onClick={() => toggleBook(book)}
         >
@@ -1388,7 +1479,11 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
           type="button"
           className="bookCard__body"
           onClick={() => readBook(book)}
-          aria-label={`${at.started ? 'Continue' : 'Start'} ${book.title}`}
+          aria-label={
+            at.started
+              ? t('books.continueAria', { title: book.title })
+              : t('books.startAria', { title: book.title })
+          }
         >
           <span className="bookCard__cover">
             {book.cover ? (
@@ -1404,8 +1499,11 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
           <span className="bookCard__author">{book.author}</span>
           <span className="bookCard__standing">
             {at.started
-              ? `${chapterFigure(book, at.index)} · ${minutes(at.positionMs)} in`
-              : `${book.chapters.length} ${book.chapters.length === 1 ? 'chapter' : 'chapters'}`}
+              ? t('books.standingAt', {
+                  chapter: chapterFigure(book, at.index),
+                  time: minutes(at.positionMs, t),
+                })
+              : t('books.chapterCount', { count: book.chapters.length })}
           </span>
           {/* The narrator's actual reading speed, beside how long the book is.
               It is the number that decides whether to reach for 1.25x before
@@ -1413,14 +1511,25 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
               falls out of a transcript that already exists. Absent for a book
               nobody has transcribed, which is most of them at first. */}
           {shape && shape.wpm > 0 && (
-            <span className="bookCard__pace" title={`${shape.words.toLocaleString()} words`}>
-              {shape.wpm} wpm{shape.pace ? `, ${shape.pace}` : ''}
+            <span
+              className="bookCard__pace"
+              // `count` picks the plural form, `words` carries the number
+              // already grouped the way this locale groups it - the raw count
+              // would interpolate as an ungrouped 84213.
+              title={t('books.wordCount', {
+                count: shape.words,
+                words: formatNumber(shape.words),
+              })}
+            >
+              {shape.pace
+                ? t('books.wpmPace', { wpm: shape.wpm, pace: paceWord(shape.pace, t) })
+                : t('books.wpm', { wpm: shape.wpm })}
               {bookSkips(
-                book.tracks.map((t) => serverId(t.path)).filter((n): n is number => n !== null),
+                book.tracks.map((tr) => serverId(tr.path)).filter((n): n is number => n !== null),
               ) && (
                 <>
                   {' · '}
-                  <span className="bookCard__paceSkip">card skipped</span>
+                  <span className="bookCard__paceSkip">{t('books.cardSkipped')}</span>
                 </>
               )}
             </span>
@@ -1431,7 +1540,7 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
           <button
             type="button"
             className="bookCard__chapters"
-            aria-label={`Chapters of ${book.title}`}
+            aria-label={t('books.chaptersOf', { title: book.title })}
             onClick={() => setOpen(book)}
           >
             <ChevronRight size={14} />
@@ -1444,7 +1553,7 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
   return (
     <div ref={pageRef} className="discoverPage booksPage">
       <BooksHeader
-        blurb="Your shelf — pick up where you left off."
+        blurb={t('books.blurb')}
         onAdded={rescan}
         covers={shelf.map((b) => b.cover)}
         count={shelf.length}
@@ -1477,7 +1586,7 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
           one button. */}
       {reading.length > 1 && (
         <section className="discoverSection">
-          <h2 className="discoverSection__title">Continue reading</h2>
+          <h2 className="discoverSection__title">{t('books.continueReading')}</h2>
           <div className="booksShelf">{reading.map(card)}</div>
         </section>
       )}
@@ -1487,12 +1596,12 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
           {/* Its own shelf rather than a filter, because "the ones I am
               actually reading" is a different question from "everything I
               own", and on a shelf of forty the difference is the whole point. */}
-          <h2 className="discoverSection__title">Favourites</h2>
+          <h2 className="discoverSection__title">{t('books.favourites')}</h2>
           <div className="booksShelf">{favourites.map(card)}</div>
         </section>
       )}
       <section className="discoverSection">
-        {favourites.length > 0 && <h2 className="discoverSection__title">All books</h2>}
+        {favourites.length > 0 && <h2 className="discoverSection__title">{t('books.allBooks')}</h2>}
         <div className="booksShelf">{rest.map(card)}</div>
       </section>
 

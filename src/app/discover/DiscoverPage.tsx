@@ -204,7 +204,12 @@ const PER_SECTION = 6;
 
 /** The global chart is its own trending shelf now, labelled by the server;
  *  offered again here, unfiltered, it would be the one blend the page
- *  promised never to make. */
+ *  promised never to make.
+ *
+ *  NOT translated, and the `===` below is why: this is the section name the
+ *  SERVER sends, matched against, not shown. Translate it and the blend the
+ *  comment promises never to make starts happening in every language but
+ *  English. i18n-ignore */
 const BLENDED_SECTION = 'Trending now';
 
 /** Where a card is, from the download queue rather than a click a moment ago:

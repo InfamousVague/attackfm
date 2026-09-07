@@ -13,6 +13,7 @@ import {
 } from '../server.ts';
 import { loadHoldings, trackKey } from '../servers/mirrors.ts';
 import { formatBytes } from '../ux/format.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * Freeing space on one server, song by song.
@@ -47,6 +48,7 @@ export function StorageManager({
   peerUrls: string[];
   onBack: () => void;
 }) {
+  const t = useT();
   const [tracks, setTracks] = useState<RemoteTrack[]>(() => loadCachedIndex(target.url).tracks);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [query, setQuery] = useState('');
@@ -95,10 +97,10 @@ export function StorageManager({
     const q = query.trim().toLowerCase();
     const filtered = q
       ? tracks.filter(
-          (t) =>
-            t.title.toLowerCase().includes(q) ||
-            t.artist.toLowerCase().includes(q) ||
-            t.album.toLowerCase().includes(q),
+          (track) =>
+            track.title.toLowerCase().includes(q) ||
+            track.artist.toLowerCase().includes(q) ||
+            track.album.toLowerCase().includes(q),
         )
       : tracks;
     const sorted = [...filtered];
@@ -110,14 +112,14 @@ export function StorageManager({
 
   const pickedBytes = useMemo(() => {
     let total = 0;
-    for (const t of tracks) if (picked.has(t.id)) total += t.sizeBytes;
+    for (const track of tracks) if (picked.has(track.id)) total += track.sizeBytes;
     return total;
   }, [tracks, picked]);
 
   const pickedOnlyCopies = useMemo(() => {
     let n = 0;
-    for (const t of tracks) {
-      if (picked.has(t.id) && !copies.has(trackKey(t.artist, t.title))) n += 1;
+    for (const track of tracks) {
+      if (picked.has(track.id) && !copies.has(trackKey(track.artist, track.title))) n += 1;
     }
     return n;
   }, [tracks, picked, copies]);
@@ -139,11 +141,13 @@ export function StorageManager({
       const result = await removeTracks(target, [...picked]);
       setPicked(new Set());
       setNote(
-        `Moved ${result.removed.toLocaleString()} ${result.removed === 1 ? 'song' : 'songs'} to the trash. Empty it below to get the ${formatBytes(result.bytes)} back.`,
+        t('storage.movedToTrash', { count: result.removed, size: formatBytes(result.bytes) }),
       );
       await reload();
     } catch (e) {
-      setNote(e instanceof Error ? e.message : 'That did not work.');
+      // A server that explained itself is quoted as it came; only the silence
+      // gets a sentence of ours.
+      setNote(e instanceof Error ? e.message : t('storage.actionFailed'));
     } finally {
       setBusy(false);
     }
@@ -154,30 +158,37 @@ export function StorageManager({
     setNote(null);
     try {
       const result = await purgeTrash(target);
-      setNote(`Freed ${formatBytes(result.bytes)}.`);
+      setNote(t('storage.freed', { size: formatBytes(result.bytes) }));
       setConfirmPurge(false);
       await reload();
     } catch (e) {
-      setNote(e instanceof Error ? e.message : 'That did not work.');
+      setNote(e instanceof Error ? e.message : t('storage.actionFailed'));
     } finally {
       setBusy(false);
     }
   };
 
-  const total = useMemo(() => tracks.reduce((n, t) => n + t.sizeBytes, 0), [tracks]);
+  const total = useMemo(() => tracks.reduce((n, track) => n + track.sizeBytes, 0), [tracks]);
 
   return (
     <div className="storage">
       <header className="storage__head">
-        <Button variant="ghost" onClick={onBack} aria-label="Back to servers">
+        <Button variant="ghost" onClick={onBack} aria-label={t('storage.backToServers')}>
           <ArrowLeft size={16} />
         </Button>
         <div>
           <Heading level={2} noMargin>
-            Free up space
+            {t('storage.title')}
           </Heading>
+          {/* One entry rather than three fragments: the server's name, how
+              many songs it holds and how much room they take are a sentence,
+              and a translator has to be able to put them in another order. */}
           <Text size="sm" tone="muted">
-            {name} · {tracks.length.toLocaleString()} songs · {formatBytes(total)}
+            {t('storage.serverSummary', {
+              name,
+              count: tracks.length,
+              size: formatBytes(total),
+            })}
           </Text>
         </div>
       </header>
@@ -186,15 +197,17 @@ export function StorageManager({
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Find a song, artist or album"
+          placeholder={t('storage.findPlaceholder')}
           leadingIcon={<Search size={16} />}
         />
-        <div className="storage__sorts" role="group" aria-label="Sort">
+        <div className="storage__sorts" role="group" aria-label={t('storage.sortLabel')}>
+          {/* The left half of each pair is the sort ITSELF - compared against
+              `sort` and never shown - so only the right half is translated. */}
           {(
             [
-              ['largest', 'Largest'],
-              ['oldest', 'Oldest'],
-              ['artist', 'Artist'],
+              ['largest', t('storage.sortLargest')],
+              ['oldest', t('storage.sortOldest')],
+              ['artist', t('storage.sortArtist')],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -224,11 +237,11 @@ export function StorageManager({
               return next;
             });
           }}
-          label={query ? `Select these ${rows.length.toLocaleString()}` : 'Select all'}
+          label={query ? t('storage.selectThese', { count: rows.length }) : t('storage.selectAll')}
         />
         {picked.size > 0 && (
           <Text size="sm" tone="muted">
-            {picked.size.toLocaleString()} selected · {formatBytes(pickedBytes)}
+            {t('storage.pickedSummary', { count: picked.size, size: formatBytes(pickedBytes) })}
           </Text>
         )}
       </div>
@@ -238,26 +251,35 @@ export function StorageManager({
         count={rows.length}
         itemSize={ROW_HEIGHT}
         getKey={(i) => rows[i]?.id ?? i}
-        emptyLabel="Nothing matches that."
+        emptyLabel={t('storage.noMatch')}
         renderItem={(i) => {
-          const t = rows[i];
-          if (!t) return null;
-          const elsewhere = copies.get(trackKey(t.artist, t.title)) ?? 0;
+          const track = rows[i];
+          if (!track) return null;
+          const elsewhere = copies.get(trackKey(track.artist, track.title)) ?? 0;
           return (
-            <label className="storageRow" data-picked={picked.has(t.id) || undefined}>
-              <Checkbox checked={picked.has(t.id)} onCheckedChange={() => toggle(t.id)} />
+            <label className="storageRow" data-picked={picked.has(track.id) || undefined}>
+              <Checkbox checked={picked.has(track.id)} onCheckedChange={() => toggle(track.id)} />
               <span className="storageRow__text">
-                <span className="storageRow__title">{t.title}</span>
+                <span className="storageRow__title">{track.title}</span>
                 <span className="storageRow__sub">
-                  {t.artist}
+                  {track.artist}
+                  {/* The separator stays in the markup: it is punctuation, and
+                      putting it in the catalogue only gives eight translators
+                      a chance to lose it. */}
                   {elsewhere > 0 ? (
-                    <span className="storageRow__safe"> · also on {elsewhere} other</span>
+                    <span className="storageRow__safe">
+                      {' · '}
+                      {t('storage.alsoOnOtherServers', { count: elsewhere })}
+                    </span>
                   ) : (
-                    <span className="storageRow__only"> · only copy</span>
+                    <span className="storageRow__only">
+                      {' · '}
+                      {t('storage.onlyCopy')}
+                    </span>
                   )}
                 </span>
               </span>
-              <span className="storageRow__size">{formatBytes(t.sizeBytes)}</span>
+              <span className="storageRow__size">{formatBytes(track.sizeBytes)}</span>
             </label>
           );
         }}
@@ -273,38 +295,40 @@ export function StorageManager({
         {pickedOnlyCopies > 0 && (
           <span className="storage__warn">
             <TriangleAlert size={14} />
-            {pickedOnlyCopies.toLocaleString()} of these are the only copy I know of
+            {t('storage.onlyCopyWarning', { count: pickedOnlyCopies })}
           </span>
         )}
         <Button variant="danger" disabled={picked.size === 0 || busy} onClick={() => void remove()}>
           <Trash2 size={16} />
-          {picked.size > 0 ? `Remove ${picked.size.toLocaleString()} · ${formatBytes(pickedBytes)}` : 'Remove'}
+          {picked.size > 0
+            ? t('storage.removeCount', { count: picked.size, size: formatBytes(pickedBytes) })
+            : t('common.remove')}
         </Button>
       </footer>
 
       {trash && trash.files > 0 && (
         <section className="storage__trash">
           <div>
-            <Text>In the trash</Text>
+            <Text>{t('storage.inTheTrash')}</Text>
             <Text size="sm" tone="muted">
-              {trash.files.toLocaleString()} files · {formatBytes(trash.bytes)} recoverable until emptied
+              {t('storage.trashSummary', { count: trash.files, size: formatBytes(trash.bytes) })}
             </Text>
           </div>
           {confirmPurge ? (
             <div className="storage__confirm">
               <Text size="sm" tone="danger">
-                Deletes {trash.files.toLocaleString()} files for good.
+                {t('storage.purgeWarning', { count: trash.files })}
               </Text>
               <Button variant="ghost" onClick={() => setConfirmPurge(false)} disabled={busy}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button variant="danger" onClick={() => void empty()} disabled={busy}>
-                Empty trash
+                {t('storage.emptyTrash')}
               </Button>
             </div>
           ) : (
             <Button variant="outline" onClick={() => setConfirmPurge(true)} disabled={busy}>
-              Empty trash · {formatBytes(trash.bytes)}
+              {t('storage.emptyTrashSize', { size: formatBytes(trash.bytes) })}
             </Button>
           )}
         </section>

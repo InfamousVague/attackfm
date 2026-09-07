@@ -4,6 +4,7 @@ import { useMediaQuery } from '../ux/useMediaQuery.ts';
 import { fireFelt } from '../core/haptics.ts';
 import { MOBILE_PLAYER_QUERY, type HearMode } from './deckShared.ts';
 import { useJamOptional } from './jam.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * "Where should the music play?" - a follower's first moment in a room.
@@ -29,6 +30,7 @@ import { useJamOptional } from './jam.tsx';
  * two cards, and every target at least 44px.
  */
 export function GrooveHearSheet() {
+  const t = useT();
   const jam = useJamOptional();
   const phone = useMediaQuery(MOBILE_PLAYER_QUERY);
   const room = jam?.choosing ?? null;
@@ -44,14 +46,13 @@ export function GrooveHearSheet() {
     <div className="hearSheet">
       <p className="hearSheet__lead">
         <Users size={14} aria-hidden />
-        You&rsquo;re joining {room.hostName}&rsquo;s groove. Pick where it plays - you can change
-        this in the groove deck any time.
+        {t('player.hearJoining', { host: room.hostName })}
       </p>
-      <div className="hearSheet__options" role="group" aria-label="Where the music plays">
+      <div className="hearSheet__options" role="group" aria-label={t('player.hearWhere')}>
         <button
           type="button"
           className="hearCard"
-          aria-label="On this device. Plays here, in time with the room."
+          aria-label={t('player.hearDeviceAria')}
           onClick={() => pick('device')}
           autoFocus
         >
@@ -59,31 +60,29 @@ export function GrooveHearSheet() {
             <Smartphone size={24} />
           </span>
           <span className="hearCard__text">
-            <span className="hearCard__name">On this device</span>
-            <span className="hearCard__sub">Plays here, in time with the room</span>
+            <span className="hearCard__name">{t('player.onThisDevice')}</span>
+            <span className="hearCard__sub">{t('player.hearDeviceSub')}</span>
           </span>
         </button>
         <button
           type="button"
           className="hearCard"
-          aria-label={`On ${room.hostName}'s speaker. This phone stays quiet and shows what's on; your controls steer the room.`}
+          aria-label={t('player.hearSpeakerAria', { host: room.hostName })}
           onClick={() => pick('speaker')}
         >
           <span className="hearCard__disc" aria-hidden>
             <Speaker size={24} />
           </span>
           <span className="hearCard__text">
-            <span className="hearCard__name">On {room.hostName}&rsquo;s speaker</span>
-            <span className="hearCard__sub">
-              This phone stays quiet and shows what&rsquo;s on. Your controls steer the room.
-            </span>
+            <span className="hearCard__name">{t('player.onHostSpeaker', { host: room.hostName })}</span>
+            <span className="hearCard__sub">{t('player.hearSpeakerSub')}</span>
           </span>
         </button>
       </div>
     </div>
   );
 
-  const title = 'Where should the music play?';
+  const title = t('player.hearTitle');
   return phone ? (
     <Drawer open onClose={dismiss} side="bottom" size="md" title={title} className="hearDrawer">
       {body}

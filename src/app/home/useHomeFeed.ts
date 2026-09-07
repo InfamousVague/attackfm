@@ -8,7 +8,9 @@ import {
   type ServerSession,
 } from '../server.ts';
 import { readFeedCache, writeFeedCache } from '../library/feedCache.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
+import { formatDate } from '../ux/format.ts';
 import type { Track } from '../core/tauri.ts';
 import type { ResolvedMix } from './homeCards.tsx';
 import { tracksOfHub } from '../server.ts';
@@ -37,6 +39,7 @@ export function useHomeFeed(
    */
   forYou: Track[] = [],
 ) {
+  const t = useT();
   // Every feed seeds from the last launch's answer, so the shelves paint at
   // full size on the first frame and the refresh below swaps content in place
   // - the page must never assemble itself in front of the listener twice.
@@ -54,8 +57,8 @@ export function useHomeFeed(
   const [held, setHeld] = useState(firstLaunch.current);
   useEffect(() => {
     if (!held) return;
-    const t = window.setTimeout(() => setHeld(false), 1000);
-    return () => window.clearTimeout(t);
+    const id = window.setTimeout(() => setHeld(false), 1000);
+    return () => window.clearTimeout(id);
   }, [held]);
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -184,10 +187,14 @@ export function useHomeFeed(
     const l = allCurated.find((x) => x.id === `curated-daylist-${utc}`);
     if (!l || l.tracks.length < 4) return null;
     const localBucket = Math.floor(now.getHours() / 6); // 0 night, 1 morning, 2 afternoon, 3 evening
-    const parts = ['night', 'morning', 'afternoon', 'evening'];
-    const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
-    return { ...l, title: `${weekday} ${parts[localBucket]}`, subtitle: l.title };
-  }, [allCurated]);
+    // One key per daypart, each holding the WHOLE heading rather than a word
+    // to glue after the weekday: "Tuesday morning" is two words in this order
+    // in English and neither of those is true everywhere, so the day goes in
+    // as a hole the translator places.
+    const partKeys = ['home.daypartNight', 'home.daypartMorning', 'home.daypartAfternoon', 'home.daypartEvening'];
+    const weekday = formatDate(now, { weekday: 'long' });
+    return { ...l, title: t(partKeys[localBucket]!, { weekday }), subtitle: l.title };
+  }, [allCurated, t]);
 
   // One shelf, not two. "From your curator" and "Made for you" were two rails
   // of identical cards that differed only in WHICH PROCESS built them - a

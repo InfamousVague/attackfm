@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { formatBytes } from '../ux/format.ts';
+import { formatBytes, formatNumber } from '../ux/format.ts';
 import { AlertDialog, Button, Label, ProgressBar, Spinner, Switch, Text } from '@glacier/react';
 import { Trash2 } from '@glacier/icons';
 import { request } from '../api/http.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useServerSession } from './serverSession.tsx';
 
 /**
@@ -114,8 +115,38 @@ export function usePrefetchStatus(): Prefetch | null {
  * operator's GPU and disk; watching it does not. The endpoint agrees - it asks
  * only for a signed-in caller, not an admin.
  */
+/** The song being worked on, named the way the catalogue names songs. */
+function songLabel(t: (key: string, values?: Record<string, unknown>) => string, running: Running): string {
+  if (!running.title) return t('servers.aSong');
+  return running.artist
+    ? t('servers.songTitleByArtist', { title: running.title, artist: running.artist })
+    : t('servers.songTitleQuoted', { title: running.title });
+}
+
 export function StemProgress({ state }: { state: Prefetch }) {
+  const t = useT();
   if (!state.available) return null;
+
+  /*
+   * "Taking apart “Blue Monday” — New Order · 40%".
+   *
+   * Built here rather than in the JSX below because the verb is a whole
+   * catalogue entry with the song inside it, not a word glued in front of one:
+   * `phase` is the server's own token and is matched, never shown. The song
+   * goes in as one `what` hole so the quotation marks come from the catalogue
+   * as well - not every language quotes with “ ”.
+   */
+  const now = state.running;
+  const nowLine = now
+    ? [
+        now.phase === 'packing'
+          ? t('servers.stemsFiling', { what: songLabel(t, now) })
+          : t('servers.stemsTakingApart', { what: songLabel(t, now) }),
+        ...(now.phase === 'separating' && now.fraction > 0
+          ? [formatNumber(now.fraction, { style: 'percent', maximumFractionDigits: 0 })]
+          : []),
+      ].join(' · ')
+    : null;
   if (typeof state.total === 'number' && state.total > 0) {
     return (
       <div className="prefetchProgress">
@@ -127,12 +158,27 @@ export function StemProgress({ state }: { state: Prefetch }) {
           max={state.total}
           tone="accent"
           size="sm"
-          aria-label="Songs separated"
+          aria-label={t('servers.stemsProgressLabel')}
         />
         <Text tone="muted" size="xs">
-          {(state.separated ?? 0).toLocaleString()} of {state.total.toLocaleString()} songs apart
-          {state.wanted > 0 ? ` · ${state.wanted.toLocaleString()} queued` : ''} · {formatBytes(state.bytes)} used
-          {state.failed > 0 ? ` · ${state.failed} could not be separated` : ''}
+          {/* A bulleted LIST of readings, not a sentence: each part is its own
+              catalogue entry, and the optional ones simply do not join the
+              list. Building it as JSX siblings would hand a translator the
+              separators and none of the order. */}
+          {[
+            t('servers.stemsApartOfTotal', {
+              count: state.total,
+              n: formatNumber(state.separated ?? 0),
+              total: formatNumber(state.total),
+            }),
+            ...(state.wanted > 0
+              ? [t('servers.stemsQueued', { count: state.wanted, n: formatNumber(state.wanted) })]
+              : []),
+            t('servers.stemsUsed', { size: formatBytes(state.bytes) }),
+            ...(state.failed > 0
+              ? [t('servers.stemsFailed', { count: state.failed, n: formatNumber(state.failed) })]
+              : []),
+          ].join(' · ')}
         </Text>
         {/* Naming the song is what turns a stalled-looking number into
             visible work: this moves every couple of seconds even when the
@@ -140,17 +186,12 @@ export function StemProgress({ state }: { state: Prefetch }) {
         {state.running && (
           <Text tone="muted" size="xs" className="prefetchProgress__now">
             <Spinner size="sm" aria-hidden />
-            {state.running.phase === 'packing' ? 'Filing' : 'Taking apart'}{' '}
-            {state.running.title ? `“${state.running.title}”` : 'a song'}
-            {state.running.artist ? ` — ${state.running.artist}` : ''}
-            {state.running.phase === 'separating' && state.running.fraction > 0
-              ? ` · ${Math.round(state.running.fraction * 100)}%`
-              : ''}
+            {nowLine}
           </Text>
         )}
         {!state.running && state.enabled && (state.separated ?? 0) >= state.total && (
           <Text tone="muted" size="xs">
-            Everything liked or in a playlist is already apart.
+            {t('servers.stemsAllApart')}
           </Text>
         )}
       </div>
@@ -161,9 +202,14 @@ export function StemProgress({ state }: { state: Prefetch }) {
   if (state.done > 0 || state.wanted > 0) {
     return (
       <Text tone="muted" size="xs">
-        {state.done.toLocaleString()} ready · {state.wanted.toLocaleString()} waiting ·{' '}
-        {formatBytes(state.bytes)} used
-        {state.failed > 0 ? ` · ${state.failed} could not be separated` : ''}
+        {[
+          t('servers.stemsReady', { count: state.done, n: formatNumber(state.done) }),
+          t('servers.stemsWaiting', { count: state.wanted, n: formatNumber(state.wanted) }),
+          t('servers.stemsUsed', { size: formatBytes(state.bytes) }),
+          ...(state.failed > 0
+            ? [t('servers.stemsFailed', { count: state.failed, n: formatNumber(state.failed) })]
+            : []),
+        ].join(' · ')}
       </Text>
     );
   }
@@ -171,6 +217,7 @@ export function StemProgress({ state }: { state: Prefetch }) {
 }
 
 export function BackgroundWork() {
+  const t = useT();
   const { session } = useServerSession();
   const state = usePrefetchStatus();
   const [busy, setBusy] = useState(false);
@@ -265,12 +312,12 @@ export function BackgroundWork() {
         { method: 'POST' , token: session.token },
       );
       if (dry.tracks === 0) {
-        setPruneNote('Nothing to clear — every separation belongs to something you chose.');
+        setPruneNote(t('servers.stemsNothingToClear'));
         return;
       }
       setPlan(dry);
     } catch (err) {
-      setPruneNote(err instanceof Error ? err.message : 'That did not work.');
+      setPruneNote(err instanceof Error ? err.message : t('servers.stemsPruneFailed'));
     } finally {
       setPlanning(false);
     }
@@ -287,11 +334,15 @@ export function BackgroundWork() {
       );
       setPruneNote(
         reply.tracks === 0
-          ? 'Nothing to clear — every separation belongs to something you chose.'
-          : `Cleared ${reply.tracks.toLocaleString()} ${reply.tracks === 1 ? 'song' : 'songs'}, freeing ${formatBytes(reply.bytes)}.`,
+          ? t('servers.stemsNothingToClear')
+          : t('servers.stemsCleared', {
+              count: reply.tracks,
+              n: formatNumber(reply.tracks),
+              size: formatBytes(reply.bytes),
+            }),
       );
     } catch (err) {
-      setPruneNote(err instanceof Error ? err.message : 'That did not work.');
+      setPruneNote(err instanceof Error ? err.message : t('servers.stemsPruneFailed'));
     } finally {
       setPruning(false);
     }
@@ -299,21 +350,19 @@ export function BackgroundWork() {
 
   return (
     <div className="prefsSection" data-setting="stem-prefetch">
-      <Label>Background work</Label>
+      <Label>{t('servers.backgroundWork')}</Label>
       <Switch
-        label="Separate songs before you ask"
+        label={t('servers.stemsPrefetch')}
         checked={enabled && state.available}
         disabled={busy || !state.available}
         onCheckedChange={(on: boolean) => void flip(on)}
       />
       <Text tone="muted" size="sm">
-        {!state.available
-          ? 'This server does not have the separation tools installed, so there is nothing to turn on.'
-          : 'Pulls songs apart in the background so the Pads and the Stems tab open instantly instead of after minutes. Only the lists you choose: turn a playlist on from its ⋮ menu, and Liked with the switch below. Costs GPU time per song and disk to keep. It always yields to a song you ask for.'}
+        {!state.available ? t('servers.stemsUnavailable') : t('servers.stemsPrefetchBlurb')}
       </Text>
       {state.available && state.liked !== undefined && (
         <Switch
-          label="Include your Liked songs"
+          label={t('servers.stemsIncludeLiked')}
           checked={likedOn}
           disabled={!enabled}
           onCheckedChange={(on: boolean) => void flipLiked(on)}
@@ -330,13 +379,11 @@ export function BackgroundWork() {
               onClick={() => void askToPrune()}
             >
               <Trash2 size={14} />{' '}
-              {pruning ? 'Clearing…' : planning ? 'Counting…' : 'Clear the rest'}
+              {pruning ? t('servers.stemsClearing') : planning ? t('servers.stemsCounting') : t('servers.stemsClearRest')}
             </Button>
           </div>
           <Text tone="muted" size="sm">
-            Deletes the separations for songs outside the lists you chose — what the old
-            separate-everything rule left behind. The songs themselves are untouched; anything
-            cleared is separated again the next time you ask for it.
+            {t('servers.stemsClearBlurb')}
           </Text>
           {pruneNote && (
             <Text tone="muted" size="sm">
@@ -348,15 +395,15 @@ export function BackgroundWork() {
             onClose={() => setPlan(null)}
             title={
               plan
-                ? `Clear ${plan.tracks.toLocaleString()} ${plan.tracks === 1 ? 'song' : 'songs'}, freeing ${formatBytes(plan.bytes)}?`
-                : 'Clear the rest?'
+                ? t('servers.stemsClearConfirm', {
+                    count: plan.tracks,
+                    n: formatNumber(plan.tracks),
+                    size: formatBytes(plan.bytes),
+                  })
+                : t('servers.stemsClearRestQuestion')
             }
-            description={
-              likedOn
-                ? 'Your Liked songs and the playlists you turned on keep their separated parts. Everything else loses them. The music itself is untouched, and anything cleared is separated again the next time you ask for it — which costs the server minutes of GPU per song.'
-                : 'Liked is switched OFF, so your liked songs are NOT spared — they are counted in the number above. Switch "Include your Liked songs" on first if you want to keep theirs. The music itself is untouched either way, and anything cleared is separated again the next time you ask for it.'
-            }
-            actionLabel="Clear them"
+            description={likedOn ? t('servers.stemsClearBodyLiked') : t('servers.stemsClearBodyNotLiked')}
+            actionLabel={t('servers.stemsClearAction')}
             tone="danger"
             onAction={() => {
               setPlan(null);

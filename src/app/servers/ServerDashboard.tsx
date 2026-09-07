@@ -18,6 +18,8 @@ import {
   type ServerStats,
 } from '../server.ts';
 import { useLibrary } from '../library/library.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatBytes, formatNumber } from '../ux/format.ts';
 import { useServerSession } from './serverSession.tsx';
 import { gbLabel, uptimeLabel } from './serverFormat.ts';
 import { UsersSection } from './ServerUsers.tsx';
@@ -26,6 +28,7 @@ import { BackgroundWork } from './BackgroundWork.tsx';
 /** The signed-in status board: who and where, the numbers, the disk, and the
  * controls - a dashboard, not a form. */
 export function Connected() {
+  const t = useT();
   const { session, disconnect } = useServerSession();
   const { tracks, indexing, rescan, error } = useLibrary();
   const [status, setStatus] = useState<ScanStatus | null>(null);
@@ -88,7 +91,18 @@ export function Connected() {
   if (!session) return null;
 
   const trackCount = stats?.tracks ?? status?.tracks ?? tracks.length;
-  const sizeLabel = stats?.bytesLabel ?? status?.bytesLabel ?? null;
+  /*
+   * The library's size, built HERE from the raw byte count.
+   *
+   * Both payloads also carry a ready-made `bytesLabel`, and that is what this
+   * read before: a string the Rust side formatted with its own `human_bytes`.
+   * It is English, it is the server's choice of unit, and its thousands are
+   * grouped the server's way - none of which the app can translate, and none
+   * of which agrees with the sizes beside it. The number is in the same
+   * payload, so the label is ours to make.
+   */
+  const sizeBytes = stats?.bytesUsed ?? status?.bytes ?? null;
+  const sizeLabel = sizeBytes == null ? null : formatBytes(sizeBytes);
   const scanning = status?.running ?? false;
 
   // Disk: used fraction of the volume the music lives on. High is the bad
@@ -151,7 +165,7 @@ export function Connected() {
           </span>
           <div className="serverHero__meta">
             <span className="serverHero__name">
-              <Text weight="semibold">{stats?.name ?? 'Connected'}</Text>
+              <Text weight="semibold">{stats?.name ?? t('servers.connected')}</Text>
               {stats && (
                 <Pill size="sm" tone="neutral">
                   v{stats.version}
@@ -161,8 +175,14 @@ export function Connected() {
             <span className="serverHero__status">
               <StatusDot tone={scanning ? 'warning' : 'success'} pulse size="sm" />
               <Text size="sm" tone="muted">
-                {session.url.replace(/^https?:\/\//, '')}
-                {stats ? ` · up ${uptimeLabel(stats.uptimeSecs)}` : ''}
+                {/* Host and uptime are one line, not two fragments: which side
+                    of the separator each sits on is the translator's call. */}
+                {stats
+                  ? t('servers.hostUpFor', {
+                      host: session.url.replace(/^https?:\/\//, ''),
+                      time: uptimeLabel(stats.uptimeSecs),
+                    })
+                  : session.url.replace(/^https?:\/\//, '')}
               </Text>
             </span>
           </div>
@@ -174,7 +194,7 @@ export function Connected() {
               </Text>
               {session.isAdmin && (
                 <Pill size="sm" tone="accent">
-                  Owner
+                  {t('servers.owner')}
                 </Pill>
               )}
             </span>
@@ -182,12 +202,14 @@ export function Connected() {
         </div>
 
         <div className="serverStats">
-          <StatTile icon={<Music size={16} />} value={trackCount.toLocaleString()} label="Songs" />
-          <StatTile icon={<Database size={16} />} value={sizeLabel ?? '—'} label="Library size" />
+          <StatTile icon={<Music size={16} />} value={formatNumber(trackCount)} label={t('servers.statSongs')} />
+          <StatTile icon={<Database size={16} />} value={sizeLabel ?? '—'} label={t('servers.statLibrarySize')} />
           <StatTile
             icon={<Users size={16} />}
-            value={stats ? String(stats.users) : '—'}
-            label={stats?.users === 1 ? 'Listener' : 'Listeners'}
+            value={stats ? formatNumber(stats.users) : '—'}
+            // The tile keeps the number in `value`, so the label carries the
+            // plural form alone - `count` selects it without being printed.
+            label={t('servers.statListeners', { count: stats?.users ?? 0 })}
           />
           <StatTile
             icon={<Activity size={16} />}
@@ -195,10 +217,10 @@ export function Connected() {
               stats
                 ? stats.importsActive + stats.importsQueued > 0
                   ? `${stats.importsActive + stats.importsQueued}`
-                  : 'Idle'
+                  : t('servers.importsIdle')
                 : '—'
             }
-            label="Import queue"
+            label={t('servers.statImportQueue')}
           />
         </div>
 
@@ -207,14 +229,14 @@ export function Connected() {
             <span className="serverDisk__head">
               <HardDrive size={14} aria-hidden="true" />
               <Text size="sm" weight="medium">
-                Disk
+                {t('servers.disk')}
               </Text>
               <Text size="sm" tone="muted" className="serverDisk__free">
-                {gbLabel(disk.free)} free of {gbLabel(disk.total)}
+                {t('servers.freeOfSize', { free: gbLabel(disk.free), total: gbLabel(disk.total) })}
               </Text>
             </span>
             <Meter
-              aria-label="Disk used"
+              aria-label={t('servers.diskUsed')}
               value={Math.round(disk.usedFraction * 100)}
               max={100}
               segments={20}
@@ -223,8 +245,18 @@ export function Connected() {
             />
             {sizeLabel && (
               <Text size="xs" tone="subtle">
-                The library itself is {sizeLabel}
-                {stats && stats.quotaBytes > 0 ? ` of a ${gbLabel(stats.quotaBytes)} quota` : ''}.
+                {/* Two whole sentences rather than one with an optional tail:
+                    a language that puts the quota first cannot reorder a
+                    fragment that is glued on after the full stop. */}
+                {stats && stats.quotaBytes > 0 && sizeBytes != null
+                  ? /* A pair again - the size is read AGAINST the quota, so
+                       both halves are held to gigabytes rather than each
+                       picking its own unit. */
+                    t('servers.librarySizeOfQuota', {
+                      size: gbLabel(sizeBytes),
+                      quota: gbLabel(stats.quotaBytes),
+                    })
+                  : t('servers.librarySizeIs', { size: sizeLabel })}
               </Text>
         )}
 
@@ -237,14 +269,17 @@ export function Connected() {
             <span className="serverDisk__head">
               <Cpu size={14} aria-hidden="true" />
               <Text size="sm" weight="medium">
-                CPU
+                {/* An initialism in English, a word in plenty of other
+                    languages - and the row beside it says Disk through the
+                    catalogue, so this one cannot be a literal. */}
+                {t('servers.cpu')}
               </Text>
               <Text size="sm" tone="muted" className="serverDisk__free">
-                {cpu.load1.toFixed(2)} load on {cpu.cores} {cpu.cores === 1 ? 'core' : 'cores'}
+                {t('servers.cpuLoadOnCores', { count: cpu.cores, load: cpu.load1.toFixed(2) })}
               </Text>
             </span>
             <Meter
-              aria-label="CPU load"
+              aria-label={t('servers.cpuLoad')}
               value={Math.round(cpu.usedFraction * 100)}
               max={100}
               segments={20}
@@ -253,7 +288,10 @@ export function Connected() {
             />
             {cpu.load5 != null && cpu.load15 != null && (
               <Text size="xs" tone="subtle">
-                {cpu.load5.toFixed(2)} over five minutes, {cpu.load15.toFixed(2)} over fifteen.
+                {t('servers.loadFiveFifteen', {
+                  five: cpu.load5.toFixed(2),
+                  fifteen: cpu.load15.toFixed(2),
+                })}
               </Text>
             )}
           </div>
@@ -264,14 +302,14 @@ export function Connected() {
             <span className="serverDisk__head">
               <MemoryStick size={14} aria-hidden="true" />
               <Text size="sm" weight="medium">
-                Memory
+                {t('servers.memory')}
               </Text>
               <Text size="sm" tone="muted" className="serverDisk__free">
-                {gbLabel(mem.available)} free of {gbLabel(mem.total)}
+                {t('servers.freeOfSize', { free: gbLabel(mem.available), total: gbLabel(mem.total) })}
               </Text>
             </span>
             <Meter
-              aria-label="Memory used"
+              aria-label={t('servers.memoryUsed')}
               value={Math.round(mem.usedFraction * 100)}
               max={100}
               segments={20}
@@ -279,7 +317,7 @@ export function Connected() {
               tone={memTone}
             />
             <Text size="xs" tone="subtle">
-              Free counts what the system would hand back on demand, not only what is untouched.
+              {t('servers.memoryFreeNote')}
             </Text>
           </div>
         )}
@@ -290,7 +328,10 @@ export function Connected() {
         {status?.running && (
           <>
             <Text tone="muted" size="sm">
-              Server is indexing {status.seen.toLocaleString()} of {status.total.toLocaleString()}…
+              {t('servers.indexingProgress', {
+                seen: formatNumber(status.seen),
+                total: formatNumber(status.total),
+              })}
             </Text>
             <ProgressBar value={status.total > 0 ? (status.seen / status.total) * 100 : 0} />
           </>
@@ -308,10 +349,10 @@ export function Connected() {
               void rescan();
             }}
           >
-            <RefreshCw size={14} /> {indexing ? 'Syncing…' : 'Rescan & sync'}
+            <RefreshCw size={14} /> {indexing ? t('servers.syncing') : t('servers.rescanSync')}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => void disconnect()}>
-            Sign out
+            {t('servers.signOut')}
           </Button>
         </div>
       </div>

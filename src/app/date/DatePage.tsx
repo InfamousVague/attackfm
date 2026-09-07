@@ -12,6 +12,7 @@ import {
 } from '@glacier/react';
 import { Heart, Play, Undo2, X } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useMyAuditions } from '../library/myAuditions.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -53,6 +54,7 @@ import {
   type DateMode,
   type PreviewDateCard,
 } from '../api/curator.ts';
+import { formatNumber } from '../ux/format.ts';
 import { makeRatchet } from '../ux/ratchet.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 
@@ -133,6 +135,7 @@ interface Slot {
 }
 
 export function DatePage() {
+  const t = useT();
   const { isFavorite, toggleFavorite } = useLibrary();
   const { session } = useServerSession();
   const { toast } = useToast();
@@ -266,19 +269,19 @@ export function DatePage() {
         artist: c.artist,
         album:
           c.lane === 'trending'
-            ? 'Charting right now'
+            ? t('date.laneCharting')
             : c.lane === 'fresh'
-              ? 'Fresh out - a brand new release'
+              ? t('date.laneFreshOut')
               : c.seed
-                ? `Because you play ${c.seed}`
-                : 'New to you',
+                ? t('date.laneBecauseYouPlay', { seed: c.seed })
+                : t('date.laneNewToYou'),
         duration: null,
         addedAt: Date.now(),
         artwork: c.cover || null,
         genre: '',
         lyrics: '',
       })),
-    [candidates],
+    [candidates, t],
   );
 
   // In a mode, the library auditions are set aside: a "new music only" or
@@ -967,11 +970,15 @@ export function DatePage() {
     track.path.startsWith(PREVIEW_SCHEME) && track.album.trim() ? track.album : undefined;
   const refuseSong = (track: Track) => {
     verdict(track, 'left');
-    toast({ message: 'Less of that.' });
+    toast({ message: t('date.lessOfThatToast') });
   };
   const refuseAct = (track: Track) => {
     verdict(track, 'left', { lessLike: true });
-    toast({ message: track.artist.trim() ? `Less like ${track.artist}.` : 'Less like this.' });
+    toast({
+      message: track.artist.trim()
+        ? t('date.lessLikeArtistToast', { artist: track.artist })
+        : t('date.lessLikeThisToast'),
+    });
   };
 
   const dx = drag?.dx ?? 0;
@@ -991,10 +998,7 @@ export function DatePage() {
       <div className="homePage datePage">
         <div className="emptyState emptyState--tall">
           <EmptyArt name="discovery" />
-          <p className="emptyState__text">
-            Date needs your server — it introduces you to the music your DJ fetched, and the DJ
-            lives there.
-          </p>
+          <p className="emptyState__text">{t('date.needsServer')}</p>
         </div>
       </div>
     );
@@ -1014,19 +1018,19 @@ export function DatePage() {
    */
   const judged = tally.kept + tally.passed;
   const split: { value: number; tone: 'danger' | 'success'; label: string }[] = [
-    { value: judged === 0 ? 1 : tally.passed, tone: 'danger', label: 'Passed' },
-    { value: judged === 0 ? 1 : tally.kept, tone: 'success', label: 'Kept' },
+    { value: judged === 0 ? 1 : tally.passed, tone: 'danger', label: t('date.passed') },
+    { value: judged === 0 ? 1 : tally.kept, tone: 'success', label: t('date.kept') },
   ];
 
   return (
     <div className="homePage datePage">
       {intro !== null &&
         createPortal(
-          <div className="dateIntro" role="dialog" aria-label="Your date briefing">
-            <p className="dateIntro__eyebrow">Tonight&rsquo;s dates</p>
+          <div className="dateIntro" role="dialog" aria-label={t('date.briefing')}>
+            <p className="dateIntro__eyebrow">{t('date.tonightsDates')}</p>
             <div className="dateIntro__lines">
               {intro.phase === 'loading' ? (
-                <p className="dateIntro__line is-live">Reading the matchbook&hellip;</p>
+                <p className="dateIntro__line is-live">{t('date.readingMatchbook')}</p>
               ) : (
                 intro.songs.map((song, seat) => (
                   <p
@@ -1039,7 +1043,7 @@ export function DatePage() {
               )}
             </div>
             <Button variant="ghost" className="dateIntro__skip" onClick={skipIntro}>
-              Skip intro
+              {t('date.skipIntro')}
             </Button>
           </div>,
           document.body,
@@ -1053,18 +1057,18 @@ export function DatePage() {
           off (tapping the lit chip returns to the default deck); without this
           a user could be stranded in an empty mode with no control on screen.
           Mutually exclusive. */}
-      <div className="dateModes" role="group" aria-label="Choose what to hear">
+      <div className="dateModes" role="group" aria-label={t('date.chooseWhatToHear')}>
         <FilterChip selected={mode === 'charts'} onSelectedChange={() => chooseMode('charts')}>
-          Charts
+          {t('date.modeCharts')}
         </FilterChip>
         <FilterChip selected={mode === 'fresh'} onSelectedChange={() => chooseMode('fresh')}>
-          Fresh
+          {t('date.modeFresh')}
         </FilterChip>
         <FilterChip selected={mode === 'new'} onSelectedChange={() => chooseMode('new')}>
-          New music
+          {t('date.modeNew')}
         </FilterChip>
         <FilterChip selected={mode === 'tiny'} onSelectedChange={() => chooseMode('tiny')}>
-          Tiny artists
+          {t('date.modeTiny')}
         </FilterChip>
       </div>
       {current || outgoing ? (
@@ -1072,23 +1076,48 @@ export function DatePage() {
           {/* How many are still waiting, and how this sitting is going. The
               card itself stays wordless; this is the page around it. */}
           <header className="dateTally">
+            {/* One sentence, not "a number then some words": the count and the
+                phrase around it are a single catalogue entry, and the styled
+                <n> is a component the translator can move within it.
+                Two values for one number, as in DateProfile: `count` picks the
+                plural form and `value` is what gets printed, grouped the way
+                this locale groups - the pool runs hundreds deep, and "1,200"
+                is "1.200" in German. */}
             <p className="dateTally__count">
-              <span className="dateTally__n">{deck.length + poolBeyond}</span> left to meet
+              <Trans
+                i18nKey="date.leftToMeet"
+                values={{
+                  count: deck.length + poolBeyond,
+                  value: formatNumber(deck.length + poolBeyond),
+                }}
+                components={{ n: <span className="dateTally__n" /> }}
+              />
             </p>
             <SegmentedBar
               className="dateTally__bar"
               size="sm"
               rounded
               data={split}
+              /* Both halves are pluralised BEFORE the sentence is built, and
+                 handed in as finished phrases. i18next picks ONE plural form
+                 per call, from `count`, and this label has two independent
+                 counts in it - "1 kept, 12 passed" needs the singular of one
+                 and the plural of the other in the same breath. They are the
+                 same two keys the visible split below uses, so the label a
+                 screen reader hears and the line a sighted reader sees cannot
+                 word themselves differently. */
               aria-label={
                 judged === 0
-                  ? 'Nothing judged yet this sitting'
-                  : `${tally.kept} kept, ${tally.passed} passed this sitting`
+                  ? t('date.nothingJudgedYet')
+                  : t('date.tallyThisSitting', {
+                      kept: t('date.keptCount', { count: tally.kept }),
+                      passed: t('date.passedCount', { count: tally.passed }),
+                    })
               }
             />
             <p className="dateTally__split" aria-hidden>
-              <span className="dateTally__passed">{tally.passed} passed</span>
-              <span className="dateTally__kept">{tally.kept} kept</span>
+              <span className="dateTally__passed">{t('date.passedCount', { count: tally.passed })}</span>
+              <span className="dateTally__kept">{t('date.keptCount', { count: tally.kept })}</span>
             </p>
           </header>
 
@@ -1107,7 +1136,7 @@ export function DatePage() {
               <SayNoMenu
                 key={current.path}
                 className="dateCardMenu"
-                label={`Why ${current.title}, and less like it`}
+                label={t('date.whyAndLessLike', { title: current.title })}
                 why={whyDealt(current)}
                 artist={current.artist}
                 onTrack={() => refuseSong(current)}
@@ -1123,13 +1152,13 @@ export function DatePage() {
               >
                 <CardFace track={current} live />
                 <span className="dateCard__stamp dateCard__stamp--like" style={{ opacity: likeHint }}>
-                  KEEP
+                  {t('date.stampKeep')}
                 </span>
                 <span className="dateCard__stamp dateCard__stamp--pass" style={{ opacity: passHint }}>
-                  PASS
+                  {t('date.stampPass')}
                 </span>
                 {needsTap && (
-                  <button type="button" className="dateCard__tapPlay" onClick={tapPlay} aria-label="Play snippet">
+                  <button type="button" className="dateCard__tapPlay" onClick={tapPlay} aria-label={t('date.playSnippet')}>
                     <Play size={30} fill="currentColor" />
                   </button>
                 )}
@@ -1139,7 +1168,7 @@ export function DatePage() {
                   <SeekBar
                     duration={SNIPPET_SECONDS}
                     value={progress * SNIPPET_SECONDS}
-                    aria-label="Snippet position"
+                    aria-label={t('date.snippetPosition')}
                     shape="swell"
                     tone="accent"
                     fill="solid"
@@ -1166,7 +1195,7 @@ export function DatePage() {
                   className={`dateCard__stamp dateCard__stamp--${outgoing.dir === 'right' ? 'like' : 'pass'}`}
                   style={{ opacity: 1 }}
                 >
-                  {outgoing.dir === 'right' ? 'KEEP' : 'PASS'}
+                  {outgoing.dir === 'right' ? t('date.stampKeep') : t('date.stampPass')}
                 </span>
               </div>
             )}
@@ -1184,7 +1213,7 @@ export function DatePage() {
                 row. As a sibling at the stack's foot it lands on exactly the
                 card's footprint (the card is inset:0 in this same box) and
                 touches none of that. Do not tidy this into CardFace. */}
-            <div className="dateVerdicts" role="group" aria-label="Your verdict">
+            <div className="dateVerdicts" role="group" aria-label={t('date.yourVerdict')}>
               {/* Pass says why: a tap is the plain pass, a hold opens the
                   same menu the card carries - the reason it was dealt, "not
                   this song", and "less like {artist}", which passes with the
@@ -1192,7 +1221,7 @@ export function DatePage() {
                   and pointer-events rules see the button exactly as before. */}
               <SayNoMenu
                 className="dateVerdicts__hold"
-                label={current ? `Less like ${current.title}` : 'Less like this'}
+                label={current ? t('date.lessLikeTitle', { title: current.title }) : t('date.lessLikeThis')}
                 why={current ? whyDealt(current) : undefined}
                 artist={current?.artist ?? ''}
                 onTrack={() => current && refuseSong(current)}
@@ -1201,7 +1230,7 @@ export function DatePage() {
               <IconButton
                 variant="outline"
                 className="dateVerdicts__btn dateVerdicts__btn--pass"
-                aria-label={current ? `Pass on ${current.title}. Hold for less like this` : 'Pass'}
+                aria-label={current ? t('date.passOnHold', { title: current.title }) : t('date.pass')}
                 disabled={!current}
                 onClick={() => current && verdict(current, 'left')}
               >
@@ -1215,10 +1244,15 @@ export function DatePage() {
               <IconButton
                 variant="outline"
                 className="dateVerdicts__btn dateVerdicts__btn--undo"
+                /* Two whole sentences rather than one with the verb swapped
+                   inside it - "undo keeping X" and "undo passing on X" are not
+                   the same sentence with a word changed in most languages. */
                 aria-label={
                   undos.length > 0
-                    ? `Undo ${undos[undos.length - 1]!.dir === 'right' ? 'keeping' : 'passing on'} ${undos[undos.length - 1]!.track.title}`
-                    : 'Nothing to undo'
+                    ? undos[undos.length - 1]!.dir === 'right'
+                      ? t('date.undoKeeping', { title: undos[undos.length - 1]!.track.title })
+                      : t('date.undoPassing', { title: undos[undos.length - 1]!.track.title })
+                    : t('date.nothingToUndo')
                 }
                 disabled={undos.length === 0}
                 onClick={undo}
@@ -1228,7 +1262,7 @@ export function DatePage() {
               <IconButton
                 variant="outline"
                 className="dateVerdicts__btn dateVerdicts__btn--like"
-                aria-label={current ? `Keep ${current.title}` : 'Keep'}
+                aria-label={current ? t('date.keepTitle', { title: current.title }) : t('date.keep')}
                 disabled={!current}
                 onClick={() => current && verdict(current, 'right')}
               >
@@ -1248,21 +1282,24 @@ export function DatePage() {
         <div className="emptyState emptyState--tall">
           <EmptyArt name="discovery" />
           <p className="emptyState__text">
+            {/* Each mode's dead end names the chip that gets you out, and takes
+                that name from the chip's own key - so the way back is spelt the
+                same as the control it points at, in every language. */}
             {mode === 'charts'
-              ? 'Nothing on the charts fits you right now - tap Charts above to go back to everything.'
+              ? t('date.emptyCharts', { deck: t('date.modeCharts') })
               : mode === 'fresh'
-              ? 'Nothing fresh fits you right now - tap Fresh above to go back to everything.'
+              ? t('date.emptyFresh', { deck: t('date.modeFresh') })
               : mode === 'new'
-              ? 'No new releases left to meet right now - tap New music above to go back to everything.'
+              ? t('date.emptyNew', { deck: t('date.modeNew') })
               : mode === 'tiny'
-              ? 'No tiny artists left to meet right now - tap Tiny artists above to go back to everything.'
+              ? t('date.emptyTiny', { deck: t('date.modeTiny') })
               : refill === 'asking'
-              ? 'That\u2019s everyone. Going to find more like the ones you kept\u2026'
+              ? t('date.refillAsking')
               : refill === 'failed'
-                ? 'That\u2019s everyone. I could not reach your server to look for more.'
+                ? t('date.refillFailed')
                 : refill === 'asked'
-                  ? 'That\u2019s everyone. Your server is out looking now — new ones land as it finds them.'
-                  : 'You\u2019re all caught up — the DJ fetches more as it learns what you keep.'}
+                  ? t('date.refillAsked')
+                  : t('date.allCaughtUp')}
           </p>
           {!mode && passedRef.current.size > 0 && (
             <Button
@@ -1274,7 +1311,7 @@ export function DatePage() {
                 setGone(new Set());
               }}
             >
-              Meet the passed ones again
+              {t('date.meetPassedAgain')}
             </Button>
           )}
         </div>

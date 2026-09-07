@@ -6,9 +6,13 @@ import type { CatalogArtist } from '../api/catalog.ts';
 import type { ServerSession } from '../api/http.ts';
 import { openExternal } from '../core/openExternal.ts';
 import { useCardArt } from '../ux/artLoad.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
-/** The catalogue's own name for where a link leads. */
-function sourceLabel(source: string | undefined): string {
+/** The catalogue's own name for where a link leads. The four services are
+ *  brand names and stay as they are written; only the fallback is prose, so
+ *  the translator is passed in rather than the label being looked up here. */
+function sourceLabel(source: string | undefined, t: (key: string) => string): string {
   switch ((source ?? '').toLowerCase()) {
     case 'deezer':
       return 'Deezer';
@@ -19,7 +23,7 @@ function sourceLabel(source: string | undefined): string {
     case 'qobuz':
       return 'Qobuz';
     default:
-      return 'the catalogue';
+      return t('library.theCatalogue');
   }
 }
 
@@ -63,6 +67,7 @@ export function ArtistAbout({
   profile: CatalogArtist | null;
   onOpenArtist: (artist: string) => void;
 }) {
+  const t = useT();
   const [about, setAbout] = useState<DateArtistProfile | null>(null);
   useEffect(() => {
     if (!session) {
@@ -96,7 +101,7 @@ export function ArtistAbout({
 
   return (
     <section className="homeShelf artistAbout">
-      <h2 className="homeShelfTitle">About</h2>
+      <h2 className="homeShelfTitle">{t('library.about')}</h2>
       {blurb && (
         <Text size="sm" className="artistAbout__blurb">
           {blurb}
@@ -106,7 +111,9 @@ export function ArtistAbout({
         <div className="artistAbout__meta">
           {fans !== null && (
             <Text size="sm" tone="muted">
-              {fans.toLocaleString()} {fans === 1 ? 'follower' : 'followers'}
+              {/* Grouped by Intl, pluralised by the catalogue - the count
+                  goes in twice because those are two separate jobs. */}
+              {t('library.followerCount', { count: fans, n: formatNumber(fans) })}
             </Text>
           )}
           {url && (
@@ -114,10 +121,13 @@ export function ArtistAbout({
               variant="outline"
               size="sm"
               onClick={() => void openExternal(url)}
-              aria-label={`Open ${artist} on ${sourceLabel(profile?.source)}`}
+              aria-label={t('library.openArtistOn', {
+                artist,
+                source: sourceLabel(profile?.source, t),
+              })}
             >
               <ExternalLink size={15} />
-              {sourceLabel(profile?.source)}
+              {sourceLabel(profile?.source, t)}
             </Button>
           )}
         </div>
@@ -131,7 +141,7 @@ export function ArtistAbout({
       )}
       {related.length > 0 && (
         <>
-          <h3 className="artistAbout__relatedTitle">Related artists</h3>
+          <h3 className="artistAbout__relatedTitle">{t('library.relatedArtists')}</h3>
           <ScrollArea orientation="horizontal" className="homeShelfScroll" hideScrollbar>
             <div className="homeShelfRow">
               {related.map((r) => (

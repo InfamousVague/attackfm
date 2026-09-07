@@ -1,5 +1,6 @@
 import { isAndroid } from '../core/platform.ts';
 import { isTauri } from '../core/tauri.ts';
+import { translate } from '../i18n/LocaleShell.tsx';
 
 /**
  * Put a rendered card (a PNG data URL) somewhere the person can send it.
@@ -31,7 +32,8 @@ export async function saveCardImage(opts: {
   }).AFMNative;
   if (native?.saveImage) {
     const ok = native.saveImage(dataUrl.slice(dataUrl.indexOf(',') + 1), filename);
-    say(ok ? 'Saved to Photos, in the AttackFM album.' : 'Could not save the picture. Check storage access in Settings.');
+    if (ok) say(translate('widget.savedToPhotos'));
+    else say(translate('widget.saveFailed'));
     return;
   }
   const raw = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
@@ -45,7 +47,7 @@ export async function saveCardImage(opts: {
       await navigator.share(shareData);
     } catch (err) {
       if (err instanceof Error && err.name !== 'AbortError') {
-        say('The share sheet would not open - tap Save image again.');
+        say(translate('widget.shareSheetFailed'));
       }
     }
     return;
@@ -58,15 +60,20 @@ export async function saveCardImage(opts: {
     } catch {
       // Unknown is fine.
     }
+    // Two whole sentences rather than one with an optional clause spliced in:
+    // the version we found is a parenthetical in English and may not be one
+    // anywhere else, and a translator cannot move a fragment they never see.
     say(
-      `Saving pictures needs the AttackFM app itself from the 0.5.38 release or newer${installed ? ` - this phone has the ${installed} app installed` : ''}. Updates over the air do not replace the app; install the latest from attack.fm.`,
+      installed
+        ? translate('widget.needsNativeAppInstalled', { installed })
+        : translate('widget.needsNativeApp'),
     );
     return;
   }
   if (isTauri() && navigator.clipboard && 'ClipboardItem' in window) {
     try {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      say('Copied the picture to the clipboard - paste it into a message.');
+      say(translate('widget.copiedToClipboard'));
       return;
     } catch {
       // Fall through to the download.
@@ -80,5 +87,5 @@ export async function saveCardImage(opts: {
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  say(`Downloaded ${filename}.`);
+  say(translate('widget.downloaded', { filename }));
 }

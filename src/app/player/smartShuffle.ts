@@ -46,8 +46,7 @@ export interface Enhancer {
  * plain shuffle, and a reader who cannot see it should still be told what the
  * third state does.
  */
-export const SMART_SHUFFLE_LABEL =
-  'Smart shuffle: the DJ mixes in new music, your on-repeat songs and similar tracks';
+export const SMART_SHUFFLE_LABEL_KEY = 'player.smartShuffleLabel';
 
 const MIN_QUEUE = 3;
 /**

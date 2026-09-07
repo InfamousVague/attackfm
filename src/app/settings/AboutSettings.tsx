@@ -137,7 +137,16 @@ export function AboutSettings() {
     };
   }, [session]);
 
-  const platform = isIOS ? 'iOS' : isDesktopApp ? 'Desktop' : isTauri() ? 'Tauri' : 'Web';
+  // iOS and Tauri are product names and stay as they are in every language;
+  // "Desktop" and "Web" are ordinary words describing where this build runs,
+  // so those two come from the catalogue.
+  const platform = isIOS
+    ? 'iOS'
+    : isDesktopApp
+      ? t('settings.aboutPlatformDesktop')
+      : isTauri()
+        ? 'Tauri'
+        : t('settings.aboutPlatformWeb');
   const PlatformGlyph = isIOS ? Smartphone : Laptop;
   const hours = Math.round(tracks.reduce((sum, t) => sum + (t.duration ?? 0), 0) / 3600);
 

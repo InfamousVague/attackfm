@@ -21,10 +21,11 @@ import {
   MixCover,
   Shelf,
   TrackCard,
-  greetingFor,
   mixArt,
 } from '../home/homeCards.tsx';
 import { useHomeFeed, type HomeFeedValue } from '../home/useHomeFeed.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 import { useDiscoverFeedOptional } from '../home/DiscoverFeed.tsx';
 
 /**
@@ -142,10 +143,11 @@ function MixTile({
 }) {
   const { playNext, addToQueue, following } = useQueueControls();
   const mixHold = useHoldToMenu((from) => from.closest('.mixCardMenuTarget'));
+  const t = useT();
   return (
     <ContextMenu
       {...mixHold}
-      aria-label={`${mix.title} actions`}
+      aria-label={t('library.mixActions', { title: mix.title })}
       className="mixCardMenuTarget"
       content={
         <>
@@ -155,7 +157,7 @@ function MixTile({
                 icon={<Play size={15} />}
                 onSelect={() => mix.tracks.length > 0 && onPlay(mix.tracks[0]!, mix.tracks)}
               >
-                Play
+                {t('player.play')}
               </MenuItem>
               <MenuItem
                 icon={<Shuffle size={15} />}
@@ -164,7 +166,7 @@ function MixTile({
                   if (order.length > 0) onPlay(order[0]!, order);
                 }}
               >
-                Shuffle
+                {t('player.shuffle')}
               </MenuItem>
             </>
           )}
@@ -174,10 +176,13 @@ function MixTile({
             // slots in front of the last); a groove keeps ask order instead.
             onSelect={() => (following ? mix.tracks : [...mix.tracks].reverse()).forEach((t) => playNext(t))}
           >
-            {following ? 'Play next in the groove' : 'Play next'}
+            {/* Two different labels for two different destinations, not a
+                plural: a groove is somebody else's queue. Two keys, chosen
+                here, so neither language has to fit both readings. */}
+            {following ? t('player.playNextGroove') : t('player.playNext')}
           </MenuItem>
           <MenuItem icon={<ListEnd size={15} />} onSelect={() => mix.tracks.forEach((t) => addToQueue(t))}>
-            {following ? 'Add to the groove' : 'Add to queue'}
+            {following ? t('player.addToGroove') : t('player.addToQueue')}
           </MenuItem>
         </>
       }
@@ -201,8 +206,8 @@ function MixTile({
             role="button"
             tabIndex={0}
             className="mixCard__tune"
-            aria-label={`Tune ${mix.title}`}
-            title="Rebuild this mix by its traits"
+            aria-label={t('library.tuneMix', { title: mix.title })}
+            title={t('library.tuneMixHint')}
             onClick={(e) => {
               e.stopPropagation();
               onTune(mix);
@@ -251,6 +256,7 @@ export function HomeShelves({
   const showHistory = section === 'history' || section === 'all';
   const { tracks, favoriteTracks } = useLibrary();
   const { session } = useServerSession();
+  const t = useT();
   // The entrance wave, when this page stands alone; embedded, the host
   // page's own observer covers these shelves (first registration wins).
   const [rippleRoot, setRippleRoot] = useState<HTMLDivElement | null>(null);
@@ -281,6 +287,14 @@ export function HomeShelves({
   const [query, setQuery] = useState('');
 
   const hour = new Date().getHours();
+  const greetingKey =
+    hour < 5
+      ? 'library.greetingLate'
+      : hour < 12
+        ? 'library.greetingMorning'
+        : hour < 18
+          ? 'library.greetingAfternoon'
+          : 'library.greetingEvening';
   const name = session?.username;
 
   // A pasted link is an instruction, not a search term: no library contains
@@ -312,15 +326,22 @@ export function HomeShelves({
           <header className="homeGreeting">
             <div className="homeGreeting__text">
               <h1 className="homeGreetingTitle">
-                {greetingFor(hour)}
-                {name ? `, ${name}` : ''}
+                {/* The greeting used to come from greetingFor() in homeCards,
+                    which returned the English words themselves, with the name
+                    glued on after a comma here. Both halves were wrong to
+                    translate in place: the hour picks a MEANING, not a string,
+                    and where the name sits relative to the greeting - and
+                    whether a comma is the thing between them at all - is the
+                    sentence's business. So the hour picks a key, and the named
+                    form is one entry with both holes in it. */}
+                {name ? t('library.greetingNamed', { greeting: t(greetingKey), name }) : t(greetingKey)}
               </h1>
               <Text tone="muted" size="sm">
                 {quiet
-                  ? 'Play a few songs and this page starts learning what you like.'
+                  ? t('discover.learningBlurb')
                   : home?.ai
-                    ? 'Mixed for you by your own server.'
-                    : 'Made from your listening.'}
+                    ? t('library.homeBlurbAi')
+                    : t('library.homeBlurbHistory')}
               </Text>
             </div>
           </header>
@@ -329,8 +350,8 @@ export function HomeShelves({
             className="pageSearch"
             value={query}
             onValueChange={setQuery}
-            placeholder="Search, or paste a music link to import"
-            aria-label="Search, or paste a music link to import"
+            placeholder={t('library.searchOrPaste')}
+            aria-label={t('library.searchOrPaste')}
           />
           <ImportFromSearch query={query} />
         </>
@@ -340,7 +361,7 @@ export function HomeShelves({
         results.length > 0 ? (
           <section className="homeShelf homeResults">
             <h2 className="homeShelfTitle">
-              {results.length} {results.length === 1 ? 'result' : 'results'}
+              {t('library.resultCount', { count: results.length })}
             </h2>
             <div className="homeResultsGrid">
               {results.map((t) => (
@@ -351,7 +372,7 @@ export function HomeShelves({
         ) : (
           <div className="emptyState">
             <EmptyArt name="search" />
-            <p className="homeResultsEmpty">No songs in your library match “{query.trim()}”.</p>
+            <p className="homeResultsEmpty">{t('library.searchNoMatch', { query: query.trim() })}</p>
           </div>
         )
       ) : (
@@ -361,7 +382,7 @@ export function HomeShelves({
               Its first card is the feature: two wide, the words over the
               art - the page's biggest owned thing after the hero. */}
           {showMadeForYou && !skelCurator && madeForYouRail.length > 0 && (
-            <Shelf title="Made for you" count={madeForYouRail.length}>
+            <Shelf title={t('library.madeForYou')} count={madeForYouRail.length}>
               {madeForYouRail.map(({ mix, verbs }, i) => (
                 <MixTile
                   key={mix.id}
@@ -369,7 +390,7 @@ export function HomeShelves({
                   art={mixArt(mix.title, { id: mix.id, curated: true })}
                   feature={i === 0}
                   verbs={verbs}
-                  emptyLabel="This mix came up empty."
+                  emptyLabel={t('playlists.mixEmpty')}
                   onPlay={onPlay}
                 />
               ))}
@@ -378,9 +399,9 @@ export function HomeShelves({
 
           {showLibrary &&
             (skelCurator || skelFeed ? (
-              <ShelfSkeleton title="Made from your library" kind="mix" count={4} />
+              <ShelfSkeleton title={t('library.madeFromLibrary')} kind="mix" count={4} />
             ) : (
-              <Shelf title="Made from your library" count={Math.min(madeForYou.length, RAIL)}>
+              <Shelf title={t('library.madeFromLibrary')} count={Math.min(madeForYou.length, RAIL)}>
                 {/* No AI badge: these live on Discover, which is the AI's own
                     page end to end, so a pill on every card said nothing the
                     heading did not already say. */}
@@ -393,7 +414,7 @@ export function HomeShelves({
                       fromCurator ? { id: mix.id, curated: true } : { id: mix.id, flavor: mix.flavor },
                     )}
                     verbs="play"
-                    emptyLabel="This mix came up empty."
+                    emptyLabel={t('playlists.mixEmpty')}
                     onPlay={onPlay}
                     onTune={onTune}
                   />
@@ -411,14 +432,14 @@ export function HomeShelves({
            * the one place a person meets them.
            */}
           {showLibrary && !skelCurator && stations.length > 0 && (
-            <Shelf title="Your stations" count={Math.min(stations.length, RAIL)}>
+            <Shelf title={t('library.yourStations')} count={Math.min(stations.length, RAIL)}>
               {stations.slice(0, RAIL).map((mix) => (
                 <MixTile
                   key={mix.id}
                   mix={mix}
                   art={mixArt(mix.title, { id: mix.id, curated: true })}
                   verbs="queue"
-                  emptyLabel="This station came up empty."
+                  emptyLabel={t('library.stationEmpty')}
                   onPlay={onPlay}
                 />
               ))}
@@ -433,16 +454,24 @@ export function HomeShelves({
             curator?.progress &&
             curator.progress.checked < curator.progress.total && (
               <p className="curatorNote">
-                Still reading your library — {curator.progress.checked} of {curator.progress.total}{' '}
-                songs.
+                {/* One sentence, one key: as three JSX siblings a translator
+                    could not move the numbers, and where a count sits in the
+                    sentence is exactly what changes between languages. The
+                    plural is carried by the TOTAL - it is the noun being
+                    counted - while both numbers are grouped by Intl. */}
+                {t('library.stillReading', {
+                  count: curator.progress.total,
+                  checked: formatNumber(curator.progress.checked),
+                  total: formatNumber(curator.progress.total),
+                })}
               </p>
             )}
 
           {showHistory &&
             (skelFeed ? (
-              <ShelfSkeleton title="Jump back in" kind="track" count={RAIL} />
+              <ShelfSkeleton title={t('library.jumpBackIn')} kind="track" count={RAIL} />
             ) : (
-              <Shelf title="Jump back in" count={Math.min(jumpBack.length, RAIL)}>
+              <Shelf title={t('library.jumpBackIn')} count={Math.min(jumpBack.length, RAIL)}>
                 {jumpBack.slice(0, RAIL).map((album) => (
                   <AlbumCard
                     key={album[0]!.path}
@@ -462,10 +491,10 @@ export function HomeShelves({
 
           {showHistory &&
             (skelFeed ? (
-              <ShelfSkeleton title="Your top artists" kind="artist" count={RAIL} />
+              <ShelfSkeleton title={t('library.topArtists')} kind="artist" count={RAIL} />
             ) : (
               <Shelf
-                title="Your top artists"
+                title={t('library.topArtists')}
                 count={Math.min(topArtists.length, RAIL)}
                 // The stats door lives where the listening is summarized:
                 // these artists ARE the top of the stats page, so "view all"
@@ -474,7 +503,7 @@ export function HomeShelves({
                   onOpenStats && (
                     <Button variant="ghost" size="sm" onClick={onOpenStats}>
                       <ChartNoAxesColumn size={14} />
-                      <span>View all stats</span>
+                      <span>{t('profile.viewAllStats')}</span>
                     </Button>
                   )
                 }
@@ -487,9 +516,9 @@ export function HomeShelves({
 
           {showHistory &&
             (skelFeed ? (
-              <ShelfSkeleton title="Recently played" kind="track" count={RAIL} />
+              <ShelfSkeleton title={t('library.recentlyPlayed')} kind="track" count={RAIL} />
             ) : (
-              <Shelf title="Recently played" count={Math.min(recent.length, RAIL)}>
+              <Shelf title={t('library.recentlyPlayed')} count={Math.min(recent.length, RAIL)}>
                 {recent.slice(0, RAIL).map((t) => (
                   <TrackCard key={t.path} track={t} onOpen={() => onPlay(t, recent)} />
                 ))}
@@ -513,8 +542,8 @@ export function HomeShelves({
                 <EmptyArt name="discovery" />
                 <p className="emptyState__text">
                   {quiet
-                    ? 'Play a few songs and this page starts learning what you like.'
-                    : 'Add music to your library and your mixes will appear here.'}
+                    ? t('discover.learningBlurb')
+                    : t('library.homeEmpty')}
                 </p>
               </div>
             )}

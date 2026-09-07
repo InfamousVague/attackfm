@@ -27,9 +27,10 @@ import { adoptVaultRoot, offlineSpace, onOfflineChange } from './offline.ts';
 import { isTauri } from '../core/tauri.ts';
 import { networkKindNow, onNetworkChange, type NetworkKind } from '../core/network.ts';
 import { setWifiOnlyDownloads, wifiOnlyDownloads } from '../settings/behaviourPrefs.ts';
-import { formatBytes } from '../ux/format.ts';
+import { formatAgo, formatBytes, formatNumber } from '../ux/format.ts';
 import { estimateSetBytes } from '../cache/cacheQuality.ts';
 import { loadCachedIndex } from '../api/libraryCache.ts';
+import { Trans, useSongCount, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The Overview chunk: one picture of the space, then the levers.
@@ -45,25 +46,23 @@ import { loadCachedIndex } from '../api/libraryCache.ts';
  * The file-by-file half lives in the Files chunk; this page never lists songs.
  */
 
+/** The app's translator, as the module-scope helpers below want it. They are
+ *  called from render and handed `t` rather than calling a hook themselves. */
+type T = ReturnType<typeof useT>;
+
 // Bytes render through the shared BINARY formatter: this line pairs a usage
 // with the limit it counts against, and the limit is set in 1024-based GB -
 // the old decimal copy here made a full 15 GB cache read "16 GB of 15 GB".
-function gbLabel(bytes: number): string {
-  if (bytes === 0) return 'Off';
-  return `${Math.round(bytes / 1024 ** 3)} GB`;
-}
-
-/** "3 min ago" - the sweep is periodic, so WHEN it last ran is half the answer
- *  to why something has not arrived yet. */
-function sinceLabel(at: number): string {
-  const secs = Math.max(0, Math.round((Date.now() - at) / 1000));
-  if (secs < 90) return 'just now';
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins} min ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
-  const days = Math.round(hours / 24);
-  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+// Whole gigabytes rather than formatBytes' one decimal, because every stop on
+// the slider IS a whole number and "2.0 GB" under a detent reads as precision
+// that is not there. The unit word still comes from Intl.
+function gbLabel(bytes: number, t: T): string {
+  if (bytes === 0) return t('downloads.limitOff');
+  return formatNumber(Math.round(bytes / 1024 ** 3), {
+    style: 'unit',
+    unit: 'gigabyte',
+    unitDisplay: 'short',
+  });
 }
 
 /**
@@ -89,35 +88,31 @@ function sinceLabel(at: number): string {
  * 929 kbps is a measured FLAC average rather than a guess - it is what 44.1kHz
  * stereo lossless comes out at across ordinary music. The AAC figures are the
  * requested rate plus ADTS framing.
+ *
+ * Three whole sentences joined, rather than one entry with a hole in the
+ * middle: "roughly N hours" only appears when a budget is set, and a catalogue
+ * entry cannot have a clause that sometimes is not there. It now CLOSES the
+ * paragraph in both branches - it used to sit mid-paragraph in the AAC one -
+ * so each sentence is a key a translator can move words around inside.
  */
-function qualityHint(kbps: number, limitBytes: number): string {
+function qualityHint(kbps: number, limitBytes: number, t: T): string {
   const perHourBytes = ((kbps === 0 ? 929 : kbps * 1.03) * 1000 * 3600) / 8;
   const hours = limitBytes > 0 ? Math.round(limitBytes / perHourBytes) : 0;
-  const holds = limitBytes > 0 ? ` At this size that is roughly ${hours} hours of music.` : '';
-  if (kbps === 0) {
-    return `The original file, byte for byte — the same bits the server holds.${holds}`;
-  }
-  return (
-    `Re-encoded to ${kbps}k AAC as it downloads, which is a fraction of the size and costs the ` +
-    `server a moment's work per song.${holds} Songs already on this device are brought over a few ` +
-    `dozen at a time as the cache checks in; songs you kept by hand are left as they are.`
-  );
+  const holds = limitBytes > 0 ? ` ${t('downloads.qualityHolds', { count: hours })}` : '';
+  if (kbps === 0) return `${t('downloads.qualityLossless')}${holds}`;
+  return `${t('downloads.qualityAac', { kbps })}${holds}`;
 }
 
-function wifiOnlyText(on: boolean, network: NetworkKind): string {
-  if (!on) {
-    return 'Automatic downloads use whatever connection is here, mobile data included. Downloads only happen while the app is open.';
-  }
-  if (network === 'cellular') {
-    return 'Paused — this device is on mobile data. It picks up again on Wi-Fi. Playing music, pinned songs and Check now are unaffected.';
-  }
-  if (network === 'unknown') {
-    return 'This device cannot tell Wi-Fi from mobile data, so downloads carry on regardless. Playing music, pinned songs and Check now are never held back.';
-  }
-  return 'Automatic downloads wait for Wi-Fi. Playing music, pinned songs and Check now are unaffected — those are you asking.';
+function wifiOnlyText(on: boolean, network: NetworkKind, t: T): string {
+  if (!on) return t('downloads.wifiAnyConnection');
+  if (network === 'cellular') return t('downloads.wifiPausedCellular');
+  if (network === 'unknown') return t('downloads.wifiCannotTell');
+  return t('downloads.wifiWaiting');
 }
 
 export function StorageOverview() {
+  const t = useT();
+  const songCount = useSongCount();
   const { session } = useServerSession();
   const [limit, setLimit] = useState(cacheLimitBytes);
   const [usage, setUsage] = useState<{
@@ -177,7 +172,7 @@ export function StorageOverview() {
     try {
       await sweepCache(session, { onProgress: (done, total) => setProgress({ done, total }) });
     } catch (e) {
-      setSweepError(e instanceof Error ? e.message : 'The check did not finish.');
+      setSweepError(e instanceof Error ? e.message : t('downloads.checkDidNotFinish'));
     } finally {
       setBusy(false);
       setProgress(null);
@@ -204,7 +199,7 @@ export function StorageOverview() {
    */
   const [, setGrantTick] = useState(0);
   useEffect(() => {
-    const poke = () => setGrantTick((t) => t + 1);
+    const poke = () => setGrantTick((n) => n + 1);
     window.addEventListener('focus', poke);
     document.addEventListener('visibilitychange', poke);
     return () => {
@@ -245,7 +240,7 @@ export function StorageOverview() {
   if (!isTauri()) {
     return (
       <Text size="sm" tone="muted">
-        Downloads are kept by the app. A browser tab streams everything from the server.
+        {t('downloads.browserTabOnly')}
       </Text>
     );
   }
@@ -293,21 +288,45 @@ export function StorageOverview() {
   const capacity = Math.max(limit, total);
   const empty = Math.max(0, capacity - total);
 
+  /* The three tallies under the big number, and the two under "Also held", are
+     each a complete phrase; the ` · ` between them is punctuation rather than
+     grammar, so they are joined here instead of living in the catalogue as one
+     entry with two clauses that are usually absent. */
+  const tallies = [songCount(musicCount)];
+  if (bookCount > 0) tallies.push(t('downloads.bookFileCount', { count: bookCount }));
+  if (space?.freeBytes != null) {
+    tallies.push(t('downloads.freeOnPhone', { size: formatBytes(space.freeBytes) }));
+  }
+
+  const alsoHeld = [];
+  if (coverCount > 0) alsoHeld.push(t('downloads.coverCount', { count: coverCount }));
+  if (wordCount > 0) alsoHeld.push(t('downloads.transcriptCount', { count: wordCount }));
+
+  const receipt = [];
+  if (report) {
+    receipt.push(t('downloads.lastCheck', { when: formatAgo(report.at), note: report.note }));
+    if (report.liked > 0) receipt.push(t('downloads.likedCount', { count: report.liked }));
+    if (report.skippedUnknown > 0) {
+      receipt.push(t('downloads.notIndexedCount', { count: report.skippedUnknown }));
+    }
+  }
+
+  const planned = plan.filter((e) => e.state === 'done').length;
+  const planLine = [t('downloads.planOnPhone', { done: planned, total: plan.length })];
+  if (plan.some((e) => e.state === 'downloading')) planLine.push(t('downloads.planDownloadingNow'));
+  if (plan.length > 96) planLine.push(t('downloads.planShowingCap', { n: 96 }));
+
   return (
     <>
       <div className="prefsSection">
-        <Label>On this device</Label>
+        <Label>{t('downloads.onThisDevice')}</Label>
         <div className="storageBreak__totals">
           <span className="storageBreak__big">{formatBytes(total)}</span>
           <Text size="sm" tone="muted">
             {/* Named separately for the same reason the bar is split: "1,204
                 songs" over a shelf of audiobooks counts two unlike things as
                 one. */}
-            {musicCount.toLocaleString()} {musicCount === 1 ? 'song' : 'songs'}
-            {bookCount > 0
-              ? ` · ${bookCount.toLocaleString()} ${bookCount === 1 ? 'book file' : 'book files'}`
-              : ''}
-            {space?.freeBytes != null ? ` · ${formatBytes(space.freeBytes)} free on the phone` : ''}
+            {tallies.join(' · ')}
           </Text>
         </div>
         {total > 0 ? (
@@ -323,47 +342,67 @@ export function StorageOverview() {
                  number each hides the other. How it got here is still said, per
                  type, in the legend below. */
               data={[
-                { value: musicBytes, tone: 'accent', label: 'Music' },
-                { value: bookBytes, tone: 'success', label: 'Audiobooks' },
+                { value: musicBytes, tone: 'accent', label: t('downloads.kindMusic') },
+                { value: bookBytes, tone: 'success', label: t('downloads.kindBooks') },
                 /* Other files sit on `warning` so the gray stays with Free -
                    the kit has one gray, and the room left and the untracked
                    bytes have to stay tellable apart. Warning fits: files the
                    cache cannot manage are a state worth noticing, where empty
                    space is the absence of one. */
-                { value: other, tone: 'warning', label: 'Other files' },
-                { value: empty, tone: 'neutral', label: 'Free' },
+                { value: other, tone: 'warning', label: t('downloads.kindOther') },
+                { value: empty, tone: 'neutral', label: t('downloads.kindFree') },
               ]}
-              aria-label="What is using the space"
+              aria-label={t('downloads.spaceBarLabel')}
             />
             <div className="storageBreak__legend">
+              {/* One entry per key rather than a label and a size sitting next
+                  to each other, because the ` · ` between them is the sentence:
+                  a translator needs to be able to put the size first. */}
               <span className="storageBreak__key" data-tone="accent">
-                Music · {formatBytes(musicBytes)}
                 {kinds && kinds.music.pinnedBytes > 0
-                  ? ` (${formatBytes(kinds.music.pinnedBytes)} kept)`
-                  : ''}
+                  ? t('downloads.legendKept', {
+                      label: t('downloads.kindMusic'),
+                      size: formatBytes(musicBytes),
+                      kept: formatBytes(kinds.music.pinnedBytes),
+                    })
+                  : t('downloads.legend', {
+                      label: t('downloads.kindMusic'),
+                      size: formatBytes(musicBytes),
+                    })}
               </span>
               <span className="storageBreak__key" data-tone="success">
-                Audiobooks · {formatBytes(bookBytes)}
                 {kinds && kinds.books.pinnedBytes > 0
-                  ? ` (${formatBytes(kinds.books.pinnedBytes)} kept)`
-                  : ''}
+                  ? t('downloads.legendKept', {
+                      label: t('downloads.kindBooks'),
+                      size: formatBytes(bookBytes),
+                      kept: formatBytes(kinds.books.pinnedBytes),
+                    })
+                  : t('downloads.legend', {
+                      label: t('downloads.kindBooks'),
+                      size: formatBytes(bookBytes),
+                    })}
               </span>
               {other > 0 && (
                 <span className="storageBreak__key" data-tone="warning">
-                  Other files · {formatBytes(other)}
+                  {t('downloads.legend', {
+                    label: t('downloads.kindOther'),
+                    size: formatBytes(other),
+                  })}
                 </span>
               )}
               {empty > 0 && (
                 <span className="storageBreak__key" data-tone="neutral">
-                  Free · {formatBytes(empty)}
+                  {t('downloads.legend', {
+                    label: t('downloads.kindFree'),
+                    size: formatBytes(empty),
+                  })}
                 </span>
               )}
             </div>
           </>
         ) : (
           <Text size="sm" tone="muted">
-            Nothing stored yet. The cache fills in as you listen, and a song&rsquo;s own menu keeps
-            it here for good.
+            {t('downloads.nothingStored')}
           </Text>
         )}
         {/* The rest of what is on the device.
@@ -375,32 +414,31 @@ export function StorageOverview() {
             phone holding hundreds of covers costs more than the answer is
             worth. Saying how many there are is honest and cheap; drawing them as
             a slice of a budget they are not part of would not be. */}
-        {(coverCount > 0 || wordCount > 0) && (
+        {alsoHeld.length > 0 && (
           <Text size="xs" tone="subtle">
-            Also held: {coverCount.toLocaleString()} {coverCount === 1 ? 'cover' : 'covers'}
-            {wordCount > 0
-              ? ` · words for ${wordCount.toLocaleString()} ${wordCount === 1 ? 'book' : 'books'}`
-              : ''}
+            {t('downloads.alsoHeld', { what: alsoHeld.join(' · ') })}
           </Text>
         )}
         {report && limit > 0 && (
           <>
             <Text size="xs" tone={report.failed > 0 || report.liked === -1 ? 'danger' : 'subtle'}>
-              Last check {sinceLabel(report.at)} — {report.note}
-              {report.liked > 0 ? ` · ${report.liked} liked` : ''}
-              {report.skippedUnknown > 0
-                ? ` · ${report.skippedUnknown} not in this device's index yet`
-                : ''}
+              {/* `report.note` and the fail reasons below are written by
+                  cacheSweep and arrive already-composed; they are the one part
+                  of this receipt the catalogue does not own. */}
+              {receipt.join(' · ')}
             </Text>
             {/* Said on its own line rather than left to the note, because the
                 note leads with failures when there are any - and a full budget
                 is exactly the case where nothing failed and songs are missing
                 anyway. Names the remedy: this is the one shortfall on this
-                screen the slider directly below actually fixes. */}
+                screen the slider directly below actually fixes.
+
+                One plural key, not a sentence assembled around a ternary: the
+                "is/are" and the "it/them" are both the same grammatical number,
+                so each plural form of the entry carries its own agreement. */}
             {(report.budgetShort ?? 0) > 0 && (
               <Text size="xs" tone="subtle">
-                {report.budgetShort} more {report.budgetShort === 1 ? 'song is' : 'songs are'} wanted
-                than this much space holds — raise the limit below to keep {report.budgetShort === 1 ? 'it' : 'them'} too.
+                {t('downloads.budgetShort', { count: report.budgetShort })}
               </Text>
             )}
             {/* The note leads with the commonest failure; when the sweep hit
@@ -409,7 +447,7 @@ export function StorageOverview() {
             {(report.failReasons?.length ?? 0) > 1 &&
               report.failReasons!.slice(1).map((r) => (
                 <Text key={r.reason} size="xs" tone="danger">
-                  {r.n} × {r.reason}
+                  {t('downloads.failReason', { n: r.n, reason: r.reason })}
                 </Text>
               ))}
             {/* The two things a person standing in front of an error wants:
@@ -429,11 +467,11 @@ export function StorageOverview() {
                       void update();
                     }}
                   >
-                    Retry failed
+                    {t('downloads.retryFailed')}
                   </Button>
                 )}
                 <Button size="sm" variant="ghost" onClick={() => dismissSweepReport()}>
-                  Dismiss
+                  {t('common.dismiss')}
                 </Button>
               </div>
             )}
@@ -442,19 +480,17 @@ export function StorageOverview() {
       </div>
 
       <div className="prefsSection">
-        <Label>Automatic downloads</Label>
+        <Label>{t('downloads.automatic')}</Label>
         <Text size="sm" tone="muted">
-          Liked songs, everything in your playlists, what you have on repeat, and what you played
-          recently — kept on the phone so they play instantly and without the hub. Liked songs and
-          playlists come first; the rest rotates out as it goes cold or as newer songs need the room.
+          {t('downloads.automaticHint')}
         </Text>
         {/* Above the budget rather than below it, because this is what decides
             what a gigabyte holds: at 128k the same slider keeps about seven
             times the songs. Answering "how good" before "how much" means the
             number under the slider is already true when you read it. */}
-        <Field label="Download quality" hint={qualityHint(kbps, limit)}>
+        <Field label={t('downloads.quality')} hint={qualityHint(kbps, limit, t)}>
           <SegmentedControl
-            aria-label="Download quality"
+            aria-label={t('downloads.quality')}
             fullWidth
             value={String(kbps)}
             onValueChange={(next: string) => {
@@ -462,9 +498,11 @@ export function StorageOverview() {
               setKbps(n);
               setCacheQualityKbps(n);
             }}
+            /* `256k` and friends are a bitrate, not prose - the number IS the
+               label, and the k is the unit every locale writes the same way. */
             options={QUALITY_CHOICES.map((q) => ({
               value: String(q),
-              label: q === 0 ? 'Lossless' : `${q}k`,
+              label: q === 0 ? t('downloads.lossless') : `${q}k`,
             }))}
           />
         </Field>
@@ -475,13 +513,20 @@ export function StorageOverview() {
             everything, or am I choosing what to leave behind? */}
         {libraryEstimate && (
           <Text size="xs" tone="subtle">
-            Your whole library is about {formatBytes(libraryEstimate.bytes)} at this quality
-            ({libraryEstimate.count.toLocaleString()} songs).{' '}
+            {t('downloads.libraryEstimate', {
+              count: libraryEstimate.count,
+              size: formatBytes(libraryEstimate.bytes),
+            })}{' '}
             {limit === 0
-              ? 'Automatic downloads are off.'
+              ? t('downloads.estimateOff')
               : libraryEstimate.bytes <= limit
-                ? 'That fits in the budget below — everything can live on this device.'
-                : `The budget below holds roughly ${Math.round((limit / libraryEstimate.bytes) * 100)}% of it; the rest streams from the hub.`}
+                ? t('downloads.estimateFits')
+                : t('downloads.estimatePartial', {
+                    percent: formatNumber(limit / libraryEstimate.bytes, {
+                      style: 'percent',
+                      maximumFractionDigits: 0,
+                    }),
+                  })}
           </Text>
         )}
 
@@ -490,7 +535,7 @@ export function StorageOverview() {
             into its first sixth. One detent per stop, Off at the left edge. */}
         <div className="cacheLimit">
           <Slider
-            aria-label="How much space automatic downloads may use"
+            aria-label={t('downloads.budgetLabel')}
             min={0}
             max={LIMIT_CHOICES.length - 1}
             step={1}
@@ -515,7 +560,7 @@ export function StorageOverview() {
               setCacheLimitBytes(next);
             }}
           />
-          <span className="cacheLimit__value">{gbLabel(limit)}</span>
+          <span className="cacheLimit__value">{gbLabel(limit, t)}</span>
         </div>
 
         {/* This used to be a paragraph apologising for the absence of the
@@ -523,7 +568,7 @@ export function StorageOverview() {
             time and the wrong thing to leave standing. */}
         <div data-setting="wifi-only">
           <Switch
-            label="Only download on Wi-Fi"
+            label={t('downloads.wifiOnly')}
             checked={wifiOnly}
             onCheckedChange={(on: boolean) => {
               setWifiOnlyDownloads(on);
@@ -531,7 +576,7 @@ export function StorageOverview() {
             }}
           />
           <Text size="xs" tone="subtle">
-            {wifiOnlyText(wifiOnly, network)}
+            {wifiOnlyText(wifiOnly, network, t)}
           </Text>
         </div>
 
@@ -539,9 +584,12 @@ export function StorageOverview() {
           <Button size="sm" variant="soft" disabled={busy || !session || limit === 0} onClick={() => void update()}>
             {busy
               ? progress && progress.total > 0
-                ? `Downloading ${progress.done} of ${progress.total}…`
-                : 'Checking…'
-              : 'Check now'}
+                ? t('downloads.downloadingProgress', {
+                    done: progress.done,
+                    total: progress.total,
+                  })
+                : t('downloads.checking')
+              : t('downloads.checkNow')}
           </Button>
           <Button
             size="sm"
@@ -551,7 +599,7 @@ export function StorageOverview() {
               void clearCache().then(refresh);
             }}
           >
-            Clear automatic downloads
+            {t('downloads.clearAutomatic')}
           </Button>
         </div>
         {sweepError && (
@@ -563,9 +611,9 @@ export function StorageOverview() {
 
       {plan.length > 0 && (
         <div className="prefsSection">
-          <Label>What the last check planned</Label>
+          <Label>{t('downloads.planTitle')}</Label>
           <Text size="sm" tone="muted">
-            Every song the cache decided this phone should hold, and where each one got.
+            {t('downloads.planHint')}
           </Text>
           {/* Mini scale on purpose: the point is the overall pattern - a wall
               of green with three red is a different sentence from a wall of
@@ -581,16 +629,14 @@ export function StorageOverview() {
                   role="listitem"
                   className="sweepGrid__tile"
                   data-state={e.state}
-                  title={`${e.title} — ${e.artist}${e.reason ? ` · ${e.reason}` : e.state === 'done' ? '' : ` · ${e.state}`}`}
+                  title={tileTitle(e.title, e.artist, e.reason, e.state, t)}
                 >
                   {e.art ? <img src={artSized(e.art, 160) ?? undefined} alt="" loading="lazy" /> : null}
                 </span>
               ))}
           </div>
           <Text size="xs" tone="subtle">
-            {plan.filter((e) => e.state === 'done').length} of {plan.length} on the phone
-            {plan.some((e) => e.state === 'downloading') ? ' · downloading now' : ''}
-            {plan.length > 96 ? ` · showing 96` : ''}
+            {planLine.join(' · ')}
           </Text>
         </div>
       )}
@@ -600,8 +646,10 @@ export function StorageOverview() {
       {browsable === null && /Android/i.test(navigator.userAgent) && (
         <div className="storageBrowsable">
           <Text size="xs" tone="muted">
-            Cached music can live in a browsable <b>AttackFM</b> folder — that arrives with the
-            next app build (not just an update banner: a reinstall of the app itself).
+            {/* The folder name is a literal path segment inside the sentence,
+                so it rides through as markup rather than as a hole a
+                translator could helpfully translate. */}
+            <Trans i18nKey="downloads.browsableSoon" components={{ b: <b /> }} />
           </Text>
         </div>
       )}
@@ -609,23 +657,20 @@ export function StorageOverview() {
         <div className="storageBrowsable">
           {vaultPath ? (
             <Text size="xs" tone="muted">
-              Cached music lives in <b>AttackFM/Music</b> on this phone's storage — open any file
-              manager to browse or prune it by hand.
-              {migrated !== null ? ` ${migrated.toLocaleString()} files just moved in.` : ''}
+              <Trans i18nKey="downloads.browsablePath" components={{ b: <b /> }} />
+              {migrated !== null ? ` ${t('downloads.filesMoved', { count: migrated })}` : ''}
             </Text>
           ) : (
             <>
               <Text size="xs" tone="muted">
-                Keep cached music in an <b>AttackFM</b> folder a file manager can browse. Android
-                grants this on a settings screen, not a pop-up — the button below opens it; flip
-                the switch for AttackFM and come back.
+                <Trans i18nKey="downloads.browsableAsk" components={{ b: <b /> }} />
               </Text>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => native?.requestVaultAccess?.()}
               >
-                Allow the AttackFM folder
+                {t('downloads.allowFolder')}
               </Button>
             </>
           )}
@@ -635,5 +680,33 @@ export function StorageOverview() {
   );
 }
 
+/**
+ * A tile's tooltip: the song, then whatever the sweep has to say about it.
+ *
+ * The trailing clause is only sometimes there - a reason when the sweep wrote
+ * one, otherwise the state, and nothing at all once the song has landed - so
+ * it is a second entry wrapped around the first rather than an optional tail
+ * inside one. The reason itself comes from cacheSweep already written.
+ */
+function tileTitle(
+  title: string,
+  artist: string,
+  reason: string | undefined,
+  state: keyof typeof ORDER,
+  t: T,
+): string {
+  const main = t('downloads.planTile', { title, artist });
+  const detail = reason ?? (state === 'done' ? null : t(STATE_KEYS[state]));
+  return detail ? t('downloads.planTileDetail', { main, detail }) : main;
+}
+
 /** Failures first, then live work, then the queue, then the settled. */
 const ORDER = { failed: 0, downloading: 1, waiting: 2, done: 3 } as const;
+
+/** The manifest's states are storage values; these are how they read out loud.
+ *  `done` has no entry - a landed song's tooltip says nothing extra. */
+const STATE_KEYS: Record<Exclude<keyof typeof ORDER, 'done'>, string> = {
+  failed: 'downloads.detailFailed',
+  downloading: 'downloads.detailDownloading',
+  waiting: 'downloads.detailWaiting',
+};

@@ -1,4 +1,13 @@
+import { translate } from '../i18n/LocaleShell.tsx';
 import { osNoticesEnabled } from '../settings/behaviourPrefs.ts';
+
+/**
+ * The tray's sender name. Not a catalogue string: it is the product's name,
+ * the same one on the icon beside it, and it reads the same in every language.
+ * Kept here rather than imported from HeaderChrome so this helper - which the
+ * notice store loads - does not pull a header component in behind it.
+ */
+const APP_NAME = 'AttackFM';
 import type { Notice } from './notices.ts';
 
 /**
@@ -164,8 +173,8 @@ export async function sendTestNotification(): Promise<'sent' | 'refused' | 'unsu
   try {
     api.sendNotification({
       id: idNumber('attackfm-test'),
-      title: 'AttackFM',
-      body: "That's what a notification will look like.",
+      title: APP_NAME,
+      body: translate('notices.testBody'),
       group: 'attackfm',
     });
     return 'sent';

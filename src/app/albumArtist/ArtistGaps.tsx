@@ -2,6 +2,8 @@ import { Check, Disc3, Plus, X } from '@glacier/icons';
 import type { AlbumGap } from '../server.ts';
 import type { AddingState } from './artistAcquire.ts';
 import { CatalogTrackMenu } from '../library/CatalogTrackMenu.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 interface ArtistGapsProps {
   gaps: AlbumGap[] | 'old' | null;
@@ -19,13 +21,14 @@ interface ArtistGapsProps {
   the plus that turns it into a download.
 */
 export function ArtistGaps({ gaps, adding, addMissing }: ArtistGapsProps) {
+  const t = useT();
   if (gaps === 'old' || !gaps || gaps.length === 0) return null;
   return (
     <section className="homeShelf">
       <h2 className="homeShelfTitle">
-        Missing from your albums
+        {t('library.missingFromYourAlbums')}
         <span className="artistDiscCount">
-          {gaps.reduce((n, g) => n + g.missing.length, 0)} songs
+          {t('library.songCount', { count: gaps.reduce((n, g) => n + g.missing.length, 0) })}
         </span>
       </h2>
       <div className="albumGaps">
@@ -42,7 +45,15 @@ export function ArtistGaps({ gaps, adding, addMissing }: ArtistGapsProps) {
               <span className="albumGap__meta">
                 <span className="albumGap__title">{gap.album}</span>
                 <span className="albumGap__count">
-                  {gap.owned} of {gap.total} · {gap.missing.length} missing
+                  {/* One line, three numbers, one key: the two counts and the
+                      word "missing" are a single phrase, and which of them
+                      comes first is the translator's call. The plural is on
+                      the absences, since that is the number being described. */}
+                  {t('library.gapCount', {
+                    count: gap.missing.length,
+                    owned: gap.owned,
+                    total: gap.total,
+                  })}
                 </span>
               </span>
               {/* One tap for the whole gap, because "finish this record" is
@@ -55,7 +66,7 @@ export function ArtistGaps({ gaps, adding, addMissing }: ArtistGapsProps) {
                   for (const row of gap.missing) void addMissing(gap, row);
                 }}
               >
-                Add all
+                {t('player.addAll')}
               </button>
             </header>
             <ol className="albumGap__list">
@@ -69,7 +80,9 @@ export function ArtistGaps({ gaps, adding, addMissing }: ArtistGapsProps) {
                     onAdd={() => void addMissing(gap, row)}
                   >
                   <li className="albumGap__row" data-state={state}>
-                    <span className="albumGap__no">{row.position}</span>
+                    {/* The track's own number on the sleeve, in the locale's
+                        digits rather than always-Latin ones. */}
+                    <span className="albumGap__no">{formatNumber(row.position)}</span>
                     <span className="albumGap__name">{row.title}</span>
                     <button
                       type="button"
@@ -86,10 +99,10 @@ export function ArtistGaps({ gaps, adding, addMissing }: ArtistGapsProps) {
                       disabled={!!state}
                       aria-label={
                         state === 'added'
-                          ? `${row.title} added to your downloads`
+                          ? t('library.gapAdded', { title: row.title })
                           : state === 'missing'
-                            ? `${row.title} could not be found to import`
-                            : `Add ${row.title}`
+                            ? t('library.gapNotFound', { title: row.title })
+                            : t('library.addTrack', { title: row.title })
                       }
                       onClick={() => void addMissing(gap, row)}
                     >

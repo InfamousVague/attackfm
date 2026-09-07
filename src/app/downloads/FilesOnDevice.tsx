@@ -16,6 +16,7 @@ import { artSized, loadCachedIndex, remotePath, toTrack } from '../server.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
 import { qualityLabel, qualityOfPath } from '../cache/cacheQuality.ts';
 import { formatBytes } from '../ux/format.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { usePlayNowOptional } from '../player/playNow.tsx';
 
 /**
@@ -48,6 +49,21 @@ interface Row {
   /** The file on disk. Its extension is the record of what quality it holds.
    *  Optional because the test fixture has no real folder behind it. */
   file?: string;
+}
+
+/**
+ * What a held file's own quality reads as.
+ *
+ * `qualityLabel` answers in kbps for a transcode and with the word "Original"
+ * for a file nothing touched - and that word is the only English in it. The
+ * helper is shared with the sweep and the pinner, neither of which has a
+ * translator to hand, so the number keeps coming from there and the word comes
+ * from here. The kbps stays in Latin digits for the same reason `formatClock`
+ * does: it is a spec, read next to a filename, not a sentence.
+ */
+function fileQuality(file: string, t: ReturnType<typeof useT>): string {
+  const quality = qualityOfPath(file);
+  return quality === 0 ? t('downloads.qualityOriginal') : qualityLabel(quality);
 }
 
 /** What a delete is about to take, for the confirm dialog. */
@@ -86,6 +102,7 @@ function readFixture(): Row[] | null {
 }
 
 export function FilesOnDevice() {
+  const t = useT();
   const { tracks } = useLibrary();
   const [entries, setEntries] = useState<OfflineEntry[]>([]);
   const [owned, setOwned] = useState<Set<string>>(() => autoCachedKeys());
@@ -114,7 +131,7 @@ export function FilesOnDevice() {
   }, []);
 
   const { session } = useServerSession();
-  const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
+  const byPath = useMemo(() => new Map(tracks.map((tr) => [tr.path, tr] as const)), [tracks]);
   // The sweep resolves songs through the CACHED index, and so must this view:
   // right after a sign-in the live library can lag it, and every fresh
   // download briefly read as "no longer in the library" - the one thing it
@@ -122,7 +139,7 @@ export function FilesOnDevice() {
   const byIndex = useMemo(() => {
     if (!session) return new Map<string, Track>();
     const m = new Map<string, Track>();
-    for (const t of loadCachedIndex(session.url).tracks) m.set(remotePath(t.id), toTrack(session, t));
+    for (const tr of loadCachedIndex(session.url).tracks) m.set(remotePath(tr.id), toTrack(session, tr));
     return m;
   }, [session]);
   const resolve = (key: string): Track | null => byPath.get(key) ?? byIndex.get(key) ?? null;
@@ -174,7 +191,11 @@ export function FilesOnDevice() {
     }
     const artists = new Map<string, ArtistSlot>();
     for (const row of rows) {
-      const artist = row.track?.artist ?? 'No longer in the library';
+      // The heading for files whose song the library no longer knows. It is
+      // the grouping key as well as the label, which is harmless: the key
+      // lives only for as long as this memo, and the memo is rebuilt when the
+      // language changes.
+      const artist = row.track?.artist ?? t('downloads.notInLibrary');
       const album = row.track?.album ?? '';
       const a = artists.get(artist) ?? { albums: new Map(), bytes: 0, count: 0, art: null };
       a.bytes += row.bytes;
@@ -195,13 +216,14 @@ export function FilesOnDevice() {
           <span className="deviceFiles__name">{row.track?.title ?? row.key}</span>
           <span className="deviceFiles__meta">
             {formatBytes(row.bytes)}
-            {row.auto ? ' · automatic' : ' · kept'}
+            {' · '}
+            {row.auto ? t('downloads.badgeAutomatic') : t('downloads.kept')}
             {/* The only place the quality of a specific file is visible. Worth
                 showing because a held file always beats the setting at playback:
                 change the setting and these songs keep what they have until the
                 cache works through them, and without this there is nothing to
                 read that explains why. */}
-            {row.file ? ` · ${qualityLabel(qualityOfPath(row.file))}` : ''}
+            {row.file ? ` · ${fileQuality(row.file, t)}` : ''}
           </span>
         </span>
       ),
@@ -210,8 +232,10 @@ export function FilesOnDevice() {
         <IconButton
           variant="ghost"
           size="sm"
-          aria-label={`Delete ${row.track?.title ?? 'this file'} from this device`}
-          onClick={() => requestDelete(row.track?.title ?? 'this file', [row])}
+          aria-label={t('downloads.deleteFile', {
+            title: row.track?.title ?? t('downloads.thisFile'),
+          })}
+          onClick={() => requestDelete(row.track?.title ?? t('downloads.thisFile'), [row])}
         >
           <Trash2 size={14} />
         </IconButton>
@@ -229,7 +253,7 @@ export function FilesOnDevice() {
             <span className="deviceFiles__label">
               <span className="deviceFiles__name">{artist}</span>
               <span className="deviceFiles__meta">
-                {a.count} {a.count === 1 ? 'song' : 'songs'} · {formatBytes(a.bytes)}
+                {t('downloads.songsAndSize', { count: a.count, size: formatBytes(a.bytes) })}
               </span>
             </span>
           ),
@@ -238,7 +262,7 @@ export function FilesOnDevice() {
             <IconButton
               variant="ghost"
               size="sm"
-              aria-label={`Delete everything by ${artist} from this device`}
+              aria-label={t('downloads.deleteArtist', { artist })}
               onClick={() =>
                 requestDelete(
                   artist,
@@ -257,9 +281,12 @@ export function FilesOnDevice() {
                 id: `album:${artist}:${album}`,
                 label: (
                   <span className="deviceFiles__label">
-                    <span className="deviceFiles__name">{album || 'Singles'}</span>
+                    <span className="deviceFiles__name">{album || t('downloads.singles')}</span>
                     <span className="deviceFiles__meta">
-                      {al.rows.length} {al.rows.length === 1 ? 'song' : 'songs'} · {formatBytes(al.bytes)}
+                      {t('downloads.songsAndSize', {
+                        count: al.rows.length,
+                        size: formatBytes(al.bytes),
+                      })}
                     </span>
                   </span>
                 ),
@@ -268,8 +295,8 @@ export function FilesOnDevice() {
                   <IconButton
                     variant="ghost"
                     size="sm"
-                    aria-label={`Delete the album ${album || 'Singles'} from this device`}
-                    onClick={() => requestDelete(album || 'Singles', al.rows)}
+                    aria-label={t('downloads.deleteAlbum', { album: album || t('downloads.singles') })}
+                    onClick={() => requestDelete(album || t('downloads.singles'), al.rows)}
                   >
                     <Trash2 size={14} />
                   </IconButton>
@@ -279,9 +306,11 @@ export function FilesOnDevice() {
         };
       });
     // requestDelete is stable in spirit (setState + module calls); listing rows
-    // alone keeps the tree from rebuilding on every render.
+    // alone keeps the tree from rebuilding on every render. `t` is here because
+    // every label in the tree came out of it: without it the tree keeps the
+    // language it was built in until the folder next changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
+  }, [rows, t]);
 
   /*
    * Every row here is, by definition, a file sitting on this device - so a tap
@@ -313,8 +342,12 @@ export function FilesOnDevice() {
           <span className="deviceFiles__label">
             <span className="deviceFiles__name">{row.track?.title ?? row.key}</span>
             <span className="deviceFiles__meta">
-              {row.track?.artist ?? 'No longer in the library'} · {formatBytes(row.bytes)}
-              {row.auto ? ' · automatic' : ' · kept'}
+              {t('downloads.artistAndSize', {
+                artist: row.track?.artist ?? t('downloads.notInLibrary'),
+                size: formatBytes(row.bytes),
+              })}
+              {' · '}
+              {row.auto ? t('downloads.badgeAutomatic') : t('downloads.kept')}
             </span>
           </span>
         ),
@@ -323,20 +356,22 @@ export function FilesOnDevice() {
           <IconButton
             variant="ghost"
             size="sm"
-            aria-label={`Delete ${row.track?.title ?? 'this file'} from this device`}
-            onClick={() => requestDelete(row.track?.title ?? 'this file', [row])}
+            aria-label={t('downloads.deleteFile', {
+              title: row.track?.title ?? t('downloads.thisFile'),
+            })}
+            onClick={() => requestDelete(row.track?.title ?? t('downloads.thisFile'), [row])}
           >
             <Trash2 size={14} />
           </IconButton>
         ),
       }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
+  }, [rows, t]);
 
   if (!isTauri() && !fixture) {
     return (
       <Text size="sm" tone="muted">
-        A browser tab keeps nothing on the device — everything streams from the server.
+        {t('downloads.browserKeepsNothing')}
       </Text>
     );
   }
@@ -344,8 +379,7 @@ export function FilesOnDevice() {
   if (rows.length === 0) {
     return (
       <Text size="sm" tone="muted">
-        Nothing on this device yet. The cache fills in as you listen, and a song&rsquo;s own menu
-        keeps it here for good.
+        {t('downloads.deviceEmpty')}
       </Text>
     );
   }
@@ -356,43 +390,53 @@ export function FilesOnDevice() {
   return (
     <div className="deviceFiles">
       <SegmentedControl
-        aria-label="How the files are listed"
+        aria-label={t('downloads.viewLabel')}
         size="sm"
         fullWidth
         value={view}
         options={[
-          { value: 'tree', label: 'By artist' },
-          { value: 'biggest', label: 'Biggest' },
+          { value: 'tree', label: t('downloads.viewByArtist') },
+          { value: 'biggest', label: t('downloads.viewBiggest') },
         ]}
         onValueChange={(next) => setView(next as View)}
       />
 
       <TreeView
-        aria-label={view === 'tree' ? 'Songs on this device, by artist' : 'Largest files on this device'}
+        aria-label={view === 'tree' ? t('downloads.treeByArtist') : t('downloads.treeBiggest')}
         items={view === 'tree' ? tree : biggest}
         className="deviceFiles__tree"
         onSelect={playRow}
       />
 
       <Text size="xs" tone="subtle">
-        Deleting an automatic download also stops it coming back; the space returns to the budget.
-        Kept songs stay gone until you keep them again.
+        {t('downloads.deleteExplainer')}
       </Text>
 
+      {/* The dialog's body is three sentences with a key each, rather than one
+          entry, because the middle one only appears for automatic downloads.
+          Each is whole on its own, so a translator is never handed a fragment
+          and left to guess what follows it. */}
       <AlertDialog
         open={pending !== null}
         onClose={() => setPending(null)}
         tone="danger"
-        title={`Delete ${pending?.label ?? ''} from this device?`}
+        title={t('downloads.deleteConfirmTitle', { what: pending?.label ?? '' })}
         description={
           pending
-            ? `${pending.rows.length} ${pending.rows.length === 1 ? 'song' : 'songs'} · ${formatBytes(pendingBytes)} freed.` +
-              (pendingAuto > 0 ? ' Automatic downloads will not be re-downloaded.' : '') +
-              ' Nothing is removed from the library — only from this phone.'
+            ? [
+                t('downloads.deleteConfirmFreed', {
+                  count: pending.rows.length,
+                  size: formatBytes(pendingBytes),
+                }),
+                pendingAuto > 0 ? t('downloads.deleteConfirmAuto') : null,
+                t('downloads.deleteConfirmLibrary'),
+              ]
+                .filter(Boolean)
+                .join(' ')
             : ''
         }
-        actionLabel="Delete"
-        cancelLabel="Cancel"
+        actionLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
         onAction={() => {
           if (pending) remove(pending.rows);
           setPending(null);

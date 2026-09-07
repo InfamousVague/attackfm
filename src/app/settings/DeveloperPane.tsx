@@ -14,6 +14,8 @@ import type { BundleState } from './appUpdate.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { isAndroid, isIOS, isMobile } from '../core/platform.ts';
 import { isTauri } from '../core/tauri.ts';
+import { translate, useT } from '../i18n/LocaleShell.tsx';
+import { formatBytes, formatNumber } from '../ux/format.ts';
 
 /**
  * The Developer page. Unlocked by seventeen presses on the wordmark in About,
@@ -31,13 +33,6 @@ import { isTauri } from '../core/tauri.ts';
  * belong in their own pane, visible, not behind a knock. This page is a window
  * and, in one section at the bottom, a hammer.
  */
-
-/** Bytes, in the shortest honest form. */
-function size(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
 
 /** What localStorage is holding, which is where nearly all of this app's
  *  client state lives - so "the app is behaving strangely" is often here. */
@@ -62,6 +57,7 @@ function localStorageReport(): { keys: number; bytes: number; top: [string, numb
 }
 
 export function DeveloperPane() {
+  const t = useT();
   const on = useDeveloperMode();
   const { session } = useServerSession();
   const { toast } = useToast();
@@ -115,9 +111,9 @@ export function DeveloperPane() {
       if (!alive.current) return;
       setOutcome(
         result.state === 'staged'
-          ? `Installed ${result.version} — restart to run it`
+          ? t('settings.devUpdateStaged', { version: result.version })
           : result.state === 'current'
-            ? `Already on ${result.version}`
+            ? t('settings.devUpdateCurrent', { version: result.version })
             : result.why,
       );
       void readBundle();
@@ -133,9 +129,18 @@ export function DeveloperPane() {
     try {
       const res = await fetch(`${session.url}/api/server`, { cache: 'no-store' });
       const ms = Math.round(performance.now() - started);
-      if (alive.current) setPing(res.ok ? `${ms}ms` : `${res.status} after ${ms}ms`);
+      // The number goes through Intl and the sentence through the catalogue:
+      // the digits, the grouping and the word order are three different
+      // decisions and only the last one is ours.
+      if (alive.current) {
+        setPing(
+          res.ok
+            ? t('settings.devPingOk', { ms: formatNumber(ms) })
+            : t('settings.devPingStatus', { status: res.status, ms: formatNumber(ms) }),
+        );
+      }
     } catch {
-      if (alive.current) setPing('unreachable');
+      if (alive.current) setPing(t('settings.devPingUnreachable'));
     }
   };
 
@@ -155,34 +160,40 @@ export function DeveloperPane() {
     };
     try {
       await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
-      toast({ message: 'Report copied' });
+      toast({ message: t('settings.devReportCopied') });
     } catch {
-      toast({ message: 'Could not reach the clipboard', tone: 'danger' });
+      toast({ message: t('settings.devReportFailed'), tone: 'danger' });
     }
   };
 
   return (
     <div className="prefsBody devPane">
       <PaneSection
-        title="Developer mode"
-        description="Off again, and this page and Diagnostics disappear until the next seventeen taps."
+        title={t('settings.developerMode')}
+        description={t('settings.devModeOffAgain')}
       >
         <SettingRow
           id="dev-mode"
-          label="Developer mode"
+          label={t('settings.developerMode')}
           icon={<Wrench size={16} />}
-          hint="Shows this page and Diagnostics in Settings."
-          control={<Switch checked={on} onCheckedChange={(v) => setDeveloperMode(v)} aria-label="Developer mode" />}
+          hint={t('settings.devModeHint')}
+          control={
+            <Switch
+              checked={on}
+              onCheckedChange={(v) => setDeveloperMode(v)}
+              aria-label={t('settings.developerMode')}
+            />
+          }
         />
       </PaneSection>
 
       <PaneSection
-        title="Which frontend is running"
-        description="The app updates itself over the air, so the code on screen is often not the code the installed binary shipped with. This is the first thing to check when a fix “did not land”."
+        title={t('settings.devFrontendTitle')}
+        description={t('settings.devFrontendBody')}
         footer={
           <div className="devPane__actions">
             <Button size="sm" variant="soft" disabled={checking} onClick={() => void check()}>
-              {checking ? <Spinner size="sm" /> : <><RefreshCw size={14} /> Check for updates</>}
+              {checking ? <Spinner size="sm" /> : <><RefreshCw size={14} /> {t('settings.devCheckForUpdates')}</>}
             </Button>
             {running && (
               <Button
@@ -190,7 +201,7 @@ export function DeveloperPane() {
                 variant="ghost"
                 onClick={() => { void revertToEmbedded().then(() => window.location.reload()); }}
               >
-                <RotateCcw size={14} /> Revert to embedded
+                <RotateCcw size={14} /> {t('settings.devRevertToEmbedded')}
               </Button>
             )}
           </div>
@@ -198,54 +209,78 @@ export function DeveloperPane() {
       >
         <SettingRow
           id="dev-running"
-          label="Running"
-          hint={running ? 'A downloaded bundle.' : 'The frontend the installed app shipped with.'}
-          value={<Pill size="sm" variant="soft" tone={running ? 'accent' : 'neutral'}>{running ?? `${embedded} (embedded)`}</Pill>}
+          label={t('settings.devRunning')}
+          hint={running ? t('settings.devRunningDownloaded') : t('settings.devRunningEmbedded')}
+          value={
+            <Pill size="sm" variant="soft" tone={running ? 'accent' : 'neutral'}>
+              {running ?? t('settings.devEmbeddedVersion', { version: embedded })}
+            </Pill>
+          }
         />
-        <SettingRow id="dev-embedded" label="Embedded floor" hint="What a revert falls back to." value={embedded} />
+        <SettingRow
+          id="dev-embedded"
+          label={t('settings.devEmbeddedFloor')}
+          hint={t('settings.devEmbeddedFloorHint')}
+          value={embedded}
+        />
         {asked && (
           <>
-            <SettingRow id="dev-active" label="Active bundle" value={bundle?.active ?? 'none'} />
+            <SettingRow
+              id="dev-active"
+              label={t('settings.devActiveBundle')}
+              value={bundle?.active ?? t('settings.devNone')}
+            />
             <SettingRow
               id="dev-native-gen"
-              label="Native generation"
-              hint="A bundle needing a higher one is refused — that is the guard that keeps new JS off an old binary."
+              label={t('settings.devNativeGeneration')}
+              hint={t('settings.devNativeGenerationHint')}
               value={String(bundle?.nativeGeneration ?? '—')}
             />
             <SettingRow
               id="dev-quarantined"
-              label="Quarantined"
-              hint="Versions that failed to boot here. They are refused for good, so a number listed here will never install again."
+              label={t('settings.devQuarantined')}
+              hint={t('settings.devQuarantinedHint')}
               value={
                 bundle?.quarantined.length
                   ? <span className="devPane__quarantine">{bundle.quarantined.map((v) => <Pill key={v} size="sm" variant="soft" tone="danger">{v}</Pill>)}</span>
-                  : 'none'
+                  : t('settings.devNone')
               }
             />
             {!!bundle?.quarantined.length && (
-              <SettingsCallout tone="warning">
-                Clearing this list needs a native command that does not exist yet, so a quarantined
-                version stays refused until the app is rebuilt. Shipping a higher version number is
-                the way past it.
-              </SettingsCallout>
+              <SettingsCallout tone="warning">{t('settings.devQuarantineStuck')}</SettingsCallout>
             )}
           </>
         )}
         {outcome && <Text tone="muted" size="sm">{outcome}</Text>}
       </PaneSection>
 
-      <PaneSection title="This device" description="What the layout and the feature gates are actually seeing.">
+      <PaneSection title={t('settings.devDevice')} description={t('settings.devDeviceBody')}>
         <SettingRow
           id="dev-platform"
-          label="Platform"
-          value={`${isAndroid ? 'Android' : isIOS ? 'iOS' : isMobile ? 'mobile' : 'desktop'}${isTauri() ? '' : ' · browser'}`}
+          label={t('settings.devPlatform')}
+          value={(() => {
+            // Two decisions, not one: which shell this is, and whether it is
+            // running inside a browser tab rather than the native wrapper.
+            // Joined by the catalogue so a language that words the aside
+            // differently - or puts it first - can.
+            const shell = isAndroid
+              ? t('settings.devPlatformAndroid')
+              : isIOS
+                ? t('settings.devPlatformIos')
+                : isMobile
+                  ? t('settings.devPlatformMobile')
+                  : t('settings.devPlatformDesktop');
+            return isTauri() ? shell : t('settings.devPlatformInBrowser', { shell });
+          })()}
         />
-        <SettingRow id="dev-screen" label="Screen" value={`${window.screen.width}×${window.screen.height} @${window.devicePixelRatio}×`} />
-        <SettingRow id="dev-viewport" label="Viewport" value={`${window.innerWidth}×${window.innerHeight}`} />
+        {/* Pixel dimensions, left as digits and symbols: there is no prose in
+            "390×844 @3×" for a translator to move. */}
+        <SettingRow id="dev-screen" label={t('settings.devScreen')} value={`${window.screen.width}×${window.screen.height} @${window.devicePixelRatio}×`} />
+        <SettingRow id="dev-viewport" label={t('settings.devViewport')} value={`${window.innerWidth}×${window.innerHeight}`} />
         <SettingRow
           id="dev-safe"
-          label="Safe insets"
-          hint="Read off the live custom properties — the notch and the home indicator, as the stylesheet sees them."
+          label={t('settings.devSafeInsets')}
+          hint={t('settings.devSafeInsetsHint')}
           value={(() => {
             const cs = getComputedStyle(document.documentElement);
             const px = (name: string) => cs.getPropertyValue(name).trim() || '0px';
@@ -254,8 +289,8 @@ export function DeveloperPane() {
         />
         <SettingRow
           id="dev-chrome"
-          label="Header / player / nav"
-          hint="The three heights every page's bottom padding is calculated from."
+          label={t('settings.devChromeHeights')}
+          hint={t('settings.devChromeHeightsHint')}
           value={(() => {
             const cs = getComputedStyle(document.documentElement);
             const px = (name: string) => cs.getPropertyValue(name).trim() || '—';
@@ -265,74 +300,88 @@ export function DeveloperPane() {
       </PaneSection>
 
       <PaneSection
-        title="Server"
-        description="Where this device is signed in, and how far away it is."
-        footer={<Button size="sm" variant="soft" onClick={() => void pingServer()}>Ping</Button>}
+        title={t('settings.devServer')}
+        description={t('settings.devServerBody')}
+        footer={<Button size="sm" variant="soft" onClick={() => void pingServer()}>{t('settings.devPing')}</Button>}
       >
-        <SettingRow id="dev-server-url" label="Server" value={session?.url ?? 'signed out'} />
-        <SettingRow id="dev-server-admin" label="This account" value={session ? (session.isAdmin ? 'owner' : 'member') : '—'} />
+        <SettingRow id="dev-server-url" label={t('settings.devServer')} value={session?.url ?? t('settings.devSignedOut')} />
+        <SettingRow
+          id="dev-server-admin"
+          label={t('settings.devThisAccount')}
+          value={session ? (session.isAdmin ? t('settings.devRoleOwner') : t('settings.devRoleMember')) : '—'}
+        />
         <SettingRow
           id="dev-server-token"
-          label="Session token"
-          hint="Never shown — only whether there is one."
-          value={session?.token ? 'held' : 'none'}
+          label={t('settings.devSessionToken')}
+          hint={t('settings.devSessionTokenHint')}
+          value={session?.token ? t('settings.devTokenHeld') : t('settings.devNone')}
         />
-        {ping && <SettingRow id="dev-server-ping" label="Round trip" value={ping} />}
+        {ping && <SettingRow id="dev-server-ping" label={t('settings.devRoundTrip')} value={ping} />}
       </PaneSection>
 
       <PaneSection
-        title="Storage"
-        description="Nearly all of this app’s client state is in localStorage. A key that has grown enormous is usually the answer to “why is launch slow”."
+        title={t('settings.devStorage')}
+        description={t('settings.devStorageBody')}
         footer={
           <Button size="sm" variant="soft" onClick={() => setStorage(localStorageReport())}>
-            <HardDrive size={14} /> Re-measure
+            <HardDrive size={14} /> {t('settings.devRemeasure')}
           </Button>
         }
       >
-        <SettingRow id="dev-ls" label="localStorage" value={`${storage.keys} keys · ${size(storage.bytes)}`} />
+        {/* Counted rather than concatenated: "1 key" and "2 keys" is a plural
+            form, and the languages this ships in do not all have two of them. */}
+        <SettingRow
+          id="dev-ls"
+          label="localStorage"
+          value={t('settings.devKeysAndSize', { count: storage.keys, size: formatBytes(storage.bytes) })}
+        />
         {quota && (
           <SettingRow
             id="dev-quota"
-            label="Origin usage"
-            hint="Everything the web layer holds: caches, IndexedDB, the offline library."
-            value={`${size(quota.usage)}${quota.quota ? ` of ${size(quota.quota)}` : ''}`}
+            label={t('settings.devOriginUsage')}
+            hint={t('settings.devOriginUsageHint')}
+            value={
+              quota.quota
+                ? t('settings.devUsedOf', { used: formatBytes(quota.usage), total: formatBytes(quota.quota) })
+                : formatBytes(quota.usage)
+            }
           />
         )}
         {storage.top.map(([key, n]) => (
-          <SettingRow key={key} id={`dev-ls-${key}`} label={key} value={size(n)} />
+          <SettingRow key={key} id={`dev-ls-${key}`} label={key} value={formatBytes(n)} />
         ))}
       </PaneSection>
 
       <PaneSection
-        title="Hammers"
-        description="Each of these throws something away. None of them touch your music, which lives on the server."
+        title={t('settings.devHammers')}
+        description={t('settings.devHammersBody')}
         tone="danger"
       >
         <SettingRow
           id="dev-copy-report"
-          label="Copy a diagnostic report"
-          hint="Everything on this page as JSON, for pasting into a bug report."
+          label={t('settings.devCopyReport')}
+          hint={t('settings.devCopyReportHint')}
           onPress={() => void copyReport()}
           control={<Copy size={16} />}
         />
         <SettingRow
           id="dev-reload"
-          label="Reload the frontend"
-          hint="Re-runs the boot loader without reinstalling anything."
+          label={t('settings.devReloadFrontend')}
+          hint={t('settings.devReloadFrontendHint')}
           onPress={() => window.location.reload()}
           control={<RefreshCw size={16} />}
         />
         <SettingRow
           id="dev-clear-caches"
-          label="Empty the web caches"
-          hint="Artwork and offline responses. They rebuild as you use the app."
+          label={t('settings.devEmptyCaches')}
+          hint={t('settings.devEmptyCachesHint')}
           danger
           onPress={() => {
             void caches
               .keys()
               .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
-              .then(() => toast({ message: 'Caches emptied' }))
-              .catch(() => toast({ message: 'Could not empty the caches', tone: 'danger' }));
+              .then(() => toast({ message: t('settings.devCachesEmptied') }))
+              .catch(() => toast({ message: t('settings.devCachesFailed'), tone: 'danger' }));
           }}
           control={<Trash2 size={16} />}
         />
@@ -341,7 +390,9 @@ export function DeveloperPane() {
   );
 }
 
-/** The rail row's second line, for SettingsModal. */
+/** The rail row's second line, for SettingsModal. Read at render by the rail
+ *  rather than inside a component of ours, so it uses the non-reactive
+ *  translate(); the rail re-renders on a language change and calls it again. */
 export function developerSummary(): string {
-  return 'Bundles, this device, storage and hammers';
+  return translate('settings.devSummary');
 }

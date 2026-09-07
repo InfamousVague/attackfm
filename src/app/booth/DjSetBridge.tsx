@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IconButton } from '@glacier/react';
 import { X } from '@glacier/icons';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useNowPlayingMotion } from '../player/nowPlayingMotion.tsx';
 import { currentDjRun, publishDjRun, subscribeDjRun, type DjRun } from './djSession.ts';
@@ -18,6 +19,7 @@ const TOAST_MS = 12_000;
  * gets to squeeze it - being readable is the entire reason it exists.
  */
 export function DjToast({ line, onDismiss }: { line: string; onDismiss: () => void }) {
+  const t = useT();
   useEffect(() => {
     const t = window.setTimeout(onDismiss, TOAST_MS);
     return () => window.clearTimeout(t);
@@ -31,7 +33,7 @@ export function DjToast({ line, onDismiss }: { line: string; onDismiss: () => vo
         variant="ghost"
         size="sm"
         className="djToast__close"
-        aria-label="Dismiss"
+        aria-label={t('common.dismiss')}
         onClick={onDismiss}
       >
         <X size={14} />

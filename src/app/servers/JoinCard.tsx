@@ -8,6 +8,8 @@ import { previewInvite, type InvitePreview } from './registry.ts';
 import { enterServer, fetchServerInfo, type ServerInfo } from '../server.ts';
 import { rememberSession, sessionForOrigin } from './sessions.ts';
 import { normalizeServerUrl } from '../server.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 /**
  * An invite LINK, tapped: one card, one button.
@@ -37,6 +39,7 @@ export function JoinCard({
    */
   auto?: boolean;
 }) {
+  const t = useT();
   const { session: registry, apply: applyRegistry } = useRegistry();
   const { applySession, pivot } = useServerSession();
   const [preview, setPreview] = useState<InvitePreview | null>(null);
@@ -54,8 +57,8 @@ export function JoinCard({
     previewInvite(code.toUpperCase())
       .then((p) => {
         if (!live) return;
-        if (p.spent) setError('That invite has already been used.');
-        else if (p.expired) setError('That invite has expired.');
+        if (p.spent) setError(t('servers.inviteSpent'));
+        else if (p.expired) setError(t('servers.inviteExpired'));
         else setPreview(p);
         // The server's glance, from the server: a box that is asleep or
         // unreachable from here still leaves a joinable card, just a quieter one.
@@ -68,12 +71,12 @@ export function JoinCard({
         }
       })
       .catch(() => {
-        if (live) setError('That invite could not be found.');
+        if (live) setError(t('servers.inviteNotFound'));
       });
     return () => {
       live = false;
     };
-  }, [code]);
+  }, [code, t]);
 
   const join = async (identity = registry) => {
     if (!identity || !preview || busy) return;
@@ -87,7 +90,7 @@ export function JoinCard({
       applySession(session);
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not join that server.');
+      setError(err instanceof Error ? err.message : t('servers.couldNotJoin'));
     } finally {
       setBusy(false);
     }
@@ -108,18 +111,27 @@ export function JoinCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per card, on the first render that has both
   }, [auto, registry, preview, held]);
 
-  const name = preview?.serverName || info?.name || 'a server';
+  const name = preview?.serverName || info?.name || t('servers.aServer');
   // The owner is what the SERVER says; the inviter is who sent the link.
   // They are usually the same person, but any member may mint an invite,
   // and a card that called the inviter the owner would be lying.
   const owner = info?.owner || '';
-  const stats: { icon: ReactNode; value: number; label: string }[] = info
+  /*
+   * The glance. The count sits in its own cell, so the label is the noun ALONE
+   * and `count` only picks which form of it - which is also why every row is
+   * plural-aware now: "1 artists" was reachable before and is not a thing a
+   * translator could have fixed from the catalogue.
+   *
+   * `id` rather than the label as the React key: a translated label is not a
+   * stable identity, and it would change under React on every language switch.
+   */
+  const stats: { id: string; icon: ReactNode; value: number; label: string }[] = info
     ? [
-        { icon: <Music size={14} />, value: info.tracks, label: info.tracks === 1 ? 'song' : 'songs' },
-        ...(typeof info.artists === 'number' ? [{ icon: <User size={14} />, value: info.artists, label: 'artists' }] : []),
-        ...(typeof info.albums === 'number' ? [{ icon: <Disc3 size={14} />, value: info.albums, label: 'albums' }] : []),
-        ...(typeof info.playlists === 'number' ? [{ icon: <ListMusic size={14} />, value: info.playlists, label: 'playlists' }] : []),
-        ...(typeof info.members === 'number' ? [{ icon: <Users size={14} />, value: info.members, label: info.members === 1 ? 'member' : 'members' }] : []),
+        { id: 'songs', icon: <Music size={14} />, value: info.tracks, label: t('servers.glanceSongs', { count: info.tracks }) },
+        ...(typeof info.artists === 'number' ? [{ id: 'artists', icon: <User size={14} />, value: info.artists, label: t('servers.glanceArtists', { count: info.artists }) }] : []),
+        ...(typeof info.albums === 'number' ? [{ id: 'albums', icon: <Disc3 size={14} />, value: info.albums, label: t('servers.glanceAlbums', { count: info.albums }) }] : []),
+        ...(typeof info.playlists === 'number' ? [{ id: 'playlists', icon: <ListMusic size={14} />, value: info.playlists, label: t('servers.glancePlaylists', { count: info.playlists }) }] : []),
+        ...(typeof info.members === 'number' ? [{ id: 'members', icon: <Users size={14} />, value: info.members, label: t('servers.glanceMembers', { count: info.members }) }] : []),
       ]
     : [];
 
@@ -131,7 +143,7 @@ export function JoinCard({
         </Text>
       ) : !preview ? (
         <Text tone="muted" size="sm">
-          Reading the invite…
+          {t('servers.readingInvite')}
         </Text>
       ) : (
         <>
@@ -142,33 +154,36 @@ export function JoinCard({
             <div className="joinCard__who">
               <h3 className="joinCard__name">{name}</h3>
               <Text tone="muted" size="sm">
-                {owner ? `${owner}'s server` : 'A server on AttackFM'}
-                {preview.from ? ` · invited by @${preview.from}` : ''}
+                {/* Whose it is, and who sent it - two readings on one line,
+                    each its own entry, joined rather than concatenated. */}
+                {[
+                  owner ? t('servers.ownersServer', { owner }) : t('servers.aServerOnAttackFm'),
+                  ...(preview.from ? [t('servers.invitedBy', { from: preview.from })] : []),
+                ].join(' · ')}
               </Text>
             </div>
           </div>
           {stats.length > 0 ? (
             <ul className="joinCard__stats">
               {stats.map((s) => (
-                <li key={s.label} className="joinCard__stat">
+                <li key={s.id} className="joinCard__stat">
                   <span className="joinCard__statIcon" aria-hidden>
                     {s.icon}
                   </span>
-                  <span className="joinCard__statValue">{s.value.toLocaleString()}</span>
+                  <span className="joinCard__statValue">{formatNumber(s.value)}</span>
                   <span className="joinCard__statLabel">{s.label}</span>
                 </li>
               ))}
             </ul>
           ) : (
             <Text tone="muted" size="xs">
-              The server is not answering right now; you can still join, and its library appears
-              when it wakes.
+              {t('servers.notAnsweringYet')}
             </Text>
           )}
           {held ? (
             <>
               <Text size="sm" tone="muted">
-                <Check size={14} /> {held.isAdmin ? `This is your server.` : `You're already a member of ${name}.`}
+                <Check size={14} /> {held.isAdmin ? t('servers.thisIsYourServer') : t('servers.alreadyMember', { name })}
               </Text>
               <Button
                 variant="solid"
@@ -179,17 +194,17 @@ export function JoinCard({
                   onDone();
                 }}
               >
-                <LogIn size={16} /> Open {name}
+                <LogIn size={16} /> {t('servers.openNamed', { name })}
               </Button>
             </>
           ) : registry ? (
             <Button variant="solid" size="lg" className="joinCard__join" disabled={busy} onClick={() => void join()}>
-              <LogIn size={16} /> {busy ? 'Joining…' : `Join ${name}`}
+              <LogIn size={16} /> {busy ? t('servers.joining') : t('servers.joinNamed', { name })}
             </Button>
           ) : (
             <>
               <Text size="sm" tone="muted">
-                Joining takes a free AttackFM account - it works on every server.
+                {t('servers.joinNeedsAccount')}
               </Text>
               <AccountForm
                 defaultMode="create"

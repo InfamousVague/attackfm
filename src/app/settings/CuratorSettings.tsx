@@ -9,7 +9,9 @@ import {
   type CollectorStatus,
   type CuratorFeed,
 } from '../server.ts';
-import { formatBytes } from '../ux/format.ts';
+import { formatAgo, formatBytes, formatNumber } from '../ux/format.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import type { Translate } from './settingsShared.ts';
 
 /**
  * The curator's control room: the one place the machine accounts for itself.
@@ -27,31 +29,30 @@ import { formatBytes } from '../ux/format.ts';
 /**
  * What each pull is doing, in the reader's terms. Only the states that are
  * genuinely ambiguous get a word - a landed pull is just the song.
+ *
+ * KEYS, not sentences: this table is built at import, long before a provider
+ * exists, so a translated one would freeze the app in whatever language it
+ * booted in. The state name is the server's; only the reading is ours.
  */
 const WHERE: Partial<Record<string, string>> = {
-  offered: 'waiting for a download box',
-  fetching: 'downloading elsewhere',
-  queued: 'downloading here',
-  failed: 'could not be fetched',
+  offered: 'curator.whereOffered',
+  fetching: 'curator.whereFetching',
+  queued: 'curator.whereQueued',
+  failed: 'curator.whereFailed',
 };
 
-/** How the delegating case reads, which depends entirely on the clock. */
-function peerNote(seenAt: number | null): string {
-  if (seenAt == null) {
-    return 'Downloads are handed to another server, and none has ever collected any. Picks are waiting.';
-  }
-  return `Downloads are handed to another server, which last collected one ${timeAgo(seenAt)}.`;
-}
+/** The two readings of the enrichment line, keyed rather than chosen inline
+ *  for the same reason as WHERE above. */
+const ENRICHMENT = { ai: 'curator.enrichment', noAi: 'curator.enrichmentNoAi' };
 
-function timeAgo(ms: number): string {
-  const mins = Math.max(0, Math.round((Date.now() - ms) / 60_000));
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+/** How the delegating case reads, which depends entirely on the clock. */
+function peerNote(seenAt: number | null, t: Translate): string {
+  if (seenAt == null) return t('curator.delegatesNever');
+  return t('curator.delegatesLast', { when: formatAgo(seenAt) });
 }
 
 export function CuratorSettings() {
+  const t = useT();
   const { session } = useServerSession();
   const [status, setStatus] = useState<CollectorStatus | null>(null);
   const [feed, setFeed] = useState<CuratorFeed | null>(null);
@@ -73,23 +74,25 @@ export function CuratorSettings() {
   if (!session) {
     return (
       <div className="prefsBody">
-        <Text tone="muted" size="sm">
-          The curator lives on your server — connect to one to see it.
-        </Text>
+        <Text tone="muted" size="sm">{t('curator.needsServer')}</Text>
       </div>
     );
   }
   if (failed) {
     return (
       <div className="prefsBody">
-        <Text tone="muted" size="sm">
-          This server does not have the curator yet — it needs the current home-hub build.
-        </Text>
+        <Text tone="muted" size="sm">{t('curator.unsupported')}</Text>
       </div>
     );
   }
 
   const share = status ? Math.min(1, status.ledgerBytes / Math.max(1, status.capBytes)) : 0;
+  /** The reading for a pull's state, or '' for the states that speak for
+   *  themselves (a landed pull is just the song). */
+  const whereFor = (state: string): string => {
+    const key = WHERE[state];
+    return key ? t(key) : '';
+  };
 
   return (
     <div className="prefsBody">
@@ -104,9 +107,9 @@ export function CuratorSettings() {
       )}
       {status && (
         <div className="prefsSection">
-          <Label>Collector</Label>
+          <Label>{t('curator.collector')}</Label>
           <Switch
-            label="Download music for me"
+            label={t('curator.downloadForMe')}
             checked={status.enabled}
             onCheckedChange={(on: boolean) => {
               // Optimistic - the switch answers the press; a refusal puts it back.
@@ -118,14 +121,21 @@ export function CuratorSettings() {
           />
           <Text tone="muted" size="sm">
             {status.halted === 'cap'
-              ? 'Stopped: the budget below is full of music nobody has adopted yet.'
+              ? t('curator.stateHalted')
               : status.enabled
-                ? 'Hunting continuously. Everything it fetches auditions on the For-you shelf first.'
-                : 'Off. Mixes and suggestions keep running — only the downloading stops.'}
+                ? t('curator.stateHunting')
+                : t('curator.stateOff')}
           </Text>
 
           {/* The ledger: what unadopted music is holding, against the cap. */}
-          <div className="curatorLedger" role="img" aria-label={`Budget: ${formatBytes(status.ledgerBytes)} of ${formatBytes(status.capBytes)} holding auditions`}>
+          <div
+            className="curatorLedger"
+            role="img"
+            aria-label={t('curator.ledgerAria', {
+              used: formatBytes(status.ledgerBytes),
+              cap: formatBytes(status.capBytes),
+            })}
+          >
             <div className="curatorLedger__rail">
               <div
                 className="curatorLedger__fill"
@@ -134,13 +144,20 @@ export function CuratorSettings() {
               />
             </div>
             <span className="curatorLedger__label">
-              {formatBytes(status.ledgerBytes)} of {formatBytes(status.capBytes)} auditioning
+              {t('curator.ledgerLabel', {
+                used: formatBytes(status.ledgerBytes),
+                cap: formatBytes(status.capBytes),
+              })}
             </span>
           </div>
 
           <Text tone="muted" size="sm">
-            Reach: {(status.exploration * 100).toFixed(0)}% adventurous — it tunes itself from what
-            you keep and what you skip.
+            {/* One sentence, one key: the share sits in the middle of it, and
+                where a language puts "%" relative to its number is Intl's
+                business rather than ours. */}
+            {t('curator.reach', {
+              share: formatNumber(status.exploration, { style: 'percent', maximumFractionDigits: 0 }),
+            })}
           </Text>
           {/*
             * Where the downloading actually happens.
@@ -154,20 +171,21 @@ export function CuratorSettings() {
             */}
           <Text tone="muted" size="sm">
             {status.delegates
-              ? peerNote(status.peerSeenAt)
+              ? peerNote(status.peerSeenAt, t)
               : status.downloadsHere
-                ? 'This server downloads its own picks.'
-                : 'This server is not set up to download, and no other box has been given the job.'}
+                ? t('curator.downloadsHere')
+                : t('curator.downloadsNowhere')}
           </Text>
           <Text tone="muted" size="sm">
+            {/* Not a plural of the same sentence - nothing arriving is its own
+                wording, so the zero case is its own key and the rest counts. */}
             {status.landedToday > 0
-              ? `${status.landedToday} arrived in the last day.`
-              : 'Nothing has arrived in the last day.'}
+              ? t('curator.landedToday', { count: status.landedToday })
+              : t('curator.landedNone')}
           </Text>
           {!status.importable && (
             <Text size="sm" className="curatorWarn">
-              The server cannot look anything up — the SpotiFLAC tool is missing, so it can neither
-              find music nor ask for it.
+              {t('curator.noLookupTool')}
             </Text>
           )}
         </div>
@@ -175,7 +193,7 @@ export function CuratorSettings() {
 
       {status && status.recent.length > 0 && (
         <div className="prefsSection">
-          <Label>Recent pulls</Label>
+          <Label>{t('curator.recentPulls')}</Label>
           <ul className="curatorPulls">
             {status.recent.map((r, i) => (
               <li key={`${r.title}:${r.at}:${i}`} className="curatorPull" data-state={r.state}>
@@ -199,12 +217,12 @@ export function CuratorSettings() {
                     {r.title} · {r.artist}
                   </span>
                   <span className="curatorPull__reason">
-                    {WHERE[r.state] ?? ''}
-                    {WHERE[r.state] && r.reason ? ' · ' : ''}
-                    {r.reason}
+                    {/* The reason is the server's own words and stays as it
+                        came; only the state gets a reading. */}
+                    {[whereFor(r.state), r.reason].filter(Boolean).join(' · ')}
                   </span>
                 </span>
-                <span className="curatorPull__when">{timeAgo(r.at)}</span>
+                <span className="curatorPull__when">{formatAgo(r.at)}</span>
               </li>
             ))}
           </ul>
@@ -213,12 +231,18 @@ export function CuratorSettings() {
 
       {feed && (
         <div className="prefsSection">
-          <Label>Understanding your library</Label>
+          <Label>{t('curator.understanding')}</Label>
           <Text tone="muted" size="sm">
-            {feed.progress.checked.toLocaleString()} of {feed.progress.total.toLocaleString()} songs
-            read · {feed.progress.withTempo.toLocaleString()} with a measured tempo ·{' '}
-            {feed.progress.withLyrics.toLocaleString()} with their words understood
-            {feed.status.ai ? '' : ' · no local model connected, so words are not being read'}
+            {/* One sentence rather than five fragments, and it is written out
+                twice rather than having the missing-model clause bolted on:
+                a translator needs to see where that clause lands, and in some
+                languages it does not land at the end. */}
+            {t(ENRICHMENT[feed.status.ai ? 'ai' : 'noAi'], {
+              checked: formatNumber(feed.progress.checked),
+              total: formatNumber(feed.progress.total),
+              tempo: formatNumber(feed.progress.withTempo),
+              lyrics: formatNumber(feed.progress.withLyrics),
+            })}
           </Text>
         </div>
       )}

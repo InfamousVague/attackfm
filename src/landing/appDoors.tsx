@@ -1,6 +1,8 @@
 import { Button, Text } from '@glacier/react';
 import { Download, LogIn } from '@glacier/icons';
 import { useEffect, useState } from 'react';
+import { Trans, useT } from '../app/i18n/LocaleShell.tsx';
+import { formatBytes } from '../app/ux/format.ts';
 
 /**
  * The two doors every landing page offers: open the app if it is on this
@@ -36,6 +38,7 @@ export function detectPlatform(): PlatformKey {
   return 'linux';
 }
 
+/** Product names, and so the same word in every language. */
 export const PLATFORM_NAMES: Record<PlatformKey, string> = {
   macos: 'Mac',
   windows: 'Windows',
@@ -83,7 +86,7 @@ export function useInstaller(platform: PlatformKey): Installer | null {
         setFound({
           url: asset.browser_download_url,
           kind: `.${asset.name.split('.').pop() ?? ''}`,
-          size: `${Math.round(asset.size / 1024 / 1024)} MB`,
+          size: formatBytes(asset.size),
           version: release.tag_name ?? null,
         });
       })
@@ -96,11 +99,13 @@ export function useInstaller(platform: PlatformKey): Installer | null {
 /**
  * @param scheme The app link this page's subject opens, e.g. `i/ABC123`.
  * @param label What the first button says, where "Open in AttackFM" is not
- *   the most useful sentence for this page's subject.
+ *   the most useful sentence for this page's subject. Already translated by
+ *   the caller - the pages that pass one own the sentence, not this file.
  */
 export function AppDoors({ scheme, label }: { scheme: string; label?: string }) {
   const [platform] = useState<PlatformKey>(detectPlatform);
   const installer = useInstaller(platform);
+  const t = useT();
   return (
     <div className="doors">
       <Button
@@ -109,11 +114,13 @@ export function AppDoors({ scheme, label }: { scheme: string; label?: string }) 
         className="door"
         onClick={() => (window.location.href = `attackfm://${scheme}`)}
       >
-        <LogIn size={16} /> {label ?? 'Open in AttackFM'}
+        <LogIn size={16} /> {label ?? t('landing.openInApp')}
       </Button>
       {platform === 'ios' ? (
         <Text tone="muted" size="sm" className="door__note">
-          iPhone and iPad builds are not on the App Store yet. <a href={SITE}>Other platforms</a>
+          {/* One sentence with the link inside it: which half of it the link
+              sits on is a translator's decision, not a layout one. */}
+          <Trans i18nKey="landing.noAppStoreYet" components={{ a: <a href={SITE} /> }} />
         </Text>
       ) : (
         <>
@@ -123,12 +130,15 @@ export function AppDoors({ scheme, label }: { scheme: string; label?: string }) 
             className="door"
             onClick={() => (window.location.href = installer?.url ?? RELEASES)}
           >
-            <Download size={16} /> Download for {PLATFORM_NAMES[platform]}
+            {/* The extension and the size are not part of the sentence -
+                they are two facts hung off it, joined by punctuation, so
+                they stay out of the catalogue entry. */}
+            <Download size={16} /> {t('landing.downloadFor', { platform: PLATFORM_NAMES[platform] })}
             {installer ? ` · ${installer.kind} · ${installer.size}` : ''}
           </Button>
           <Text tone="muted" size="xs" className="door__note">
             {installer?.version ? `${installer.version} · ` : ''}
-            <a href={SITE}>Other platforms</a>
+            <a href={SITE}>{t('landing.otherPlatforms')}</a>
           </Text>
         </>
       )}

@@ -105,6 +105,29 @@ const TEXT_FIELDS = [
   },
 ];
 
+/*
+ * Latencies and timeouts, in the unit's own words.
+ *
+ * These were written out as `${ms}ms` and `${secs}s` - two abbreviations that
+ * are English, sit on the wrong side of the number in some locales, and were
+ * hidden from the catalogue inside a template literal. Intl knows both, so
+ * they come from there rather than from a key; the sentence AROUND the number
+ * is still a catalogue entry.
+ */
+function msLabel(ms: number): string {
+  return formatNumber(ms, { style: 'unit', unit: 'millisecond', unitDisplay: 'narrow' });
+}
+
+function secondsLabel(seconds: number, digits = 0): string {
+  return formatNumber(seconds, {
+    style: 'unit',
+    unit: 'second',
+    unitDisplay: 'narrow',
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
 /* "3 hours ago", and the six Arabic forms of it. The hand-rolled ladder this
  * replaces is one of the four ux/format.ts was written to absorb - it said
  * "3d ago" in English on every surface, in every language. */
@@ -203,13 +226,13 @@ function sameModel(named: string | null | undefined, listed: string): boolean {
  * How long something has been running.
  *
  * Everything from a minute up goes through the house formatter, which knows
- * the unit names in every locale. Under a minute there is nothing there to
- * ask: formatTotal rounds to whole minutes, so a pass that started twenty
- * seconds ago would report "0 min" - which is why the seconds case, and only
- * the seconds case, is a catalogue entry.
+ * the unit names in every locale. Under a minute it cannot be asked -
+ * formatTotal rounds to whole minutes, so a pass that started twenty seconds
+ * ago would report "0 min" - so the seconds case goes to Intl directly, which
+ * plurals the unit itself rather than through a two-form catalogue entry.
  */
-function duration(seconds: number, t: Translate): string {
-  if (seconds < 60) return t('settings.aiElapsedSeconds', { count: seconds });
+function duration(seconds: number): string {
+  if (seconds < 60) return secondsLabel(seconds);
   return formatTotal(seconds);
 }
 
@@ -290,7 +313,13 @@ function voiceOptions(live: AiVoice[], t: Translate): { value: string; label: st
       // through as its own raw word rather than as nothing.
       const known = VOICE_KIND[v.category];
       const kind = known ? t(known) : v.category;
-      return { value: v.id, label: kind ? `${v.name} - ${kind}` : v.name };
+      // Name and category joined through a key, not a dash: the voice's name
+      // is a proper noun and the category is translated, and which of the two
+      // leads - and what sits between them - is the translator's call.
+      return {
+        value: v.id,
+        label: kind ? t('settings.voiceWithKind', { name: v.name, kind }) : v.name,
+      };
     });
 }
 
@@ -621,7 +650,7 @@ export function LocalAiPane() {
             <div className="aiRun__clock">
               <Spinner size="sm" aria-label="" />
               <Text tone="muted" size="xs">
-                {duration(Math.max(0, Math.floor((Date.now() - report.running.startedAt) / 1000)), t)}
+                {duration(Math.max(0, Math.floor((Date.now() - report.running.startedAt) / 1000)))}
               </Text>
             </div>
           </div>
@@ -771,7 +800,7 @@ export function LocalAiPane() {
           id="ai-timeout"
           label={t('settings.aiTimeout')}
           hint={t('settings.aiTimeoutHint')}
-          value={`${settings.timeoutSecs}s`}
+          value={secondsLabel(settings.timeoutSecs)}
           control={
             <Input
               type="number"
@@ -887,7 +916,7 @@ export function LocalAiPane() {
                 ? health.error
                 : health?.reachable
                   ? t('settings.aiHealthDetail', {
-                      ms: health.latencyMs,
+                      ms: msLabel(health.latencyMs ?? 0),
                       count: health.models.length,
                     })
                   : t('settings.aiHealthIdle')}
@@ -934,13 +963,21 @@ export function LocalAiPane() {
             id={`ai-fn-${fn.id}`}
             icon={fn.uses === 'embed' ? <Zap size={16} /> : <Bot size={16} />}
             label={fn.label}
-            hint={`${fn.model ?? t('settings.aiNoModel')} · ${activity(fn, t)}`}
+            // One entry rather than two joined here: the separator sits
+            // BETWEEN two translated halves, and which half leads is the
+            // translator's call in an RTL line.
+            hint={t('settings.aiFnHint', {
+              model: fn.model ?? t('settings.aiNoModel'),
+              activity: activity(fn, t),
+            })}
             value={
               fn.calls === 0 ? (
                 <Text tone="muted" size="xs">—</Text>
               ) : (
                 <span className="localAi__fnStat" data-bad={fn.failures > 0 || fn.lastOk === false ? '' : undefined}>
-                  {fn.avgMs != null && <span>{fn.avgMs < 1000 ? `${fn.avgMs}ms` : `${(fn.avgMs / 1000).toFixed(1)}s`}</span>}
+                  {fn.avgMs != null && (
+                    <span>{fn.avgMs < 1000 ? msLabel(fn.avgMs) : secondsLabel(fn.avgMs / 1000, 1)}</span>
+                  )}
                   {fn.failures > 0 && (
                     <span className="localAi__fnFail">
                       {t('settings.aiFailedCount', { count: fn.failures })}
@@ -957,7 +994,7 @@ export function LocalAiPane() {
               ? t('settings.aiTotalsWithAverage', {
                   calls: totals.calls,
                   failures: totals.failures,
-                  seconds: (totals.avgMs / 1000).toFixed(1),
+                  average: secondsLabel(totals.avgMs / 1000, 1),
                 })
               : t('settings.aiTotals', { calls: totals.calls, failures: totals.failures })}
           </Text>
@@ -1112,7 +1149,7 @@ function TastePage({ report }: { report: AiReport }) {
                   <div className="aiMood__head">
                     <Text weight="medium">{c.name}</Text>
                     <Text tone="muted" size="xs">
-                      {Math.round(c.share * 100)}%
+                      {formatNumber(c.share, { style: 'percent' })}
                     </Text>
                   </div>
                   {c.blurb && (
@@ -1124,7 +1161,12 @@ function TastePage({ report }: { report: AiReport }) {
                     {[
                       c.bpm != null ? t('settings.aiMoodBpm', { bpm: Math.round(c.bpm) }) : null,
                       c.energy != null
-                        ? t('settings.aiMoodEnergy', { value: c.energy.toFixed(2) })
+                        ? t('settings.aiMoodEnergy', {
+                            value: formatNumber(c.energy, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            }),
+                          })
                         : null,
                       t('settings.aiMoodMostly', { when: whenLabel(c.hours) }),
                     ]

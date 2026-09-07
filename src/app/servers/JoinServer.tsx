@@ -15,6 +15,7 @@ import { useServerSession } from './serverSession.tsx';
 import { previewInvite, type InvitePreview } from './registry.ts';
 import { enterServer } from '../server.ts';
 import { onInvite } from './deepLink.ts';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
 
 /** Pull the code out of a full invite link, or take a bare code as-is. */
 function codeFrom(text: string): string {
@@ -24,6 +25,7 @@ function codeFrom(text: string): string {
 }
 
 export function JoinServer() {
+  const t = useT();
   const { session: registry, apply: applyRegistry } = useRegistry();
   const { applySession } = useServerSession();
   const [value, setValue] = useState('');
@@ -39,11 +41,11 @@ export function JoinServer() {
     setPreview(null);
     try {
       const p = await previewInvite(code);
-      if (p.spent) setError('That invite has already been used.');
-      else if (p.expired) setError('That invite has expired.');
+      if (p.spent) setError(t('servers.inviteSpent'));
+      else if (p.expired) setError(t('servers.inviteExpired'));
       else setPreview(p);
     } catch {
-      setError('That invite could not be found.');
+      setError(t('servers.inviteNotFound'));
     } finally {
       setBusy(false);
     }
@@ -78,7 +80,7 @@ export function JoinServer() {
       // Adopting the session drops us into that server's library at once.
       applySession(session);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not join that server.');
+      setError(err instanceof Error ? err.message : t('servers.joinFailed'));
     } finally {
       setBusy(false);
     }
@@ -86,7 +88,7 @@ export function JoinServer() {
 
   return (
     <div className="joinServer">
-      <Field label="Have an invite?" hint="Enter the 6-character code a friend sent you.">
+      <Field label={t('servers.haveInvite')} hint={t('servers.haveInviteHint')}>
         <OtpField
           length={6}
           groupSize={3}
@@ -95,7 +97,7 @@ export function JoinServer() {
           size="sm"
           type="alphanumeric"
           value={value}
-          aria-label="Invite code"
+          aria-label={t('servers.inviteCodeLabel')}
           onValueChange={(v) => {
             // Uppercase so the cells and the redeemed code match what the
             // registry mints; a fresh edit clears a stale preview/error.
@@ -107,12 +109,12 @@ export function JoinServer() {
         />
       </Field>
 
-      <Field label="Or paste an invite link">
+      <Field label={t('servers.orPasteLink')}>
         <Input
           size="sm"
           placeholder="https://attack.fm/i/ABC123"
           leadingIcon={<Link2 size={14} />}
-          aria-label="Invite link"
+          aria-label={t('servers.inviteLinkLabel')}
           onChange={(e) => {
             // The moment the pasted text carries a code, it checks itself -
             // the six cells above fill in so what happened stays visible.
@@ -128,17 +130,33 @@ export function JoinServer() {
 
       {!preview ? (
         <Button variant="outline" size="sm" onClick={() => void look()} disabled={busy || value.length !== 6}>
-          {busy ? 'Checking…' : 'Check invite'}
+          {busy ? t('servers.checking') : t('servers.checkInvite')}
         </Button>
       ) : (
         <div className="joinServer__preview">
           <Text size="sm">
-            Join <strong>{preview.serverName || 'a server'}</strong>
-            {preview.from ? ` — invited by ${preview.from}` : ''}?
+            {/* One sentence, not "Join" + a name + a trailing "?": the name
+                sits mid-sentence and every language puts it somewhere else.
+                Two keys because the inviter is optional, and a language that
+                needs the inviter FIRST cannot get there from an appended
+                clause. */}
+            {preview.from ? (
+              <Trans
+                i18nKey="servers.joinFromPrompt"
+                values={{ name: preview.serverName || t('servers.aServer'), who: preview.from }}
+                components={{ b: <strong /> }}
+              />
+            ) : (
+              <Trans
+                i18nKey="servers.joinPrompt"
+                values={{ name: preview.serverName || t('servers.aServer') }}
+                components={{ b: <strong /> }}
+              />
+            )}
           </Text>
           {registry ? (
             <Button variant="solid" size="sm" onClick={() => void join()} disabled={busy}>
-              <LogIn size={15} /> {busy ? 'Joining…' : 'Join'}
+              <LogIn size={15} /> {busy ? t('servers.joining') : t('servers.join')}
             </Button>
           ) : (
             <>
@@ -149,9 +167,7 @@ export function JoinServer() {
                   broken. Make the account here and carry straight on into the
                   server, rather than sending them away to find a settings page
                   and then find this screen again. */}
-              <Text size="sm" tone="muted">
-                You need an AttackFM account to join. It works on every server, and it is free.
-              </Text>
+              <Text size="sm" tone="muted">{t('servers.joinNeedsAccount')}</Text>
               <AccountSetup
                 onDone={(made) => {
                   applyRegistry(made);

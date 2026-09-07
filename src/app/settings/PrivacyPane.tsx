@@ -5,6 +5,8 @@ import { setSharing, useSharing } from '../profile/listeningShare.tsx';
 import { onlineMetadataEnabled, setOnlineMetadata } from './netPrefs.ts';
 import { sharePositionEnabled, setSharePosition } from './behaviourPrefs.ts';
 import { PaneSection, SettingRow } from './kit/settingsKit.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
+import type { Translate } from './settingsShared.ts';
 
 /**
  * What leaves this device, and who gets it.
@@ -28,17 +30,18 @@ export function Privacy() {
   const sharingWeek = useSharing();
   const [online, setOnline] = useState(onlineMetadataEnabled);
   const [position, setPosition] = useState(sharePositionEnabled);
+  const t = useT();
 
   return (
     <div className="prefsBody">
-      <PaneSection title="Outside services">
+      <PaneSection title={t('privacy.outsideServices')}>
         <SettingRow
           id="online-metadata"
-          label="Online metadata lookups"
-          hint="Fetches lyrics from LRCLIB and album art from Apple, keyed by track titles. Off keeps the app entirely between your devices and your own server."
+          label={t('privacy.onlineMetadata')}
+          hint={t('privacy.onlineMetadataHint')}
           control={
             <Switch
-              aria-label="Online metadata lookups"
+              aria-label={t('privacy.onlineMetadata')}
               checked={online}
               onCheckedChange={(on: boolean) => {
                 setOnlineMetadata(on);
@@ -49,14 +52,14 @@ export function Privacy() {
         />
       </PaneSection>
 
-      <PaneSection title="Your server">
+      <PaneSection title={t('privacy.yourServer')}>
         <SettingRow
           id="listening-history"
-          label="Save listening history"
-          hint="Reports finished listens to your server — it is what feeds the Home page's recently-played shelves and your mixes. It stays on your server."
+          label={t('privacy.saveHistory')}
+          hint={t('privacy.saveHistoryHint')}
           control={
             <Switch
-              aria-label="Save listening history"
+              aria-label={t('privacy.saveHistory')}
               checked={pb.saveHistory}
               onCheckedChange={(on: boolean) => pb.update({ saveHistory: on })}
             />
@@ -64,14 +67,14 @@ export function Privacy() {
         />
       </PaneSection>
 
-      <PaneSection title="Your account">
+      <PaneSection title={t('privacy.yourAccount')}>
         <SettingRow
           id="share-position"
-          label="Keep my place across devices"
-          hint="Sends what you are playing — song, artist and how far in — to your AttackFM account every twenty seconds, and offers it back when you open the app somewhere else. Your audiobook places are kept by your own server and do not need this."
+          label={t('privacy.keepPlace')}
+          hint={t('privacy.keepPlaceHint')}
           control={
             <Switch
-              aria-label="Keep my place across devices"
+              aria-label={t('privacy.keepPlace')}
               checked={position}
               onCheckedChange={(on: boolean) => {
                 setSharePosition(on);
@@ -82,14 +85,14 @@ export function Privacy() {
         />
       </PaneSection>
 
-      <PaneSection title="Other people">
+      <PaneSection title={t('privacy.otherPeople')}>
         <SettingRow
           id="share-week"
-          label="Share my listening with friends"
-          hint="Friends on your server can open your full profile - your stats page and your liked songs. Friends elsewhere see only your week: minutes, top artist and streak, refreshed every six hours. Off closes both doors. The same switch as the one on Friends."
+          label={t('privacy.shareWithFriends')}
+          hint={t('privacy.shareWithFriendsHint')}
           control={
             <Switch
-              aria-label="Share my listening with friends"
+              aria-label={t('privacy.shareWithFriends')}
               checked={sharingWeek}
               onCheckedChange={(on: boolean) => setSharing(on)}
             />
@@ -100,15 +103,21 @@ export function Privacy() {
   );
 }
 
-/** The row's second line on the touch list: how much is switched off. */
+/** The row's second line on the touch list: how much is switched off.
+ *  Takes the translator rather than reaching for `translate()`: it is read
+ *  during the settings hub's render, so it has to follow a language change. */
 export function privacySummary(
   online: boolean,
   history: boolean,
   position: boolean,
   week: boolean,
+  t: Translate,
 ): string {
-  const off = [online, history, position, week].filter((x) => !x).length;
-  if (off === 0) return 'Everything shared';
-  if (off === 4) return 'Nothing leaves this device';
-  return `${off} of 4 off`;
+  const switches = [online, history, position, week];
+  const off = switches.filter((x) => !x).length;
+  if (off === 0) return t('privacy.summaryAllShared');
+  if (off === switches.length) return t('privacy.summaryNothingLeaves');
+  // Both numbers are holes: "2 of 4" is not a fixed phrase, and the count
+  // still selects a plural form in the languages that have one.
+  return t('privacy.summarySomeOff', { count: off, total: switches.length });
 }

@@ -47,8 +47,12 @@ import {
   type FriendsFeed,
   type RegistryFriend,
 } from '../servers/registry.ts';
-import { fmtMinutes } from './stats.ts';
 import { openFriendPicker } from '../nav/friendPickerDoor.ts';
+import { Trans, useSongCount, useT } from '../i18n/LocaleShell.tsx';
+import { formatAgo, formatNumber, formatTotal } from '../ux/format.ts';
+
+/** The app's translator, as a value the plain helpers below can be handed. */
+type T = ReturnType<typeof useT>;
 
 /**
  * A person, as a mark: a deterministic two-tone gradient from their handle
@@ -94,47 +98,79 @@ export function FriendAvatar({
   );
 }
 
-/** "now", "4h ago" - the coarse read a friend row wants, never a timestamp. */
-export function seenAgo(stamp: number): string | null {
-  if (!stamp) return null;
-  // The registry stamps in seconds; anything suspiciously small is treated as
-  // such rather than reading as fifty-six years ago.
-  const ms = stamp < 1e12 ? stamp * 1000 : stamp;
-  const gone = Date.now() - ms;
-  if (gone < 0) return null;
-  if (gone < 90_000) return 'online now';
-  const mins = gone / 60_000;
-  if (mins < 60) return `${Math.round(mins)}m ago`;
-  const hours = mins / 60;
-  if (hours < 24) return `${Math.round(hours)}h ago`;
-  const days = hours / 24;
-  if (days < 7) return `${Math.round(days)}d ago`;
-  return `${Math.round(days / 7)}w ago`;
+/** The registry stamps in seconds; anything suspiciously small is treated as
+ *  such rather than reading as fifty-six years ago. */
+function stampMs(stamp: number): number {
+  return stamp < 1e12 ? stamp * 1000 : stamp;
 }
 
-/** The listening glance a friend chose to share: "6h 20m this week · Jon Hopkins". */
-function weekGlance(f: RegistryFriend): string | null {
+/**
+ * Seen inside the heartbeat window.
+ *
+ * This used to be `seenAgo(f) === 'online now'` - a FACT about a friend
+ * decided by comparing a display string, which is exactly the sort of thing
+ * that quietly stops being true the day the string is translated. The window
+ * is the fact; the words are a separate question.
+ */
+function seenJustNow(stamp: number): boolean {
+  if (!stamp) return false;
+  const gone = Date.now() - stampMs(stamp);
+  return gone >= 0 && gone < 90_000;
+}
+
+/** "4 hours ago" - the coarse read a friend row wants, never a timestamp.
+ *  Intl does the counting and names the unit (ux/format.ts); the hand-rolled
+ *  ladder this replaced said "4h ago" in English in every branch. */
+export function seenAgo(stamp: number): string | null {
+  if (!stamp) return null;
+  const ms = stampMs(stamp);
+  if (Date.now() - ms < 0) return null;
+  return formatAgo(ms);
+}
+
+/** The listening glance a friend chose to share: "6 hr 20 min this week · Jon Hopkins". */
+function weekGlance(t: T, f: RegistryFriend): string | null {
   if (typeof f.weekMinutes !== 'number' || f.weekMinutes <= 0) return null;
   // Time only - the artist half renders separately, as a door rather than a
   // suffix baked into the string. Hours AND minutes: rounding to the hour
   // read 89 and 91 minutes as the same "1h".
-  return `${fmtMinutes(f.weekMinutes)} this week`;
+  return t('profile.timeThisWeek', { time: listenedTime(f.weekMinutes) });
+}
+
+/**
+ * Minutes as a readout, in whatever language the app is in.
+ *
+ * NOT `fmtMinutes` from ./stats.ts, which builds `${n.toLocaleString()} min`:
+ * that spells the unit in English on every screen and asks the BROWSER's
+ * locale for the digits, so a Japanese app got Japanese grouping under an
+ * English "min". `formatTotal` asks Intl for both, and gives the hour and the
+ * minute rather than a decimal hour - which is the distinction the glance
+ * above was already reaching for when it refused to round 89 and 91 minutes
+ * to the same "1h".
+ */
+export function listenedTime(minutes: number): string {
+  return formatTotal(Math.max(0, Math.round(minutes)) * 60);
 }
 
 /** Online: the registry's word when it has one (a heartbeat within the last
  *  minute or two), else the old read off seenAt. */
 export function isOnline(f: RegistryFriend): boolean {
-  return f.online ?? seenAgo(f.seenAt) === 'online now';
+  return f.online ?? seenJustNow(f.seenAt);
 }
 
-/** "for 12m" - how long the song they are on has been on. */
-function sinceAgo(sinceSecs: number): string {
-  const mins = Math.max(0, Math.round((Date.now() / 1000 - sinceSecs) / 60));
-  return mins < 1 ? 'just started' : mins < 60 ? `for ${mins}m` : `for ${Math.round(mins / 60)}h`;
+/** "for 12 min" - how long the song they are on has been on. Intl counts and
+ *  names the unit; the sentence around it is one entry, so the duration can
+ *  sit wherever the language puts it. */
+function playingFor(t: T, sinceSecs: number): string {
+  const elapsed = Math.max(0, Date.now() / 1000 - sinceSecs);
+  return elapsed < 60
+    ? t('profile.playingJustStarted')
+    : t('profile.playingFor', { duration: formatTotal(elapsed) });
 }
 
 /** What they are hearing right now, as a line - or null when nothing is on. */
 export function NowPlayingLine({ f, long = false }: { f: RegistryFriend; long?: boolean }) {
+  const t = useT();
   const np = f.nowPlaying;
   if (!np) return null;
   return (
@@ -142,10 +178,19 @@ export function NowPlayingLine({ f, long = false }: { f: RegistryFriend; long?: 
       <Music size={12} aria-hidden />
       <span className="friendRow__liveDot" aria-hidden />
       <span className="friendRow__liveText">
-        {np.playing ? 'Listening to ' : 'Paused on '}
-        <strong>{np.title}</strong>
+        {/* Verb and title are one sentence - German puts the title before the
+            verb - so the emphasis rides inside the entry rather than being a
+            <strong> the translator cannot move. Two whole entries rather than
+            one with the verb swapped: "paused on" is not "listening to" with
+            a different word in it, and some languages change the case of what
+            follows. */}
+        {np.playing ? (
+          <Trans i18nKey="profile.listeningTo" values={{ title: np.title }} components={{ b: <strong /> }} />
+        ) : (
+          <Trans i18nKey="profile.pausedOn" values={{ title: np.title }} components={{ b: <strong /> }} />
+        )}
         {np.artist ? ` · ${np.artist}` : ''}
-        {long && np.since ? ` · ${sinceAgo(np.since)}` : ''}
+        {long && np.since ? ` · ${playingFor(t, np.since)}` : ''}
       </span>
     </span>
   );
@@ -167,14 +212,12 @@ function byLiveness(a: RegistryFriend, b: RegistryFriend): number {
 // --- account setup ----------------------------------------------------------
 
 export function AccountSetup({ onDone }: { onDone: (s: import('../servers/registry.ts').RegistrySession) => void }) {
+  const t = useT();
   return (
     <div className="registrySetup">
       <div className="emptyState">
         <EmptyArt name="friends" />
-        <p className="emptyState__text">
-          Your AttackFM account is the one key: friends, invitations to their servers, and every
-          server you belong to, on every device.
-        </p>
+        <p className="emptyState__text">{t('profile.accountIsTheKey')}</p>
       </div>
       {/* The one account form (servers/AccountForm.tsx); this door only frames
           it. Sign-in first here too: a returning listener is the common case. */}
@@ -208,6 +251,8 @@ export function FriendsSection({
   /** A tap anywhere on the card that is not a control: their profile. */
   onOpen?: (friend: RegistryFriend) => void;
 }) {
+  const t = useT();
+  const songCount = useSongCount();
   const { session: server } = useServerSession();
   // Listen-along lives here so the ask sits on the friend who is playing. Null
   // outside the player's provider, which is where a signed-out list renders.
@@ -230,14 +275,14 @@ export function FriendsSection({
     } catch (e) {
       // Unreachable right now; whatever is on screen stays, and the page
       // says the numbers may be old.
-      setFeedError(e instanceof Error && e.message ? e.message : 'attack.fm is not answering');
+      setFeedError(e instanceof Error && e.message ? e.message : t('profile.registryNotAnswering'));
     }
     try {
       setShares(await fetchShares(token));
     } catch {
       // A registry from before songs could be sent has no inbox to show.
     }
-  }, [token]);
+  }, [token, t]);
 
   /**
    * Take a song a friend sent: ask YOUR OWN hub for it by name. The hub
@@ -248,7 +293,7 @@ export function FriendsSection({
    */
   const takeShare = async (s: Share) => {
     if (!server) {
-      setNote({ tone: 'bad', text: 'Connect to your server first - that is where the song goes.' });
+      setNote({ tone: 'bad', text: t('profile.connectServerFirst') });
       return;
     }
     setBusy(true);
@@ -258,10 +303,12 @@ export function FriendsSection({
       setShares((prev) => prev.filter((x) => x.id !== s.id));
       setNote({
         tone: 'ok',
-        text: landed ? `${s.title} is already here - it is in your Liked songs now.` : `${s.title} is on its way; it lands in Liked songs.`,
+        text: landed
+          ? t('profile.shareLanded', { title: s.title })
+          : t('profile.shareOnItsWay', { title: s.title }),
       });
     } catch (e) {
-      setNote({ tone: 'bad', text: e instanceof Error ? e.message : 'That did not go through.' });
+      setNote({ tone: 'bad', text: e instanceof Error ? e.message : t('profile.didNotGoThrough') });
     } finally {
       setBusy(false);
     }
@@ -288,7 +335,7 @@ export function FriendsSection({
         allow ? prev.map((x) => (x.from === handle ? { ...x, allowed: true } : x)) : prev.filter((x) => x.from !== handle),
       );
     } catch (e) {
-      setNote({ tone: 'bad', text: e instanceof Error ? e.message : 'That did not go through.' });
+      setNote({ tone: 'bad', text: e instanceof Error ? e.message : t('profile.didNotGoThrough') });
     } finally {
       setBusy(false);
     }
@@ -365,7 +412,7 @@ export function FriendsSection({
       if (server && token) await syncRegistryFriendsToHub(server, token).catch(() => false);
       await refresh();
     } catch (error) {
-      setNote({ tone: 'bad', text: error instanceof Error ? error.message : 'That did not work.' });
+      setNote({ tone: 'bad', text: error instanceof Error ? error.message : t('profile.didNotWork') });
     } finally {
       setBusy(false);
     }
@@ -394,11 +441,13 @@ export function FriendsSection({
   const gather = async () => {
     if (!jam) return;
     const pick = await openFriendPicker({
-      title: 'Invite to groove',
-      hint: jam.current ? 'Into your groove' : 'A room opens as they are asked',
+      title: t('profile.inviteToGroove'),
+      hint: jam.current ? t('profile.grooveIntoYours') : t('profile.grooveOpensRoom'),
       mode: 'groove',
       exclude: jam.current?.members ?? [],
-      action: (n) => (n ? `Invite ${n}` : 'Invite'),
+      // Zero is the button with no number on it at all, which is a different
+      // label rather than a plural form of this one.
+      action: (n) => (n ? t('profile.inviteCount', { count: n }) : t('profile.invite')),
     });
     if (!pick || pick.people.length === 0) return;
     await jam.jamWithAll(pick.people.map((p) => p.handle));
@@ -419,15 +468,15 @@ export function FriendsSection({
         className="friendsAdd__field"
         value={handle}
         onChange={(e) => setHandle(e.currentTarget.value)}
-        placeholder="their-handle"
-        aria-label="Add a friend by handle"
+        placeholder={t('profile.handlePlaceholder')}
+        aria-label={t('profile.addFriendByHandle')}
         autoCapitalize="none"
         autoCorrect="off"
         spellCheck={false}
       />
       <Button type="submit" variant="solid" size="sm" disabled={busy || handle.trim() === ''}>
         {busy ? <Spinner size="sm" aria-label="" /> : <UserPlus size={15} />}
-        <span>Add</span>
+        <span>{t('profile.add')}</span>
       </Button>
     </form>
   );
@@ -441,13 +490,16 @@ export function FriendsSection({
       )}
       {feedError && (
         <p className="friendsNote friendsNote--bad" role="status">
-          Could not reach attack.fm ({feedError}).{feed ? ' Showing what was last read.' : ''}
+          {/* Two sentences, two entries: the second is only true when there
+              is something stale still on screen. */}
+          {t('profile.registryUnreachable', { reason: feedError })}
+          {feed ? ` ${t('profile.showingLastRead')}` : ''}
         </p>
       )}
 
       {incoming.length > 0 && (
         <section className="homeShelf">
-          <h2 className="homeShelfTitle">Wants to be friends</h2>
+          <h2 className="homeShelfTitle">{t('profile.wantsToBeFriends')}</h2>
           <div className="requestCards">
             {incoming.map((r) => (
               <div key={r.id} className="requestCard">
@@ -455,9 +507,9 @@ export function FriendsSection({
                 <span className="requestCard__handle">{r.handle}</span>
                 <span className="requestCard__actions">
                   <Button variant="solid" size="sm" disabled={busy} onClick={() => void act(() => acceptFriendRequest(token, r.id))}>
-                    <Check size={15} /> <span>Accept</span>
+                    <Check size={15} /> <span>{t('profile.accept')}</span>
                   </Button>
-                  <IconButton variant="ghost" size="sm" disabled={busy} aria-label={`Decline ${r.handle}`} onClick={() => void act(() => declineFriendRequest(token, r.id))}>
+                  <IconButton variant="ghost" size="sm" disabled={busy} aria-label={t('profile.declineWho', { handle: r.handle })} onClick={() => void act(() => declineFriendRequest(token, r.id))}>
                     <X size={15} />
                   </IconButton>
                 </span>
@@ -469,7 +521,7 @@ export function FriendsSection({
 
       {senderAsks.length > 0 && (
         <section className="homeShelf">
-          <h2 className="homeShelfTitle">Wants to send you songs</h2>
+          <h2 className="homeShelfTitle">{t('profile.wantsToSendSongs')}</h2>
           <div className="requestCards">
             {senderAsks.map((handle) => (
               <div key={handle} className="requestCard">
@@ -477,9 +529,9 @@ export function FriendsSection({
                 <span className="requestCard__handle">{handle}</span>
                 <span className="requestCard__actions">
                   <Button variant="solid" size="sm" disabled={busy} onClick={() => void decideSender(handle, true)}>
-                    <Check size={15} /> <span>Take them</span>
+                    <Check size={15} /> <span>{t('profile.takeThem')}</span>
                   </Button>
-                  <IconButton variant="ghost" size="sm" disabled={busy} aria-label={`Do not take songs from ${handle}`} onClick={() => void decideSender(handle, false)}>
+                  <IconButton variant="ghost" size="sm" disabled={busy} aria-label={t('profile.dontTakeSongsFrom', { handle })} onClick={() => void decideSender(handle, false)}>
                     <X size={15} />
                   </IconButton>
                 </span>
@@ -491,7 +543,7 @@ export function FriendsSection({
 
       {songsSent.length > 0 && (
         <section className="homeShelf">
-          <h2 className="homeShelfTitle">Sent to you</h2>
+          <h2 className="homeShelfTitle">{t('profile.sentToYou')}</h2>
           <div className="requestCards">
             {songsSent.map((s) => (
               <div key={s.id} className="requestCard">
@@ -499,15 +551,19 @@ export function FriendsSection({
                 <span className="requestCard__handle">
                   {s.title}
                   <Text as="span" tone="muted" size="xs" className="requestCard__sub">
-                    {s.artist} · from {s.from}
-                    {s.note ? ` · “${s.note}”` : ''}
+                    {/* Whole line, one entry. A note is a different sentence
+                        rather than a fragment glued on the end: the quotes it
+                        wears are not the same characters in every language. */}
+                    {s.note
+                      ? t('profile.shareFromNoted', { artist: s.artist, who: s.from, note: s.note })
+                      : t('profile.shareFrom', { artist: s.artist, who: s.from })}
                   </Text>
                 </span>
                 <span className="requestCard__actions">
                   <Button variant="solid" size="sm" disabled={busy} onClick={() => void takeShare(s)}>
-                    <Check size={15} /> <span>Get it</span>
+                    <Check size={15} /> <span>{t('profile.getIt')}</span>
                   </Button>
-                  <IconButton variant="ghost" size="sm" disabled={busy} aria-label={`Put away ${s.title}`} onClick={() => void putAway(s)}>
+                  <IconButton variant="ghost" size="sm" disabled={busy} aria-label={t('profile.putAwayWhat', { title: s.title })} onClick={() => void putAway(s)}>
                     <X size={15} />
                   </IconButton>
                 </span>
@@ -520,24 +576,25 @@ export function FriendsSection({
       <section className="homeShelf">
         <div className="friendsBar">
           <h2 className="homeShelfTitle">
-            Friends{friends.length > 0 ? ` · ${friends.length}` : ''}
+            {t('profile.friendsHeading')}
+            {friends.length > 0 ? ` · ${formatNumber(friends.length)}` : ''}
             {/* The live count beside the total: what the page is FOR. */}
             {(listeningNow > 0 || onlineNow > 0) && (
               <span className="friendsBar__live">
                 {listeningNow > 0
-                  ? `${listeningNow} listening now`
-                  : `${onlineNow} online`}
+                  ? t('profile.listeningNowCount', { count: listeningNow })
+                  : t('profile.onlineCount', { count: onlineNow })}
               </span>
             )}
           </h2>
           <span className="friendsBar__actions">
             {canGather && friends.length > 0 && (
-              <Button variant="outline" size="sm" onClick={() => void gather()} aria-label="Invite friends to a groove">
-                <Users size={15} /> <span>Invite to groove…</span>
+              <Button variant="outline" size="sm" onClick={() => void gather()} aria-label={t('profile.inviteFriendsToGroove')}>
+                <Users size={15} /> <span>{t('profile.inviteToGrooveMore')}</span>
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={openAdd}>
-              <UserPlus size={15} /> <span>Add</span>
+              <UserPlus size={15} /> <span>{t('profile.add')}</span>
             </Button>
           </span>
         </div>
@@ -561,13 +618,11 @@ export function FriendsSection({
             ))}
           </div>
         ) : feed === null ? (
-          <p className="statsNote">Nothing to show until attack.fm answers.</p>
+          <p className="statsNote">{t('profile.nothingUntilRegistry')}</p>
         ) : friends.length === 0 && outgoing.length === 0 ? (
           <div className="emptyState">
             <EmptyArt name="friends" />
-            <p className="emptyState__text">
-              Nobody yet. Add someone by their handle, and they show up here once they say yes.
-            </p>
+            <p className="emptyState__text">{t('profile.noFriendsYet')}</p>
             {/* The one place the add form lives in the open: on an empty page
                 it IS the next step, not chrome above the content. */}
             <div className="friendsEmptyAdd">{addForm}</div>
@@ -577,7 +632,7 @@ export function FriendsSection({
             {friends.map((f) => {
               const seen = seenAgo(f.seenAt);
               const online = isOnline(f);
-              const glance = weekGlance(f);
+              const glance = weekGlance(t, f);
               // The two ways to reach a same-server friend from here. Listen
               // along follows a friend who is PLAYING (they host); invite-to-groove
               // gathers an ONLINE friend into a room you host. A playing friend
@@ -592,9 +647,9 @@ export function FriendsSection({
               // Sharing OFF is its own honest line; a quiet week is another.
               const quiet =
                 f.sharing === false
-                  ? 'keeps their listening private'
+                  ? t('profile.keepsListeningPrivate')
                   : glance === null && f.songs > 0
-                    ? 'quiet this week'
+                    ? t('profile.quietThisWeek')
                     : null;
               // `artTick` is read here so the memo-free list re-renders when a
               // batch of pictures lands; the value itself is meaningless.
@@ -632,7 +687,10 @@ export function FriendsSection({
                   <span className="friendRow__who">
                     <span className="friendRow__handle">{f.handle}</span>
                     <span className="friendRow__meta">
-                      {[f.songs > 0 ? `${f.songs.toLocaleString()} songs` : 'no library yet', online ? 'online' : seen]
+                      {[
+                        f.songs > 0 ? songCount(f.songs) : t('profile.noLibraryYet'),
+                        online ? t('profile.online') : seen,
+                      ]
                         .filter(Boolean)
                         .join(' · ')}
                     </span>
@@ -681,11 +739,11 @@ export function FriendsSection({
                       <Button
                         variant="solid"
                         size="sm"
-                        aria-label={`Listen along with ${f.handle}`}
+                        aria-label={t('profile.listenAlongWith', { handle: f.handle })}
                         onClick={() => void jam?.invite(f.handle, 'along')}
                       >
                         <Headphones size={15} />
-                        Listen along
+                        {t('profile.listenAlong')}
                       </Button>
                     )}
                     {/* Same server and online: gather them into a room YOU host
@@ -695,11 +753,11 @@ export function FriendsSection({
                       <Button
                         variant={jam?.current ? 'soft' : 'solid'}
                         size="sm"
-                        aria-label={`Invite ${f.handle} to groove`}
+                        aria-label={t('profile.inviteWhoToGroove', { handle: f.handle })}
                         onClick={() => void jam?.jamWith(f.handle)}
                       >
                         <Users size={15} />
-                        Invite to groove
+                        {t('profile.inviteToGroove')}
                       </Button>
                     )}
                     {/* Their library is somewhere this device is not listening
@@ -709,11 +767,11 @@ export function FriendsSection({
                       <Button
                         variant="ghost"
                         size="sm"
-                        aria-label={`Visit their server, ${f.handle}`}
+                        aria-label={t('profile.visitTheirServerWho', { handle: f.handle })}
                         onClick={() => onVisit(f)}
                       >
                         <ArrowUpRight size={15} />
-                        Visit their server
+                        {t('profile.friendVisitServer')}
                       </Button>
                     )}
                     {/* The profile: the stats modal's grown-up replacement.
@@ -723,11 +781,11 @@ export function FriendsSection({
                       <Button
                         variant="ghost"
                         size="sm"
-                        aria-label={`Profile for ${f.handle}`}
+                        aria-label={t('profile.profileForWho', { handle: f.handle })}
                         onClick={() => onOpen(f)}
                       >
                         <ChartNoAxesColumn size={15} />
-                        Profile
+                        {t('profile.profile')}
                       </Button>
                     )}
                   </div>
@@ -736,7 +794,7 @@ export function FriendsSection({
                     size="sm"
                     className="friendRow__remove"
                     disabled={busy}
-                    aria-label={`Remove ${f.handle}`}
+                    aria-label={t('profile.removeWho', { handle: f.handle })}
                     onClick={() => void act(() => removeFriend(token, f.id))}
                   >
                     <X size={14} />
@@ -752,7 +810,7 @@ export function FriendsSection({
                 <FriendAvatar handle={r.handle} size="md" className="friendRow__face" />
                 <span className="friendRow__who">
                   <span className="friendRow__handle">{r.handle}</span>
-                  <span className="friendRow__meta">invited · waiting</span>
+                  <span className="friendRow__meta">{t('profile.invitedWaiting')}</span>
                 </span>
               </div>
             ))}
@@ -760,10 +818,10 @@ export function FriendsSection({
         )}
       </section>
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add a friend" size="sm">
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('profile.addAFriend')} size="sm">
         <div className="friendsModal">
           <Text size="sm" tone="muted">
-            Ask by handle. They appear in your grid once they say yes.
+            {t('profile.addByHandleHint')}
           </Text>
           {addForm}
           {note && addOpen && (
@@ -788,6 +846,7 @@ export function FriendsSection({
  * anything - a friend's box is not this device's to query.
  */
 export function FriendStats({ friend }: { friend: RegistryFriend }) {
+  const t = useT();
   const sharing = typeof friend.weekMinutes === 'number';
   return (
     <div className="friendStats">
@@ -799,39 +858,46 @@ export function FriendStats({ friend }: { friend: RegistryFriend }) {
       {sharing ? (
         <div className="friendStats__week">
           <div className="friendStats__hero">
-            <span className="friendStats__minutes">{fmtMinutes(friend.weekMinutes ?? 0)}</span>
-            <span className="friendStats__label">listened this week</span>
+            <span className="friendStats__minutes">{listenedTime(friend.weekMinutes ?? 0)}</span>
+            <span className="friendStats__label">{t('profile.listenedThisWeek')}</span>
           </div>
           {/* Names do not belong in number tiles - a tile ellipsizes exactly
               the part that matters. The artist gets a sentence of their own,
               and the streak keeps a bare number a tile can always fit. */}
           {friend.weekTopArtist && (
             <p className="friendStats__artist">
-              <Clock size={14} aria-hidden /> On repeat:{' '}
-              <strong>
-                <ArtistLink artist={friend.weekTopArtist} />
-              </strong>
+              <Clock size={14} aria-hidden />{' '}
+              {/* The name is a door, not a plain hole in the sentence, so it
+                  rides in as the <name> component and the entry decides where
+                  in the line it sits. */}
+              <Trans
+                i18nKey="profile.onRepeatArtist"
+                values={{ artist: friend.weekTopArtist }}
+                components={{ b: <strong />, name: <ArtistLink artist={friend.weekTopArtist} /> }}
+              />
             </p>
           )}
           {(friend.streakDays ?? 0) > 0 && (
             <p className="friendStats__artist">
-              <Flame size={14} aria-hidden /> {friend.streakDays}-day streak
+              <Flame size={14} aria-hidden /> {t('profile.dayStreakCount', { count: friend.streakDays ?? 0 })}
             </p>
           )}
         </div>
       ) : (
         <Text size="sm" tone="muted">
           {friend.sharing === false
-            ? 'They keep their listening private.'
+            ? t('profile.theyKeepPrivate')
             : friend.listenedAt
-              ? 'Nothing played this week yet.'
-              : 'They have not shared any listening yet.'}
+              ? t('profile.nothingPlayedThisWeek')
+              : t('profile.noListeningShared')}
         </Text>
       )}
+      {/* The tile shows the number and the label apart, so the label still has
+          to agree with a count it is not sitting beside. */}
       <div className="friendStats__tiles">
-        <StatTile value={friend.songs.toLocaleString()} label="songs" />
-        <StatTile value={friend.playlists.toLocaleString()} label="playlists" />
-        <StatTile value={friend.artists.toLocaleString()} label="artists" />
+        <StatTile value={formatNumber(friend.songs)} label={t('profile.songsHeard', { count: friend.songs })} />
+        <StatTile value={formatNumber(friend.playlists)} label={t('profile.playlistsHeard', { count: friend.playlists })} />
+        <StatTile value={formatNumber(friend.artists)} label={t('profile.artistsHeard', { count: friend.artists })} />
       </div>
     </div>
   );

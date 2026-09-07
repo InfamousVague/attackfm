@@ -4,6 +4,12 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { BRAND_ACCENTS } from './brandAccents.ts';
 import { getThemePreset, isThemePreference, type ThemePreference } from './themePresets.ts';
 
+/* The two inks a brand accent can ask for. Near-white and near-black rather
+   than the primaries: pure #fff on a saturated accent glares, and pure #000
+   reads as a hole. Named because they are colours, not copy - a string scan
+   looking for English cannot tell an oklch() triple from a label otherwise. */
+const CONTRAST_INK = { white: 'oklch(0.995 0 0)', black: 'oklch(0.18 0 0)' } as const;
+
 export interface Appearance {
   theme: ThemePreference;
   accent: string;
@@ -174,10 +180,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
         deepenRamp(accentSteps({ ...brand, label: brand.name }, scheme), brand.deep ?? 0).forEach((value, index) =>
           root.style.setProperty(`--glacier-accent-${index + 1}`, value),
         );
-        root.style.setProperty(
-          '--glacier-accent-contrast',
-          brand.contrast === 'white' ? 'oklch(0.995 0 0)' : 'oklch(0.18 0 0)',
-        );
+        root.style.setProperty('--glacier-accent-contrast', CONTRAST_INK[brand.contrast]);
       } else if (appearance.accent === KIT_DEFAULT_ACCENT) {
         root.removeAttribute('data-accent');
       } else {

@@ -7,6 +7,7 @@ import { fold, titleKey } from '../library/owned.ts';
 import { MosaicCover } from './PlaylistShowcase.tsx';
 import { isGeneratedPlaylist, usePlaylists } from './playlists.tsx';
 import { openNewPlaylist } from '../nav/newPlaylistDoor.ts';
+import { Trans, useSongCount, useT } from '../i18n/LocaleShell.tsx';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -48,6 +49,8 @@ function AddToPlaylistPanel({
   want?: PlaylistWantTarget | null;
   onDone: () => void;
 }) {
+  const t = useT();
+  const songCount = useSongCount();
   const { toast } = useToast();
   const { playlists: every, addTrack, removeTrack, addWant, removeWant } = usePlaylists();
   const { tracks } = useLibrary();
@@ -105,8 +108,13 @@ function AddToPlaylistPanel({
     <div className="addPlaylist">
       <div className="addPlaylist__head">
         <Text size="sm" className="addPlaylist__song">
-          Add{' '}
-          <strong>{want || list.length === 1 ? songName : `${list.length} songs`}</strong> to
+          {/* One sentence, not "Add" + name + "to": German wants the pieces in
+              another order, and the <b> is where the name sits inside it. */}
+          <Trans
+            i18nKey="playlists.addWhatTo"
+            values={{ what: want || list.length === 1 ? songName : songCount(list.length) }}
+            components={{ b: <strong /> }}
+          />
         </Text>
       </div>
 
@@ -115,10 +123,10 @@ function AddToPlaylistPanel({
           <Search size={14} />
           <Input
             size="sm"
-            placeholder="Find a playlist"
+            placeholder={t('playlists.findAList')}
             value={query}
             onChange={(e) => setQuery(e.currentTarget.value)}
-            aria-label="Find a playlist"
+            aria-label={t('playlists.findAList')}
           />
         </div>
       )}
@@ -127,7 +135,7 @@ function AddToPlaylistPanel({
         <span className="addPlaylist__newIcon">
           <Plus size={16} />
         </span>
-        New playlist…
+        {t('playlists.newPlaylistAction')}
       </button>
 
       {/* One scroller, the sheet's own: the old nested ScrollArea inside a
@@ -137,7 +145,9 @@ function AddToPlaylistPanel({
       <div className="addPlaylist__list">
           {filtered.length === 0 ? (
             <Text tone="muted" size="sm" className="addPlaylist__empty">
-              {playlists.length === 0 ? 'No playlists yet.' : 'No playlist by that name.'}
+              {/* Two states, not two number forms: nothing to file into at all,
+                  or nothing left after the filter. */}
+              {playlists.length === 0 ? t('playlists.noneYet') : t('playlists.noneMatch')}
             </Text>
           ) : (
             filtered.map((playlist) => {
@@ -177,11 +187,11 @@ function AddToPlaylistPanel({
                       // the way out like the owned path does.
                       if (has) {
                         removeWant?.(playlist.id, wantKey);
-                        toast({ message: `Removed from “${playlist.name}”` });
+                        toast({ message: t('playlists.removedFromList', { name: playlist.name }) });
                       } else {
                         void addWant?.(playlist.id, want);
                         fireNativeHaptic('success');
-                        toast({ message: `Added to “${playlist.name}” — downloading` });
+                        toast({ message: t('playlists.addedToListDownloading', { name: playlist.name }) });
                       }
                       onDone();
                       return;
@@ -189,9 +199,9 @@ function AddToPlaylistPanel({
                     if (has) {
                       for (const p of paths) removeTrack(playlist.id, p);
                       toast({
-                        message: `Removed from “${playlist.name}”`,
+                        message: t('playlists.removedFromList', { name: playlist.name }),
                         action: {
-                          label: 'Undo',
+                          label: t('common.undo'),
                           onPress: () => {
                             for (const p of paths) addTrack(playlist.id, p);
                           },
@@ -213,8 +223,14 @@ function AddToPlaylistPanel({
                   <span className="addPlaylistRow__body">
                     <span className="addPlaylistRow__name">{playlist.name}</span>
                     <span className="addPlaylistRow__meta">
-                      {count} {count === 1 ? 'song' : 'songs'}
-                      {waiting > 0 ? ` · ${waiting} arriving` : ''}
+                      {/* Both halves are counts, and the pair is one catalogue
+                          entry so a translator can put the arrivals first. */}
+                      {waiting > 0
+                        ? t('playlists.rowMetaArriving', {
+                            songs: songCount(count),
+                            arriving: t('playlists.arrivingCount', { count: waiting }),
+                          })
+                        : songCount(count)}
                     </span>
                   </span>
                   {has && (
@@ -254,6 +270,8 @@ export function AddToPlaylistDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  // Above the early return: a hook cannot sit behind a conditional exit.
+  const t = useT();
   const list = tracks && tracks.length > 0 ? tracks : track ? [track] : [];
   if (!want && list.length === 0) return null;
   return (
@@ -262,7 +280,7 @@ export function AddToPlaylistDialog({
       onClose={onClose}
       side="bottom"
       size="lg"
-      title="Add to playlist"
+      title={t('player.addToPlaylist')}
       className="addPlaylistSheet"
     >
       <AddToPlaylistPanel list={want ? [] : list} want={want ?? null} onDone={onClose} />

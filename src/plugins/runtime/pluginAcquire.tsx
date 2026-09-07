@@ -12,6 +12,7 @@ import { Button, Modal } from '@glacier/react';
 import { usePlugins } from '../pluginsContext.ts';
 import { HookScopeContext, PluginCrashError, PluginHookScope } from './pluginBoundaries.tsx';
 import type { AcquireHandler, AcquireTarget } from '../types.ts';
+import { useT } from '../../app/i18n/LocaleShell.tsx';
 
 /** The music-import plugin: the one handler that acquires by downloading, and
  *  so the one the app prefers outright over asking. Surfaces that keep their
@@ -123,6 +124,7 @@ function AcquireCollector({ sink }: { sink: (handlers: ResolvedAcquireHandler[])
  * with an Add control.
  */
 export function AcquireProvider({ children }: { children: ReactNode }) {
+  const t = useT();
   const handlersRef = useRef<ResolvedAcquireHandler[]>([]);
   // Bumped only when the set of handler ids changes, so consumers re-gate on a
   // plugin toggle or a server connect without churning on every queue tick.
@@ -190,11 +192,11 @@ export function AcquireProvider({ children }: { children: ReactNode }) {
           <Modal
             open
             onClose={() => setChooser(null)}
-            title={`Add “${chooser.target.title}”`}
+            title={t('discover.addTitled', { title: chooser.target.title })}
             size="sm"
           >
             <div className="acquireChooser">
-              <p className="acquireChooser__blurb">How would you like to get this?</p>
+              <p className="acquireChooser__blurb">{t('discover.howToGetThis')}</p>
               {chooser.handlers.map((h) => (
                 <Button
                   key={h.id}

@@ -2,6 +2,7 @@ import { Text } from '@glacier/react';
 import { UserRound } from '@glacier/icons';
 import { ArtWall } from '../app/servers/ArtWall.tsx';
 import { AppDoors } from './appDoors.tsx';
+import { LocaleShell, useT } from '../app/i18n/LocaleShell.tsx';
 
 /**
  * A profile LINK, opened in a browser: who this is, and the way to add them.
@@ -24,7 +25,18 @@ export interface ProfileDocLanding {
   bannerUrl: string | null;
 }
 
+/** The shell, for the reason spelled out in InviteLanding: this bundle never
+ *  mounts App, so each page starts i18next and stamps the document itself. */
 export function ProfileLanding({ profile }: { profile: ProfileDocLanding }) {
+  return (
+    <LocaleShell>
+      <ProfileCard profile={profile} />
+    </LocaleShell>
+  );
+}
+
+function ProfileCard({ profile }: { profile: ProfileDocLanding }) {
+  const t = useT();
   const dead = profile.state !== 'ok';
 
   return (
@@ -38,9 +50,9 @@ export function ProfileLanding({ profile }: { profile: ProfileDocLanding }) {
             <span className="joinCard__mark joinCard__mark--dead" aria-hidden>
               !
             </span>
-            <h1>No one goes by that handle</h1>
+            <h1>{t('landing.profileMissingTitle')}</h1>
             <Text tone="muted" size="sm">
-              The link may have been mistyped, or the account closed.
+              {t('landing.profileMissingBody')}
             </Text>
           </div>
         ) : (
@@ -66,15 +78,14 @@ export function ProfileLanding({ profile }: { profile: ProfileDocLanding }) {
             <div className="head">
               <h1>@{profile.handle}</h1>
               <Text tone="muted" size="sm">
-                On AttackFM · add them and listen along
+                {t('landing.profileTagline')}
               </Text>
             </div>
 
-            <AppDoors scheme={`u/${encodeURIComponent(profile.handle)}`} label="Add in AttackFM" />
+            <AppDoors scheme={`u/${encodeURIComponent(profile.handle)}`} label={t('landing.addInApp')} />
 
             <Text tone="muted" size="xs" className="carry">
-              This page shows a handle and a picture, and nothing else. What @{profile.handle}{' '}
-              listens to is for their friends - opening this in AttackFM asks to be one.
+              {t('landing.profileIsThin', { handle: profile.handle })}
             </Text>
           </>
         )}

@@ -30,6 +30,7 @@ import {
 } from '@glacier/icons';
 import type { ComponentType } from 'react';
 import { applyStagedBundle, markNotesSeen, notesLines } from './appUpdate.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /** The kinds a changelog line can be, in the order they are tested. */
 interface Kind {
@@ -112,12 +113,16 @@ function Hero({
   from: string | null;
   to: string;
 }) {
+  const t = useT();
+  const mark = 'updateModal__mark';
   return (
     <div className="updateModal__hero">
-      <span className={done ? 'updateModal__mark is-done' : 'updateModal__mark'} aria-hidden>
+      <span className={done ? `${mark} is-done` : mark} aria-hidden>
         {done ? <Check size={26} /> : <Sparkles size={26} />}
       </span>
-      <span className="updateModal__title">{done ? 'Up to date' : 'Update ready'}</span>
+      <span className="updateModal__title">
+        {done ? t('update.upToDate') : t('update.ready')}
+      </span>
       <span className="updateModal__version">
         {/* Where it came from earns its place only when it is known and
             different - "0.3.46 → 0.3.47" tells a story that "0.3.47" alone
@@ -155,6 +160,7 @@ export function UpdateModal({
   done: boolean;
   onClose: () => void;
 }) {
+  const t = useT();
   const lines = notesLines(notes);
   return (
     <Modal
@@ -170,9 +176,7 @@ export function UpdateModal({
         {lines.length > 0 ? (
           <NoteList lines={lines} />
         ) : (
-          <p className="updateModal__quiet">
-            Small fixes and polish. Nothing that changes how anything works.
-          </p>
+          <p className="updateModal__quiet">{t('update.quiet')}</p>
         )}
         <div className="updateModal__actions">
           {done ? (
@@ -185,12 +189,12 @@ export function UpdateModal({
                 onClose();
               }}
             >
-              Nice
+              {t('update.acknowledge')}
             </Button>
           ) : (
             <>
               <Button variant="ghost" size="md" onClick={onClose}>
-                Later
+                {t('update.later')}
               </Button>
               <Button
                 variant="solid"
@@ -198,7 +202,7 @@ export function UpdateModal({
                 className="updateModal__go"
                 onClick={() => applyStagedBundle()}
               >
-                <RefreshCw size={15} /> Restart now
+                <RefreshCw size={15} /> {t('update.restartNow')}
               </Button>
             </>
           )}

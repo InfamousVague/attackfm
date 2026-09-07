@@ -12,6 +12,12 @@ import { syncRegistryFriendsToHub } from '../profile/friendMirror.ts';
 import { sayNames } from '../nav/friendPickerDoor.ts';
 import { pushJamState, trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
+// Toasts and refusal reasons are BUILT here and handed off, not rendered from
+// this file, so they take the non-reactive translator: each is resolved once,
+// in the language of the moment it was raised, and never re-renders. Using the
+// hook would also put `t` in half a dozen dependency arrays and re-arm a poll
+// every time somebody changed language.
+import { translate } from '../i18n/LocaleShell.tsx';
 import {
   acceptJamInvite as acceptJamInviteApi,
   addToJamQueue,
@@ -401,22 +407,25 @@ export function JamProvider({ children }: { children: ReactNode }) {
             toast({
               message:
                 e.kind === 'joined'
-                  ? `${e.who} joined the groove`
+                  ? translate('player.jamEventJoined', { who: e.who })
                   : e.kind === 'left'
-                    ? `${e.who} left the groove`
+                    ? translate('player.jamEventLeft', { who: e.who })
                     : e.kind === 'host'
-                      ? `${e.who} has the clock now`
-                      : `${e.who}: ${e.kind}`,
+                      ? translate('player.jamEventHost', { who: e.who })
+                      // A kind this build has no words for. The wire value is
+                      // shown as it came, which is a diagnostic rather than a
+                      // sentence, and stays English for that reason.
+                      : translate('player.jamEventOther', { who: e.who, kind: e.kind }),
             });
           }
         }
         lastEventAt.current = Math.max(lastEventAt.current, ...(room.events ?? []).map((e) => e.at));
         if (before && before.id === room.id && before.hostId !== room.hostId && room.hostId !== undefined) {
           const iAmHost = room.hostName.toLowerCase() === me;
-          if (iAmHost) toast({ message: 'The groove is yours now - your player sets the pace' });
+          if (iAmHost) toast({ message: translate('player.jamClockYours') });
         }
       } else if (before && !leaving.current) {
-        toast({ message: `${before.hostName}'s groove ended` });
+        toast({ message: translate('player.jamHostGrooveEnded', { host: before.hostName }) });
       }
       leaving.current = false;
       lastRoom.current = room;
@@ -488,8 +497,8 @@ export function JamProvider({ children }: { children: ReactNode }) {
         toast({
           message:
             inv.kind === 'jam'
-              ? `${inv.from} invited you to groove`
-              : `${inv.from} wants to listen along`,
+              ? translate('player.jamInviteFrom', { who: inv.from })
+              : translate('player.jamAlongRequest', { who: inv.from }),
         });
       }
     } catch {
@@ -584,11 +593,13 @@ export function JamProvider({ children }: { children: ReactNode }) {
       fireNativeHaptic('success');
       toast({
         icon: <Users size={16} />,
+        // The room with only its host in it does not say "1 listening" - it
+        // says nothing about the count at all. That is the singular FORM of
+        // the sentence rather than a branch, so it is `_one` in the catalogue
+        // and a language with more than two forms gets to fill them in.
         message: mine
-          ? count > 1
-            ? `Your groove is open — ${count} listening`
-            : 'Your groove is open'
-          : `You're in ${room.hostName}'s groove — ${count} listening`,
+          ? translate('player.jamOpenedYours', { count })
+          : translate('player.jamOpenedTheirs', { count, host: room.hostName }),
       });
       openNowPlaying();
       armGrooveDeck();
@@ -658,7 +669,9 @@ export function JamProvider({ children }: { children: ReactNode }) {
         // A dead code, an old hub, a moment offline - said out loud. The
         // bare `void jam.join()` this used to hang off left the tap doing
         // nothing at all.
-        toast({ message: e instanceof Error && e.message ? e.message : 'Could not join that groove.' });
+        toast({
+          message: e instanceof Error && e.message ? e.message : translate('player.jamJoinFailed'),
+        });
         return false;
       }
     },
@@ -691,7 +704,12 @@ export function JamProvider({ children }: { children: ReactNode }) {
           if (!synced) throw e;
           await inviteToJamApi(session, to, kind, registryToken);
         }
-        toast({ message: kind === 'jam' ? `Invited ${to} to groove` : `Asked ${to} to listen along` });
+        toast({
+          message:
+            kind === 'jam'
+              ? translate('player.jamInvitedTo', { who: to })
+              : translate('player.jamAskedAlong', { who: to }),
+        });
         // 'along' only: the room appears when THEY accept, so poll faster for a
         // beat rather than waiting out the idle interval. 'jam' needs none of
         // this - you are already the host, the room is already here.
@@ -707,7 +725,9 @@ export function JamProvider({ children }: { children: ReactNode }) {
         }
         return true;
       } catch (e) {
-        toast({ message: e instanceof Error && e.message ? e.message : 'Could not send that invite.' });
+        toast({
+          message: e instanceof Error && e.message ? e.message : translate('player.jamInviteFailed'),
+        });
         return false;
       }
     },
@@ -732,7 +752,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
     async (to: string[], kind: 'along' | 'jam' = 'jam'): Promise<InviteOutcome> => {
       const out: InviteOutcome = { invited: [], refused: [] };
       if (!session) {
-        out.refused = to.map((t) => ({ to: t, reason: 'not signed in' }));
+        out.refused = to.map((handle) => ({ to: handle, reason: translate('player.jamNotSignedIn') }));
         return out;
       }
       // The hub may not have mirrored a fresh friendship yet: hand it the
@@ -750,15 +770,21 @@ export function JamProvider({ children }: { children: ReactNode }) {
           }
           out.invited.push(handle);
         } catch (e) {
-          out.refused.push({ to: handle, reason: e instanceof Error && e.message ? e.message : 'could not send that invite' });
+          out.refused.push({
+            to: handle,
+            reason:
+              e instanceof Error && e.message ? e.message : translate('player.jamRefusedReason'),
+          });
         }
       }
       const said = out.invited.length
         ? kind === 'jam'
-          ? `Invited ${sayNames(out.invited)}`
-          : `Asked ${sayNames(out.invited)} to listen along`
+          ? translate('player.jamInvitedNames', { names: sayNames(out.invited) })
+          : translate('player.jamAskedNamesAlong', { names: sayNames(out.invited) })
         : '';
-      const sorry = out.refused.map((r) => `${r.to}: ${r.reason}`).join(' · ');
+      const sorry = out.refused
+        .map((r) => translate('player.jamRefusedLine', { who: r.to, reason: r.reason }))
+        .join(' · ');
       if (said || sorry) toast({ message: [said, sorry].filter(Boolean).join(' · ') });
       if (kind === 'along' && out.invited.length) {
         let tries = 0;
@@ -777,7 +803,15 @@ export function JamProvider({ children }: { children: ReactNode }) {
 
   const jamWithAll = useCallback(
     async (to: string[]): Promise<InviteOutcome> => {
-      if (!session) return { invited: [], refused: to.map((t) => ({ to: t, reason: 'not signed in' })) };
+      if (!session) {
+        return {
+          invited: [],
+          refused: to.map((handle) => ({
+            to: handle,
+            reason: translate('player.jamNotSignedIn'),
+          })),
+        };
+      }
       if (!jamRef.current) await start();
       return inviteAll(to, 'jam');
     },
@@ -799,7 +833,7 @@ export function JamProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         toast({
           message:
-            e instanceof Error && e.message ? e.message : 'Could not start listening along.',
+            e instanceof Error && e.message ? e.message : translate('player.jamAlongFailed'),
         });
         return false;
       }
@@ -932,10 +966,10 @@ export function JamProvider({ children }: { children: ReactNode }) {
         toast({
           message:
             e instanceof ServerError && e.status === 403
-              ? 'You are not in that groove any more.'
+              ? translate('player.jamNotInRoom')
               : e instanceof Error && e.message
                 ? e.message
-                : 'The groove did not get that.',
+                : translate('player.jamControlFailed'),
         });
         void refresh();
         return false;

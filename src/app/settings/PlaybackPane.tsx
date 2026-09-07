@@ -11,9 +11,12 @@ import {
   type LoudnessMode,
 } from '../player/loudness.ts';
 import { PaneSection, SettingRow, SettingSliderRow } from './kit/settingsKit.tsx';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
+import { formatClock, formatNumber } from '../ux/format.ts';
 
 /** The sleep timer's countdown, ticking once a second while one is armed. */
 function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
+  const t = useT();
   const [now, setNow] = useState(() => Date.now());
   const running = sleep !== null && !sleepsAtAnEnd(sleep);
   useEffect(() => {
@@ -26,17 +29,14 @@ function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
     return () => window.clearInterval(interval);
   }, [running]);
   if (sleep === null) return null;
-  if (sleep === 'end-of-track') return <>Playback stops when the current track ends.</>;
-  if (sleep === 'end-of-chapter')
-    return <>Playback stops at the next chapter break.</>;
+  if (sleep === 'end-of-track') return <>{t('settings.sleepStopsAtTrackEnd')}</>;
+  if (sleep === 'end-of-chapter') return <>{t('settings.sleepStopsAtChapterEnd')}</>;
+  // One sentence, one entry: the clock used to sit between two text fragments,
+  // which is three pieces a translator cannot reorder. formatClock does the
+  // mm:ss padding this was doing by hand, and keeps Latin digits for the same
+  // reason the player's clocks do.
   const remaining = Math.max(0, sleep.at - now);
-  const minutes = Math.floor(remaining / 60_000);
-  const seconds = Math.floor((remaining % 60_000) / 1000);
-  return (
-    <>
-      Playback stops in {minutes}:{String(seconds).padStart(2, '0')}.
-    </>
-  );
+  return <Trans i18nKey="settings.sleepStopsIn" values={{ time: formatClock(remaining / 1000) }} />;
 }
 
 /**
@@ -53,6 +53,7 @@ function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
  * question, not a fact about the box.
  */
 export function PlaybackSettings() {
+  const t = useT();
   const pb = usePlayback();
   const { session, settings, updateSettings } = useServerSession();
 
@@ -83,34 +84,37 @@ export function PlaybackSettings() {
   return (
     <div className="prefsBody">
       <PaneSection
-        title="Loudness"
+        title={t('settings.loudness')}
         footer={
           levelling !== 'off'
             ? measured === 0
-              ? 'Your server is still measuring. Songs it has not reached yet play unlevelled.'
-              : `${measured.toLocaleString()} songs measured. A song is never boosted past the point where it would distort.`
+              ? t('settings.loudnessMeasuring')
+              : // `count` picks the plural form, `n` is the number as this
+                // locale writes it - i18next interpolates a raw number, and a
+                // library-sized count wants its thousands grouped.
+                t('settings.loudnessMeasured', { count: measured, n: formatNumber(measured) })
             : undefined
         }
       >
         <SettingRow
-          label="Volume levelling"
+          label={t('settings.volumeLevelling')}
           hint={
             levelling === 'off'
-              ? 'Songs play at whatever level they were mastered at.'
+              ? t('settings.levellingOffHint')
               : levelling === 'album'
-                ? 'Records play at a steady level, and the quiet track on an album stays quiet.'
-                : 'Every song plays at the same level — best for shuffling.'
+                ? t('settings.levellingAlbumHint')
+                : t('settings.levellingTrackHint')
           }
           layout="stacked"
           control={
             <SegmentedControl
-              aria-label="Volume levelling"
+              aria-label={t('settings.volumeLevelling')}
               fullWidth
               value={levelling}
               options={[
-                { value: 'off', label: 'Off' },
-                { value: 'track', label: 'Per song' },
-                { value: 'album', label: 'Per album' },
+                { value: 'off', label: t('common.off') },
+                { value: 'track', label: t('settings.levellingPerSong') },
+                { value: 'album', label: t('settings.levellingPerAlbum') },
               ]}
               onValueChange={(v) => setLoudnessMode(v as LoudnessMode)}
             />
@@ -118,32 +122,34 @@ export function PlaybackSettings() {
         />
       </PaneSection>
 
-      <PaneSection title="Between songs">
+      <PaneSection title={t('settings.betweenSongs')}>
         <SettingSliderRow
           id="crossfade"
-          label="Crossfade"
-          hint="Blends the end of one song into the start of the next. Automatic changes only - skips stay immediate."
+          label={t('settings.crossfade')}
+          hint={t('settings.crossfadeHint')}
           min={0}
           max={12}
           step={1}
           value={pb.crossfade}
-          valueLabel={pb.crossfade === 0 ? 'Off' : `${pb.crossfade}s`}
+          valueLabel={
+            pb.crossfade === 0 ? t('common.off') : t('settings.secondsShort', { n: pb.crossfade })
+          }
           onChange={(next) => pb.update({ crossfade: next })}
         />
         <SettingRow
-          label="Pause"
-          hint="What pressing pause sounds like."
+          label={t('settings.pause')}
+          hint={t('settings.pauseHint')}
           layout="stacked"
           control={
             <SegmentedControl
-              aria-label="Pause style"
+              aria-label={t('settings.pauseStyle')}
               fullWidth
               value={pb.pauseStyle}
               onValueChange={(next) => pb.update({ pauseStyle: next as typeof pb.pauseStyle })}
               options={[
-                { value: 'turntable', label: 'Turntable' },
-                { value: 'fade', label: 'Fade' },
-                { value: 'instant', label: 'Cut' },
+                { value: 'turntable', label: t('settings.pauseTurntable') },
+                { value: 'fade', label: t('settings.pauseFade') },
+                { value: 'instant', label: t('settings.pauseCut') },
               ]}
             />
           }
@@ -155,69 +161,69 @@ export function PlaybackSettings() {
           session settings - this row is a view over it, never a second
           store - so the dashboard losing the control changed nothing about
           where the choice lives. */}
-      <PaneSection title="Streaming">
+      <PaneSection title={t('settings.streaming')}>
         <SettingRow
           id="streaming-quality"
-          label="Streaming quality"
+          label={t('settings.streamingQuality')}
           hint={
             !session
               ? undefined
               : settings.quality === 'lossless'
-                ? 'Sends the original file, byte for byte. No re-encoding, and no work for the server.'
-                : 'Re-encodes on the fly to save data. Costs the server a CPU core per listener.'
+                ? t('settings.streamingLosslessHint')
+                : t('settings.streamingTranscodeHint')
           }
-          disabledReason={session ? undefined : 'Needs a server'}
+          disabledReason={session ? undefined : t('servers.needsAServer')}
           layout="stacked"
           control={
             <SegmentedControl
-              aria-label="Streaming quality"
+              aria-label={t('settings.streamingQuality')}
               fullWidth
               disabled={!session}
               value={settings.quality}
               onValueChange={(next) => updateSettings({ quality: next as 'lossless' | 'transcode' })}
               options={[
-                { value: 'lossless', label: 'Lossless' },
-                { value: 'transcode', label: 'Data saver' },
+                { value: 'lossless', label: t('settings.streamingLossless') },
+                { value: 'transcode', label: t('settings.streamingDataSaver') },
               ]}
             />
           }
         />
         {session && settings.quality === 'transcode' && (
           <SettingSliderRow
-            label="Bitrate"
+            label={t('settings.bitrate')}
             min={96}
             max={320}
             step={32}
             value={settings.bitrate}
-            valueLabel={`${settings.bitrate}k`}
+            valueLabel={t('settings.bitrateShort', { n: settings.bitrate })}
             onChange={(next) => updateSettings({ bitrate: next })}
           />
         )}
       </PaneSection>
 
-      <PaneSection title="Queue">
+      <PaneSection title={t('settings.queue')}>
         {/* Shuffle's MANNERS, which is all this has ever been - the field is
             called smartShuffle for historical reasons and is not the parked
             "Smart shuffle" mode, which was the shuffle button's third state.
             This one stays: it costs nothing, needs no server, and turning it
             off is a worse shuffle rather than a missing feature. */}
         <SettingRow
-          label="Shuffle manners"
-          hint="Shuffle avoids playing the same artist twice in a row, and steers around songs it just played."
+          label={t('settings.shuffleManners')}
+          hint={t('settings.shuffleMannersHint')}
           control={
             <Switch
-              aria-label="Shuffle manners"
+              aria-label={t('settings.shuffleManners')}
               checked={pb.smartShuffle}
               onCheckedChange={(on) => pb.update({ smartShuffle: on })}
             />
           }
         />
         <SettingRow
-          label="Auto DJ"
-          hint="When the queue runs out, keeps playing similar songs from the library instead of stopping."
+          label={t('settings.autoDj')}
+          hint={t('settings.autoDjHint')}
           control={
             <Switch
-              aria-label="Auto DJ"
+              aria-label={t('settings.autoDj')}
               checked={pb.autoDj}
               onCheckedChange={(on) => pb.update({ autoDj: on })}
             />
@@ -225,31 +231,35 @@ export function PlaybackSettings() {
         />
       </PaneSection>
 
-      <PaneSection title="Sound" footer={<StemsReadout />}>
+      <PaneSection title={t('settings.sound')} footer={<StemsReadout />}>
         <SettingRow
-          label="Night mode"
-          hint="Evens out loud and quiet passages, for listening at low volume without riding the fader."
+          label={t('settings.nightMode')}
+          hint={t('settings.nightModeHint')}
           control={
             <Switch
-              aria-label="Night mode"
+              aria-label={t('settings.nightMode')}
               checked={pb.nightMode}
               onCheckedChange={(on) => pb.update({ nightMode: on })}
             />
           }
         />
         <SettingRow
-          label="Mono"
-          hint="Plays the same signal to both ears - for single-earbud listening, or hearing comfort."
+          label={t('settings.mono')}
+          hint={t('settings.monoHint')}
           control={
-            <Switch aria-label="Mono" checked={pb.mono} onCheckedChange={(on) => pb.update({ mono: on })} />
+            <Switch
+              aria-label={t('settings.mono')}
+              checked={pb.mono}
+              onCheckedChange={(on) => pb.update({ mono: on })}
+            />
           }
         />
         <SettingRow
-          label="Volume boost range"
-          hint="Lets the fader push past 100% for quiet recordings. Off caps it at unity - kinder to ears and speakers."
+          label={t('settings.volumeBoost')}
+          hint={t('settings.volumeBoostHint')}
           control={
             <Switch
-              aria-label="Volume boost range"
+              aria-label={t('settings.volumeBoost')}
               checked={pb.volumeBoost}
               onCheckedChange={(on) => pb.update({ volumeBoost: on })}
             />
@@ -261,27 +271,27 @@ export function PlaybackSettings() {
             for the CURRENT choice, the way Volume levelling's does, instead of
             reciting the whole manual at once. */}
         <SettingRow
-          label="Louder when driving"
+          label={t('settings.driveBoost')}
           layout="stacked"
           hint={
             pb.driveBoost === 'off'
-              ? 'Raises the volume with your speed to cover road noise, like a car stereo does. Switching on uses GPS and asks once.'
+              ? t('settings.driveBoostOffHint')
               : pb.driveBoost === 'gentle'
-                ? 'Up to +3 dB by motorway pace, nothing under 20 km/h — a light hand.'
+                ? t('settings.driveBoostGentleHint')
                 : pb.driveBoost === 'standard'
-                  ? 'Up to +6 dB by motorway pace, nothing under 20 km/h.'
-                  : 'Up to +9 dB by motorway pace — enough to clip already-loud songs.'
+                  ? t('settings.driveBoostStandardHint')
+                  : t('settings.driveBoostStrongHint')
           }
           control={
             <SegmentedControl
-              aria-label="Louder when driving"
+              aria-label={t('settings.driveBoost')}
               fullWidth
               value={pb.driveBoost}
               options={[
-                { value: 'off', label: 'Off' },
-                { value: 'gentle', label: 'Gentle' },
-                { value: 'standard', label: 'Standard' },
-                { value: 'strong', label: 'Strong' },
+                { value: 'off', label: t('common.off') },
+                { value: 'gentle', label: t('settings.driveBoostGentle') },
+                { value: 'standard', label: t('settings.driveBoostStandard') },
+                { value: 'strong', label: t('settings.driveBoostStrong') },
               ]}
               onValueChange={(v) => pb.update({ driveBoost: v as DriveBoost })}
             />
@@ -290,32 +300,37 @@ export function PlaybackSettings() {
       </PaneSection>
 
       <PaneSection
-        title="Sleep"
+        title={t('settings.sleep')}
         tone="session"
         footer={<SleepCountdown sleep={pb.sleep} />}
       >
         <SettingRow
           id="sleep-timer"
-          label="Sleep timer"
+          label={t('settings.sleepTimer')}
           hint={
             pb.bookPlaying
-              ? 'Fades out and pauses when the time is up. Chapter end stops at the next break, not at the end of the file. Cleared on relaunch.'
-              : 'Fades out and pauses when the time is up. Cleared on relaunch.'
+              ? t('settings.sleepTimerHintBook')
+              : t('settings.sleepTimerHint')
           }
           layout="stacked"
           control={
             <SegmentedControl
-              aria-label="Sleep timer"
+              aria-label={t('settings.sleepTimer')}
               fullWidth
               value={sleepValue}
               onValueChange={setSleepChoice}
               options={[
-                { value: 'off', label: 'Off' },
-                { value: '15', label: '15m' },
-                { value: '30', label: '30m' },
-                { value: '45', label: '45m' },
-                { value: '60', label: '1h' },
-                { value: 'end', label: pb.bookPlaying ? 'Chapter end' : 'Track end' },
+                { value: 'off', label: t('common.off') },
+                { value: '15', label: t('settings.minutesShort', { n: 15 }) },
+                { value: '30', label: t('settings.minutesShort', { n: 30 }) },
+                { value: '45', label: t('settings.minutesShort', { n: 45 }) },
+                { value: '60', label: t('settings.hoursShort', { n: 1 }) },
+                {
+                  value: 'end',
+                  label: pb.bookPlaying
+                    ? t('settings.sleepAtChapterEnd')
+                    : t('settings.sleepAtTrackEnd'),
+                },
               ]}
             />
           }
@@ -343,20 +358,15 @@ export function PlaybackSettings() {
  * absence.
  */
 function StemsReadout() {
+  const t = useT();
   const state = usePrefetchStatus();
   if (!state || !state.available) {
-    return (
-      <>
-        This server does not take songs apart, so the Stems tab and the Pads work on whatever you
-        play as you play it.
-      </>
-    );
+    return <>{t('settings.stemsUnavailable')}</>;
   }
   return (
     <>
       <Text tone="muted" size="sm">
-        Songs you have liked or put in a playlist are pulled apart on the server ahead of time, so
-        the Stems tab and the Pads open straight away instead of after a wait.
+        {t('settings.stemsPrefetched')}
       </Text>
       <StemProgress state={state} />
     </>

@@ -1,4 +1,5 @@
 import { Spinner, Text } from '@glacier/react';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { ConnectForm } from './ServerConnect.tsx';
 import { Connected } from './ServerDashboard.tsx';
@@ -19,12 +20,13 @@ import { Connected } from './ServerDashboard.tsx';
  * file is the root switch plus re-exports of the pieces ServersSettings mounts.
  */
 export function ServerSettings() {
+  const t = useT();
   const { session, restoring } = useServerSession();
   if (restoring) {
     return (
       <div className="prefsBody">
         <div className="prefsSection">
-          <Spinner size="sm" /> <Text tone="muted">Reconnecting…</Text>
+          <Spinner size="sm" /> <Text tone="muted">{t('servers.reconnecting')}</Text>
         </div>
       </div>
     );

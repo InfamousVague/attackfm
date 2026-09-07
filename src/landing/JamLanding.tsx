@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ArtWall } from '../app/servers/ArtWall.tsx';
 import { LiveWall } from './LiveWall.tsx';
 import { AppDoors } from './appDoors.tsx';
+import { LocaleShell, useT } from '../app/i18n/LocaleShell.tsx';
 
 /**
  * A jam LINK, opened in a browser: whose room it is, what is on right now,
@@ -39,7 +40,18 @@ interface WallDoc {
 /** Fewer covers than this and the stock wall reads better than a sparse one. */
 const WALL_MINIMUM = 8;
 
+/** The shell, for the reason spelled out in InviteLanding: this bundle never
+ *  mounts App, so each page starts i18next and stamps the document itself. */
 export function JamLanding({ jam }: { jam: JamDoc }) {
+  return (
+    <LocaleShell>
+      <JamCard jam={jam} />
+    </LocaleShell>
+  );
+}
+
+function JamCard({ jam }: { jam: JamDoc }) {
+  const t = useT();
   const [wall, setWall] = useState<{ covers: string[]; canvases: string[] } | null>(null);
   const [where, setWhere] = useState<string>(jam.hubName);
   const [copied, setCopied] = useState(false);
@@ -89,9 +101,9 @@ export function JamLanding({ jam }: { jam: JamDoc }) {
             <span className="joinCard__mark joinCard__mark--dead" aria-hidden>
               !
             </span>
-            <h1>That groove is not one we know about</h1>
+            <h1>{t('landing.grooveMissingTitle')}</h1>
             <Text tone="muted" size="sm">
-              The link may have been mistyped. Ask whoever sent it for another.
+              {t('landing.grooveMissingBody')}
             </Text>
           </div>
         ) : (
@@ -103,13 +115,15 @@ export function JamLanding({ jam }: { jam: JamDoc }) {
               <span className="joinCard__mark" aria-hidden>
                 <Users size={22} />
               </span>
-              <h1>{jam.by ? `Listen along with @${jam.by}` : 'Listen along'}</h1>
+              <h1>{jam.by ? t('landing.listenAlongWith', { who: jam.by }) : t('landing.listenAlong')}</h1>
               <Text tone="muted" size="sm">
-                {where ? `A groove on ${where}` : 'A groove on AttackFM'} · same song, same moment
+                {/* Where the groove is, then what a groove IS - two clauses a
+                    middot joins, so neither has the other baked into it. */}
+                {`${where ? t('landing.grooveOn', { where }) : t('landing.grooveOnAttackFm')} · ${t('landing.sameSongSameMoment')}`}
               </Text>
             </div>
 
-            <AppDoors scheme={`j/${encodeURIComponent(jam.code)}`} label="Join in AttackFM" />
+            <AppDoors scheme={`j/${encodeURIComponent(jam.code)}`} label={t('landing.joinInApp')} />
 
             {/* The code, big, for the phone the button cannot help: two
                 installs claiming one scheme, a build the app-link file does
@@ -117,16 +131,21 @@ export function JamLanding({ jam }: { jam: JamDoc }) {
                 groove deck has a "Have a code?" row that takes exactly this. */}
             <div className="codeBox">
               <Text tone="muted" size="xs">
-                Or open AttackFM and enter this code
+                {t('landing.enterCodeGroove')}
               </Text>
               <div className="codeBox__row">
                 <code className="codeBox__code codeBox__code--groove">{jam.code}</code>
-                <Button variant="ghost" size="sm" onClick={copy} aria-label="Copy the groove code">
-                  {copied ? <Check size={16} /> : <Copy size={16} />} {copied ? 'Copied' : 'Copy'}
+                <Button variant="ghost" size="sm" onClick={copy} aria-label={t('landing.copyGrooveCode')}>
+                  {/* Not a plural: two labels for two states, chosen here. */}
+                  {copied ? <Check size={16} /> : <Copy size={16} />}{' '}
+                  {copied ? t('common.copied') : t('common.copy')}
                 </Button>
               </div>
               <Text tone="muted" size="xs">
-                Now Playing → the groove deck → Have a code?
+                {/* A trail through the app's own screens: every step of it is
+                    a label the app translates too, so the whole crumb is one
+                    entry rather than three joined by an arrow here. */}
+                {t('landing.grooveCodeTrail')}
               </Text>
             </div>
 
@@ -140,9 +159,8 @@ export function JamLanding({ jam }: { jam: JamDoc }) {
                 which is the opposite of what this sentence exists to say. A
                 host is unambiguous and is the thing they would have typed. */}
             <Text tone="muted" size="xs" className="carry">
-              <Music size={12} aria-hidden /> A groove happens on one server. If you are signed in to{' '}
-              {host || 'that server'}, this walks you straight in. If you are not, you will need an
-              invite from someone who is - a groove is a room, not a broadcast.
+              <Music size={12} aria-hidden />{' '}
+              {t('landing.grooveIsARoom', { host: host || t('landing.thatServer') })}
             </Text>
           </>
         )}

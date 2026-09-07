@@ -4,6 +4,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { ArtWall } from '../app/servers/ArtWall.tsx';
 import { LiveWall } from './LiveWall.tsx';
 import { AppDoors } from './appDoors.tsx';
+import { LocaleShell, useT } from '../app/i18n/LocaleShell.tsx';
+import { formatNumber } from '../app/ux/format.ts';
 
 /**
  * An invite LINK, opened in a browser: the same card the app raises for it
@@ -48,7 +50,25 @@ interface WallDoc {
 /** Fewer covers than this and the stock wall reads better than a sparse one. */
 const WALL_MINIMUM = 8;
 
+/**
+ * The landing bundle is its own entry point (landing/main.tsx) - it never
+ * mounts App, so nothing has started i18next or stamped the document. Each
+ * page raises the shell itself: it boots the catalogue before its children
+ * render, hands the kit the same language, and sets `dir` on <html>, which is
+ * what actually mirrors the layout for Arabic. Without it every t() here
+ * would resolve to a raw key, and PlayerStrip - which the playlist page
+ * borrows whole - already calls one.
+ */
 export function InviteLanding({ invite }: { invite: InviteDoc }) {
+  return (
+    <LocaleShell>
+      <InviteCard invite={invite} />
+    </LocaleShell>
+  );
+}
+
+function InviteCard({ invite }: { invite: InviteDoc }) {
+  const t = useT();
   const [glance, setGlance] = useState<Glance | null>(null);
   const [wall, setWall] = useState<{ covers: string[]; canvases: string[] } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -84,26 +104,41 @@ export function InviteLanding({ invite }: { invite: InviteDoc }) {
     });
   };
 
-  const name = invite.serverName || glance?.name || 'a server';
+  const name = invite.serverName || glance?.name || t('landing.someServer');
   const owner = glance?.owner || '';
-  const stats: { icon: ReactNode; value: number; label: string }[] = glance
+  // The stat chips draw the number and its unit in two differently styled
+  // spans, so the unit is a bare noun rather than part of a sentence - but it
+  // still agrees with the number, and "1 songs" is the failure this avoids.
+  // The `id` is the React key: the label is a translated word now, and two
+  // languages are free to spell two of these the same.
+  const stats: { id: string; icon: ReactNode; value: number; label: string }[] = glance
     ? [
-        ...(typeof glance.tracks === 'number' ? [{ icon: <Music size={14} />, value: glance.tracks, label: glance.tracks === 1 ? 'song' : 'songs' }] : []),
-        ...(typeof glance.artists === 'number' ? [{ icon: <User size={14} />, value: glance.artists, label: 'artists' }] : []),
-        ...(typeof glance.albums === 'number' ? [{ icon: <Disc3 size={14} />, value: glance.albums, label: 'albums' }] : []),
-        ...(typeof glance.playlists === 'number' ? [{ icon: <ListMusic size={14} />, value: glance.playlists, label: 'playlists' }] : []),
-        ...(typeof glance.members === 'number' ? [{ icon: <Users size={14} />, value: glance.members, label: glance.members === 1 ? 'member' : 'members' }] : []),
+        ...(typeof glance.tracks === 'number' ? [{ id: 'tracks', icon: <Music size={14} />, value: glance.tracks, label: t('landing.statSongs', { count: glance.tracks }) }] : []),
+        ...(typeof glance.artists === 'number' ? [{ id: 'artists', icon: <User size={14} />, value: glance.artists, label: t('landing.statArtists', { count: glance.artists }) }] : []),
+        ...(typeof glance.albums === 'number' ? [{ id: 'albums', icon: <Disc3 size={14} />, value: glance.albums, label: t('landing.statAlbums', { count: glance.albums }) }] : []),
+        ...(typeof glance.playlists === 'number' ? [{ id: 'playlists', icon: <ListMusic size={14} />, value: glance.playlists, label: t('landing.statPlaylists', { count: glance.playlists }) }] : []),
+        ...(typeof glance.members === 'number' ? [{ id: 'members', icon: <Users size={14} />, value: glance.members, label: t('landing.statMembers', { count: glance.members }) }] : []),
       ]
     : [];
 
   const dead =
     invite.state === 'missing'
-      ? { title: 'That invite is not valid', body: 'The link may have been mistyped, or the invite withdrawn.' }
+      ? { title: t('landing.inviteMissingTitle'), body: t('landing.inviteMissingBody') }
       : invite.state === 'used'
-        ? { title: 'That invite has already been used', body: 'Ask whoever sent it for another.' }
+        ? { title: t('landing.inviteUsedTitle'), body: t('landing.inviteUsedBody') }
         : invite.state === 'expired'
-          ? { title: 'That invite has expired', body: 'Ask whoever sent it for another.' }
+          ? { title: t('landing.inviteExpiredTitle'), body: t('landing.inviteExpiredBody') }
           : null;
+
+  // Two independent clauses - whose server this is, and who asked you - joined
+  // by a middot. The middot is punctuation, not language, so it lives here and
+  // each clause stays a sentence a translator can rewrite on its own.
+  const byline = [
+    owner ? t('landing.ownersServer', { owner }) : t('landing.aLibraryOnAttackFm'),
+    invite.from ? t('landing.invitedBy', { who: invite.from }) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div className="stage">
@@ -127,19 +162,18 @@ export function InviteLanding({ invite }: { invite: InviteDoc }) {
               <span className="joinCard__mark" aria-hidden>
                 {name.slice(0, 1).toUpperCase()}
               </span>
-              <h1>Join {name}</h1>
+              <h1>{t('landing.joinServer', { name })}</h1>
               <Text tone="muted" size="sm">
-                {owner ? `${owner}'s server` : 'A music library on AttackFM'}
-                {invite.from ? ` · invited by @${invite.from}` : ''}
+                {byline}
               </Text>
               {stats.length > 0 && (
                 <ul className="joinCard__stats">
                   {stats.map((s) => (
-                    <li key={s.label} className="joinCard__stat">
+                    <li key={s.id} className="joinCard__stat">
                       <span className="joinCard__statIcon" aria-hidden>
                         {s.icon}
                       </span>
-                      <span className="joinCard__statValue">{s.value.toLocaleString()}</span>
+                      <span className="joinCard__statValue">{formatNumber(s.value)}</span>
                       <span className="joinCard__statLabel">{s.label}</span>
                     </li>
                   ))}
@@ -155,19 +189,20 @@ export function InviteLanding({ invite }: { invite: InviteDoc }) {
 
             <div className="codeBox">
               <Text tone="muted" size="xs">
-                Or enter this code in AttackFM under Join a server
+                {t('landing.enterCodeInvite')}
               </Text>
               <div className="codeBox__row">
                 <code className="codeBox__code">{code}</code>
-                <Button variant="ghost" size="sm" onClick={copy} aria-label="Copy the invite code">
-                  {copied ? <Check size={16} /> : <Copy size={16} />} {copied ? 'Copied' : 'Copy'}
+                <Button variant="ghost" size="sm" onClick={copy} aria-label={t('landing.copyInviteCode')}>
+                  {/* Not a plural: two labels for two states, chosen here. */}
+                  {copied ? <Check size={16} /> : <Copy size={16} />}{' '}
+                  {copied ? t('common.copied') : t('common.copy')}
                 </Button>
               </div>
             </div>
 
             <Text tone="muted" size="xs" className="carry">
-              Just installed it? Sign in or create your account in the app, then open this link again -
-              it joins {name} by itself.
+              {t('landing.inviteCarry', { name })}
             </Text>
           </>
         )}

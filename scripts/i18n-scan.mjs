@@ -17,6 +17,7 @@
  *   jsx-text       text between tags
  *   prop           a visible prop's literal (label=, placeholder=, aria-label=)
  *   ts-field       a display field in a .ts object literal
+ *   ts-const       a module-scope `const` holding a whole sentence
  *   toast          a message handed to toast()/notify()
  *   plural         `n === 1 ? 'song' : 'songs'` - English grammar as code
  *   ternary        a two-branch string choice that is not a count
@@ -99,15 +100,40 @@ const DENY_SUBSTRINGS = [
   'Charts', 'New music',             // folder AND playlist names, matched on
 ];
 
+/**
+ * Things that live in a string but are not language.
+ *
+ * A class list, a selector, a transition, a catalogue key being CHOSEN between,
+ * and the app's own name. Every one of these was a finding the scanner was
+ * reporting and a human then had to dismiss - and a checker whose output you
+ * learn to skim is worse than no checker, because the real one hides in it.
+ */
+const cssish = (s) =>
+  /var\(--|\w__\w|\w--\w/.test(s) ||        // BEM, custom properties
+  /^[.#[]/.test(s) ||                          // a selector
+  /^[a-z-]+ [\d.]+m?s\b/.test(s) ||           // "transform 0.22s ease-out"
+  s === 'none';
+
+/** 'library.greetingEvening' - a key, not a string. Choosing between two of
+ *  them at a call site is the CORRECT shape, not a finding. */
+const looksLikeKey = (s) => /^[a-z][a-zA-Z0-9]*(\.[a-zA-Z0-9_]+)+$/.test(s);
+
+/** Never translated: it is the product's name in every language. */
+const BRANDS = new Set(['AttackFM', 'Attack FM']);
+
 function looksTranslatable(raw) {
   const s = raw.trim();
   if (s.length < 2) return false;
   if (!/[A-Za-z]/.test(s)) return false;                 // "—", "•", "3"
   if (/^https?:|^\/|^\.\/|^#|^--|^data:/.test(s)) return false;
+  if (/:\/\//.test(s)) return false;                    // a URL anywhere in it
+  if (/^\(.*:.*\)/.test(s)) return false;               // a media query
   if (/^[a-z0-9-]+$/.test(s) && !s.includes(' ')) return false;  // "liked"
   if (/^[A-Z0-9_]+$/.test(s)) return false;              // SCREAMING_CONSTANT
   if (/^[a-z]+([A-Z][a-z]*)+$/.test(s)) return false;    // camelCaseIdentifier
   if (DENY_SUBSTRINGS.includes(s)) return false;
+  if (BRANDS.has(s)) return false;
+  if (cssish(s) || looksLikeKey(s)) return false;
   return true;
 }
 
@@ -144,8 +170,22 @@ function scanFile(file) {
     return true;
   };
 
+  const lines = text.split('\n');
+  /**
+   * An escape hatch, spelled out rather than hidden in this file's deny-list.
+   *
+   * Some English is protocol - a section name the server also sends, a value
+   * something compares with === - and the scanner cannot tell that by looking
+   * at the string. Writing `i18n-ignore` on the line, or the line above it,
+   * says so AT THE STRING, where the next reader is, instead of in a list
+   * over here that nobody will find.
+   */
+  const ignored = (line) =>
+    (lines[line - 1] ?? '').includes('i18n-ignore') || (lines[line - 2] ?? '').includes('i18n-ignore');
+
   const add = (node, kind, value) => {
     const line = at(node);
+    if (ignored(line)) return;
     const clean = String(value).trim().replace(/\s+/g, ' ');
     const key = `${line}:${kind}:${clean}`;
     if (seen.has(key)) return;
@@ -172,7 +212,10 @@ function scanFile(file) {
     // `n === 1 ? 'song' : 'songs'` and its cousins.
     if (ts.isConditionalExpression(node)) {
       const a = strLit(node.whenTrue), b = strLit(node.whenFalse);
-      if (a && b && (looksTranslatable(a.text) || looksTranslatable(b.text))) {
+      // Judged per branch: the joined "a | b" is not a string anybody reads,
+      // and a class list joined to another class list is not prose twice.
+      const branches = [a, b].filter(Boolean).map((n) => n.text).filter((x) => x.trim());
+      if (a && b && branches.some((x) => looksTranslatable(x))) {
         const cond = node.condition.getText(sf);
         const plural = /[=!]==?\s*1\b|\b1\s*[=!]==?|\.length\b|\bcount\b/i.test(cond);
         add(node, plural ? 'plural' : 'ternary', `${a.text} | ${b.text}`);
@@ -198,6 +241,23 @@ function scanFile(file) {
         const lit = strLit(inner);
         if (lit && looksTranslatable(lit.text)) add(node, `prop:${prop}`, lit.text);
         else if (inner && ts.isTemplateExpression(inner)) add(node, 'template', inner.getText(sf));
+      }
+    }
+
+    /*
+     * A sentence living in a bare `export const`.
+     *
+     * SMART_SHUFFLE_LABEL got through an entire sweep hiding in one of these:
+     * not a JSX attribute, not a display field in an object, just a const with
+     * a sentence in it that was handed to an aria-label two files away.
+     * Nothing about the SHAPE says user-visible, so this leans entirely on
+     * looksTranslatable and additionally demands a SPACE - which is most of
+     * what separates a sentence from an identifier.
+     */
+    if (ts.isVariableDeclaration(node) && node.initializer && atModuleScope(node)) {
+      const lit = strLit(node.initializer);
+      if (lit && lit.text.trim().includes(' ') && looksTranslatable(lit.text)) {
+        add(node, 'ts-const', lit.text);
       }
     }
 

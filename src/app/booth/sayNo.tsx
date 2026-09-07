@@ -8,6 +8,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { reactDj, type DjReaction } from '../api/dj.ts';
 import { trackIdFromPath } from '../api/library.ts';
 import { artistKey, noteNo, trackKey } from './saidNo.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -33,6 +34,7 @@ import type { Track } from '../core/tauri.ts';
 /** Saying "less of that" on the same song twice is one opinion; a minute
  *  later on another song is a new one. The thumbs remember per song. */
 export function useSayNo() {
+  const t = useT();
   const { session } = useServerSession();
   const { toast } = useToast();
 
@@ -48,7 +50,10 @@ export function useSayNo() {
       if (id !== null) noteNo(trackKey(id));
       opts.onLeave?.();
       toast({
-        message: opts.scope === 'artist' && track.artist.trim() ? `Less like ${track.artist}.` : 'Less of that.',
+        message:
+          opts.scope === 'artist' && track.artist.trim()
+            ? t('booth.lessLikeArtistToast', { artist: track.artist })
+            : t('booth.lessOfThat'),
       });
       if (session && id !== null) {
         void reactDj(session, id, 'down', opts.positionMs ?? 0, opts.scope).catch(() => {
@@ -57,19 +62,19 @@ export function useSayNo() {
         });
       }
     },
-    [session, toast],
+    [session, toast, t],
   );
 
   const up = useCallback(
     (track: Track, positionMs = 0) => {
       const id = trackIdFromPath(track.path);
       fireNativeHaptic('light');
-      toast({ message: 'Noted. More like this.' });
+      toast({ message: t('booth.notedMoreLikeThis') });
       if (session && id !== null) {
         void reactDj(session, id, 'up', positionMs).catch(() => {});
       }
     },
-    [session, toast],
+    [session, toast, t],
   );
 
   return { down, up };
@@ -96,18 +101,19 @@ export function Thumbs({
   onDown?: () => void;
   className?: string;
 }) {
+  const t = useT();
   const { down, up } = useSayNo();
   const [said, setSaid] = useState<DjReaction | null>(null);
   // A new song is a fresh question.
   useEffect(() => setSaid(null), [track.path]);
   if (trackIdFromPath(track.path) === null) return null;
   return (
-    <span className={`sayNoThumbs${className ? ` ${className}` : ''}`} role="group" aria-label="Your word on this pick">
+    <span className={`sayNoThumbs${className ? ` ${className}` : ''}`} role="group" aria-label={t('booth.yourWordOnThisPick')}>
       <IconButton
         type="button"
         variant="ghost"
         className="sayNoThumbs__btn sayNoThumbs__btn--up"
-        aria-label={`More like ${track.title}`}
+        aria-label={t('booth.moreLikeTitle', { title: track.title })}
         aria-pressed={said === 'up'}
         data-on={said === 'up' || undefined}
         onClick={() => {
@@ -121,7 +127,7 @@ export function Thumbs({
         type="button"
         variant="ghost"
         className="sayNoThumbs__btn sayNoThumbs__btn--down"
-        aria-label={`Less like ${track.title}`}
+        aria-label={t('booth.lessLikeTitle', { title: track.title })}
         aria-pressed={said === 'down'}
         data-on={said === 'down' || undefined}
         onClick={() => {
@@ -145,6 +151,9 @@ export interface SayNoItemsProps {
   onTrack: () => void;
   /** Refuse the act. */
   onArtist: () => void;
+  /** Overrides for the two refusals. Left out, they read as the defaults
+   *  below - which have to be resolved at RENDER, not in a default parameter,
+   *  because a parameter default is evaluated before any translator exists. */
   trackLabel?: string;
   artistLabel?: string;
 }
@@ -160,19 +169,20 @@ export function SayNoItems({
   artist,
   onTrack,
   onArtist,
-  trackLabel = 'Not this song',
+  trackLabel,
   artistLabel,
 }: SayNoItemsProps) {
+  const t = useT();
   const act = artist.trim();
   return (
     <>
       {why && <MenuLabel className="sayNoWhy">{why}</MenuLabel>}
       <MenuItem icon={<Ban size={15} />} onSelect={onTrack}>
-        {trackLabel}
+        {trackLabel ?? t('booth.notThisSong')}
       </MenuItem>
       {act !== '' && (
         <MenuItem icon={<UserX size={15} />} onSelect={onArtist}>
-          {artistLabel ?? `Less like ${act}`}
+          {artistLabel ?? t('booth.lessLikeArtist', { artist: act })}
         </MenuItem>
       )}
     </>

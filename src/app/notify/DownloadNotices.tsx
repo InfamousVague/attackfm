@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useHaptics, useToast } from '@glacier/react';
 import { artSized } from '../server.ts';
+import { translate } from '../i18n/LocaleShell.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useDownloadsOptional, type MusicImportState } from '../../plugins/importsBridge.ts';
 import { noteNotice, setNoticeScope } from './notices.ts';
@@ -95,12 +96,16 @@ export function DownloadNotices() {
     if (plan.started.length === 1) {
       const one = plan.started[0]!;
       toastRef.current({
-        message: one.title ? `Downloading “${one.title}”` : 'Downloading that link…',
+        message: one.title
+          ? translate('downloads.startedOne', { title: one.title })
+          : translate('downloads.startedLink'),
         duration: START_TOAST_MS,
       });
     } else if (plan.started.length > 1) {
       toastRef.current({
-        message: `${plan.started.length} downloads started`,
+        // Only ever reached with two or more, but still a plural: a language
+        // with a dual form wants to say "two downloads" its own way.
+        message: translate('downloads.startedCount', { count: plan.started.length }),
         duration: START_TOAST_MS,
       });
     }

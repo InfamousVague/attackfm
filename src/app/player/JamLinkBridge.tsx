@@ -6,6 +6,7 @@ import type { JamShare } from '../servers/registry.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useJamOptional } from './jam.tsx';
 import { hubHost, lookupGroove, sameHub, walkIn } from './grooveEntry.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * A groove LINK, opened in the app.
@@ -30,6 +31,7 @@ import { hubHost, lookupGroove, sameHub, walkIn } from './grooveEntry.ts';
  * the same-server test and the join live in grooveEntry, shared by both.
  */
 export function JamLinkBridge() {
+  const t = useT();
   const [code, setCode] = useState<string | null>(null);
   const [share, setShare] = useState<JamShare | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,14 +58,18 @@ export function JamLinkBridge() {
         if (s) setShare(s);
         // The registry knows no link by that name - a mistyped code, or one
         // it never minted. Said in words rather than the API's own.
-        else setError('That groove is not one we know about. The link may have been mistyped.');
+        else setError(t('player.jamLinkUnknown'));
       })
       .catch(() => {
-        if (live) setError('Could not look that up just now. Try again in a moment.');
+        if (live) setError(t('player.jamLinkLookupFailed'));
       });
     return () => {
       live = false;
     };
+    // `t` is left out on purpose: it changes identity with the language, and
+    // looking the link up again because somebody switched to German would be
+    // a network round trip for a sentence nobody is reading yet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
   if (!code) return null;
@@ -91,9 +97,7 @@ export function JamLinkBridge() {
         // The registry row outlives the room; this is the hub saying the room
         // is not there any more, which is the one answer only it can give.
         setError(
-          walked === 'failed'
-            ? 'Could not walk into that groove just now.'
-            : 'That groove has ended. Ask whoever sent this to start another.',
+          walked === 'failed' ? t('player.jamWalkInFailed') : t('player.jamEnded'),
         );
       }
     } finally {
@@ -102,7 +106,7 @@ export function JamLinkBridge() {
   };
 
   return (
-    <Modal open onClose={close} title="Listen along" size="sm">
+    <Modal open onClose={close} title={t('player.jamListenAlong')} size="sm">
       <div className="sharedPlaylist">
         {error && (
           <Text tone="danger" size="sm">
@@ -110,51 +114,51 @@ export function JamLinkBridge() {
           </Text>
         )}
         {!share && !error && (
-          <Text tone="muted" size="sm">
-            Opening…
-          </Text>
+          <Text tone="muted" size="sm">{t('player.jamOpening')}</Text>
         )}
         {share && (
           <>
             <div className="sharedPlaylist__head">
               <div className="sharedPlaylist__who">
                 <h3 className="sharedPlaylist__name">
-                  <Users size={15} aria-hidden /> {share.by ? `@${share.by}'s groove` : 'A groove'}
+                  <Users size={15} aria-hidden />{' '}
+                  {share.by ? t('player.jamHandleGroove', { handle: share.by }) : t('player.aGroove')}
                 </h3>
                 <Text tone="muted" size="sm">
-                  {share.hubName ? `On ${share.hubName}` : 'On another AttackFM server'}
+                  {share.hubName
+                    ? t('player.jamOnHub', { hub: share.hubName })
+                    : t('player.jamOnAnotherServer')}
                 </Text>
               </div>
             </div>
 
             {here ? (
-              <Text tone="muted" size="xs">
-                Joining follows along with whatever they are playing. Anyone in the room can add to
-                the queue.
-              </Text>
+              <Text tone="muted" size="xs">{t('player.jamJoinHint')}</Text>
             ) : (
               /* Named by ADDRESS, so the sentence is actionable and cannot be
                  misread: hubs are called things like "AttackFM" by default,
                  and "this one is on AttackFM" reads as a statement about the
                  app rather than about which box the room is on. */
               <Text tone="muted" size="xs">
-                A groove is a room on one server, and this one is on {hubHost(share.hubUrl)}. You
-                would need to be signed in there to walk into it - ask @{share.by} for an invite.
+                {t('player.jamOtherServer', {
+                  host: hubHost(share.hubUrl),
+                  handle: share.by,
+                })}
               </Text>
             )}
 
             <div className="sharedPlaylist__actions">
               {!here ? (
                 <Button variant="solid" size="sm" onClick={close}>
-                  Done
+                  {t('common.done')}
                 </Button>
               ) : (
                 <>
                   <Button variant="ghost" size="sm" onClick={close}>
-                    Not now
+                    {t('common.notNow')}
                   </Button>
                   <Button variant="solid" size="sm" disabled={busy || !jam} onClick={() => void join()}>
-                    {busy ? 'Joining…' : 'Join the groove'}
+                    {busy ? t('player.jamJoining') : t('player.jamJoin')}
                   </Button>
                 </>
               )}

@@ -1,4 +1,5 @@
 import { X } from '@glacier/icons';
+import { useT } from '../i18n/LocaleShell.tsx';
 import type { PlaylistWant } from '../server.ts';
 
 /**
@@ -19,10 +20,11 @@ export function PlaylistWantRows({
   /** Withdraw a want before it lands (its `k`). */
   onDismiss: (k: string) => void;
 }) {
+  const t = useT();
   if (wants.length === 0) return null;
   return (
     <div className="incomingRows" role="status" aria-live="polite">
-      <p className="incomingRows__head">Arriving in this playlist</p>
+      <p className="incomingRows__head">{t('playlists.arriving')}</p>
       {wants.map((w) => (
         <div key={w.k} className="incomingRow">
           <span className="incomingRow__mark" aria-hidden>
@@ -36,7 +38,7 @@ export function PlaylistWantRows({
           <button
             type="button"
             className="incomingRow__drop"
-            aria-label={`Stop waiting for ${w.title}`}
+            aria-label={t('playlists.stopWaitingFor', { title: w.title })}
             onClick={() => onDismiss(w.k)}
           >
             <X size={14} />

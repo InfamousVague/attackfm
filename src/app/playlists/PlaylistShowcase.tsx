@@ -101,18 +101,19 @@ function Tile({
   /** Extra items above Delete - the playlist options the page's own menu has. */
   menu?: ReactNode;
 }) {
+  const t = useT();
   const tile = (
     <button
       type="button"
       className="playlistTile"
       data-fresh={fresh || undefined}
-      aria-label={fresh ? `${name}, new` : undefined}
+      aria-label={fresh ? t('playlists.tileFreshLabel', { name }) : undefined}
       onClick={onOpen}
     >
       {cover}
       {fresh && (
         <span className="playlistTileBadge" aria-hidden>
-          New
+          {t('playlists.fresh')}
         </span>
       )}
       <span className="playlistTileName">{name}</span>
@@ -122,14 +123,14 @@ function Tile({
   if (!onDelete && !menu) return tile;
   return (
     <ContextMenu
-      aria-label={`${name} actions`}
+      aria-label={t('playlists.actionsFor', { name })}
       className="playlistTileMenuTarget"
       content={
         <>
           {menu}
           {onDelete && (
             <MenuItem icon={<Trash2 size={15} />} onSelect={onDelete}>
-              Delete playlist
+              {t('playlists.delete')}
             </MenuItem>
           )}
         </>
@@ -168,6 +169,7 @@ function tileMenuTarget(from: Element): Element | null {
 
 /** The new-folder form, keyed per invocation so each opens empty. */
 function NewFolderForm({ onDone }: { onDone: (name: string) => void }) {
+  const t = useT();
   const [name, setName] = useState('');
   return (
     <form
@@ -181,11 +183,11 @@ function NewFolderForm({ onDone }: { onDone: (name: string) => void }) {
         autoFocus
         value={name}
         onChange={(e) => setName(e.currentTarget.value)}
-        placeholder="Road trips"
-        aria-label="Folder name"
+        placeholder={t('playlists.folderNameExample')}
+        aria-label={t('playlists.folderName')}
       />
       <Button type="submit" variant="solid">
-        Move here
+        {t('playlists.moveHere')}
       </Button>
     </form>
   );
@@ -218,9 +220,13 @@ function PluginTile({ tile }: { tile: PluginPlaylistTile }) {
  * new-music list. Generated, refreshed on their own clock, never filed by a
  * person: they belong on Discover, not among the lists you made.
  */
+// Keys rather than labels: this is evaluated at import, before any provider
+// exists, so a translated string here would freeze in whatever language the
+// app booted in. The MAP KEYS are the server's own folder names and stay
+// English - they are matched against what the server sends.
 const GENERATED_FOLDERS = new Map<string, string>([
-  ['Charts', 'Top charts'],
-  ['New music', 'New music'],
+  ['Charts', 'playlists.folderTopCharts'],
+  ['New music', 'playlists.folderNewMusic'],
 ]);
 
 /**
@@ -231,6 +237,13 @@ const GENERATED_FOLDERS = new Map<string, string>([
  * OUT of the Library's own folders - it just has no rail of its own.
  */
 const SHOWN_GENERATED = new Set(['Charts']);
+
+/** The server's generated folders wear a name of ours. GENERATED_FOLDERS holds
+ *  a catalogue key rather than a label, so the lookup happens here, at render. */
+function resolveFolderLabel(t: (key: string) => string, folder: string): string {
+  const key = GENERATED_FOLDERS.get(folder);
+  return key ? t(key) : folder;
+}
 
 export function PlaylistShowcase({
   onPlay,
@@ -326,7 +339,7 @@ export function PlaylistShowcase({
   const tileMenu = (p: Playlist) => (
     <>
       <MenuItem icon={<Pencil size={15} />} onSelect={() => setRenaming({ id: p.id, name: p.name })}>
-        Rename
+        {t('playlists.rename')}
       </MenuItem>
       {folders.map((name) => (
         <MenuItem
@@ -339,11 +352,11 @@ export function PlaylistShowcase({
       ))}
       {p.folder && (
         <MenuItem icon={<FolderOpen size={15} />} onSelect={() => setMeta(p.id, { folder: '' })}>
-          Take out of {p.folder}
+          {t('playlists.takeOutOf', { folder: p.folder })}
         </MenuItem>
       )}
       <MenuItem icon={<FolderPlus size={15} />} onSelect={() => setFolderFor({ id: p.id, name: p.name })}>
-        New folder…
+        {t('playlists.newFolder')}
       </MenuItem>
       {setCover && (
         <MenuItem
@@ -353,12 +366,12 @@ export function PlaylistShowcase({
             coverInput.current?.click();
           }}
         >
-          {p.coverUrl ? 'Change cover…' : 'Choose cover…'}
+          {p.coverUrl ? t('playlists.changeCover') : t('playlists.chooseCover')}
         </MenuItem>
       )}
       {setCover && p.coverUrl && (
         <MenuItem icon={<X size={15} />} onSelect={() => void setCover(p.id, null)}>
-          Remove cover
+          {t('playlists.removeCover')}
         </MenuItem>
       )}
       {/* Separating ahead is now per list and off until asked for. Shown only
@@ -369,7 +382,7 @@ export function PlaylistShowcase({
           icon={<AudioLines size={15} />}
           onSelect={() => setAutoStem(p.id, !p.autoStem)}
         >
-          {p.autoStem ? 'Stop separating ahead' : 'Separate these ahead'}
+          {p.autoStem ? t('playlists.stopSeparating') : t('playlists.separateAhead')}
         </MenuItem>
       )}
     </>
@@ -444,9 +457,12 @@ export function PlaylistShowcase({
       generated: folders
         .filter(([folder]) => SHOWN_GENERATED.has(folder))
         .sort((a, b) => (a[0] === 'Charts' ? -1 : b[0] === 'Charts' ? 1 : 0)),
+      // The label stays unresolved here: this memo runs outside a render pass
+      // when the playlists change, and a translated fallback baked in now would
+      // outlive a language switch. The heading below picks the wording.
       elsewhere: [...hubs.entries()].map(([origin, lists]) => ({
         origin,
-        label: serverLabelFor(origin) ?? 'Another server',
+        label: serverLabelFor(origin),
         lists,
       })),
       // The ones not yet opened first: that is the invitation the section
@@ -510,13 +526,13 @@ export function PlaylistShowcase({
               does nothing. */}
           <MaybeMenu
             when={likedStems !== undefined}
-            aria-label="Liked actions"
+            aria-label={t('playlists.likedActions')}
             content={
               <MenuItem
                 icon={<AudioLines size={15} />}
                 onSelect={() => void setLikedStems(!likedStems)}
               >
-                {likedStems ? 'Stop separating ahead' : 'Separate these ahead'}
+                {likedStems ? t('playlists.stopSeparating') : t('playlists.separateAhead')}
               </MenuItem>
             }
           >
@@ -553,7 +569,7 @@ export function PlaylistShowcase({
       <section className="homeShelf" data-shelf="shared">
         <h2 className="homeShelfTitle">
           <Users size={15} className="showcaseFolderGlyph" aria-hidden />
-          Shared with you
+          {t('playlists.sharedWithYou')}
           <span className="showcaseFolderCount">{shared.length}</span>
         </h2>
         <div className="showcaseGrid">
@@ -561,7 +577,7 @@ export function PlaylistShowcase({
             <Tile
               key={playlist.id}
               name={playlist.name}
-              caption={`by ${playlist.ownerName ?? 'a friend'}`}
+              caption={t('playlists.byOwner', { name: playlist.ownerName ?? t('playlists.aFriend') })}
               fresh={fresh}
               cover={
                 playlist.coverUrl ? (
@@ -659,7 +675,7 @@ export function PlaylistShowcase({
             {show === 'personal' && (
               <FolderClosed size={15} className="showcaseFolderGlyph" aria-hidden />
             )}
-            {show === 'personal' ? folder : (GENERATED_FOLDERS.get(folder) ?? folder)}
+            {show === 'personal' ? folder : resolveFolderLabel(t, folder)}
             <span className="showcaseFolderCount">{lists.length}</span>
           </h2>
           {/* Generated tiles (the charts, new music) take the read-only shape
@@ -699,7 +715,7 @@ export function PlaylistShowcase({
       {show === 'personal' && elsewhere.map(({ origin, label, lists }) => (
         <section className="homeShelf" key={origin}>
           <h2 className="homeShelfTitle">
-            On {label}
+            {t('playlists.onHub', { server: label ?? t('playlists.anotherHub') })}
             <span className="showcaseFolderCount">{lists.length}</span>
           </h2>
           <div className="showcaseGrid">
@@ -731,15 +747,15 @@ export function PlaylistShowcase({
         <Modal
           open
           onClose={() => setDeleting(null)}
-          title={`Delete ${deleting.name}?`}
+          title={t('playlists.deleteConfirmTitle', { name: deleting.name })}
           size="sm"
         >
           <Text tone="muted" size="sm">
-            The songs stay in your library. Only the list goes.
+            {t('playlists.deleteConfirm')}
           </Text>
           <div className="playlistDeleteActions">
             <Button variant="ghost" size="sm" onClick={() => setDeleting(null)}>
-              Keep it
+              {t('playlists.keepIt')}
             </Button>
             <Button
               variant="danger"
@@ -750,7 +766,7 @@ export function PlaylistShowcase({
               }}
             >
               <Trash2 size={15} />
-              <span>Delete</span>
+              <span>{t('common.delete')}</span>
             </Button>
           </div>
         </Modal>
@@ -776,14 +792,14 @@ export function PlaylistShowcase({
             toast({
               message:
                 err instanceof Error && err.message
-                  ? `That cover did not take: ${err.message}`
-                  : 'That cover did not take.',
+                  ? t('playlists.coverFailedWhy', { reason: err.message })
+                  : t('playlists.coverFailed'),
             });
           });
         }}
       />
 
-      <Modal open={renaming !== null} onClose={() => setRenaming(null)} title="Rename playlist" size="sm">
+      <Modal open={renaming !== null} onClose={() => setRenaming(null)} title={t('playlists.renameTitle')} size="sm">
         <form
           className="playlistCreate"
           onSubmit={(e) => {
@@ -796,15 +812,15 @@ export function PlaylistShowcase({
             autoFocus
             value={renaming?.name ?? ''}
             onChange={(e) => setRenaming((r) => (r ? { ...r, name: e.currentTarget.value } : r))}
-            aria-label="Playlist name"
+            aria-label={t('playlists.nameField')}
           />
           <Button type="submit" variant="solid">
-            Save
+            {t('common.save')}
           </Button>
         </form>
       </Modal>
 
-      <Modal open={folderFor !== null} onClose={() => setFolderFor(null)} title="New folder" size="sm">
+      <Modal open={folderFor !== null} onClose={() => setFolderFor(null)} title={t('playlists.newFolderTitle')} size="sm">
         <NewFolderForm
           key={folderFor?.id ?? ''}
           onDone={(name) => {

@@ -8,6 +8,7 @@ import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { publishJamShare } from '../servers/registry.ts';
 import { shoot } from '../widget/shot.ts';
 import { saveCardImage } from '../widget/saveCard.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import logo from '../../assets/attack-white.png';
 
 /**
@@ -47,11 +48,15 @@ function JamCard({
   qr: string | null;
   listening: number;
 }) {
+  const t = useT();
   return (
     <div className="shareCard" ref={cardRef}>
       <div className="shareCard__head">
+        {/* The product's name, which is the same word in every language -
+            the invite card leaves its own logo's alt English for the same
+            reason. */}
         <img className="shareCard__logo" src={logo} alt="AttackFM" />
-        <span className="shareCard__kicker">Listening together</span>
+        <span className="shareCard__kicker">{t('player.jamCardKicker')}</span>
       </div>
       {/* A room has no cover, and inventing one from whatever happens to be
           playing would put a record on the card that the room has already
@@ -61,25 +66,36 @@ function JamCard({
           <Users size={40} />
         </span>
       </div>
-      <p className="shareCard__name">{host ? `${host}'s groove` : 'A groove'}</p>
+      <p className="shareCard__name">
+        {host ? t('player.hostGroove', { host }) : t('player.aGroove')}
+      </p>
+      {/* The one-listener case is not "1 listening" - it is the room before
+          anyone else has arrived, which is a different sentence rather than a
+          different number, so it is the `_one` form of the count and not a
+          branch here. The server, when there is one, wraps that phrase rather
+          than trailing it, so a language that puts the place first can. */}
       <p className="shareCard__sub">
-        {listening === 1 ? 'Just getting started' : `${listening} listening`}
-        {where ? ` · on ${where}` : ''}
+        {where
+          ? t('player.jamListenersWhere', {
+              listeners: t('player.jamListeners', { count: listening }),
+              where,
+            })
+          : t('player.jamListeners', { count: listening })}
       </p>
       <div className="shareCard__qrRow">
         {qr ? (
-          <img className="shareCard__qr" src={qr} alt="Link as a QR code" />
+          <img className="shareCard__qr" src={qr} alt={t('player.jamQrAlt')} />
         ) : (
           <span className="shareCard__qr" aria-hidden />
         )}
         <div className="shareCard__linkWrap">
-          <span className="shareCard__linkLabel">Scan, or open</span>
+          <span className="shareCard__linkLabel">{t('player.jamScanOrOpen')}</span>
           <span className="shareCard__link">
-            {link ? link.replace(/^https?:\/\//, '') : 'making the link…'}
+            {link ? link.replace(/^https?:\/\//, '') : t('player.jamMakingLink')}
           </span>
         </div>
       </div>
-      <p className="shareCard__foot">attack.fm · same song, same moment</p>
+      <p className="shareCard__foot">{t('player.jamCardFoot')}</p>
     </div>
   );
 }
@@ -116,6 +132,7 @@ export function ShareJamSheet({
   open: boolean;
   onClose: () => void;
 }) {
+  const t = useT();
   const { session } = useServerSession();
   const registry = useRegistryOptional();
   const { toast } = useToast();
@@ -146,11 +163,15 @@ export function ShareJamSheet({
         if (live) setLink(out.url);
       })
       .catch(() => {
-        if (live) setLinkError('Could not make a link just now. The room is still yours.');
+        if (live) setLinkError(t('player.jamLinkFailed'));
       });
     return () => {
       live = false;
     };
+    // `t` is deliberately not a dependency: it changes identity when the
+    // language does, and re-minting the link because somebody switched to
+    // German would be a network call for a string.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, token, session, jamId, where]);
 
   useEffect(() => {
@@ -199,13 +220,15 @@ export function ShareJamSheet({
       const box = node.getBoundingClientRect();
       const dataUrl = png ?? (await shoot(node, Math.round(box.width), Math.round(box.height), 4));
       if (!dataUrl) {
-        toast({ message: 'Could not draw the card. Try again in a moment.' });
+        toast({ message: t('player.jamCardShotFailed') });
         return;
       }
       await saveCardImage({
         dataUrl,
         filename: 'attackfm-groove.png',
-        title: `${hostName ? `${hostName}'s groove` : 'A groove'} on AttackFM`,
+        title: t('player.jamShareTitle', {
+          name: hostName ? t('player.hostGroove', { host: hostName }) : t('player.aGroove'),
+        }),
         say: (message) => toast({ message }),
       });
     } finally {
@@ -220,13 +243,13 @@ export function ShareJamSheet({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      toast({ message: 'Could not copy - long-press the link on the card to select it.' });
+      toast({ message: t('player.jamCopyFailed') });
     }
   };
 
   return (
-    <GlassSheet open={open} onClose={onClose} label="Share groove" className="shareSheet">
-      <h2 className="shareSheet__title">Share this groove</h2>
+    <GlassSheet open={open} onClose={onClose} label={t('player.shareGroove')} className="shareSheet">
+      <h2 className="shareSheet__title">{t('player.shareThisGroove')}</h2>
       <div className="shareSheet__linkFace">
         <JamCard
           cardRef={cardRef}
@@ -238,8 +261,7 @@ export function ShareJamSheet({
         />
         {!token ? (
           <Text tone="muted" size="sm" className="shareSheet__note">
-            Links come from your AttackFM account, and this device is not signed into one yet. Sign
-            in under Profile, then come back here.
+            {t('player.jamShareNeedsAccount')}
           </Text>
         ) : linkError ? (
           <Text tone="danger" size="sm" className="shareSheet__note">
@@ -249,18 +271,17 @@ export function ShareJamSheet({
         <div className="shareSheet__actions">
           <Button variant="ghost" onClick={() => void copyLink()} disabled={!link}>
             {copied ? <Check size={16} /> : <Copy size={16} />}
-            {copied ? 'Copied' : 'Copy link'}
+            {copied ? t('player.jamCopied') : t('player.jamCopyLink')}
           </Button>
           <Button variant="solid" onClick={() => void saveImage()} disabled={saving || !link}>
             <Download size={16} />
-            {saving ? 'Saving…' : 'Save image'}
+            {saving ? t('player.jamSaving') : t('player.jamSaveImage')}
           </Button>
         </div>
         {/* The honest limit, said before the link is sent rather than
             discovered by whoever follows it. */}
         <Text tone="muted" size="xs" className="shareSheet__hint">
-          The link walks anyone on this server straight into the room. Someone who is not on it will
-          be told so - a groove is a room on one server, not a broadcast.
+          {t('player.jamShareLimit')}
         </Text>
       </div>
     </GlassSheet>

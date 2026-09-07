@@ -3,6 +3,8 @@ import { fireFelt } from '../core/haptics.ts';
 import { IconButton, Popover, Slider, volumeGain } from '@glacier/react';
 import { Volume2, VolumeX } from '@glacier/icons';
 import { usePlayback } from './playback.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 /** Unity (0 dB) sits at 100; the fader runs on to 150 for a boost region. */
 export const VOLUME_UNITY = 100;
@@ -44,8 +46,15 @@ function useUnityDetent() {
 function readoutFor(value: number, muted: boolean): string {
   if (muted || value <= 0) return '\u2212\u221E dB';
   const db = value <= VOLUME_UNITY ? volumeGain(value) : 20 * Math.log10(value / VOLUME_UNITY);
-  const rounded = Math.round(db * 10) / 10;
-  return `${rounded > 0 ? '+' : ''}${rounded} dB`;
+  // The NUMBER is the locale's - the sign it writes, and the decimal
+  // separator it writes (a German fader reads "-3,5 dB", not "-3.5"). "dB" is
+  // not: Intl has no decibel unit, and dB is the symbol in every locale
+  // anyway, so it stays a literal rather than becoming a catalogue string
+  // somebody would eventually translate.
+  return `${formatNumber(Math.round(db * 10) / 10, {
+    signDisplay: 'exceptZero',
+    maximumFractionDigits: 1,
+  })} dB`;
 }
 
 interface VolumeControlProps {
@@ -74,6 +83,7 @@ interface VolumeControlProps {
  * geometry changes.
  */
 export function VolumeRow({ value, muted, onValueChange, onMutedChange }: VolumeControlProps) {
+  const t = useT();
   const detent = useUnityDetent();
   // With boost off the fader simply ends at unity: no boost region, no detent
   // line to mark where it would have started.
@@ -84,7 +94,7 @@ export function VolumeRow({ value, muted, onValueChange, onMutedChange }: Volume
       <IconButton
         variant="ghost"
         size="sm"
-        aria-label={muted ? 'Unmute' : 'Mute'}
+        aria-label={muted ? t('player.unmute') : t('player.mute')}
         aria-pressed={muted}
         onClick={() => onMutedChange(!muted)}
       >
@@ -99,7 +109,7 @@ export function VolumeRow({ value, muted, onValueChange, onMutedChange }: Volume
           min={0}
           max={volumeBoost ? VOLUME_MAX : VOLUME_UNITY}
           value={shown}
-          aria-label="Volume"
+          aria-label={t('player.volume')}
           aria-valuetext={readoutFor(shown, muted)}
           onValueChange={(next) => {
             if (muted) onMutedChange(false);
@@ -113,6 +123,7 @@ export function VolumeRow({ value, muted, onValueChange, onMutedChange }: Volume
 }
 
 export function VolumeControl({ value, muted, onValueChange, onMutedChange }: VolumeControlProps) {
+  const t = useT();
   const detent = useUnityDetent();
   const { volumeBoost } = usePlayback();
   const shown = muted ? 0 : value;
@@ -120,13 +131,13 @@ export function VolumeControl({ value, muted, onValueChange, onMutedChange }: Vo
     <Popover
       placement="top"
       openOn="hover"
-      aria-label="Volume"
+      aria-label={t('player.volume')}
       className="volPanel"
       trigger={
         <IconButton
           variant="ghost"
           size="sm"
-          aria-label={muted ? 'Unmute' : 'Mute'}
+          aria-label={muted ? t('player.unmute') : t('player.mute')}
           aria-pressed={muted}
           onClick={() => onMutedChange(!muted)}
         >
@@ -144,7 +155,7 @@ export function VolumeControl({ value, muted, onValueChange, onMutedChange }: Vo
             min={0}
             max={volumeBoost ? VOLUME_MAX : VOLUME_UNITY}
             value={shown}
-            aria-label="Volume"
+            aria-label={t('player.volume')}
             aria-valuetext={readoutFor(shown, muted)}
             onValueChange={(next) => {
               // Moving a fader that is putting out nothing is a request to hear

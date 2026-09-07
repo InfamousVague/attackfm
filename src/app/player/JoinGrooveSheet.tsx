@@ -6,6 +6,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useNarrowViewport } from '../ux/useNarrowViewport.ts';
 import { useJamOptional } from './jam.tsx';
 import { clearGrooveCode, enterGroove, hubHost, onGrooveCode, type GrooveEntry } from './grooveEntry.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * "Have a code?" - the groove's typed door.
@@ -32,6 +33,7 @@ import { clearGrooveCode, enterGroove, hubHost, onGrooveCode, type GrooveEntry }
  * unfolded foldable gets the dialog.
  */
 export function JoinGrooveSheet() {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -46,8 +48,8 @@ export function JoinGrooveSheet() {
   // lands on it - the field is the whole sheet.
   useEffect(() => {
     if (!open) return;
-    const t = window.setTimeout(() => field.current?.focus(), 180);
-    return () => window.clearTimeout(t);
+    const timer = window.setTimeout(() => field.current?.focus(), 180);
+    return () => window.clearTimeout(timer);
   }, [open]);
 
   useEffect(
@@ -100,43 +102,48 @@ export function JoinGrooveSheet() {
   // The one line under the field. Busy first, then the hub's or the
   // registry's answer, then a nudge for text that is not a code.
   let status: { tone: 'muted' | 'danger'; words: string } | null = null;
-  if (busy) status = { tone: 'muted', words: 'Looking for that groove…' };
+  if (busy) status = { tone: 'muted', words: t('player.joinLooking') };
   else if (answer) {
     switch (answer.kind) {
       case 'elsewhere': {
         const where = answer.share.hubName ? `${answer.share.hubName} (${hubHost(answer.share.hubUrl)})` : hubHost(answer.share.hubUrl);
+        // Two whole sentences rather than one with a clause bolted on the
+        // end: where the "ask them for an invite" part belongs in a sentence
+        // is the translator's call, and a tacked-on fragment takes it away.
         status = {
           tone: 'muted',
-          words: `That groove is on ${where}. A groove is a room on one server, and you would need to be signed in there to walk in${answer.share.by ? ` - ask @${answer.share.by} for an invite` : ''}.`,
+          words: answer.share.by
+            ? t('player.joinElsewhereAsk', { where, who: answer.share.by })
+            : t('player.joinElsewhere', { where }),
         };
         break;
       }
       case 'missing':
         status = {
           tone: 'danger',
-          words: answer.bare
-            ? 'No groove answers to that code. It may have ended, or a letter is off - check it with whoever gave it to you.'
-            : 'That link is not one we know about. Ask whoever sent it for another.',
+          words: answer.bare ? t('player.joinNoCode') : t('player.joinNoLink'),
         };
         break;
       case 'ended':
         status = {
           tone: 'danger',
-          words: `That groove has ended.${answer.share.by ? ` Ask @${answer.share.by} to start another.` : ''}`,
+          words: answer.share.by
+            ? t('player.joinEndedAsk', { who: answer.share.by })
+            : t('player.joinEnded'),
         };
         break;
       case 'failed':
-        status = { tone: 'danger', words: 'Could not look that up just now. Try again in a moment.' };
+        status = { tone: 'danger', words: t('player.joinLookupFailed') };
         break;
     }
   } else if (text.trim() && !ref) {
-    status = { tone: 'muted', words: 'A code is a few letters and numbers; a link has /j/ in it.' };
+    status = { tone: 'muted', words: t('player.joinNotACode') };
   }
 
   const body = (
     <div className="joinGroove">
       <Text tone="muted" size="sm">
-        Read it off a friend&rsquo;s groove deck, or paste the link they sent you.
+        {t('player.joinBlurb')}
       </Text>
       <form
         className="joinGroove__form"
@@ -146,7 +153,7 @@ export function JoinGrooveSheet() {
         }}
       >
         <label className="joinGroove__field">
-          <span className="joinGroove__label">Code or link</span>
+          <span className="joinGroove__label">{t('player.joinFieldLabel')}</span>
           <Input
             ref={field}
             value={text}
@@ -154,7 +161,7 @@ export function JoinGrooveSheet() {
               setText(e.target.value);
               setAnswer(null);
             }}
-            placeholder="GR00VE or attack.fm/j/GR00VE"
+            placeholder={t('player.joinPlaceholder')}
             leadingIcon={<KeyRound size={16} aria-hidden />}
             autoCapitalize="characters"
             autoCorrect="off"
@@ -169,7 +176,7 @@ export function JoinGrooveSheet() {
         {canPaste && (
           <button type="button" className="jamAction joinGroove__paste" onClick={() => void paste()} disabled={busy}>
             <ClipboardPaste size={16} aria-hidden />
-            Paste
+            {t('player.joinPaste')}
           </button>
         )}
       </form>
@@ -182,10 +189,10 @@ export function JoinGrooveSheet() {
       </div>
       <div className="joinGroove__actions">
         <Button variant="ghost" onClick={close}>
-          Not now
+          {t('player.joinNotNow')}
         </Button>
         <Button variant="solid" disabled={!ref || busy || !jam || !session} onClick={() => void go()}>
-          {busy ? 'Looking…' : 'Join'}
+          {busy ? t('player.joinBusy') : t('player.joinAction')}
         </Button>
       </div>
     </div>
@@ -193,13 +200,13 @@ export function JoinGrooveSheet() {
 
   if (narrow) {
     return (
-      <Drawer open={open} onClose={close} side="bottom" size="md" title="Join a groove" className="joinGrooveSheet">
+      <Drawer open={open} onClose={close} side="bottom" size="md" title={t('player.joinTitle')} className="joinGrooveSheet">
         {body}
       </Drawer>
     );
   }
   return (
-    <Modal open={open} onClose={close} title="Join a groove" size="sm">
+    <Modal open={open} onClose={close} title={t('player.joinTitle')} size="sm">
       {body}
     </Modal>
   );

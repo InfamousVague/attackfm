@@ -18,6 +18,8 @@ import { trackIdFromPath } from '../server.ts';
 import { Button, IconButton, Slider, SortableList, Text, useToast } from '@glacier/react';
 import { ArrowUpToLine, ChevronDown, Hourglass, Music, Radio, Sparkles, X } from '@glacier/icons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 import { artSized } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
 import { hostWaiting, useJamOptional, type PendingAdd } from './jam.tsx';
@@ -33,6 +35,22 @@ interface QueueRow {
   id: string;
   track: Track;
 }
+
+/*
+ * What a pending send is READ OUT as - a whole sentence per state, rather than
+ * one sentence with a `{{state}}` hole and "playing next" / "waiting" dropped
+ * into it. Those two are a bare verb phrase in English and an inflected one in
+ * most of Europe, and a translator handed the fragment on its own cannot see
+ * which sentence it lands in or what it has to agree with. Four entries is the
+ * price of two that can actually be translated.
+ *
+ * `alone` is the row with no title yet (the hub has not answered); `row` is the
+ * one that names the song.
+ */
+const SEND_ARIA = {
+  next: { alone: 'player.sendAriaNext', row: 'player.sendRowAriaNext' },
+  waiting: { alone: 'player.sendAriaWaiting', row: 'player.sendRowAriaWaiting' },
+} as const;
 
 export function QueuePanel({
   queue,
@@ -60,7 +78,8 @@ export function QueuePanel({
   // The current track's spot splits the line: everything after it is still to
   // come. With the current track absent from the queue (a lone DJ pick, say),
   // there is nothing behind it to arrange.
-  const curIdx = current ? queue.findIndex((t) => t.path === current.path) : -1;
+  const t = useT();
+  const curIdx = current ? queue.findIndex((s) => s.path === current.path) : -1;
   const upcoming = curIdx >= 0 ? queue.slice(curIdx + 1) : [];
   // Only the near horizon is drawn. "Shuffle all" hands this panel the whole
   // library, and a list of five thousand rows is not a queue anyone reads - it
@@ -84,7 +103,7 @@ export function QueuePanel({
    */
   const shown = upNext.slice(0, UP_NEXT_SHOWN);
   const hiddenCount = upNext.length - shown.length;
-  const rows: QueueRow[] = shown.map((t) => ({ id: t.path, track: t }));
+  const rows: QueueRow[] = shown.map((s) => ({ id: s.path, track: s }));
   /** The next few from the list being played through, for the tail below. */
   const CONTEXT_SHOWN = 5;
   const contextNext = upcoming.slice(0, CONTEXT_SHOWN);
@@ -200,17 +219,17 @@ export function QueuePanel({
   const { toast } = useToast();
 
   const remove = (path: string) => {
-    const at = upNext.findIndex((t) => t.path === path);
+    const at = upNext.findIndex((s) => s.path === path);
     if (at < 0) return;
     const track = upNext[at]!;
-    onUpNextChange(upNext.filter((t) => t.path !== path));
+    onUpNextChange(upNext.filter((s) => s.path !== path));
     toast({
-      message: `Removed “${track.title}” from the queue`,
+      message: t('player.queueRemoved', { title: track.title }),
       action: {
-        label: 'Undo',
+        label: t('common.undo'),
         onPress: () => {
           const { queue: now, onQueueChange: apply } = latest.current;
-          if (now.some((t) => t.path === path)) return; // re-queued by hand already
+          if (now.some((s) => s.path === path)) return; // re-queued by hand already
           const back = [...now];
           back.splice(Math.min(at, back.length), 0, track);
           apply(back);
@@ -227,8 +246,8 @@ export function QueuePanel({
     if (upNext.length === 0) return;
     onUpNextChange([]);
     toast({
-      message: `Cleared ${upNext.length} queued ${upNext.length === 1 ? 'song' : 'songs'}`,
-      action: { label: 'Undo', onPress: () => latest.current.onQueueChange(before) },
+      message: t('player.queueCleared', { count: before.length }),
+      action: { label: t('common.undo'), onPress: () => latest.current.onQueueChange(before) },
     });
   };
   /*
@@ -240,13 +259,13 @@ export function QueuePanel({
    */
   const dropRow = (path: string) => {
     const { queue: now, onQueueChange: apply } = latest.current;
-    if (now.some((t) => t.path === path)) apply(now.filter((t) => t.path !== path));
+    if (now.some((s) => s.path === path)) apply(now.filter((s) => s.path !== path));
   };
   const dropArtist = (artist: string) => {
     const key = artist.trim().toLowerCase();
     const { queue: now, onQueueChange: apply } = latest.current;
-    const at = current ? now.findIndex((t) => t.path === current.path) : -1;
-    const keep = (t: Track, i: number) => i <= at || t.artist.trim().toLowerCase() !== key;
+    const at = current ? now.findIndex((s) => s.path === current.path) : -1;
+    const keep = (s: Track, i: number) => i <= at || s.artist.trim().toLowerCase() !== key;
     apply(now.filter(keep));
     if (current && current.artist.trim().toLowerCase() === key) deckNext();
   };
@@ -259,10 +278,10 @@ export function QueuePanel({
   };
 
   return (
-    <div className="queuePanel" role="dialog" aria-label="Queue">
+    <div className="queuePanel" role="dialog" aria-label={t('player.queue')}>
       <header className="queuePanel__head">
-        <span className="queuePanel__title">{inJam ? 'Groove queue' : 'Queue'}</span>
-        <IconButton variant="ghost" aria-label="Close queue" onClick={onClose}>
+        <span className="queuePanel__title">{inJam ? t('player.grooveQueue') : t('player.queue')}</span>
+        <IconButton variant="ghost" aria-label={t('player.closeQueue')} onClick={onClose}>
           <ChevronDown size={22} />
         </IconButton>
       </header>
@@ -275,42 +294,42 @@ export function QueuePanel({
             <div className="radioBar__head">
               <span className="radioBar__title">
                 <Radio size={15} />
-                {radio.seed ? `Radio from ${radio.seed.title}` : 'Radio'}
+                {radio.seed ? t('player.radioFrom', { title: radio.seed.title }) : t('player.radio')}
               </span>
               <Button variant="ghost" size="sm" onClick={radio.stop}>
-                Stop
+                {t('player.radioStop')}
               </Button>
             </div>
             <label className="radioBar__dial">
-              <span>Calmer</span>
+              <span>{t('player.dialCalmer')}</span>
               <Slider
-                aria-label="Energy"
+                aria-label={t('player.dialEnergy')}
                 min={-1}
                 max={1}
                 step={0.1}
                 value={radio.dial.energy}
                 onValueChange={(v) => radio.setDial({ energy: v })}
               />
-              <span>Harder</span>
+              <span>{t('player.dialHarder')}</span>
             </label>
             <label className="radioBar__dial">
-              <span>Deep cuts</span>
+              <span>{t('player.dialDeepCuts')}</span>
               <Slider
-                aria-label="Familiarity"
+                aria-label={t('player.dialFamiliarity')}
                 min={0}
                 max={1}
                 step={0.1}
                 value={radio.dial.familiar}
                 onValueChange={(v) => radio.setDial({ familiar: v })}
               />
-              <span>Favourites</span>
+              <span>{t('player.dialFavourites')}</span>
             </label>
             {/* Two people, one queue: the blend scores every candidate against
                 BOTH tastes and keeps the worse of the two, so nobody's
                 obsession carries a song the other would skip. */}
             {house.length > 0 && (
               <div className="radioBar__blend">
-                <span>With</span>
+                <span>{t('player.blendWith')}</span>
                 {house.map((p) => (
                   <Button
                     key={p.id}
@@ -325,7 +344,7 @@ export function QueuePanel({
             )}
             {radio.filling && (
               <Text size="xs" tone="subtle">
-                Finding the next few…
+                {t('player.radioFilling')}
               </Text>
             )}
           </div>
@@ -333,7 +352,7 @@ export function QueuePanel({
 
         {current && (
           <div className="queueNow">
-            <span className="queueNow__label">Now playing</span>
+            <span className="queueNow__label">{t('player.nowPlaying')}</span>
             {/* The one row that had no menu, in the panel whose own comment
                 says the queue is a list of songs like any other. Wrapped like
                 the rest, so the playing song can be filed or queued-next from
@@ -387,18 +406,20 @@ export function QueuePanel({
 
         <div className="queueUp">
           <div className="queueUp__head">
-            <span className="queueUp__label">{inRoom ? 'Next up in the groove' : 'Next up'}</span>
+            <span className="queueUp__label">
+              {inRoom ? t('player.nextUpInGroove') : t('player.nextUp')}
+            </span>
             {!following && rows.length > 0 && (
               <Button variant="ghost" size="sm" onClick={clearUpcoming}>
-                Clear
+                {t('player.clearQueue')}
               </Button>
             )}
           </div>
           {waiting && (
             <Text tone="muted" size="xs" className="queueUp__note">
               {hosting
-                ? 'Waiting on your player — nothing lands until it reports'
-                : `Waiting for ${room?.hostName ?? 'the host'}’s player`}
+                ? t('player.waitingOnYourPlayer')
+                : t('player.waitingForHostPlayer', { host: room?.hostName ?? t('player.theHost') })}
             </Text>
           )}
           {/* The members' sends, ahead of the line: the newest thing in the
@@ -412,21 +433,28 @@ export function QueuePanel({
             <div
               className="queueRows queueRows--pending"
               role="list"
-              aria-label={`${pendingRows.length} waiting ${hosting ? 'on your player' : 'for the host'}`}
+              aria-label={
+                hosting
+                  ? t('player.pendingWaitingOnYou', { count: pendingRows.length })
+                  : t('player.pendingWaitingOnHost', { count: pendingRows.length })
+              }
             >
               {pendingRows.map((p) => {
-                const who = p.mine ? 'you' : p.by;
+                // Lower case and its own key: this is dropped INTO a sentence
+                // ("by you"), which is a different word from the standalone
+                // "You" in common - and a different one again in German.
+                const who = p.mine ? t('player.you') : p.by;
                 const next = p.next === true;
-                const state = next ? 'playing next' : 'waiting';
+                const aria = SEND_ARIA[next ? 'next' : 'waiting'];
                 const credit = next ? (
                   <span className="queueRow__credit queueRow__credit--pending queueRow__credit--next">
                     <ArrowUpToLine size={11} aria-hidden />
-                    playing next · by {who}
+                    {t('player.sendNextBy', { who })}
                   </span>
                 ) : (
                   <span className="queueRow__credit queueRow__credit--pending">
                     <Hourglass size={11} aria-hidden />
-                    by {who}
+                    {t('player.sentBy', { who })}
                   </span>
                 );
                 const withdraw = p.mine && (
@@ -434,7 +462,9 @@ export function QueuePanel({
                     variant="ghost"
                     size="sm"
                     className="queueRow__withdraw queueRow__act"
-                    aria-label={`Withdraw ${p.track?.title ?? 'your add'} from the groove`}
+                    aria-label={t('player.withdrawSend', {
+                      title: p.track?.title ?? t('player.yourAdd'),
+                    })}
                     onClick={() => void jam?.withdraw(p.trackId)}
                   >
                     <X size={16} />
@@ -446,7 +476,7 @@ export function QueuePanel({
                       key={`pending:${p.trackId}`}
                       answer={p.track}
                       named={roomNames(p.trackId)}
-                      note={`${state}, sent by ${who}`}
+                      note={t(aria.alone, { who })}
                       chip={credit}
                       action={withdraw}
                       pending
@@ -462,7 +492,11 @@ export function QueuePanel({
                       data-pending
                       data-next={next || undefined}
                       role="listitem"
-                      aria-label={`${p.track.title} by ${p.track.artist}, ${state}, sent by ${who}`}
+                      aria-label={t(aria.row, {
+                        title: p.track.title,
+                        artist: p.track.artist,
+                        who,
+                      })}
                     >
                       <Cover track={p.track} />
                       <div className="queueRow__meta">
@@ -486,29 +520,29 @@ export function QueuePanel({
           {following ? (
             lineRows.length === 0 && pendingRows.length === 0 ? (
               <Text tone="muted" size="sm" className="queueUp__empty">
-                Nothing queued yet. Tap a song anywhere and it goes to the
-                groove - {room?.hostName ?? 'the host'} plays it for everyone.
+                {t('player.grooveQueueEmptyGuest', { host: room?.hostName ?? t('player.theHost') })}
               </Text>
             ) : lineRows.length === 0 ? null : (
               // A guest reads the room's list; nobody else's device can
               // reorder it.
-              <div className="queueRows" role="list" aria-label="The groove's queue">
-                {lineRows.map(({ id, track: t }, i) => {
+              <div className="queueRows" role="list" aria-label={t('player.grooveQueueList')}>
+                {lineRows.map(({ id, track: song }, i) => {
                   const credit = creditOf(id);
-                  const chip = credit ? <span className="queueRow__credit">added by {credit}</span> : null;
-                  if (!t) {
+                  const added = credit ? t('player.addedBy', { who: credit }) : '';
+                  const chip = credit ? <span className="queueRow__credit">{added}</span> : null;
+                  if (!song) {
                     return (
-                      <AskedRow key={`${id}-${i}`} answer={t} named={roomNames(id)} note={credit ? `added by ${credit}` : ''} chip={chip} />
+                      <AskedRow key={`${id}-${i}`} answer={song} named={roomNames(id)} note={added} chip={chip} />
                     );
                   }
                   return (
-                    <TrackMenu key={t.path} track={t} className="queueRowMenu">
+                    <TrackMenu key={song.path} track={song} className="queueRowMenu">
                       <div className="queueRow" data-static role="listitem">
-                        <Cover track={t} />
+                        <Cover track={song} />
                         <div className="queueRow__meta">
-                          <span className="queueRow__title">{t.title}</span>
+                          <span className="queueRow__title">{song.title}</span>
                           <span className="queueRow__artist">
-                            <ArtistLink artist={t.artist} beforeOpen={onClose} />
+                            <ArtistLink artist={song.artist} beforeOpen={onClose} />
                             {chip}
                           </span>
                         </div>
@@ -521,9 +555,7 @@ export function QueuePanel({
           ) : rows.length === 0 ? (
             pendingRows.length > 0 ? null : (
               <Text tone="muted" size="sm" className="queueUp__empty">
-                {inRoom
-                  ? 'Nothing queued yet. Add songs from anywhere - yours and your guests’ line up here, and the groove plays them in this order.'
-                  : 'Nothing queued. Add songs from anywhere with “Add to queue,” and they line up here.'}
+                {inRoom ? t('player.grooveQueueEmptyHost') : t('player.queueEmpty')}
               </Text>
             )
           ) : (
@@ -575,7 +607,9 @@ export function QueuePanel({
                         {(() => {
                           const credit = creditFor(r.track);
                           return credit ? (
-                            <span className="queueRow__credit">added by {credit}</span>
+                            <span className="queueRow__credit">
+                              {t('player.addedBy', { who: credit })}
+                            </span>
                           ) : null;
                         })()}
                       </span>
@@ -595,7 +629,7 @@ export function QueuePanel({
                     variant="ghost"
                     size="sm"
                     className="queueRow__act"
-                    aria-label={`Remove ${r.track.title} from the queue`}
+                    aria-label={t('player.removeFromQueue', { title: r.track.title })}
                     onClick={() => remove(r.track.path)}
                   >
                     <X size={16} />
@@ -609,7 +643,9 @@ export function QueuePanel({
               five thousand rows to say so. */}
           {!following && hiddenCount > 0 && (
             <Text tone="muted" size="sm" className="queueUp__more">
-              and {hiddenCount.toLocaleString()} more
+              {/* `count` picks the plural form; `n` is the number as the
+                  locale groups it, which is not the same string. */}
+              {t('player.andMore', { count: hiddenCount, n: formatNumber(hiddenCount) })}
             </Text>
           )}
           {/*
@@ -626,17 +662,19 @@ export function QueuePanel({
           {!following && contextNext.length > 0 && (
             <div className="queueUp__context">
               <Text tone="muted" size="xs" className="queueUp__contextHead">
-                {upNext.length > 0 ? 'Then, from what you’re playing' : 'Next, from what you’re playing'}
+                {/* Two labels for two states, not a count: this says whether the
+                    list picks up after your own picks or straight away. */}
+                {upNext.length > 0 ? t('player.thenFromList') : t('player.nextFromList')}
               </Text>
-              <div className="queueRows" role="list" aria-label="Coming up from the list you are playing">
-                {contextNext.map((t) => (
-                  <TrackMenu key={t.path} track={t} className="queueRowMenu">
+              <div className="queueRows" role="list" aria-label={t('player.comingUpFromList')}>
+                {contextNext.map((song) => (
+                  <TrackMenu key={song.path} track={song} className="queueRowMenu">
                     <div className="queueRow" data-static role="listitem">
-                      <Cover track={t} />
+                      <Cover track={song} />
                       <div className="queueRow__meta">
-                        <span className="queueRow__title">{t.title}</span>
+                        <span className="queueRow__title">{song.title}</span>
                         <span className="queueRow__artist">
-                          <ArtistLink artist={t.artist} beforeOpen={onClose} />
+                          <ArtistLink artist={song.artist} beforeOpen={onClose} />
                         </span>
                       </div>
                     </div>
@@ -645,7 +683,10 @@ export function QueuePanel({
               </div>
               {upcoming.length > contextNext.length && (
                 <Text tone="muted" size="xs" className="queueUp__more">
-                  and {(upcoming.length - contextNext.length).toLocaleString()} more in the list
+                  {t('player.andMoreInList', {
+                    count: upcoming.length - contextNext.length,
+                    n: formatNumber(upcoming.length - contextNext.length),
+                  })}
                 </Text>
               )}
             </div>
@@ -684,9 +725,11 @@ function AskedRow({
   /** A pending send asked to play next (the mark rides on the row). */
   next?: boolean;
 }) {
+  const t = useT();
+  const missing = t('player.notInLibrary');
   const asking = answer === undefined;
-  const title = asking ? '…' : (named?.title ?? 'Not in your library');
-  const sub = asking ? '' : named ? [named.artist, 'Not in your library'].filter(Boolean).join(' · ') : '';
+  const title = asking ? '…' : (named?.title ?? missing);
+  const sub = asking ? '' : named ? [named.artist, missing].filter(Boolean).join(' · ') : '';
   return (
     <div
       className="queueRow"
@@ -696,7 +739,12 @@ function AskedRow({
       data-pending={pending || undefined}
       data-next={next || undefined}
       role="listitem"
-      aria-label={`${asking ? 'Still looking up a song' : `${title}${sub ? `, ${sub}` : ''}`}${note ? `, ${note}` : ''}`}
+      /* Facts read out in sequence - the song, then what state it is in -
+         rather than one sentence, because any of the three can be absent and
+         each is already a whole phrase in its own right. */
+      aria-label={[asking ? t('player.stillLookingUp') : title, asking ? '' : sub, note]
+        .filter(Boolean)
+        .join(', ')}
     >
       <span className="queueRow__cover" aria-hidden>
         <Music size={16} />

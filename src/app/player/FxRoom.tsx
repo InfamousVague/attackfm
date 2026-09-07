@@ -15,6 +15,7 @@ import {
   useChainEdit,
 } from './fxEditing.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The HiFi room: the whole signal path, and the rack you add to it from.
@@ -44,6 +45,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
  * from in here.
  */
 export function FxRoom() {
+  const t = useT();
   const { chain, patch, toggle, remove, move, add, full } = useChainEdit();
   const { session } = useServerSession();
   // A box this server cannot compile is dropped from the audio silently, so
@@ -51,7 +53,7 @@ export function FxRoom() {
   // server has not told us yet, which reads as supported - never grey out a
   // box because a fetch has not landed.
   const known = useServerFxNodes(session?.url);
-  const unsupported = (t: string) => known !== null && !known.has(t);
+  const unsupported = (tag: string) => known !== null && !known.has(tag);
 
   const [open, setOpen] = useState<string | null>(null);
   const [landed, setLanded] = useState<string | null>(null);
@@ -61,8 +63,8 @@ export function FxRoom() {
 
   useEffect(() => {
     if (!landed) return;
-    const t = window.setTimeout(() => setLanded(null), FRESH_MS);
-    return () => window.clearTimeout(t);
+    const timer = window.setTimeout(() => setLanded(null), FRESH_MS);
+    return () => window.clearTimeout(timer);
   }, [landed]);
 
   const put = (spec: FxNodeSpec) => {
@@ -79,14 +81,14 @@ export function FxRoom() {
     <div className="fxRoom" ref={root}>
       <div className="fxRoom__head">
         <Text weight="bold" size="sm">
-          HiFi chain
+          {t('player.hifiChain')}
         </Text>
         <Text tone="muted" size="xs">
           {chain.nodes.length === 0
-            ? 'empty'
+            ? t('player.fxChainEmpty')
             : live > 0
-              ? `${live} of ${chain.nodes.length} in`
-              : 'all out'}
+              ? t('player.fxChainIn', { live, total: chain.nodes.length })
+              : t('player.fxChainAllOut')}
         </Text>
         {/* No master switch. There was one, and a rack could sit with every
             box lit and the whole room greyed out from a single control at the
@@ -95,23 +97,17 @@ export function FxRoom() {
             was standing in for, and it says what it does. */}
         {live > 0 && (
           <button type="button" className="fxRoom__allOff" onClick={silenceFxChain}>
-            All out
+            {t('player.allOut')}
           </button>
         )}
       </div>
 
       {!session && (
-        <Text tone="muted" size="xs">
-          The chain is rendered by your server, so sign in to hear it. You can
-          still build one here — it will be waiting.
-        </Text>
+        <Text tone="muted" size="xs">{t('player.fxNeedsServer')}</Text>
       )}
 
       {chain.nodes.length === 0 ? (
-        <Text tone="muted" size="xs">
-          Nothing in the chain. Add a box below and it goes straight into the
-          signal path.
-        </Text>
+        <Text tone="muted" size="xs">{t('player.fxChainEmptyHint')}</Text>
       ) : (
         <ul className="fxRoom__chain">
           {chain.nodes.map((node, index) => {
@@ -133,7 +129,7 @@ export function FxRoom() {
                 >
                   <div className="fxRoom__boxHead">
                     <Switch
-                      aria-label={`${spec?.label ?? node.t} in`}
+                      aria-label={t('player.fxBoxIn', { name: spec ? t(spec.labelKey) : node.t })}
                       checked={node.on}
                       onCheckedChange={(v: boolean) => toggle(node.key, v)}
                     />
@@ -148,10 +144,10 @@ export function FxRoom() {
                       </span>
                       <span className="fxRoom__label">
                         <span className="fxRoom__name" data-unsupported={dead ? 'true' : undefined}>
-                          {spec?.label ?? node.t}
+                          {spec ? t(spec.labelKey) : node.t}
                         </span>
                         <span className="fxRoom__summary">
-                          {dead ? 'your server does not have this one' : summary(node)}
+                          {dead ? t('player.fxUnsupported') : summary(node)}
                         </span>
                       </span>
                       {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -166,10 +162,13 @@ export function FxRoom() {
                           return (
                             <label key={p.key} className="fxRoom__knob">
                               <Text tone="muted" size="xs">
-                                {p.label}
+                                {t(p.labelKey)}
                               </Text>
                               <Slider
-                                aria-label={`${spec.label} ${p.label}`}
+                                aria-label={t('player.fxKnobAria', {
+                                  node: t(spec.labelKey),
+                                  knob: t(p.labelKey),
+                                })}
                                 min={p.min}
                                 max={p.max}
                                 step={p.step}
@@ -187,22 +186,23 @@ export function FxRoom() {
                           );
                         })
                       ) : (
-                        <Text tone="muted" size="xs">
-                          No controls — it does one thing.
-                        </Text>
+                        <Text tone="muted" size="xs">{t('player.fxNoControls')}</Text>
                       )}
 
                       <div className="fxRoom__boxTools">
                         {/* Order is the whole point of a chain, so the
                             position is stated rather than left to be counted. */}
                         <Text tone="muted" size="xs">
-                          {index + 1} of {chain.nodes.length}
+                          {t('player.fxPosition', {
+                            index: index + 1,
+                            total: chain.nodes.length,
+                          })}
                         </Text>
                         <span className="fxRoom__spacer" />
                         <button
                           type="button"
                           className="fxRoom__tool"
-                          aria-label="Move earlier"
+                          aria-label={t('player.fxMoveEarlier')}
                           disabled={index === 0}
                           onClick={() => move(index, -1)}
                         >
@@ -211,7 +211,7 @@ export function FxRoom() {
                         <button
                           type="button"
                           className="fxRoom__tool"
-                          aria-label="Move later"
+                          aria-label={t('player.fxMoveLater')}
                           disabled={index === chain.nodes.length - 1}
                           onClick={() => move(index, 1)}
                         >
@@ -220,7 +220,9 @@ export function FxRoom() {
                         <button
                           type="button"
                           className="fxRoom__tool"
-                          aria-label={`Remove ${spec?.label ?? node.t}`}
+                          aria-label={t('player.fxRemoveNode', {
+                            name: spec ? t(spec.labelKey) : node.t,
+                          })}
                           onClick={() => {
                             if (open === node.key) setOpen(null);
                             remove(node.key);
@@ -257,8 +259,9 @@ function Shelf({
 }: {
   full: boolean;
   onAdd: (spec: FxNodeSpec) => void;
-  unsupported: (t: string) => boolean;
+  unsupported: (tag: string) => boolean;
 }) {
+  const t = useT();
   const { chain } = useChainEdit();
   const [drawer, setDrawer] = useState<string>(ALL_DRAWERS);
   const [query, setQuery] = useState('');
@@ -267,10 +270,17 @@ function Shelf({
     const all = drawers('rack');
     const total = all.reduce((n, d) => n + d.count, 0);
     return [
-      { value: ALL_DRAWERS, label: `All ${total}` },
-      ...all.map((d) => ({ value: d.value, label: d.label })),
+      { value: ALL_DRAWERS, label: t('player.filterFamilyAll', { count: total }) },
+      // `drawers()` hands back the drawer's own id as its label, because the
+      // id is what the segmented control and `shelfFor` match on and must
+      // stay English. The word beside it is looked up here instead, and an
+      // unmapped drawer falls back to the id rather than to a raw key.
+      ...all.map((d) => {
+        const key = DRAWER_KEYS[d.value];
+        return { value: d.value, label: key ? t(key) : d.label };
+      }),
     ];
-  }, []);
+  }, [t]);
 
   const shelf = useMemo(() => shelfFor('rack', drawer, query), [drawer, query]);
   const searching = query.trim().length > 0;
@@ -281,8 +291,8 @@ function Shelf({
         <div className="fxShelf__search">
           <Search size={14} />
           <Input
-            aria-label="Search the rack"
-            placeholder="Search the rack"
+            aria-label={t('player.fxSearchRack')}
+            placeholder={t('player.fxSearchRack')}
             value={query}
             size="sm"
             onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
@@ -291,7 +301,7 @@ function Shelf({
             <button
               type="button"
               className="fxShelf__clear"
-              aria-label="Clear search"
+              aria-label={t('common.clearSearch')}
               onClick={() => setQuery('')}
             >
               <X size={13} />
@@ -303,7 +313,7 @@ function Shelf({
         {!searching && (
           <div className="fxShelf__rail">
             <SegmentedControl
-              aria-label="Kind"
+              aria-label={t('player.fxKind')}
               size="sm"
               value={drawer}
               options={options}
@@ -314,14 +324,12 @@ function Shelf({
       </div>
 
       {full && (
-        <Text tone="muted" size="xs">
-          Sixteen boxes is the whole chain. Remove one to add another.
-        </Text>
+        <Text tone="muted" size="xs">{t('player.fxChainFull')}</Text>
       )}
 
       {shelf.length === 0 ? (
         <Text tone="muted" size="xs">
-          Nothing here matches “{query.trim()}”.
+          {t('player.filterNoMatch', { query: query.trim() })}
         </Text>
       ) : (
         <ul className="fxShelf__list">
@@ -343,10 +351,15 @@ function Shelf({
                   </span>
                   <span className="fxShelf__text">
                     <span className="fxShelf__name" data-unsupported={dead ? 'true' : undefined}>
-                      {spec.label}
-                      {taken && <span className="fxShelf__taken"> · in the chain</span>}
+                      {t(spec.labelKey)}
+                      {taken && (
+                        <>
+                          {' '}
+                          <span className="fxShelf__taken">{t('player.fxInChain')}</span>
+                        </>
+                      )}
                     </span>
-                    <span className="fxShelf__blurb">{spec.blurb}</span>
+                    <span className="fxShelf__blurb">{t(spec.blurbKey)}</span>
                   </span>
                   <Plus size={15} />
                 </button>
@@ -358,6 +371,18 @@ function Shelf({
     </div>
   );
 }
+
+/**
+ * What each rack drawer is CALLED. The ids themselves (`Tone`, `Space`) are
+ * the segmented control's values and what `shelfFor` filters by, so they
+ * cannot be translated where they are defined - only where they are shown.
+ */
+const DRAWER_KEYS: Record<string, string> = {
+  Tone: 'player.fxDrawerTone',
+  Dynamics: 'player.fxDrawerDynamics',
+  Space: 'player.fxDrawerSpace',
+  Utility: 'player.fxDrawerUtility',
+};
 
 /** A pedal's card, tinted by its hue: brighter when it is in the path. Rack
  *  boxes have no hue and stay uniform, which is what makes a pedal in this

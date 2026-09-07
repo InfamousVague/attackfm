@@ -102,6 +102,18 @@ testing.
 
 The rule: **if any code anywhere compares the string, it is not prose.**
 
+When one of those trips the scanner, say so at the string — write
+`i18n-ignore` in a comment on the line or the line above, with the reason:
+
+```ts
+/** The section name the SERVER sends, matched against below, not shown.
+ *  i18n-ignore */
+const BLENDED_SECTION = 'Trending now';
+```
+
+That belongs there rather than in a deny-list inside the scanner, where the
+next person to read this line will never find it.
+
 `CHANGELOG.md` also stays English. It ships in-app (`settings/WhatsNew.tsx`),
 but it is release notes — ~800 lines of historical product copy that grows
 every ship, and translating it means re-opening translation on every release.

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { fetchShares } from '../servers/registry.ts';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
+import { translate } from '../i18n/LocaleShell.tsx';
 import { dismissNotice, noteNotice } from './notices.ts';
 
 /**
@@ -57,8 +58,8 @@ export function ShareNotices() {
             noteNotice({
               id,
               kind: 'friends',
-              title: `@${s.from} wants to send you songs`,
-              body: 'Open Friends to say whether you take them.',
+              title: translate('notices.shareAsk', { from: s.from }),
+              body: translate('notices.shareAskBody'),
               art: null,
               door: 'friends',
               at: s.createdAt * 1000,
@@ -72,8 +73,13 @@ export function ShareNotices() {
           noteNotice({
             id,
             kind: 'friends',
-            title: `@${s.from} sent you ${s.title}`,
-            body: `${s.artist}${s.note ? ` · “${s.note}”` : ''} — open Friends to get it.`,
+            title: translate('notices.shareSent', { from: s.from, title: s.title }),
+            // A note is a whole extra clause, so it is a whole extra sentence:
+            // where the quoted aside sits relative to the artist is the
+            // translator's choice, and splicing it in here takes that away.
+            body: s.note
+              ? translate('notices.shareSentBodyNote', { artist: s.artist, note: s.note })
+              : translate('notices.shareSentBody', { artist: s.artist }),
             art: null,
             door: 'friends',
             at: s.createdAt * 1000,

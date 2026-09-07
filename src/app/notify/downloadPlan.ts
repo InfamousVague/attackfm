@@ -14,6 +14,7 @@
 //! built, and the store's own tests passed, because they exercised the ring
 //! rather than the decision about what to put in it.
 
+import { translate } from '../i18n/LocaleShell.tsx';
 import { msOf } from './notices.ts';
 import type { MusicImportJob, MusicImportState } from '../../plugins/importsBridge.ts';
 
@@ -83,9 +84,9 @@ export function silentLanding(job: MusicImportJob): boolean {
  */
 export function landedLine(job: MusicImportJob): string {
   const n = job.files?.length ?? 0;
-  if (n > 1) return `${n} songs are in your library.`;
-  if (job.title) return `“${job.title}” is in your library.`;
-  return 'It is in your library.';
+  if (n > 1) return translate('downloads.landedCount', { count: n });
+  if (job.title) return translate('downloads.landedTitle', { title: job.title });
+  return translate('downloads.landedIt');
 }
 
 /**
@@ -159,7 +160,9 @@ export function planFromQueue(
         notices.push({
           id: `import:${job.id}`,
           kind: 'drops',
-          title: 'New music',
+          // The bell's own name for this kind of news, shared with the
+          // Settings row that switches it on and off.
+          title: translate('notices.dropsLabel'),
           body: landedLine(job),
           artUrl: job.artworkUrl,
           door: 'downloads',
@@ -183,8 +186,10 @@ export function planFromQueue(
         // lands still rings.
         id: `import:${job.id}`,
         kind: 'failed',
-        title: 'Download failed',
-        body: job.title ? `“${job.title}” didn’t finish.` : 'A download didn’t finish.',
+        title: translate('downloads.failedTitle'),
+        body: job.title
+          ? translate('downloads.failedNamed', { title: job.title })
+          : translate('downloads.failedUnnamed'),
         artUrl: job.artworkUrl,
         door: 'downloads',
       });

@@ -13,7 +13,8 @@ import {
   type RefetchJob,
 } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { formatClock } from '../ux/format.ts';
+import { formatClock, formatNumber } from '../ux/format.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -49,8 +50,15 @@ export function WrongSongModal({
   onReplaced?: (newTrackId: number) => void;
 }) {
   const { session } = useServerSession();
+  const t = useT();
   const [job, setJob] = useState<RefetchJob | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /* A server too old for this endpoint is a STATE, not a message. Held apart
+     from `error` - which carries whatever the server actually said, in
+     whatever language it said it - so our own sentence can be resolved at
+     paint and follow a language change, rather than being frozen into state
+     by the language the hunt happened to start in. */
+  const [unsupported, setUnsupported] = useState(false);
   const [busy, setBusy] = useState(false);
   const [playing, setPlaying] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -70,6 +78,7 @@ export function WrongSongModal({
     const controller = new AbortController();
     setJob(null);
     setError(null);
+    setUnsupported(false);
 
     void (async () => {
       try {
@@ -94,9 +103,7 @@ export function WrongSongModal({
         // whole flow lives on the box that owns the files, so no app update
         // can stand in for the server's.
         if (e instanceof ServerError && e.status === 404) {
-          setError(
-            'Your server does not have this yet. It needs its next update — after that, this screen hunts down the alternates by itself.',
-          );
+          setUnsupported(true);
         } else {
           setError(e instanceof Error ? e.message : String(e));
         }
@@ -176,20 +183,20 @@ export function WrongSongModal({
     }
   };
 
-  const hunting = job?.state === 'hunting' || (!job && !error);
+  const hunting = job?.state === 'hunting' || (!job && !error && !unsupported);
   const currentMs = job?.current.durationMs ?? null;
 
   return (
     <Modal
       open={open}
       onClose={close}
-      title="Wrong song?"
-      description="Other recordings of this song, fetched so you can hear which one is right. Nothing changes until you pick one."
+      title={t('library.wrongSong')}
+      description={t('library.wrongSongBlurb')}
       size="lg"
       footer={
         <div className="wrongSong__foot">
           <Button variant="ghost" onClick={close} disabled={busy}>
-            Keep what I have
+            {t('library.keepWhatIHave')}
           </Button>
         </div>
       }
@@ -202,20 +209,20 @@ export function WrongSongModal({
       {track && (
         <div className="wrongSong__current">
           <Text size="xs" tone="muted">
-            In your library now
+            {t('library.inLibraryNow')}
           </Text>
           <Text weight="medium">{track.title}</Text>
           <Text size="sm" tone="muted">
             {track.artist} · {fmt(currentMs ?? (track.duration ?? 0) * 1000)}
-            {job?.current.lossless ? ' · lossless' : ''}
+            {job?.current.lossless ? ` · ${t('library.lossless')}` : ''}
           </Text>
         </div>
       )}
 
-      {error && (
+      {(error || unsupported) && (
         <div className="wrongSong__error">
           <AlertTriangle size={15} />
-          <Text size="sm">{error}</Text>
+          <Text size="sm">{unsupported ? t('library.wrongSongUnsupported') : error}</Text>
         </div>
       )}
 
@@ -234,9 +241,11 @@ export function WrongSongModal({
         <div className="wrongSong__hunting">
           <Spinner size="sm" />
           <Text size="sm" tone="muted">
+            {/* Two states, not two number forms: something has landed, or
+                nothing has yet. So two keys chosen here rather than a count. */}
             {job?.candidates.length
-              ? 'Still fetching the rest — you can close this and come back to it.'
-              : 'Looking for other recordings… this can take a few minutes, and it keeps going if you close this.'}
+              ? t('library.wrongSongFetchingRest')
+              : t('library.wrongSongLooking')}
           </Text>
         </div>
       )}
@@ -273,6 +282,7 @@ function CandidateRow({
   onPreview: () => void;
   onChoose: () => void;
 }) {
+  const t = useT();
   const ready = c.state === 'ready';
   const drift = ready && currentMs && c.durationMs ? c.durationMs - currentMs : 0;
 
@@ -282,7 +292,7 @@ function CandidateRow({
         className="wrongSong__play"
         onClick={onPreview}
         disabled={!ready}
-        aria-label={playing ? `Stop ${c.title}` : `Play ${c.title}`}
+        aria-label={playing ? t('library.stopTrack', { title: c.title }) : t('library.playTrack', { title: c.title })}
       >
         {c.state === 'downloading' || c.state === 'queued' ? (
           <Spinner size="sm" />
@@ -300,28 +310,36 @@ function CandidateRow({
         <Text size="xs" tone="muted">
           {c.artist} · {c.source}
           {ready && c.durationMs ? ` · ${fmt(c.durationMs)}` : ''}
-          {ready && c.lossless ? ' · lossless' : ''}
+          {ready && c.lossless ? ` · ${t('library.lossless')}` : ''}
         </Text>
         {/* The number that most often settles it without listening. */}
         {ready && Math.abs(drift) >= 3000 && (
           <Text size="xs" tone="muted">
-            {drift > 0 ? `${fmt(drift)} longer` : `${fmt(-drift)} shorter`} than yours
+            {/* One sentence per direction rather than "…longer" + " than
+                yours" as siblings: the comparison word does not sit in the
+                same place in every language, and a fragment cannot move. */}
+            {drift > 0
+              ? t('library.driftLonger', { length: fmt(drift) })
+              : t('library.driftShorter', { length: fmt(-drift) })}
           </Text>
         )}
         {ready && c.sameAs !== null && (
           <Text size="xs" tone="muted">
-            Same length as #{(c.sameAs ?? 0) + 1} — likely the same recording
+            {t('library.sameLengthAs', { n: formatNumber((c.sameAs ?? 0) + 1) })}
           </Text>
         )}
         {c.state === 'failed' && (
           <Text size="xs" tone="muted">
-            Couldn&apos;t fetch this one{c.error ? ` — ${c.error}` : ''}
+            {/* The server's reason, when there is one, is INSIDE the
+                sentence rather than appended to it - the clause hangs off the
+                other end in a language that puts it there. */}
+            {c.error ? t('library.fetchFailedWhy', { reason: c.error }) : t('library.fetchFailed')}
           </Text>
         )}
       </div>
 
       <Button size="sm" variant="soft" disabled={!ready || busy} onClick={onChoose}>
-        <Check size={14} /> Use this
+        <Check size={14} /> {t('library.useThis')}
       </Button>
     </div>
   );

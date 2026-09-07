@@ -5,6 +5,7 @@ import { clearProfileLink, onProfileLink } from '../servers/deepLink.ts';
 import { fetchProfileCard, sendFriendRequest, type ProfileCard } from '../servers/registry.ts';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { FriendAvatar } from './RegistryFriends.tsx';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * A profile LINK, opened in the app: a person, and the one thing you can do
@@ -21,6 +22,7 @@ import { FriendAvatar } from './RegistryFriends.tsx';
  * saying who it was about is a link that wasted the tap.
  */
 export function ProfileLinkBridge() {
+  const t = useT();
   const [handle, setHandle] = useState<string | null>(null);
   const [card, setCard] = useState<ProfileCard | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,12 +51,12 @@ export function ProfileLinkBridge() {
         if (live) setCard(c);
       })
       .catch((e: unknown) => {
-        if (live) setError(e instanceof Error ? e.message : 'Could not open that profile.');
+        if (live) setError(e instanceof Error ? e.message : t('profile.linkOpenFailed'));
       });
     return () => {
       live = false;
     };
-  }, [handle]);
+  }, [handle, t]);
 
   if (!handle) return null;
 
@@ -74,16 +76,19 @@ export function ProfileLinkBridge() {
       const out = await sendFriendRequest(token, shown);
       // The registry answers differently depending on whether they had already
       // asked; it writes the sentence, and it is the honest one either way.
-      setSaid(out.message || (out.friends ? `You and @${shown} are friends now.` : 'Asked.'));
+      setSaid(
+        out.message ||
+          (out.friends ? t('profile.linkFriendsNow', { handle: shown }) : t('profile.linkAsked')),
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not ask just now.');
+      setError(e instanceof Error ? e.message : t('profile.linkAskFailed'));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal open onClose={close} title="On AttackFM" size="sm">
+    <Modal open onClose={close} title={t('profile.linkTitle')} size="sm">
       <div className="sharedPlaylist">
         {error && (
           <Text tone="danger" size="sm">
@@ -95,7 +100,7 @@ export function ProfileLinkBridge() {
           <div className="sharedPlaylist__who">
             <h3 className="sharedPlaylist__name">@{shown}</h3>
             <Text tone="muted" size="sm">
-              {itsMe ? 'That is you' : 'Add them and you can see what they are listening to'}
+              {itsMe ? t('profile.linkItsYou') : t('profile.linkAddThem')}
             </Text>
           </div>
         </div>
@@ -104,32 +109,32 @@ export function ProfileLinkBridge() {
           <Text size="sm">{said}</Text>
         ) : itsMe ? (
           <Text tone="muted" size="xs">
-            This is your own link - the one you hand out.
+            {t('profile.linkYourOwn')}
           </Text>
         ) : !token ? (
           <Text tone="muted" size="xs">
-            Friends live on your AttackFM account, and this device is not signed into one yet. Sign
-            in under Profile, then open this link again.
+            {t('profile.linkSignInFirst')}
           </Text>
         ) : (
           <Text tone="muted" size="xs">
-            Asking sends @{shown} a friend request. Neither of you sees the other's listening until
-            you are both in.
+            {/* The handle sits mid-sentence, so the sentence is one entry with
+                the hole named inside it rather than two fragments around it. */}
+            <Trans i18nKey="profile.linkAskExplains" values={{ handle: shown }} />
           </Text>
         )}
 
         <div className="sharedPlaylist__actions">
           {said || itsMe || !token ? (
             <Button variant="solid" size="sm" onClick={close}>
-              Done
+              {t('common.done')}
             </Button>
           ) : (
             <>
               <Button variant="ghost" size="sm" onClick={close}>
-                Not now
+                {t('profile.linkNotNow')}
               </Button>
               <Button variant="solid" size="sm" disabled={busy} onClick={() => void ask()}>
-                {busy ? 'Asking…' : `Add @${shown}`}
+                {busy ? t('profile.linkAsking') : t('profile.linkAdd', { handle: shown })}
               </Button>
             </>
           )}

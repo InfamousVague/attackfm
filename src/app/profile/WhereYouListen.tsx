@@ -8,6 +8,7 @@ import { createInvite, inviteLink } from '../servers/registry.ts';
 import { enterServer, fetchServerInfo, linkAccount } from '../server.ts';
 import { forgetServer, knownServers, rememberServer, type KnownServer } from '../servers/servers.ts';
 import { fetchSavedServers, forgetServerEverywhere } from '../servers/serverSync.ts';
+import { Trans, translate, useT } from '../i18n/LocaleShell.tsx';
 
 //! Where you listen - every server this device has entered, as cards.
 //!
@@ -21,7 +22,10 @@ import { fetchSavedServers, forgetServerEverywhere } from '../servers/serverSync
 /** A registry-shaped failure, told the way the server said it - its 403 line
  *  ("This server is invite-only…") is already the honest instruction. */
 function messageOf(err: unknown): string {
-  return err instanceof Error && err.message ? err.message : 'That did not work.';
+  // translate() rather than useT(): this is a plain helper, and what it
+  // returns is stored in state at the moment of the failure rather than
+  // re-read on every render.
+  return err instanceof Error && err.message ? err.message : translate('servers.actionFailed');
 }
 
 function hostOf(url: string): string {
@@ -40,6 +44,7 @@ function hostOf(url: string): string {
  * and join another with an invite.
  */
 export function WhereYouListen() {
+  const t = useT();
   const { session, applySession, pivot } = useServerSession();
   const { session: registry, account } = useRegistry();
 
@@ -94,7 +99,7 @@ export function WhereYouListen() {
       if (!registry) {
         setNote({
           tone: 'bad',
-          text: 'Switching needs your AttackFM account signed in — or sign in from Settings → Server.',
+          text: t('servers.switchNeedsAccount'),
         });
         return;
       }
@@ -108,14 +113,14 @@ export function WhereYouListen() {
           applySession(next);
         }
         refresh();
-        setNote({ tone: 'ok', text: `Listening from ${hostOf(url)} now.` });
+        setNote({ tone: 'ok', text: t('servers.nowListeningFrom', { host: hostOf(url) }) });
       } catch (err) {
         setNote({ tone: 'bad', text: messageOf(err) });
       } finally {
         setBusyUrl(null);
       }
     },
-    [registry, applySession, pivot],
+    [registry, applySession, pivot, t],
   );
 
   // A friend's card said "visit": the page lands the attempt here, where the
@@ -193,7 +198,7 @@ export function WhereYouListen() {
                 <span className="serverCard__meta">
                   {[
                     s.name ? hostOf(s.url) : null,
-                    s.isAdmin ? 'you host this' : s.username ? `as ${s.username}` : null,
+                    s.isAdmin ? t('servers.youHostThis') : s.username ? t('servers.asUser', { name: s.username }) : null,
                   ]
                     .filter(Boolean)
                     .join(' · ') || ' '}
@@ -201,7 +206,7 @@ export function WhereYouListen() {
               </span>
               {current ? (
                 <span className="serverCard__live">
-                  <span className="serverCard__dot" aria-hidden /> Listening
+                  <span className="serverCard__dot" aria-hidden /> {t('servers.listeningHere')}
                 </span>
               ) : (
                 <span className="serverCard__actions">
@@ -211,13 +216,13 @@ export function WhereYouListen() {
                     disabled={busyUrl !== null}
                     onClick={() => void switchTo(s.url)}
                   >
-                    {busyUrl === s.url ? <Spinner size="sm" aria-label="" /> : 'Switch'}
+                    {busyUrl === s.url ? <Spinner size="sm" aria-label="" /> : t('servers.switchTo')}
                   </Button>
                   <IconButton
                     variant="ghost"
                     size="sm"
-                    aria-label={`Forget ${s.name ?? hostOf(s.url)}`}
-                    title="Forget this server"
+                    aria-label={t('servers.forgetNamed', { name: s.name ?? hostOf(s.url) })}
+                    title={t('servers.forget')}
                     onClick={() => {
                       forgetServer(s.url);
                       void forgetServerEverywhere(s.url);
@@ -242,8 +247,8 @@ export function WhereYouListen() {
               <Link2 size={18} />
             </span>
             <span className="serverCard__body">
-              <span className="serverCard__name">Invite a friend here</span>
-              <span className="serverCard__meta">A link that signs them in — no password to share</span>
+              <span className="serverCard__name">{t('servers.inviteHere')}</span>
+              <span className="serverCard__meta">{t('servers.inviteHereHint')}</span>
             </span>
           </button>
         )}
@@ -252,29 +257,38 @@ export function WhereYouListen() {
             <Plus size={18} />
           </span>
           <span className="serverCard__body">
-            <span className="serverCard__name">Join another server</span>
-            <span className="serverCard__meta">Enter the invite code a friend sent you</span>
+            <span className="serverCard__name">{t('servers.joinAnother')}</span>
+            <span className="serverCard__meta">{t('servers.joinAnotherHint')}</span>
           </span>
         </button>
       </div>
 
-      <Modal open={shareOpen} onClose={() => setShareOpen(false)} title="Invite a friend to this server" size="sm">
+      <Modal open={shareOpen} onClose={() => setShareOpen(false)} title={t('servers.inviteHereTitle')} size="sm">
         <div className="friendsModal">
           {!link ? (
             <>
               <Text size="sm" tone="muted">
-                Mint a one-time link that signs a friend into{' '}
-                <strong>{session ? (cards.find((c) => c.url === session.url)?.name ?? hostOf(session.url)) : 'this server'}</strong>{' '}
-                as themselves. Send it however you like; it works once.
+                {/* One sentence with the server's name emphasised inside it -
+                    the name is a value, the <b> is markup, and a translator
+                    may put both wherever their language wants them. */}
+                <Trans
+                  i18nKey="servers.inviteMintBlurb"
+                  values={{
+                    server: session
+                      ? (cards.find((c) => c.url === session.url)?.name ?? hostOf(session.url))
+                      : t('servers.thisServer'),
+                  }}
+                  components={{ b: <strong /> }}
+                />
               </Text>
               <Button variant="solid" onClick={() => void mint()} disabled={minting}>
-                {minting ? 'Making…' : 'Create invite link'}
+                {minting ? t('servers.minting') : t('servers.createInviteLink')}
               </Button>
             </>
           ) : (
             <>
               <div className="registryFriends__inviteLink">
-                <Input readOnly value={link} aria-label="Invite link" onFocus={(e) => e.currentTarget.select()} />
+                <Input readOnly value={link} aria-label={t('servers.inviteLinkLabel')} onFocus={(e) => e.currentTarget.select()} />
                 <Button
                   variant="ghost"
                   size="sm"
@@ -282,19 +296,25 @@ export function WhereYouListen() {
                     void navigator.clipboard?.writeText(link).then(() => setCopied(true)).catch(() => {});
                   }}
                 >
-                  <Copy size={14} /> {copied ? 'Copied' : 'Copy'}
+                  <Copy size={14} /> {copied ? t('servers.inviteCopied') : t('servers.copy')}
                 </Button>
               </div>
               {code && (
                 <p className="registryFriends__inviteCode">
-                  Or read the code out:{' '}
-                  <strong>
-                    {code.slice(0, Math.ceil(code.length / 2))} {code.slice(Math.ceil(code.length / 2))}
-                  </strong>
+                  {/* The code is split in half so it can be read aloud in two
+                      breaths; that spacing is part of the value, not the
+                      sentence, so it goes in as one placeholder. */}
+                  <Trans
+                    i18nKey="servers.readCodeOut"
+                    values={{
+                      code: `${code.slice(0, Math.ceil(code.length / 2))} ${code.slice(Math.ceil(code.length / 2))}`,
+                    }}
+                    components={{ b: <strong /> }}
+                  />
                 </p>
               )}
               <Button variant="outline" size="sm" onClick={() => void mint()} disabled={minting}>
-                {minting ? 'Making…' : 'New link'}
+                {minting ? t('servers.minting') : t('servers.newLink')}
               </Button>
             </>
           )}
@@ -312,28 +332,24 @@ export function WhereYouListen() {
                 size="sm"
                 onClick={() => {
                   void linkAccount(session.url, session.token, registry.token)
-                    .then(() => setShareNote('Linked this server to your account.'))
+                    .then(() => setShareNote(t('servers.linkAccountDone')))
                     .catch((err) => setShareNote(messageOf(err)));
                 }}
               >
-                Link this server to your account
+                {t('servers.linkAccount')}
               </Button>
               <Text size="sm" tone="muted">
-                Already had an account here before @{account.handle}? Claim it once and it follows you.
+                <Trans i18nKey="servers.linkAccountHint" values={{ handle: account.handle }} />
               </Text>
             </div>
           )}
         </div>
       </Modal>
 
-      <Modal open={joinOpen} onClose={() => setJoinOpen(false)} title="Join another server" size="sm">
+      <Modal open={joinOpen} onClose={() => setJoinOpen(false)} title={t('servers.joinAnother')} size="sm">
         <div className="friendsModal">
           <JoinServer />
-          <Text size="sm" tone="muted">
-            Joining switches you there; this page keeps every server you have
-            joined, so coming back is one tap. A server signed into with a
-            password instead lives in Settings → Server.
-          </Text>
+          <Text size="sm" tone="muted">{t('servers.joinBlurb')}</Text>
         </div>
       </Modal>
     </div>

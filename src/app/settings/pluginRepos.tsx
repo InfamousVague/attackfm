@@ -11,6 +11,7 @@ import {
   type RemoteManifest,
   type RemotePluginListing,
 } from '../../plugins/remote.ts';
+import { Trans, translate, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The repositories the marketplace pulls from, and what they offer.
@@ -71,7 +72,12 @@ export function useRepoFeeds() {
         .catch((err) => {
           if (!live) return;
           setFeeds((prev) =>
-            new Map(prev).set(source, err instanceof Error ? err.message : 'unreachable'),
+            // The message on an Error comes from the network layer and is not
+            // ours to translate; only the "we have no idea" fallback is.
+            new Map(prev).set(
+              source,
+              err instanceof Error ? err.message : translate('settings.pluginRepoUnreachable'),
+            ),
           );
         });
     }
@@ -92,6 +98,7 @@ export function useRepoFeeds() {
 
 /** Installing, shared by every surface that offers it. */
 export function useInstaller(reloadRemote: () => void) {
+  const t = useT();
   const [busyId, setBusyId] = useState<string | null>(null);
   // A failure worth reading, in the app's own voice rather than the OS's
   // alert box - which on a phone webview may not even appear.
@@ -103,7 +110,12 @@ export function useInstaller(reloadRemote: () => void) {
       await installPlugin(source, listing);
       reloadRemote();
     } catch (err) {
-      setError(`Could not install ${listing.name}: ${err instanceof Error ? err.message : err}`);
+      setError(
+        t('settings.pluginInstallFailed', {
+          name: listing.name,
+          reason: err instanceof Error ? err.message : String(err),
+        }),
+      );
     } finally {
       setBusyId(null);
     }
@@ -126,6 +138,7 @@ export function PluginUpdates({
   busyId: string | null;
   onUpdate: (source: string, listing: RemotePluginListing) => void;
 }) {
+  const t = useT();
   if (updates.length === 0) return null;
   // Wears the kit's one tinted-banner recipe (SettingsCallout) rather than
   // the raw accent ramp steps this strip had grown - two vocabularies for
@@ -141,14 +154,17 @@ export function PluginUpdates({
             for (const u of updates) onUpdate(u.source, u.listing);
           }}
         >
-          {updates.length === 1 ? 'Update' : 'Update all'}
+          {/* "Update" for the single offer, "Update all" for several: the
+              button's WORDS change with the count, so it is one plural entry
+              rather than two labels picked by a ternary. */}
+          {t('settings.pluginUpdateAction', { count: updates.length })}
         </Button>
       }
     >
     <div className="pluginUpdates pluginUpdates--inCallout">
       <div className="pluginUpdatesHead">
         <Label>
-          {updates.length === 1 ? '1 update available' : `${updates.length} updates available`}
+          {t('settings.pluginUpdatesAvailable', { count: updates.length })}
         </Label>
       </div>
       {updates.map((u) => (
@@ -156,7 +172,7 @@ export function PluginUpdates({
           <div className="pluginRepoRowText">
             <Text size="sm">{u.listing.name}</Text>
             <Text size="xs" tone="muted">
-              v{u.from} &rarr; v{u.listing.version}
+              {t('settings.pluginVersionBump', { from: u.from, to: u.listing.version })}
             </Text>
           </div>
           <Button
@@ -165,7 +181,7 @@ export function PluginUpdates({
             disabled={busyId === u.listing.id}
             onClick={() => onUpdate(u.source, u.listing)}
           >
-            {busyId === u.listing.id ? 'Updating…' : 'Update'}
+            {busyId === u.listing.id ? t('settings.pluginUpdating') : t('settings.pluginUpdate')}
           </Button>
         </div>
       ))}
@@ -188,6 +204,7 @@ export function PluginBrowse({
   loading: boolean;
   onInstall: (source: string, listing: RemotePluginListing) => void;
 }) {
+  const t = useT();
   const offered = [...feeds.entries()].flatMap(([source, feed]) =>
     listingsOf(feed).map((listing) => ({ source, listing })),
   );
@@ -217,10 +234,10 @@ export function PluginBrowse({
     return (
       <Text size="sm" tone="subtle">
         {loading
-          ? 'Looking for plugins…'
+          ? t('settings.pluginsLooking')
           : offerable.length === 0
-            ? 'No repository is offering anything. Add one under Sources.'
-            : 'Everything on offer is already installed.'}
+            ? t('settings.pluginsNoneOffered')
+            : t('settings.pluginsAllInstalled')}
       </Text>
     );
   }
@@ -249,7 +266,7 @@ export function PluginBrowse({
             disabled={busyId === listing.id}
             onClick={() => onInstall(source, listing)}
           >
-            {busyId === listing.id ? 'Installing…' : 'Install'}
+            {busyId === listing.id ? t('settings.pluginInstalling') : t('settings.pluginInstall')}
           </Button>
         </div>
       ))}
@@ -269,6 +286,7 @@ export function PluginSources({
   feeds: Map<string, Feed>;
   onRefresh: () => void;
 }) {
+  const t = useT();
   const [adding, setAdding] = useState('');
   // The trust question, asked in the app's own dialog. window.confirm was
   // doing this job; a kit AlertDialog keeps the same one-question shape and
@@ -279,9 +297,9 @@ export function PluginSources({
       <AlertDialog
         open={confirming !== null}
         onClose={() => setConfirming(null)}
-        title="Add this repository?"
-        description="Plugins from a repository run inside AttackFM with the same access the app has. Only add repositories you trust."
-        actionLabel="Add repository"
+        title={t('settings.pluginRepoAddTitle')}
+        description={t('settings.pluginRepoAddWarning')}
+        actionLabel={t('settings.pluginRepoAddConfirm')}
         tone="danger"
         onAction={() => {
           if (confirming) setSources(addSource(confirming));
@@ -291,10 +309,12 @@ export function PluginSources({
       />
       <div className="pluginSourcesHead">
         <Text size="sm" tone="muted">
-          Where the marketplace looks. Your own server hosts one at <code>/plugins</code>.
+          {/* The path is markup inside the sentence, so it travels as a
+              component rather than a third fragment a translator cannot move. */}
+          <Trans i18nKey="settings.pluginSourcesHint" components={{ code: <code /> }} />
         </Text>
         <Button variant="ghost" size="sm" onClick={onRefresh}>
-          Refresh
+          {t('settings.pluginRepoRefresh')}
         </Button>
       </div>
 
@@ -315,17 +335,17 @@ export function PluginSources({
               ) : (
                 feed !== 'loading' && (
                   <Pill size="sm" tone="neutral">
-                    {count === 1 ? '1 plugin' : `${count} plugins`}
+                    {t('settings.pluginCount', { count })}
                   </Pill>
                 )
               )}
               <Button
                 variant="ghost"
                 size="sm"
-                aria-label={`Remove repository ${source}`}
+                aria-label={t('settings.pluginRepoRemoveNamed', { source })}
                 onClick={() => setSources(removeSource(source))}
               >
-                Remove
+                {t('settings.pluginRepoRemove')}
               </Button>
             </div>
           </div>
@@ -333,7 +353,7 @@ export function PluginSources({
       })}
       {sources.length === 0 && (
         <Text size="xs" tone="subtle">
-          No repositories yet.
+          {t('settings.pluginReposEmpty')}
         </Text>
       )}
 
@@ -341,8 +361,8 @@ export function PluginSources({
         <Input
           value={adding}
           onChange={(e) => setAdding(e.currentTarget.value)}
-          placeholder="plugins.example.com"
-          aria-label="Repository address"
+          placeholder={t('settings.pluginRepoPlaceholder')}
+          aria-label={t('settings.pluginRepoAddress')}
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
@@ -357,7 +377,7 @@ export function PluginSources({
             setConfirming(adding.trim());
           }}
         >
-          Add
+          {t('settings.pluginRepoAdd')}
         </Button>
       </div>
     </div>

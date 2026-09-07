@@ -4,6 +4,7 @@ import { fireNativeHaptic } from '../core/haptics.ts';
 import { trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 import { useJamOptional } from './jam.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * A follower's tap ADDS.
@@ -30,6 +31,7 @@ export function GroovePlayRouter({
 }: {
   routeRef: { current: ((track: Track, context?: Track[]) => boolean) | null };
 }) {
+  const t = useT();
   const jam = useJamOptional();
   const { toast } = useToast();
   const room = jam?.current ?? null;
@@ -46,20 +48,20 @@ export function GroovePlayRouter({
       // A song only on this device cannot cross to the room, and playing it
       // here would fight the follow. Said, and swallowed.
       if (trackIdFromPath(track.path) == null) {
-        toast({ message: `“${track.title}” is only on this device, so it can’t go to the groove` });
+        toast({ message: t('player.grooveLocalOnly', { title: track.title }) });
         return true;
       }
       fireNativeHaptic('light');
       // An add, not a "next": the tap joins the end of the line, and the
       // menu's "Play next in the groove" is the word for the front of it.
-      toast({ message: `“${track.title}” sent to the groove - ${hostName} plays it for everyone` });
+      toast({ message: t('player.grooveSent', { title: track.title, host: hostName }) });
       void addToRoom(track);
       return true;
     };
     return () => {
       routeRef.current = null;
     };
-  }, [following, addToRoom, hostName, toast, routeRef]);
+  }, [following, addToRoom, hostName, toast, routeRef, t]);
 
   return null;
 }

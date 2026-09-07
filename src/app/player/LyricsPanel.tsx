@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Lyrics } from '@glacier/react';
 import { fetchLyrics, type SyncedLine, type TrackLyrics } from './lyrics.ts';
 import type { Track } from '../core/tauri.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * Lyrics with a clock on every word.
@@ -122,6 +123,7 @@ export function LyricsPanel({
   position: number;
   onSeek: (time: number) => void;
 }) {
+  const t = useT();
   const [lyrics, setLyrics] = useState<TrackLyrics | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -133,7 +135,11 @@ export function LyricsPanel({
     };
   }, [track]);
 
-  if (lyrics === null) return <Lyrics lines={[]} emptyLabel="Searching for lyrics…" aria-label="Lyrics" />;
+  if (lyrics === null) {
+    return (
+      <Lyrics lines={[]} emptyLabel={t('player.lyricsSearching')} aria-label={t('player.lyrics')} />
+    );
+  }
   if (lyrics.synced) {
     /*
      * A window of a huge sheet, not the whole of it. Song lyrics are a couple
@@ -165,14 +171,17 @@ export function LyricsPanel({
         lines={lines}
         position={position}
         onLineSelect={(line) => onSeek(line.time)}
-        aria-label="Lyrics"
+        aria-label={t('player.lyrics')}
       />
     );
   }
   if (lyrics.plain) {
     return (
-      <Lyrics lines={lyrics.plain.map((text) => ({ time: 0, text }))} aria-label="Lyrics" />
+      <Lyrics
+        lines={lyrics.plain.map((text) => ({ time: 0, text }))}
+        aria-label={t('player.lyrics')}
+      />
     );
   }
-  return <Lyrics lines={[]} aria-label="Lyrics" />;
+  return <Lyrics lines={[]} aria-label={t('player.lyrics')} />;
 }

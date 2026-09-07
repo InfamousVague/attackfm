@@ -6,6 +6,8 @@ import { usePreview } from '../ux/previewAudio.ts';
 import { useDiscoverFeed } from '../home/DiscoverFeed.tsx';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 import type { AcquireTarget } from '../../plugins/types.ts';
 import type { FriendTrendItem, TrendItem, TrendShelf } from '../api/trending.ts';
 import type { Track } from '../core/tauri.ts';
@@ -33,10 +35,13 @@ import type { Track } from '../core/tauri.ts';
 const RAIL = 6;
 
 export function TrendingShelves({ onPlay }: { onPlay: (track: Track, queue: Track[]) => void }) {
+  const t = useT();
   const { session, trending, home } = useDiscoverFeed();
   if (!session) return null;
   if (trending === undefined) {
-    return <ShelfSkeleton title="Charts, filtered for you" kind="mix" count={2} />;
+    // Only the skeleton's title is ours. Once the shelves land, each one is
+    // named by the SERVER (`shelf.label`) and stays in the words it sent.
+    return <ShelfSkeleton title={t('discover.chartsForYou')} kind="mix" count={2} />;
   }
   if (trending === null) return null;
   return (
@@ -107,6 +112,7 @@ function TrendCard({
   canTake: boolean;
   onTake: () => void;
 }) {
+  const t = useT();
   const why = item.anchors[0]?.artist || item.seed;
   const climbed = typeof item.rankDelta === 'number' && item.rankDelta > 0 ? item.rankDelta : null;
   return (
@@ -116,9 +122,13 @@ function TrendCard({
         className="trendCard__body"
         disabled={!item.preview}
         aria-label={
+          // Three whole sentences rather than a stem plus a verb: which verb
+          // leads is a word-order choice, and not every language puts it first.
           item.preview
-            ? `${playing ? 'Pause' : 'Preview'} ${item.title} by ${item.artist}`
-            : `${item.title} by ${item.artist} - no preview`
+            ? playing
+              ? t('discover.pauseTrack', { title: item.title, artist: item.artist })
+              : t('discover.previewTrack', { title: item.title, artist: item.artist })
+            : t('discover.noPreview', { title: item.title, artist: item.artist })
         }
         onClick={onPreview}
       >
@@ -129,12 +139,14 @@ function TrendCard({
         )}
         <span className="trendCard__scrim" aria-hidden />
         {typeof item.rank === 'number' && (
-          <span className="trendCard__rank" aria-label={`Number ${item.rank}`}>
-            {item.rank}
+          <span className="trendCard__rank" aria-label={t('discover.chartRank', { rank: item.rank })}>
+            {formatNumber(item.rank)}
             {climbed !== null && (
-              <span className="trendCard__delta" aria-label={`up ${climbed}`}>
+              // The badge is a bare arrow and a number; the label says what the
+              // number counts, which is also what makes it a plural.
+              <span className="trendCard__delta" aria-label={t('discover.chartClimbed', { count: climbed })}>
                 <TrendingUp size={11} />
-                {climbed}
+                {formatNumber(climbed)}
               </span>
             )}
           </span>
@@ -149,7 +161,9 @@ function TrendCard({
           <span className="trendCard__artist">{item.artist}</span>
           {/* The honest reason it is here, which is the one thing a
               recommendation should always be able to say. */}
-          {why && <span className="trendCard__why">because you play {why}</span>}
+          {why && (
+            <span className="trendCard__why">{t('discover.becauseYouPlay', { artist: why })}</span>
+          )}
         </span>
       </button>
       {canTake && (
@@ -157,7 +171,9 @@ function TrendCard({
           type="button"
           className="trendCard__add"
           data-state={taken ? 'added' : 'idle'}
-          aria-label={taken ? `${item.title} asked for` : `Add ${item.title}`}
+          aria-label={
+            taken ? t('discover.askedFor', { title: item.title }) : t('discover.addItem', { title: item.title })
+          }
           disabled={taken}
           onClick={onTake}
         >

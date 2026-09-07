@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { FriendAvatar } from './RegistryFriends.tsx';
 import { fetchFriends, sendShare, type RegistryFriend } from '../servers/registry.ts';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -27,6 +28,7 @@ export function SendToFriendDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const t = useT();
   const registry = useRegistryOptional();
   const token = registry?.session?.token ?? null;
   const [friends, setFriends] = useState<RegistryFriend[] | null>(null);
@@ -64,7 +66,7 @@ export function SendToFriendDialog({
       });
       setSent((prev) => ({ ...prev, [friend.handle]: pending ? 'asked' : 'sent' }));
     } catch (e) {
-      setNote(e instanceof Error ? e.message : 'That did not go through.');
+      setNote(e instanceof Error ? e.message : t('profile.didNotGoThrough'));
     } finally {
       setBusy(null);
     }
@@ -73,10 +75,12 @@ export function SendToFriendDialog({
   const anyAsked = Object.values(sent).includes('asked');
 
   return (
-    <Drawer open={open} onClose={onClose} side="bottom" size="lg" title="Send to a friend" className="sendToFriendSheet">
+    <Drawer open={open} onClose={onClose} side="bottom" size="lg" title={t('profile.sendToFriend')} className="sendToFriendSheet">
       <div className="sendToFriend">
         <Text tone="muted" size="sm">
-          {track.title} · {track.artist}. They get the name; their own server fetches the song.
+          {/* Song, then what sending means: one entry, so a translator can
+              put the name where their sentence wants it. */}
+          <Trans i18nKey="profile.sendBlurb" values={{ title: track.title, artist: track.artist }} />
         </Text>
         {note && (
           <p className="friendsNote friendsNote--bad" role="status">
@@ -85,11 +89,11 @@ export function SendToFriendDialog({
         )}
         {friends === null ? (
           <div className="sendToFriend__wait">
-            <Spinner size="sm" aria-label="Loading friends" />
+            <Spinner size="sm" aria-label={t('profile.loadingFriends')} />
           </div>
         ) : friends.length === 0 ? (
           <Text tone="muted" size="sm">
-            No friends yet - add some on the Friends page first.
+            {t('profile.noFriendsAddFirst')}
           </Text>
         ) : (
           <ul className="sendToFriend__list">
@@ -106,7 +110,9 @@ export function SendToFriendDialog({
                     onClick={() => void send(f)}
                   >
                     {busy === f.handle ? <Spinner size="sm" aria-label="" /> : state ? <Check size={15} /> : <Send size={15} />}
-                    <span>{state === 'sent' ? 'Sent' : state === 'asked' ? 'Asked' : 'Send'}</span>
+                    {/* Three states of one button, so three keys chosen here -
+                        not one string with the state written into it. */}
+                    <span>{state === 'sent' ? t('profile.sent') : state === 'asked' ? t('profile.asked') : t('profile.send')}</span>
                   </Button>
                 </li>
               );
@@ -115,7 +121,7 @@ export function SendToFriendDialog({
         )}
         {anyAsked && (
           <Text tone="muted" size="xs">
-            Asked: the first song from you waits until they say they take songs from you.
+            {t('profile.askedExplainer')}
           </Text>
         )}
       </div>

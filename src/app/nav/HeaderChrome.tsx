@@ -2,6 +2,7 @@ import { Button } from '@glacier/react';
 import { ChevronLeft, Play, Shuffle } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import { useHeaderActions, type HeaderActions } from './headerActions.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import wordmark from '../../assets/attack-white.png';
 
 export const APP_NAME = 'AttackFM';
@@ -21,6 +22,7 @@ export const APP_NAME = 'AttackFM';
  * and a fade-out with nothing left to fade is just a disappearance.
  */
 export function HeaderIdent({ tab }: { tab: string }) {
+  const t = useT();
   const lent = useHeaderActions();
   const lentTitle = lent?.title ?? null;
   const [shown, setShown] = useState<string | null>(lentTitle);
@@ -42,15 +44,17 @@ export function HeaderIdent({ tab }: { tab: string }) {
     <span className="mobileHeader__ident">
       <span className="mobileHeader__identLayer" data-on={!lentTitle || undefined} aria-hidden={!!lentTitle}>
         {tab === 'library' ? (
-          <span className="mobileHeader__title">Library</span>
+          <span className="mobileHeader__title">{t('nav.library')}</span>
         ) : tab === 'discover' ? (
-          <span className="mobileHeader__title">Discover</span>
+          <span className="mobileHeader__title">{t('nav.discover')}</span>
         ) : tab === 'friends' ? (
-          <span className="mobileHeader__title">Friends</span>
+          <span className="mobileHeader__title">{t('nav.friends')}</span>
         ) : tab === 'profile' ? (
-          <span className="mobileHeader__title">Profile</span>
+          <span className="mobileHeader__title">{t('nav.profile')}</span>
         ) : tab === 'booth' ? (
-          <span className="mobileHeader__title">The Booth</span>
+          // The header says the room's full name ("The Booth"), not the tab
+          // bar's clipped one, so this is booth.title rather than nav.booth.
+          <span className="mobileHeader__title">{t('booth.title')}</span>
         ) : (
           <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
         )}
@@ -89,6 +93,7 @@ export function HeaderIdent({ tab }: { tab: string }) {
  * is unchanged on every other page.
  */
 export function HeaderActionButtons() {
+  const t = useT();
   const actions = useHeaderActions();
   // The last page to lend its controls, kept after it withdraws.
   //
@@ -135,7 +140,7 @@ export function HeaderActionButtons() {
           tabIndex={on ? 0 : -1}
         >
           <Play size={14} fill="currentColor" />
-          Play
+          {t('player.play')}
         </Button>
       )}
       {shown.shuffle && (
@@ -144,7 +149,7 @@ export function HeaderActionButtons() {
           size="sm"
           onClick={shown.shuffle}
           disabled={shown.disabled}
-          aria-label="Shuffle"
+          aria-label={t('player.shuffle')}
           tabIndex={on ? 0 : -1}
         >
           <Shuffle size={14} />
@@ -245,11 +250,12 @@ export function TopScrim({ resetKey }: { resetKey: string }) {
 
 /** The slim bar over a Profile room: where you are, and the way back. */
 export function RoomBar({ label, onBack }: { label: string; onBack: () => void }) {
+  const t = useT();
   return (
     <div className="profileRoomBar">
       <button type="button" className="profileRoomBar__back" onClick={onBack}>
         <ChevronLeft size={18} />
-        <span>Profile</span>
+        <span>{t('nav.profile')}</span>
       </button>
       <span className="profileRoomBar__label">{label}</span>
       <span className="profileRoomBar__spacer" aria-hidden="true" />

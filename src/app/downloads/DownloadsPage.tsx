@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { formatClock } from '../ux/format.ts';
+import { formatClock, formatNumber } from '../ux/format.ts';
 import { Button, ProgressBar, Spinner } from '@glacier/react';
 import {
   Check,
@@ -31,6 +31,7 @@ import { useOwnedTrack, usePlayNowOptional } from '../player/playNow.tsx';
 import { artSized } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
 import placeholderArt from '../../assets/attack-wave.png';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The Downloads page: every queue in the app, as a destination.
@@ -90,35 +91,70 @@ function KindIcon({ kind }: { kind: string }) {
   return <Music size={12} />;
 }
 
+/**
+ * The words for the kinds the core importer sends.
+ *
+ * `kind` is an IDENTIFIER, not prose: the server picks it from a URL
+ * (detect_kind in imports.rs) and KindIcon above compares against it. So the
+ * value stays English and only the label is looked up. A plugin's own kind -
+ * a book queue's 'book' - has no entry here and wears its own word, which is
+ * a chip in the wrong language rather than no chip at all.
+ */
+const KIND_KEYS: Record<string, string> = {
+  playlist: 'downloads.kindPlaylist',
+  album: 'downloads.kindAlbum',
+  artist: 'downloads.kindArtist',
+  track: 'downloads.kindTrack',
+  link: 'downloads.kindLink',
+};
+
+function KindChip({ kind }: { kind: string }) {
+  const t = useT();
+  const key = KIND_KEYS[kind.toLowerCase()];
+  const label = key ? t(key) : kind;
+  return (
+    <span className="dlChip dlChip--kind" title={label}>
+      <KindIcon kind={kind} />
+      {label}
+    </span>
+  );
+}
+
 /** The job's state as a badge on its artwork corner - spinner, check or
  *  cross where every other card in the app wears its verdict, no words. */
 function StateBadge({ item }: { item: DownloadItem }) {
+  const t = useT();
+  // `item.stage` is a source's own word for what it is doing right now
+  // ("Decrypting"), handed over by the plugin - it is not ours to translate,
+  // so the catalogue only supplies the fallback.
+  const stage = item.stage ?? t('downloads.stateDownloading');
   if (item.state === 'done')
     return (
-      <span className="dlCard__badge" data-state="done" title="Done">
+      <span className="dlCard__badge" data-state="done" title={t('downloads.stateDone')}>
         <Check size={11} />
       </span>
     );
   if (item.state === 'error')
     return (
-      <span className="dlCard__badge" data-state="error" title="Failed">
+      <span className="dlCard__badge" data-state="error" title={t('downloads.stateFailed')}>
         <X size={11} />
       </span>
     );
   if (item.state === 'downloading')
     return (
-      <span className="dlCard__badge" data-state="downloading" title={item.stage ?? 'Downloading'}>
-        <Spinner size="sm" aria-label={item.stage ?? 'Downloading'} />
+      <span className="dlCard__badge" data-state="downloading" title={stage}>
+        <Spinner size="sm" aria-label={stage} />
       </span>
     );
   return (
-    <span className="dlCard__badge" data-state="queued" title="Queued">
+    <span className="dlCard__badge" data-state="queued" title={t('downloads.stateQueued')}>
       <Clock size={11} />
     </span>
   );
 }
 
 function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
+  const t = useT();
   const { item, source } = row;
   const active = item.state === 'queued' || item.state === 'downloading';
   const total = item.total ?? 0;
@@ -163,32 +199,33 @@ function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
               answer - with a single source on the page the chip would say the
               same word on every card and mean nothing. */}
           {showSource && (
-            <span className="dlChip dlChip--source" title={`${source.label} download`}>
+            <span className="dlChip dlChip--source" title={t('downloads.sourceTitle', { source: source.label })}>
               {source.icon}
               {source.label}
             </span>
           )}
-          {item.kind && (
-            <span className="dlChip dlChip--kind" title={item.kind}>
-              <KindIcon kind={item.kind} />
-              {item.kind}
-            </span>
-          )}
+          {item.kind && <KindChip kind={item.kind} />}
           {/* Whose errand this row is. A shared box downloads for several
               people and two machines; the queue now says which - the name
               that pasted it, the collector and who it pulled for, the
               Spotify mirror and whose account it feeds. Old jobs, stamped
               before the hub said, stay quiet rather than guessing. */}
           {item.via && (
-            <span className="dlChip dlChip--via" title={`Queued by ${item.via}`}>
+            <span className="dlChip dlChip--via" title={t('downloads.queuedBy', { who: item.via })}>
               <UserRound size={11} />
               {item.via}
             </span>
           )}
           {total > 0 && (
-            <span className="dlChip" title={`${item.completed ?? 0} of ${total}`}>
+            <span
+              className="dlChip"
+              title={t('downloads.partsProgress', {
+                completed: formatNumber(item.completed ?? 0),
+                total: formatNumber(total),
+              })}
+            >
               <Music size={11} />
-              {item.completed ?? 0}/{total}
+              {formatNumber(item.completed ?? 0)}/{formatNumber(total)}
             </span>
           )}
           {item.state === 'done' && item.note && (
@@ -208,9 +245,13 @@ function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
               indeterminate={total === 0}
               tone="accent"
               size="sm"
-              aria-label="Download progress"
+              aria-label={t('downloads.progressLabel')}
             />
-            {pct !== null && <span className="dlCard__pct">{pct}%</span>}
+            {/* The percentage is a number, not a word: Intl knows which side of
+                it the sign belongs on. */}
+            {pct !== null && (
+              <span className="dlCard__pct">{formatNumber(pct / 100, { style: 'percent' })}</span>
+            )}
           </span>
         )}
         {/* What it is doing right now: the part in flight, or - when a source
@@ -238,7 +279,7 @@ function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
               onClick={() => setOpen((v) => !v)}
             >
               <ChevronDown size={13} className="dlCard__chev" data-open={open || undefined} />
-              {open ? 'Hide list' : `${parts.length} ${parts.length === 1 ? 'part' : 'parts'}`}
+              {open ? t('downloads.hideList') : t('downloads.partCount', { count: parts.length })}
             </button>
             {open && (
               <ol className="dlTracks">
@@ -268,7 +309,7 @@ function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
                         <button
                           type="button"
                           className="dlTrack__play"
-                          aria-label={`Play ${title}`}
+                          aria-label={t('downloads.playTrack', { title })}
                           onClick={() => playNow(mine)}
                         >
                           <Play size={12} />
@@ -289,26 +330,44 @@ function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
           <button
             type="button"
             className="dlCard__act"
-            aria-label={`Play ${item.title}`}
-            title="Play"
+            aria-label={t('downloads.playTrack', { title: item.title })}
+            title={t('player.play')}
             onClick={() => playNow(owned)}
           >
             <Play size={16} />
           </button>
         )}
         {item.state === 'error' && item.retry && (
-          <button type="button" className="dlCard__act" aria-label="Retry" title="Retry" onClick={item.retry}>
+          <button
+            type="button"
+            className="dlCard__act"
+            aria-label={t('downloads.retry')}
+            title={t('downloads.retry')}
+            onClick={item.retry}
+          >
             <RotateCcw size={16} />
           </button>
         )}
         {active
           ? item.cancel && (
-              <button type="button" className="dlCard__act" aria-label="Cancel" title="Cancel" onClick={item.cancel}>
+              <button
+                type="button"
+                className="dlCard__act"
+                aria-label={t('common.cancel')}
+                title={t('common.cancel')}
+                onClick={item.cancel}
+              >
                 <X size={16} />
               </button>
             )
           : item.remove && (
-              <button type="button" className="dlCard__act" aria-label="Remove" title="Remove" onClick={item.remove}>
+              <button
+                type="button"
+                className="dlCard__act"
+                aria-label={t('common.remove')}
+                title={t('common.remove')}
+                onClick={item.remove}
+              >
                 <Trash2 size={16} />
               </button>
             )}
@@ -322,19 +381,24 @@ function Stat({
   icon,
   count,
   label,
+  title,
   tone,
 }: {
   icon: React.ReactNode;
   count: number;
   label: string;
+  /** The whole phrase - "3 waiting" - rather than the count glued to `label`.
+   *  Most languages inflect the word for the number in front of it, and only a
+   *  counted entry in the catalogue can pick the right form. */
+  title: string;
   tone: 'active' | 'queued' | 'done' | 'error';
 }) {
   return (
-    <span className="dlStat" data-tone={tone} title={`${count} ${label}`}>
+    <span className="dlStat" data-tone={tone} title={title}>
       <span className="dlStat__icon" aria-hidden>
         {icon}
       </span>
-      <span className="dlStat__num">{count}</span>
+      <span className="dlStat__num">{formatNumber(count)}</span>
       <span className="dlStat__label">{label}</span>
     </span>
   );
@@ -360,7 +424,7 @@ function Section({
           {icon}
         </span>
         {title}
-        <span className="dlSection__count">{rows.length}</span>
+        <span className="dlSection__count">{formatNumber(rows.length)}</span>
       </h2>
       <ul className="dlList downloadsList">
         {rows.map((row) => (
@@ -380,6 +444,7 @@ function Section({
  * here and nowhere else.
  */
 function useMusicSource(): ResolvedDownloadSource | null {
+  const t = useT();
   const downloads = useDownloadsOptional();
   return useMemo(() => {
     if (!downloads) return null;
@@ -387,7 +452,7 @@ function useMusicSource(): ResolvedDownloadSource | null {
     return {
       key: 'core:music',
       pluginId: 'spotify-import',
-      label: 'Music',
+      label: t('downloads.sourceMusic'),
       icon: <Music size={11} />,
       items: jobs.map(
         (job: MusicImportJob): DownloadItem => ({
@@ -399,7 +464,7 @@ function useMusicSource(): ResolvedDownloadSource | null {
           artworkUrl: job.artworkUrl,
           state: job.state,
           error: job.error,
-          note: job.skipped ? `${job.skipped} already yours` : null,
+          note: job.skipped ? t('downloads.alreadyYours', { count: job.skipped }) : null,
           completed: job.completed,
           total: job.total,
           current: job.currentTrack,
@@ -414,10 +479,11 @@ function useMusicSource(): ResolvedDownloadSource | null {
       ),
       clearFinished,
     };
-  }, [downloads]);
+  }, [downloads, t]);
 }
 
 function DownloadsBoard() {
+  const t = useT();
   const music = useMusicSource();
   const pluginSources = usePluginDownloadSources();
   const sources = useMemo(
@@ -444,9 +510,7 @@ function DownloadsBoard() {
         <div className="emptyState emptyState--tall">
           <EmptyArt name="downloads" />
           <p className="downloadsEmpty">
-            Nothing here downloads anything yet. Turn on <strong>Music import</strong> in
-            Settings → Plugins, and its queue shows up here — along with any other plugin that
-            brings one.
+            <Trans i18nKey="downloads.noSources" components={{ b: <strong /> }} />
           </p>
         </div>
       </div>
@@ -481,28 +545,50 @@ function DownloadsBoard() {
           tiles, the one line of prose the queue is worth, and its controls. */}
       <header className="dlHead">
         <div className="dlStats">
-          <Stat icon={<Download size={15} />} count={running.length} label="downloading" tone="active" />
-          <Stat icon={<Clock size={15} />} count={queued.length} label="waiting" tone="queued" />
-          <Stat icon={<Check size={15} />} count={done.length} label="done" tone="done" />
+          <Stat
+            icon={<Download size={15} />}
+            count={running.length}
+            label={t('downloads.statDownloading')}
+            title={t('downloads.statDownloadingCount', { count: running.length })}
+            tone="active"
+          />
+          <Stat
+            icon={<Clock size={15} />}
+            count={queued.length}
+            label={t('downloads.statWaiting')}
+            title={t('downloads.statWaitingCount', { count: queued.length })}
+            tone="queued"
+          />
+          <Stat
+            icon={<Check size={15} />}
+            count={done.length}
+            label={t('downloads.statDone')}
+            title={t('downloads.statDoneCount', { count: done.length })}
+            tone="done"
+          />
           {failed.length > 0 && (
-            <Stat icon={<TriangleAlert size={15} />} count={failed.length} label="failed" tone="error" />
+            <Stat
+              icon={<TriangleAlert size={15} />}
+              count={failed.length}
+              label={t('downloads.statFailed')}
+              title={t('downloads.statFailedCount', { count: failed.length })}
+              tone="error"
+            />
           )}
         </div>
         <div className="dlHead__actions">
           {partsLeft > 0 && (
-            <span className="dlHead__note">
-              {partsLeft} {partsLeft === 1 ? 'file' : 'files'} to go
-            </span>
+            <span className="dlHead__note">{t('downloads.filesToGo', { count: partsLeft })}</span>
           )}
           {finished.length > 0 && clearable.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => clearable.forEach((s) => s.clearFinished?.())}
-              title="Clear finished"
+              title={t('downloads.clearFinished')}
             >
               <ListX size={15} />
-              <span>Clear</span>
+              <span>{t('downloads.clear')}</span>
             </Button>
           )}
         </div>
@@ -512,15 +598,29 @@ function DownloadsBoard() {
         <div className="emptyState emptyState--tall">
           <EmptyArt name="downloads" />
           <p className="downloadsEmpty">
-            Nothing in the queue. Add songs from <strong>Discover</strong>, or paste a music link
-            into search.
+            <Trans i18nKey="downloads.queueEmpty" components={{ b: <strong /> }} />
           </p>
         </div>
       ) : (
         <>
-          <Section icon={<Download size={15} />} title="Downloading" rows={running} showSource={showSource} />
-          <Section icon={<Clock size={15} />} title="Up next" rows={queued} showSource={showSource} />
-          <Section icon={<Check size={15} />} title="Finished" rows={finished} showSource={showSource} />
+          <Section
+            icon={<Download size={15} />}
+            title={t('downloads.sectionDownloading')}
+            rows={running}
+            showSource={showSource}
+          />
+          <Section
+            icon={<Clock size={15} />}
+            title={t('downloads.sectionUpNext')}
+            rows={queued}
+            showSource={showSource}
+          />
+          <Section
+            icon={<Check size={15} />}
+            title={t('downloads.sectionFinished')}
+            rows={finished}
+            showSource={showSource}
+          />
         </>
       )}
     </div>

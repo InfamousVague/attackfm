@@ -5,6 +5,8 @@ import { ShelfSkeleton } from '../ux/ShelfSkeleton.tsx';
 import { useDiscoverFeed } from '../home/DiscoverFeed.tsx';
 import type { NewMusicList } from '../api/newMusic.ts';
 import type { Track } from '../core/tauri.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatBytes } from '../ux/format.ts';
 
 /**
  * New for you: what the machine has found and fetched that you have not met.
@@ -46,12 +48,13 @@ export function newForYouLists(lists: NewMusicList[] | null): NewMusicList[] {
 export function NewMusicShelf({ onPlay }: { onPlay: (track: Track, queue: Track[]) => void }) {
   const { session, newMusic, auditions, openList } = useDiscoverFeed();
   const { mine, status } = auditions;
+  const t = useT();
 
   if (!session) return null;
   // The lists are the slow half; the auditions are already in the library.
   // Hold the seat until the lists answer, unless there is nothing to wait for.
   if (newMusic === null && mine.length === 0) {
-    return <ShelfSkeleton title="New for you" kind="mix" count={3} />;
+    return <ShelfSkeleton title={t('discover.newForYou')} kind="mix" count={3} />;
   }
 
   const lists = newForYouLists(newMusic).slice(0, LISTS);
@@ -59,12 +62,9 @@ export function NewMusicShelf({ onPlay }: { onPlay: (track: Track, queue: Track[
   const count = lists.length + Math.min(mine.length, AUDITIONS);
   if (count === 0 && !halted) return null;
 
-  const spentGb = status ? status.ledgerBytes / 1e9 : 0;
-  const capGb = status ? status.capBytes / 1e9 : 0;
-
   return (
     <>
-      <Shelf title="New for you" count={count}>
+      <Shelf title={t('discover.newForYou')} count={count}>
         {lists.map((list, i) => (
           <button
             key={list.id}
@@ -78,14 +78,19 @@ export function NewMusicShelf({ onPlay }: { onPlay: (track: Track, queue: Track[
             <span className="mixCardText">
               <span className="mixCardTitle">{list.title}</span>
               <span className="mixCardBlurb">
-                {list.blurb || `${list.items.length} songs you do not own`}
+                {list.blurb || t('discover.notOwnedCount', { count: list.items.length })}
               </span>
             </span>
           </button>
         ))}
-        {mine.slice(0, AUDITIONS).map((t) => (
+        {mine.slice(0, AUDITIONS).map((audition) => (
           // Playing it through IS the adoption.
-          <TrackCard key={t.path} track={t} onOpen={() => onPlay(t, mine)} note="Fetched for you" />
+          <TrackCard
+            key={audition.path}
+            track={audition}
+            onOpen={() => onPlay(audition, mine)}
+            note={t('discover.fetchedForYou')}
+          />
         ))}
       </Shelf>
       {/* The collector's one loud message: its budget is full and it has
@@ -94,9 +99,14 @@ export function NewMusicShelf({ onPlay }: { onPlay: (track: Track, queue: Track[
           is waiting on you. */}
       {halted && (
         <Text size="sm" className="forYouHalted" role="status">
-          The collector is out of room — {spentGb.toFixed(0)} of {capGb.toFixed(0)} GB is holding
-          music nobody has adopted. Play through or heart what you want to keep; clearing the rest
-          from Settings lets it hunt again.
+          {/* One sentence, one key: it was five fragments around two numbers,
+              and the ledger reads through formatBytes so the figure here is
+              the same one Settings and the Booth print for the same bytes -
+              this line used to divide by 1e9 and disagree with both. */}
+          {t('discover.collectorFull', {
+            used: formatBytes(status?.ledgerBytes ?? 0),
+            cap: formatBytes(status?.capBytes ?? 0),
+          })}
         </Text>
       )}
     </>

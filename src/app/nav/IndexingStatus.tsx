@@ -1,4 +1,6 @@
 import { useLibrary } from '../library/library.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 /**
  * A slim strip along the bottom that reports background library work, shown
@@ -13,6 +15,7 @@ import { useLibrary } from '../library/library.tsx';
  */
 export function IndexingStatus() {
   const { source, indexing, indexed, indexTotal } = useLibrary();
+  const t = useT();
   if (!indexing) return null;
 
   if (source === 'server') {
@@ -20,7 +23,12 @@ export function IndexingStatus() {
       <div className="indexingBar" role="status" aria-live="polite">
         <span className="indexingBar__dot" aria-hidden="true" />
         <span className="indexingBar__label">
-          {indexed > 0 ? `Syncing · ${indexed.toLocaleString()} songs` : 'Syncing library…'}
+          {/* `count` is only there to pick the plural form; what is PRINTED is
+              `n`, already grouped by Intl - a library of 40,000 songs should
+              not read as "40000" in any language. */}
+          {indexed > 0
+            ? t('library.syncingCount', { count: indexed, n: formatNumber(indexed) })
+            : t('library.syncing')}
         </span>
         <span className="indexingBar__track" aria-hidden="true">
           <span className="indexingBar__fill indexingBar__fill--sweep" />
@@ -35,7 +43,11 @@ export function IndexingStatus() {
     <div className="indexingBar" role="status" aria-live="polite">
       <span className="indexingBar__dot" aria-hidden="true" />
       <span className="indexingBar__label">
-        Indexing {indexed.toLocaleString()} of {indexTotal.toLocaleString()} songs
+        {t('library.indexingCount', {
+          count: indexTotal,
+          n: formatNumber(indexed),
+          total: formatNumber(indexTotal),
+        })}
       </span>
       <span className="indexingBar__track" aria-hidden="true">
         <span className="indexingBar__fill" style={{ inlineSize: `${percent}%` }} />

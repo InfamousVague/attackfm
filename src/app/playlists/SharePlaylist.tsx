@@ -13,6 +13,8 @@ import type { Track } from '../core/tauri.ts';
 import { GlassSheet } from '../ux/GlassSheet.tsx';
 import { FriendAvatar } from '../profile/RegistryFriends.tsx';
 import { shoot } from '../widget/shot.ts';
+import { Trans, useSongCount, useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 import { saveCardImage } from '../widget/saveCard.ts';
 import logo from '../../assets/attack-white.png';
 import { usePlaylists, type Playlist } from './playlists.tsx';
@@ -101,11 +103,13 @@ function PlaylistCard({
   qr: string | null;
   count: number;
 }) {
+  const t = useT();
+  const songCount = useSongCount();
   return (
     <div className="shareCard" ref={cardRef}>
       <div className="shareCard__head">
-        <img className="shareCard__logo" src={logo} alt="AttackFM" />
-        <span className="shareCard__kicker">Playlist</span>
+        <img className="shareCard__logo" src={logo} alt={t('common.appName')} />
+        <span className="shareCard__kicker">{t('playlists.playlist')}</span>
       </div>
       <div className="shareCard__art" data-n={Math.min(covers.length, 4)}>
         {covers.length > 0 ? (
@@ -118,17 +122,18 @@ function PlaylistCard({
       </div>
       <p className="shareCard__name">{playlist.name}</p>
       <p className="shareCard__sub">
-        {count} {count === 1 ? 'song' : 'songs'}
-        {by ? ` · shared by @${by}` : ''}
+        {/* The count keeps its own plural form and is dropped INTO the line,
+            so the sharer's handle and the songs can swap places. */}
+        {by ? t('playlists.cardSubSharedBy', { songs: songCount(count), by }) : songCount(count)}
       </p>
       <div className="shareCard__qrRow">
-        {qr ? <img className="shareCard__qr" src={qr} alt="Link as a QR code" /> : <span className="shareCard__qr" aria-hidden />}
+        {qr ? <img className="shareCard__qr" src={qr} alt={t('playlists.qrAlt')} /> : <span className="shareCard__qr" aria-hidden />}
         <div className="shareCard__linkWrap">
-          <span className="shareCard__linkLabel">Scan, or open</span>
-          <span className="shareCard__link">{link ? link.replace(/^https?:\/\//, '') : 'making the link…'}</span>
+          <span className="shareCard__linkLabel">{t('playlists.scanOrOpen')}</span>
+          <span className="shareCard__link">{link ? link.replace(/^https?:\/\//, '') : t('playlists.makingLink')}</span>
         </div>
       </div>
-      <p className="shareCard__foot">attack.fm · opens in the app, or in any browser</p>
+      <p className="shareCard__foot">{t('playlists.cardFoot')}</p>
     </div>
   );
 }
@@ -145,6 +150,7 @@ export function SharePlaylistDrawer({
   /** Which face to open on. The New-playlist sheet lands on Members. */
   initialFace?: ShareFace;
 }) {
+  const t = useT();
   const { session } = useServerSession();
   const registry = useRegistryOptional();
   const { toast } = useToast();
@@ -178,7 +184,7 @@ export function SharePlaylistDrawer({
         if (live) setCurrent(seated);
       })
       .catch(() => {
-        if (live) setError('Could not reach the server just now.');
+        if (live) setError(t('playlists.membersUnreachable'));
       });
     return () => {
       live = false;
@@ -188,7 +194,7 @@ export function SharePlaylistDrawer({
   const seated = current ?? [];
   const nameOf = (userId: number) => seated.find((m) => m.userId === userId)?.username ?? '';
   const me = session?.username ?? '';
-  const ownerName = isOwner ? me : (playlist.ownerName ?? 'the owner');
+  const ownerName = isOwner ? me : (playlist.ownerName ?? t('playlists.theOwner'));
 
   const setSeat = async (userId: number, seat: Seat | null) => {
     if (!share || !unshare || busy !== null) return;
@@ -207,7 +213,7 @@ export function SharePlaylistDrawer({
       else await share(playlist.id, { userId }, seat);
     } catch (err) {
       setCurrent(before);
-      setError(err instanceof Error ? err.message : 'That change did not take.');
+      setError(err instanceof Error ? err.message : t('playlists.seatChangeFailed'));
     } finally {
       setBusy(null);
     }
@@ -220,7 +226,7 @@ export function SharePlaylistDrawer({
       await leave(playlist.id);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not leave just now.');
+      setError(err instanceof Error ? err.message : t('playlists.leaveFailed'));
     } finally {
       setBusy(null);
     }
@@ -235,12 +241,14 @@ export function SharePlaylistDrawer({
   const addPeople = async () => {
     if (!share || !members || busy !== null) return;
     const pick = await openFriendPicker({
-      title: 'Add people',
-      hint: `To “${playlist.name}” - anyone on this server`,
+      title: t('playlists.addPeople'),
+      hint: t('playlists.addPeopleHint', { name: playlist.name }),
       mode: 'playlist',
       roles: true,
       exclude: [me, ...seated.map((m) => m.username)],
-      action: (n) => (n ? `Add ${n} to the playlist` : 'Add to the playlist'),
+      // Two strings, not one with a zero form: n === 0 is the DISABLED button
+      // before anyone is ticked, which is a different sentence and not a count.
+      action: (n) => (n ? t('playlists.addNToPlaylist', { count: n }) : t('playlists.addToThePlaylist')),
     });
     if (!pick || pick.people.length === 0) return;
     setBusy('adding');
@@ -249,12 +257,16 @@ export function SharePlaylistDrawer({
     for (const p of pick.people) {
       try {
         await share(playlist.id, { username: p.handle }, pick.role);
-        out.push({ handle: p.handle, ok: true, words: pick.role === 'editor' ? 'added as an editor' : 'added as a viewer' });
+        out.push({
+          handle: p.handle,
+          ok: true,
+          words: pick.role === 'editor' ? t('playlists.addedAsEditor') : t('playlists.addedAsViewer'),
+        });
       } catch (err) {
         out.push({
           handle: p.handle,
           ok: false,
-          words: err instanceof Error && err.message ? err.message : 'could not be added',
+          words: err instanceof Error && err.message ? err.message : t('playlists.couldNotBeAdded'),
         });
       }
     }
@@ -344,7 +356,7 @@ export function SharePlaylistDrawer({
         }
       })
       .catch((err: unknown) => {
-        if (live) setLinkError(err instanceof Error ? err.message : 'Could not make a link just now.');
+        if (live) setLinkError(err instanceof Error ? err.message : t('playlists.linkFailed'));
       })
       .finally(() => {
         if (live) setLinking(false);
@@ -400,13 +412,13 @@ export function SharePlaylistDrawer({
       const box = node.getBoundingClientRect();
       const dataUrl = png ?? (await shoot(node, Math.round(box.width), Math.round(box.height), 4));
       if (!dataUrl) {
-        toast({ message: 'Could not draw the card. Try again in a moment.' });
+        toast({ message: t('playlists.cardDrawFailed') });
         return;
       }
       await saveCardImage({
         dataUrl,
         filename: `attackfm-${slug(playlist.name)}.png`,
-        title: `${playlist.name} - a playlist on AttackFM`,
+        title: t('playlists.shareSheetTitle', { name: playlist.name }),
         say: (message) => toast({ message }),
       });
     } finally {
@@ -421,23 +433,23 @@ export function SharePlaylistDrawer({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      toast({ message: 'Could not copy - long-press the link on the card to select it.' });
+      toast({ message: t('playlists.copyFailed') });
     }
   };
 
   return (
-    <GlassSheet open={open} onClose={onClose} label="Share playlist" className="shareSheet">
-      <h2 className="shareSheet__title">Share “{playlist.name}”</h2>
+    <GlassSheet open={open} onClose={onClose} label={t('playlists.sharePlaylist')} className="shareSheet">
+      <h2 className="shareSheet__title">{t('playlists.shareNamed', { name: playlist.name })}</h2>
       <SegmentedControl
         className="shareSheet__faces"
-        aria-label="How to share"
+        aria-label={t('playlists.howToShare')}
         fullWidth
         size="sm"
         value={face}
         onValueChange={(v) => setFace(v === 'members' ? 'members' : 'link')}
         options={[
-          { value: 'link', label: 'Link' },
-          { value: 'members', label: isOwner ? 'Members' : 'Who has it' },
+          { value: 'link', label: t('playlists.faceLink') },
+          { value: 'members', label: isOwner ? t('playlists.faceMembers') : t('playlists.faceWhoHasIt') },
         ]}
       />
 
@@ -454,12 +466,11 @@ export function SharePlaylistDrawer({
           />
           {!token ? (
             <Text tone="muted" size="sm" className="shareSheet__note">
-              Links come from your AttackFM account, and this device is not signed into one yet.
-              Sign in under Profile, then come back here.
+              {t('playlists.linkNeedsAccount')}
             </Text>
           ) : rows.length === 0 ? (
             <Text tone="muted" size="sm" className="shareSheet__note">
-              An empty playlist has nothing to put on a link yet.
+              {t('playlists.linkNeedsSongs')}
             </Text>
           ) : linkError ? (
             <Text tone="danger" size="sm" className="shareSheet__note">
@@ -469,16 +480,15 @@ export function SharePlaylistDrawer({
           <div className="shareSheet__actions">
             <Button variant="ghost" onClick={() => void copyLink()} disabled={!link}>
               {copied ? <Check size={16} /> : <Copy size={16} />}
-              {copied ? 'Copied' : 'Copy link'}
+              {copied ? t('common.copied') : t('common.copyLink')}
             </Button>
             <Button variant="solid" onClick={() => void saveImage()} disabled={saving || !link}>
               <Download size={16} />
-              {saving ? 'Saving…' : 'Save image'}
+              {saving ? t('common.saving') : t('common.saveImage')}
             </Button>
           </div>
           <Text tone="muted" size="xs" className="shareSheet__hint">
-            Anyone can open the link, on any server or none. In AttackFM it files the playlist onto
-            their own server, which fetches the songs they do not have.
+            {t('playlists.linkHint')}
           </Text>
         </div>
       )}
@@ -486,9 +496,14 @@ export function SharePlaylistDrawer({
       {face === 'members' && (
         <>
           <p className="shareSheet__desc">
+            {/* The member's line is one sentence per seat rather than a name
+                and a clause glued together: the owner's name has to be free to
+                move, and "can edit" is not a phrase in every language. */}
             {isOwner
-              ? 'Who can see it, and who can add to it. It stays yours.'
-              : `Shared by ${ownerName} · you can ${playlist.role === 'editor' ? 'add and remove songs' : 'see and play it'}.`}
+              ? t('playlists.membersOwnerBlurb')
+              : playlist.role === 'editor'
+                ? t('playlists.sharedByCanEdit', { name: ownerName })
+                : t('playlists.sharedByCanPlay', { name: ownerName })}
           </p>
           {error && (
             <Text tone="danger" size="sm" className="shareSheet__note" role="status">
@@ -497,15 +512,15 @@ export function SharePlaylistDrawer({
           )}
           {loading && (
             <Text tone="muted" size="sm" className="shareSheet__note">
-              Finding who is in…
+              {t('playlists.findingMembers')}
             </Text>
           )}
 
           {!loading && (
             <section className="shareSheet__room">
               <h3 className="shareSheet__h">
-                People
-                <span className="shareSheet__count">{seated.length + 1}</span>
+                {t('playlists.people')}
+                <span className="shareSheet__count">{formatNumber(seated.length + 1)}</span>
               </h3>
               <ul className="shareSheet__list">
                 {/* The owner leads: never among the members the hub lists,
@@ -513,39 +528,56 @@ export function SharePlaylistDrawer({
                 <li className="shareSheet__row">
                   <FriendAvatar handle={ownerName} size="md" />
                   <span className="shareSheet__name">
-                    {ownerName}
-                    {isOwner && <span className="shareSheet__you"> · you</span>}
+                    {/* "Name · you" is one line, not a name with a suffix
+                        stapled on: the marker goes on the other side of the
+                        name in some languages. */}
+                    {isOwner ? (
+                      <Trans
+                        i18nKey="playlists.nameIsYou"
+                        values={{ name: ownerName }}
+                        components={{ you: <span className="shareSheet__you" /> }}
+                      />
+                    ) : (
+                      ownerName
+                    )}
                   </span>
                   <span className="shareSheet__pill shareSheet__pill--owner">
                     <Crown size={11} aria-hidden />
-                    Owner
+                    {t('playlists.roleOwner')}
                   </span>
                 </li>
                 {seated.map((m) => (
                   <li key={m.userId} className="shareSheet__row">
                     <FriendAvatar handle={m.username} size="md" />
                     <span className="shareSheet__name">
-                      {m.username}
-                      {m.username.toLowerCase() === me.toLowerCase() && <span className="shareSheet__you"> · you</span>}
+                      {m.username.toLowerCase() === me.toLowerCase() ? (
+                        <Trans
+                          i18nKey="playlists.nameIsYou"
+                          values={{ name: m.username }}
+                          components={{ you: <span className="shareSheet__you" /> }}
+                        />
+                      ) : (
+                        m.username
+                      )}
                     </span>
                     {isOwner && share ? (
                       <span className="shareSheet__seats">
                         <SegmentedControl
                           size="sm"
-                          aria-label={`${m.username}'s seat`}
+                          aria-label={t('playlists.seatFor', { name: m.username })}
                           value={m.role}
                           disabled={busy !== null}
                           onValueChange={(v) => void setSeat(m.userId, v === 'viewer' ? 'viewer' : 'editor')}
                           options={[
-                            { value: 'editor', label: 'Editor' },
-                            { value: 'viewer', label: 'Viewer' },
+                            { value: 'editor', label: t('playlists.roleEditor') },
+                            { value: 'viewer', label: t('playlists.roleViewer') },
                           ]}
                         />
                         <IconButton
                           size="sm"
                           variant="ghost"
                           className="shareSheet__remove"
-                          aria-label={`Remove ${m.username}`}
+                          aria-label={t('playlists.removePerson', { name: m.username })}
                           disabled={busy !== null}
                           onClick={() => void setSeat(m.userId, null)}
                         >
@@ -554,7 +586,7 @@ export function SharePlaylistDrawer({
                       </span>
                     ) : (
                       <span className="shareSheet__pill" data-role={m.role}>
-                        {m.role === 'editor' ? 'Editor' : 'Viewer'}
+                        {m.role === 'editor' ? t('playlists.roleEditor') : t('playlists.roleViewer')}
                       </span>
                     )}
                   </li>
@@ -562,7 +594,7 @@ export function SharePlaylistDrawer({
               </ul>
               {seated.length === 0 && (
                 <Text tone="muted" size="sm" className="shareSheet__empty">
-                  {isOwner ? 'Nobody else yet.' : 'Only you and the owner.'}
+                  {isOwner ? t('playlists.nobodyElseYet') : t('playlists.onlyYouAndOwner')}
                 </Text>
               )}
             </section>
@@ -580,14 +612,14 @@ export function SharePlaylistDrawer({
                 <UserPlus size={16} />
               </span>
               <span className="fpDoor__text">
-                <span className="fpDoor__title">{busy === 'adding' ? 'Adding…' : 'Add people…'}</span>
-                <span className="fpDoor__sub">Anyone on this server, friends first</span>
+                <span className="fpDoor__title">{busy === 'adding' ? t('playlists.adding') : t('playlists.addPeopleAction')}</span>
+                <span className="fpDoor__sub">{t('playlists.addPeopleSub')}</span>
               </span>
             </button>
           )}
 
           {outcomes.length > 0 && (
-            <ul className="shareSheet__outcomes" aria-label="How that went" role="status">
+            <ul className="shareSheet__outcomes" aria-label={t('playlists.outcomesLabel')} role="status">
               {outcomes.map((o) => (
                 <li key={o.handle} className="shareSheet__outcome" data-ok={o.ok || undefined}>
                   <FriendAvatar handle={o.handle} size="sm" />
@@ -602,12 +634,11 @@ export function SharePlaylistDrawer({
           {!loading && isOwner && share && (
             <div className="shareSheet__elsewhere">
               <Text tone="muted" size="xs" className="shareSheet__hint">
-                A playlist lives on one server, so only its members can be seated. Friends
-                elsewhere get the link, which files a copy onto their own server.
+                {t('playlists.elsewhereHint')}
               </Text>
               <Button variant="ghost" size="sm" className="shareSheet__faceLink" onClick={() => setFace('link')}>
                 <Copy size={15} />
-                Get the link
+                {t('playlists.getTheLink')}
               </Button>
             </div>
           )}
@@ -616,7 +647,7 @@ export function SharePlaylistDrawer({
             <div className="shareSheet__foot">
               <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => void walkOut()}>
                 <LogOut size={15} />
-                <span>{busy === 'leave' ? 'Leaving…' : 'Leave this playlist'}</span>
+                <span>{busy === 'leave' ? t('playlists.leaving') : t('playlists.leaveThis')}</span>
               </Button>
             </div>
           )}

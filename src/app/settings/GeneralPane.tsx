@@ -5,6 +5,8 @@ import { canPickFolder } from '../core/tauri.ts';
 import { useLibrary } from '../library/library.tsx';
 import { UploadSection } from '../servers/ServerUpload.tsx';
 import { PaneSection, SettingRow } from './kit/settingsKit.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 /**
  * The Library pane (the section id stays `general` - ids are the contract
@@ -15,6 +17,7 @@ import { PaneSection, SettingRow } from './kit/settingsKit.tsx';
  * the app" material.
  */
 export function General() {
+  const t = useT();
   const { source, musicDir, loading, isDefault, choose, reset, tracks } = useLibrary();
 
   // The library, counted: what the folder (or the server) amounts to.
@@ -32,13 +35,13 @@ export function General() {
 
   return (
     <div className="prefsBody">
-      <PaneSection title="Your library">
+      <PaneSection title={t('settings.yourLibrary')}>
         <div className="setk-row">
           <div className="libraryStats">
-            <StatTile icon={<Music size={16} />} value={tracks.length.toLocaleString()} label="Songs" />
-            <StatTile icon={<Mic2 size={16} />} value={libStats.artists.toLocaleString()} label="Artists" />
-            <StatTile icon={<Disc3 size={16} />} value={libStats.albums.toLocaleString()} label="Albums" />
-            <StatTile icon={<Timer size={16} />} value={libStats.hours.toLocaleString()} label="Hours" />
+            <StatTile icon={<Music size={16} />} value={formatNumber(tracks.length)} label={t('settings.statSongs')} />
+            <StatTile icon={<Mic2 size={16} />} value={formatNumber(libStats.artists)} label={t('settings.statArtists')} />
+            <StatTile icon={<Disc3 size={16} />} value={formatNumber(libStats.albums)} label={t('settings.statAlbums')} />
+            <StatTile icon={<Timer size={16} />} value={formatNumber(libStats.hours)} label={t('settings.statHours')} />
           </div>
         </div>
       </PaneSection>
@@ -47,31 +50,33 @@ export function General() {
         // A connected server IS the library, so the folder picker would be
         // pointing at something nothing is playing from. Say where the music
         // is coming from instead; changing it lives under Servers.
-        <PaneSection title="Music source">
+        <PaneSection title={t('settings.musicSource')}>
           <SettingRow
-            label="Music library"
-            hint="The library is coming from a server. Change or disconnect it under Servers."
+            label={t('settings.musicLibrary')}
+            hint={t('settings.musicLibraryFromServer')}
             layout="stacked"
             control={
-              <Input readOnly value={musicDir} aria-label="Music library" leadingIcon={<Cloud size={16} />} />
+              <Input readOnly value={musicDir} aria-label={t('settings.musicLibrary')} leadingIcon={<Cloud size={16} />} />
             }
           />
         </PaneSection>
       ) : (
-        <PaneSection title="Music source">
+        <PaneSection title={t('settings.musicSource')}>
           <SettingRow
-            label="Music folder"
+            label={t('settings.musicFolder')}
             hint={
+              // Not a plural - two different sentences for two different
+              // platforms, so each is its own entry.
               canPickFolder
-                ? 'Where AttackFM looks for music to build the library from.'
-                : 'The folder can only be changed in the desktop app.'
+                ? t('settings.musicFolderHint')
+                : t('settings.musicFolderDesktopOnly')
             }
             layout="stacked"
             control={
               <Input
                 readOnly
-                value={loading ? 'Locating…' : musicDir}
-                aria-label="Music folder"
+                value={loading ? t('settings.musicFolderLocating') : musicDir}
+                aria-label={t('settings.musicFolder')}
                 leadingIcon={<FolderOpen size={16} />}
               />
             }
@@ -80,10 +85,10 @@ export function General() {
             <div className="setk-row">
               <div className="prefsActions">
                 <Button variant="outline" size="sm" onClick={() => void choose()}>
-                  Choose folder…
+                  {t('settings.chooseFolder')}
                 </Button>
                 <Button variant="ghost" size="sm" disabled={isDefault} onClick={() => void reset()}>
-                  Reset to default
+                  {t('settings.resetFolder')}
                 </Button>
               </div>
             </div>

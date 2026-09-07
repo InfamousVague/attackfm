@@ -8,6 +8,8 @@ import { useServerSession } from './serverSession.tsx';
 import { isTauri } from '../core/tauri.ts';
 import { autoUploadEnabled, setAutoUpload } from '../settings/behaviourPrefs.ts';
 import { SettingRow } from '../settings/kit/settingsKit.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatDate, formatNumber } from '../ux/format.ts';
 
 /**
  * Sending music up to the server.
@@ -18,6 +20,7 @@ import { SettingRow } from '../settings/kit/settingsKit.tsx';
  * already lives and where a bulk upload is worth starting.
  */
 export function UploadSection() {
+  const t = useT();
   const { session } = useServerSession();
   const { rescan } = useLibrary();
   const [busy, setBusy] = useState(false);
@@ -33,10 +36,10 @@ export function UploadSection() {
     const dialog = await import('@tauri-apps/plugin-dialog');
     const picked = await dialog.open({
       multiple: true,
-      title: 'Choose music to upload',
+      title: t('servers.uploadPickTitle'),
       filters: [
         {
-          name: 'Audio',
+          name: t('servers.uploadFilterAudio'),
           extensions: ['flac', 'mp3', 'm4a', 'wav', 'aiff', 'aif', 'ogg', 'opus', 'wv', 'ape'],
         },
       ],
@@ -78,8 +81,12 @@ export function UploadSection() {
     setCurrent('');
     setReport(
       failed === 0
-        ? `Uploaded ${files.length} ${files.length === 1 ? 'track' : 'tracks'}.`
-        : `Uploaded ${files.length - failed} of ${files.length}; ${failed} failed.`,
+        ? t('servers.uploadedAll', { count: files.length })
+        : t('servers.uploadedSome', {
+            done: formatNumber(files.length - failed),
+            total: formatNumber(files.length),
+            failed: formatNumber(failed),
+          }),
     );
     // The server indexes each upload as it lands, so this only pulls the new
     // rows down rather than asking for a fresh walk.
@@ -88,15 +95,18 @@ export function UploadSection() {
 
   return (
     <div data-setting="auto-upload" className="prefsSection">
-      <Label>Add music</Label>
+      <Label>{t('servers.uploadTitle')}</Label>
       <Text tone="muted" size="sm">
-        Sends files from this machine to the server. They are filed by their own tags and
-        indexed as they arrive.
+        {t('servers.uploadHint')}
       </Text>
       {busy && (
         <>
           <Text tone="muted" size="sm">
-            {current} — {done} of {total}
+            {t('servers.uploadProgress', {
+              name: current,
+              done: formatNumber(done),
+              total: formatNumber(total),
+            })}
           </Text>
           <ProgressBar value={fraction * 100} />
         </>
@@ -104,7 +114,7 @@ export function UploadSection() {
       {report && !busy && <Banner tone="success">{report}</Banner>}
       <div className="prefsActions">
         <Button variant="outline" size="sm" disabled={busy} onClick={() => void pickAndUpload()}>
-          <Upload size={14} /> {busy ? 'Uploading…' : 'Upload files…'}
+          <Upload size={14} /> {busy ? t('servers.uploading') : t('servers.uploadPick')}
         </Button>
       </div>
       <FolderSyncRow />
@@ -120,6 +130,7 @@ export function UploadSection() {
  * ever sent twice.
  */
 function FolderSyncRow() {
+  const t = useT();
   const { status, syncNow } = useLibrarySync();
   const { session } = useServerSession();
   const running = status.state === 'checking' || status.state === 'uploading';
@@ -136,26 +147,33 @@ function FolderSyncRow() {
 
   const line =
     status.state === 'checking'
-      ? 'Comparing the music folder with the server…'
+      ? t('servers.syncChecking')
       : status.state === 'uploading'
-        ? `Uploading ${status.current ?? '…'} — ${status.done} of ${status.total}`
+        ? t('servers.syncUploading', {
+            name: status.current ?? '…',
+            done: formatNumber(status.done),
+            total: formatNumber(status.total),
+          })
         : status.state === 'unsupported'
-          ? 'This server predates folder sync; update it to sync automatically.'
+          ? t('servers.syncUnsupported')
           : status.state === 'error'
-            ? status.error ?? 'Sync hit a problem; it will retry.'
+            ? // The server's own words when it has any; ours when it does not.
+              status.error ?? t('servers.syncFailed')
             : status.lastSyncedAt
-              ? `Folder is in sync (checked ${new Date(status.lastSyncedAt).toLocaleTimeString()}).`
-              : 'The music folder syncs to the server automatically.';
+              ? t('servers.syncInSync', {
+                  time: formatDate(status.lastSyncedAt, { timeStyle: 'medium' }),
+                })
+              : t('servers.syncIdle');
 
   return (
     <>
       {session && (
         <SettingRow
-          label="Send new music automatically"
-          hint="Anything that lands in this machine's music folder goes up to the server on its own - on connect, and after every finished download."
+          label={t('servers.autoUpload')}
+          hint={t('servers.autoUploadHint')}
           control={
             <Switch
-              aria-label="Send new music automatically"
+              aria-label={t('servers.autoUpload')}
               checked={auto}
               onCheckedChange={(on) => {
                 setAutoUpload(session.url, isAdmin, on);
@@ -178,7 +196,7 @@ function FolderSyncRow() {
           disabled={running || status.state === 'unsupported'}
           onClick={syncNow}
         >
-          {running ? 'Syncing…' : 'Sync folder now'}
+          {running ? t('servers.syncing') : t('servers.syncNow')}
         </Button>
       </div>
     </>

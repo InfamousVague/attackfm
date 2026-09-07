@@ -37,6 +37,14 @@ import { isTauri, type Track } from '../core/tauri.ts';
 import { DjTraitSheet } from '../booth/DjTraitSheet.tsx';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { artistDoorOpen, openArtist } from '../nav/artistDoor.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+
+/* The toast a queue verb leaves behind, by where the song landed. Held as
+   keys in a table rather than chosen with a chain of string ternaries so that
+   nothing here is a sentence: the sentences live in the catalogue. */
+const QUEUED_SENT = { next: 'library.queuedSentNext', end: 'library.queuedSent' };
+const QUEUED_GROOVE = { next: 'library.queuedGrooveNext', end: 'library.queuedGroove' };
+const QUEUED_OWN = { next: 'library.queuedNext', end: 'library.queued' };
 
 /**
  * The things you can do to a song that are not "play it", wrapped around
@@ -83,25 +91,22 @@ export function TrackMenu({
   const { playNext, addToQueue, following, inJam } = useQueueControls();
   const { isFavorite, toggleFavorite } = useLibrary();
   const { toast } = useToast();
+  const t = useT();
   /** One queue verb, said once. See the note at the menu items. Hosting a
    *  groove, the deck's line IS the room's, and the word says so; following
    *  one, the song was SENT - the host's player folds it in. */
-  const queued = (t: Track, next: boolean) => {
-    if (next) playNext(t);
-    else addToQueue(t);
+  const queued = (song: Track, next: boolean) => {
+    if (next) playNext(song);
+    else addToQueue(song);
     fireNativeHaptic('light');
-    const said = following
-      ? next
-        ? 'sent to play next in the groove'
-        : 'sent to the groove'
-      : inJam
-        ? next
-          ? 'playing next in the groove'
-          : 'added to the groove'
-        : next
-          ? 'playing next'
-          : 'added to the queue';
-    toast({ message: `“${t.title}” ${said}` });
+    // Six whole sentences rather than a verb slotted into one frame. The old
+    // code built `“${title}” ${said}` from a phrase picked by state, which is
+    // English word order written into the app: a language that puts the verb
+    // first, or the quotation marks somewhere else („…“ in German), cannot be
+    // reached from a frame with the verb at the end. Each state names its own
+    // line and the translator moves the title wherever it belongs.
+    const line = following ? QUEUED_SENT : inJam ? QUEUED_GROOVE : QUEUED_OWN;
+    toast({ message: t(next ? line.next : line.end, { title: song.title }) });
   };
   // The station: a song is the most natural thing to start one from, and the
   // menu is where "do something with this song" already lives.
@@ -215,11 +220,11 @@ export function TrackMenu({
      keeps the gate it always had. */
   const more: { key: string; icon: ReactNode; label: string; run: () => void }[] = [];
   if (selection) {
-    more.push({ key: 'select', icon: <CopyCheck size={15} />, label: 'Select songs…', run: () => selection.start(track.path) });
+    more.push({ key: 'select', icon: <CopyCheck size={15} />, label: t('library.selectSongs'), run: () => selection.start(track.path) });
   }
   // By name, to a friend's own hub - no file leaves this one.
   if (registry?.session) {
-    more.push({ key: 'send', icon: <Send size={15} />, label: 'Send to a friend…', run: () => setSending(true) });
+    more.push({ key: 'send', icon: <Send size={15} />, label: t('library.sendToFriend'), run: () => setSending(true) });
   }
   // An endless run in this song's direction. It plays first, and the station
   // keeps the queue fed behind it for as long as it is on - see radio.tsx.
@@ -227,7 +232,7 @@ export function TrackMenu({
     more.push({
       key: 'radio',
       icon: <Radio size={15} />,
-      label: 'Start radio from this',
+      label: t('library.startRadio'),
       run: () => {
         // The seed plays first - a station "from this song" that did not play
         // it would be a station from somewhere else.
@@ -237,23 +242,23 @@ export function TrackMenu({
     });
   }
   if (session && trackId !== null) {
-    more.push({ key: 'quick', icon: <Sparkles size={15} />, label: 'Generate custom queue', run: () => setQuickQueue(true) });
-    more.push({ key: 'explore', icon: <Sparkles size={15} />, label: 'Choose the sound for a mix…', run: () => setExploring(true) });
+    more.push({ key: 'quick', icon: <Sparkles size={15} />, label: t('library.generateQueue'), run: () => setQuickQueue(true) });
+    more.push({ key: 'explore', icon: <Sparkles size={15} />, label: t('library.chooseMixSound'), run: () => setExploring(true) });
   }
   // The importer matches a song by searching for its title and artist, so it
   // can arrive as a live cut, a remix, or a cover - correctly tagged either
   // way, which is why only a listener ever catches it. Admin-only: it edits a
   // file the whole server shares.
   if (canReport) {
-    more.push({ key: 'report', icon: <SearchX size={15} />, label: 'Wrong song?', run: () => setReporting(true) });
+    more.push({ key: 'report', icon: <SearchX size={15} />, label: t('library.wrongSong'), run: () => setReporting(true) });
   }
   // The song, on this device: it plays with the hub off, the wifi gone, or
   // the plane door shut. Held songs offer the way back out.
   if (canKeep) {
     more.push(
       held
-        ? { key: 'keep', icon: <Trash2 size={15} />, label: 'Remove from this device', run: () => void unpinTrack(track.path) }
-        : { key: 'keep', icon: keeping ? <Check size={15} /> : <ArrowDownToLine size={15} />, label: keeping ? 'Keeping…' : 'Keep on this device', run: () => void keep() },
+        ? { key: 'keep', icon: <Trash2 size={15} />, label: t('library.removeFromDevice'), run: () => void unpinTrack(track.path) }
+        : { key: 'keep', icon: keeping ? <Check size={15} /> : <ArrowDownToLine size={15} />, label: keeping ? t('library.keeping') : t('library.keepOnDevice'), run: () => void keep() },
     );
   }
 
@@ -261,7 +266,7 @@ export function TrackMenu({
     <>
       <ContextMenu
         {...hold}
-        aria-label={`${track.title} actions`}
+        aria-label={t('library.trackActions', { title: track.title })}
         className={className}
         content={
           <MenuStop>
@@ -285,19 +290,19 @@ export function TrackMenu({
             {following ? (
               <>
                 <MenuItem icon={<ListStart size={15} />} onSelect={() => queued(track, true)}>
-                  Play next in the groove
+                  {t('library.playNextInGroove')}
                 </MenuItem>
                 <MenuItem icon={<Users size={15} />} onSelect={() => queued(track, false)}>
-                  Add to the groove
+                  {t('library.addToGroove')}
                 </MenuItem>
               </>
             ) : (
               <>
                 <MenuItem icon={<ListStart size={15} />} onSelect={() => queued(track, true)}>
-                  Play next
+                  {t('library.playNext')}
                 </MenuItem>
                 <MenuItem icon={<ListEnd size={15} />} onSelect={() => queued(track, false)}>
-                  Add to queue
+                  {t('library.addToQueue')}
                 </MenuItem>
               </>
             )}
@@ -305,7 +310,7 @@ export function TrackMenu({
                 search, create and un-add, none of which a nested menu of names
                 can do. */}
             <MenuItem icon={<ListMusic size={15} />} onSelect={() => setFiling(true)}>
-              Add to playlist…
+              {t('library.addToPlaylist')}
             </MenuItem>
             {/* Love, in the menu.
 
@@ -321,7 +326,7 @@ export function TrackMenu({
                 icon={<Heart size={15} fill={isFavorite(track.path) ? 'currentColor' : 'none'} />}
                 onSelect={() => toggleFavorite(track.path)}
               >
-                {isFavorite(track.path) ? 'Remove from Liked' : 'Love this song'}
+                {isFavorite(track.path) ? t('library.unlike') : t('library.like')}
               </MenuItem>
             )}
             {/* The artist's page, from any held song anywhere. Most cards
@@ -331,7 +336,7 @@ export function TrackMenu({
                 library keeps them off the music shelves ArtistPage reads). */}
             {artistDoorOpen() && track.kind !== 'book' && track.artist.trim() !== '' && (
               <MenuItem icon={<UserRound size={15} />} onSelect={() => openArtist(track.artist)}>
-                Go to artist
+                {t('library.goToArtist')}
               </MenuItem>
             )}
             <MenuSeparator />
@@ -341,7 +346,7 @@ export function TrackMenu({
                 a third of itself off the right edge with its labels cut. A
                 pick in either closes the whole stack. */}
             {DESKTOP ? (
-              <MenuSub label="More…" icon={<Ellipsis size={15} />} menuClassName="trackMenuMore">
+              <MenuSub label={t('common.more')} icon={<Ellipsis size={15} />} menuClassName="trackMenuMore">
                 {more.map((a) => (
                   <MenuItem key={a.key} icon={a.icon} onSelect={a.run}>
                     {a.label}
@@ -350,7 +355,7 @@ export function TrackMenu({
               </MenuSub>
             ) : (
               <MenuItem icon={<Ellipsis size={15} />} onSelect={() => setMoreOpen(true)}>
-                More…
+                {t('common.more')}
               </MenuItem>
             )}
           </MenuStop>

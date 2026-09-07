@@ -2,6 +2,8 @@ import { Button, Label, Text } from '@glacier/react';
 import { useState } from 'react';
 import { useImportServer, importServerHost } from './importServer.ts';
 import { retryPeerSync, usePeerSyncStatus } from './peerSyncStatus.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 /**
  * The other half of "download on the peer": what the peer still owes the hub.
@@ -18,6 +20,7 @@ import { retryPeerSync, usePeerSyncStatus } from './peerSyncStatus.ts';
  * sections reads as a rendering bug, not as a newer style.
  */
 export function SyncToHubSection() {
+  const t = useT();
   const target = useImportServer();
   const status = usePeerSyncStatus(target);
   const [note, setNote] = useState<string | null>(null);
@@ -40,14 +43,11 @@ export function SyncToHubSection() {
   if (!status?.configured) {
     return (
       <div className="prefsSection">
-        <Label>Copying to your library</Label>
-        <Text tone="danger" size="sm">
-          {importServerHost(target.url)} has not been told where your library is, so nothing it
-          downloads can be copied back — and it will not take on new music for you either.
-        </Text>
-        <Text tone="muted" size="xs">
-          Set AFM_PEER_SYNC_URL and AFM_PEER_SYNC_TOKEN on that server and restart it.
-        </Text>
+        <Label>{t('servers.syncTitleGeneric')}</Label>
+        <Text tone="danger" size="sm">{t('servers.syncNotConfigured', { host: importServerHost(target.url) })}</Text>
+        {/* The two names inside that sentence are environment variables, so
+            they survive translation as they are written here. */}
+        <Text tone="muted" size="xs">{t('servers.syncConfigureHint')}</Text>
       </div>
     );
   }
@@ -67,37 +67,42 @@ export function SyncToHubSection() {
    * attempts it has stopped being waiting and started being stuck.
    */
   const stuck = recent.filter((r) => r.state === 'pending' && r.attempts > 4);
+  const where = hub || t('servers.yourLibrary');
+
+  /*
+   * The tally, as whole counted phrases joined by a middot.
+   *
+   * Each piece counts something, so each is its own plural key rather than a
+   * number glued to a noun: English changes one word between "1 waiting" and
+   * "2 waiting", Arabic changes the form five times over. The middot between
+   * them is punctuation and stays.
+   */
+  const tally = [
+    waiting > 0 ? t('servers.syncWaiting', { count: waiting, n: formatNumber(waiting) }) : null,
+    t('servers.syncCopied', { count: counts.done, n: formatNumber(counts.done) }),
+    counts.skipped > 0 ? t('servers.syncAlreadyThere', { count: counts.skipped, n: formatNumber(counts.skipped) }) : null,
+    stuck.length > 0 ? t('servers.syncStruggling', { count: stuck.length, n: formatNumber(stuck.length) }) : null,
+    counts.failed > 0 ? t('servers.syncFailed', { count: counts.failed, n: formatNumber(counts.failed) }) : null,
+  ].filter(Boolean).join(' · ');
 
   return (
     <div className="prefsSection">
-      <Label>Copying to {hub || 'your library'}</Label>
+      <Label>{t('servers.syncTitle', { where })}</Label>
 
       <Text tone="muted" size="sm">
-        {importServerHost(target.url)} downloads your imports and then copies each finished song to{' '}
-        {hub || 'your library'}, so both servers end up holding it.
+        {t('servers.syncExplain', { host: importServerHost(target.url), where })}
       </Text>
 
       {/* Why it is not taking work for the curator, when it is not. The
           downloading happens here, so this is the only place that knows. */}
       {claiming?.why ? (
-        <Text tone="warning" size="sm">
-          Not taking new music for you: {claiming.why}
-        </Text>
+        <Text tone="warning" size="sm">{t('servers.syncNotClaiming', { why: claiming.why })}</Text>
       ) : null}
 
       {stall ? (
-        <Text tone="danger" size="sm">
-          Stopped: {stall.reason}
-        </Text>
+        <Text tone="danger" size="sm">{t('servers.syncStopped', { reason: stall.reason })}</Text>
       ) : (
-        <Text tone="muted" size="xs">
-          {waiting > 0
-            ? `${waiting} waiting · ${counts.done.toLocaleString()} copied`
-            : `${counts.done.toLocaleString()} copied`}
-          {counts.skipped > 0 ? ` · ${counts.skipped.toLocaleString()} already there` : ''}
-          {stuck.length > 0 ? ` · ${stuck.length} struggling` : ''}
-          {counts.failed > 0 ? ` · ${counts.failed} failed` : ''}
-        </Text>
+        <Text tone="muted" size="xs">{tally}</Text>
       )}
 
       {/* The paths themselves, because "1 failed" is not something anyone can
@@ -106,7 +111,13 @@ export function SyncToHubSection() {
         <div className="prefsSection">
           {failed.map((item) => (
             <Text key={item.path} tone="muted" size="xs">
-              {item.path} — {item.error || 'no reason given'}
+              {/* Path and reason are two expressions with an em dash between
+                  them, which is a sentence a translator cannot re-punctuate or
+                  reorder - some locales want the reason first. One key. */}
+              {t('servers.syncFailedItem', {
+                path: item.path,
+                reason: item.error || t('servers.syncNoReason'),
+              })}
             </Text>
           ))}
         </div>
@@ -116,8 +127,17 @@ export function SyncToHubSection() {
         <div className="prefsSection">
           {stuck.map((item) => (
             <Text key={item.path} tone="muted" size="xs">
-              {item.path} — still trying after {item.attempts} attempts
-              {item.error ? `: ${item.error}` : ''}
+              {/* Counted on the attempts, and the reason - when there is one -
+                  sits INSIDE the sentence rather than being glued on after a
+                  colon: appended, it is a fragment with nowhere to go in a
+                  language that leads with the cause. */}
+              {item.error
+                ? t('servers.syncStillTryingReason', {
+                    path: item.path,
+                    count: item.attempts,
+                    reason: item.error,
+                  })
+                : t('servers.syncStillTrying', { path: item.path, count: item.attempts })}
             </Text>
           ))}
         </div>
@@ -133,14 +153,20 @@ export function SyncToHubSection() {
               setBusy(true);
               setNote(null);
               void retryPeerSync(target)
-                .then((n) => setNote(n > 0 ? `${n} queued again.` : 'Nothing left to retry.'))
+                .then((n) =>
+                  setNote(
+                    n > 0
+                      ? t('servers.syncQueuedAgain', { count: n, n: formatNumber(n) })
+                      : t('servers.syncNothingToRetry'),
+                  ),
+                )
                 .catch((e: unknown) =>
-                  setNote(e instanceof Error ? e.message : 'Could not queue them again.'),
+                  setNote(e instanceof Error ? e.message : t('servers.syncRetryFailed')),
                 )
                 .finally(() => setBusy(false));
             }}
           >
-            Try again
+            {t('common.tryAgain')}
           </Button>
         </div>
       )}
@@ -149,9 +175,7 @@ export function SyncToHubSection() {
           server gates the route on admin; without this line a non-owner would
           just see a button that always fails. */}
       {counts.failed > 0 && !target.isAdmin && (
-        <Text tone="muted" size="xs">
-          Only the owner of {importServerHost(target.url)} can send these again.
-        </Text>
+        <Text tone="muted" size="xs">{t('servers.syncOwnerOnly', { host: importServerHost(target.url) })}</Text>
       )}
 
       {note && (

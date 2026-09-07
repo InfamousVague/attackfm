@@ -7,6 +7,7 @@ import { profileLink } from '../servers/registry.ts';
 import { shoot } from '../widget/shot.ts';
 import { saveCardImage } from '../widget/saveCard.ts';
 import logo from '../../assets/attack-white.png';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * "Share your profile" - your handle as a link, on the card a playlist and a
@@ -94,6 +95,7 @@ function ProfileCardFace({
   link: string;
   qr: string | null;
 }) {
+  const t = useT();
   return (
     <div
       className="shareCard shareCard--profile"
@@ -114,8 +116,8 @@ function ProfileCardFace({
           inside the shot. */}
       <div className="shareProfile__veil" aria-hidden />
       <div className="shareCard__head">
-        <img className="shareCard__logo" src={logo} alt="AttackFM" />
-        <span className="shareCard__kicker">On AttackFM</span>
+        <img className="shareCard__logo" src={logo} alt={t('common.appName')} />
+        <span className="shareCard__kicker">{t('profile.shareKicker')}</span>
       </div>
       {/* Centred on the card's own picture, with nothing around it but a ring.
           It used to sit in a rounded square in the middle of the card, which
@@ -129,19 +131,22 @@ function ProfileCardFace({
         </span>
       )}
       <p className="shareCard__name">@{handle}</p>
-      <p className="shareCard__sub">Add me and we can listen along</p>
+      <p className="shareCard__sub">{t('profile.shareTagline')}</p>
       <div className="shareCard__qrRow">
         {qr ? (
-          <img className="shareCard__qr" src={qr} alt="Link as a QR code" />
+          <img className="shareCard__qr" src={qr} alt={t('profile.shareQrAlt')} />
         ) : (
           <span className="shareCard__qr" aria-hidden />
         )}
         <div className="shareCard__linkWrap">
-          <span className="shareCard__linkLabel">Scan, or open</span>
+          <span className="shareCard__linkLabel">{t('profile.shareScanOrOpen')}</span>
           <span className="shareCard__link">{link.replace(/^https?:\/\//, '')}</span>
         </div>
       </div>
-      <p className="shareCard__foot">attack.fm · your listening stays for friends</p>
+      {/* The domain is part of the sentence rather than beside it - it is what
+          the card is telling you to type, and a translator moves it where their
+          line wants it. */}
+      <p className="shareCard__foot">{t('profile.shareFoot')}</p>
     </div>
   );
 }
@@ -159,6 +164,7 @@ export function ShareProfileSheet({
   open: boolean;
   onClose: () => void;
 }) {
+  const t = useT();
   const { toast } = useToast();
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [avatar, setAvatar] = useState<string | null>(null);
@@ -229,13 +235,13 @@ export function ShareProfileSheet({
       const box = node.getBoundingClientRect();
       const dataUrl = png ?? (await shoot(node, Math.round(box.width), Math.round(box.height), 4));
       if (!dataUrl) {
-        toast({ message: 'Could not draw the card. Try again in a moment.' });
+        toast({ message: t('profile.shareDrawFailed') });
         return;
       }
       await saveCardImage({
         dataUrl,
         filename: `attackfm-${handle.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'profile'}.png`,
-        title: `@${handle} on AttackFM`,
+        title: t('profile.shareCardTitle', { handle }),
         say: (message) => toast({ message }),
       });
     } finally {
@@ -249,13 +255,13 @@ export function ShareProfileSheet({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      toast({ message: 'Could not copy - long-press the link on the card to select it.' });
+      toast({ message: t('profile.shareCopyFailed') });
     }
   };
 
   return (
-    <GlassSheet open={open} onClose={onClose} label="Share your profile" className="shareSheet">
-      <h2 className="shareSheet__title">Share your profile</h2>
+    <GlassSheet open={open} onClose={onClose} label={t('profile.shareTitle')} className="shareSheet">
+      <h2 className="shareSheet__title">{t('profile.shareTitle')}</h2>
       <div className="shareSheet__linkFace">
         <ProfileCardFace
           cardRef={cardRef}
@@ -268,18 +274,17 @@ export function ShareProfileSheet({
         <div className="shareSheet__actions">
           <Button variant="ghost" onClick={() => void copyLink()}>
             {copied ? <Check size={16} /> : <Copy size={16} />}
-            {copied ? 'Copied' : 'Copy link'}
+            {copied ? t('profile.shareCopied') : t('profile.shareCopyLink')}
           </Button>
           <Button variant="solid" onClick={() => void saveImage()} disabled={saving}>
             <Download size={16} />
-            {saving ? 'Saving…' : 'Save image'}
+            {saving ? t('common.saving') : t('profile.shareSaveImage')}
           </Button>
         </div>
         {/* Said plainly, because "share my profile" is exactly the phrase that
             makes people wonder what they just published. */}
         <Text tone="muted" size="xs" className="shareSheet__hint">
-          The link shows your handle and your pictures, and nothing else. What you listen to stays
-          for friends - opening it in AttackFM offers to add you as one.
+          {t('profile.shareHint')}
         </Text>
       </div>
     </GlassSheet>

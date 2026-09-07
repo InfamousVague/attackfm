@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { artSized, fetchCanvas, trackIdFromPath } from '../server.ts';
 import { pendingDateCanvas, warmedDateCanvas } from './dateCanvas.ts';
@@ -18,6 +19,7 @@ import { type Track } from '../core/tauri.ts';
  * the name sits over all three.
  */
 export function CardFace({ track, live = false }: { track: Track; live?: boolean }) {
+  const t = useT();
   const { session } = useServerSession();
   const art = artSized(track.artwork, 640);
   // Warmed a card ago, when the deck had the chance: the clip is then a local
@@ -64,8 +66,8 @@ export function CardFace({ track, live = false }: { track: Track; live?: boolean
       {/* A pool candidate wears its honesty: this is the catalogue's thirty
           seconds, and the full song arrives only if it is kept. */}
       {track.path.startsWith('preview:') && (
-        <span className="dateCard__preview" aria-label="Preview - thirty seconds">
-          Preview
+        <span className="dateCard__preview" aria-label={t('date.previewThirtySeconds')}>
+          {t('date.preview')}
         </span>
       )}
       {canvas ? (

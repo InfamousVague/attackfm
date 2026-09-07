@@ -23,7 +23,7 @@ import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useB
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
 import { AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Users, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
-import { SMART_SHUFFLE_LABEL } from './smartShuffle.ts';
+import { SMART_SHUFFLE_LABEL_KEY } from './smartShuffle.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
 import { NpDjButton } from './NpDjButton.tsx';
@@ -2000,7 +2000,7 @@ export function NowPlayingSheet({
         <IconButton
           variant="ghost"
           className="npShuffle"
-          aria-label={shuffle && smart ? SMART_SHUFFLE_LABEL : t('player.shuffle')}
+          aria-label={shuffle && smart ? t(SMART_SHUFFLE_LABEL_KEY) : t('player.shuffle')}
           aria-pressed={shuffle}
           data-on={shuffle || undefined}
           data-smart={(shuffle && smart) || undefined}

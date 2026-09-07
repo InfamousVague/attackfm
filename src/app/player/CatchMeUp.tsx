@@ -2,7 +2,8 @@ import { Button, Modal, Spinner, Text } from '@glacier/react';
 import { RotateCw, Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Track } from '../core/tauri.ts';
-import { fetchCatchUp, whyNot, type CatchUp, type NotReady } from './recap.ts';
+import { fetchCatchUp, type CatchUp, type NotReady } from './recap.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The one button.
@@ -25,6 +26,27 @@ import { fetchCatchUp, whyNot, type CatchUp, type NotReady } from './recap.ts';
 type Ask = { kind: 'asking' } | { kind: 'ready'; got: CatchUp } | { kind: 'none'; why: NotReady };
 
 /*
+ * Why there is nothing to show, as a key per reason.
+ *
+ * `recap.ts` used to answer this itself, in English, from a switch - which put
+ * eight sentences of reader-facing copy in a file that otherwise only talks to
+ * the hub. The reasons are a closed set the server names, so the mapping is a
+ * table here and the words live in the catalogue with the rest of the dialog's.
+ * Record<NotReady, ...> is the guard: a reason added upstream will not typecheck
+ * until it has a line here.
+ */
+const WHY_NOT: Record<NotReady, string> = {
+  'at-the-start': 'books.recapNotStarted',
+  reading: 'books.recapNotRead',
+  'no-transcript': 'books.recapNoTranscript',
+  'no-model': 'books.recapNoModel',
+  'model-silent': 'books.recapNoAnswer',
+  'not-a-book': 'books.recapNotABook',
+  'old-server': 'books.recapOldServer',
+  offline: 'books.recapOffline',
+};
+
+/*
  * The triggers, apart from the dialog.
  *
  * Both surfaces that offer this - a Modal on the shelf, a Popover in the
@@ -37,20 +59,22 @@ type Ask = { kind: 'asking' } | { kind: 'ready'; got: CatchUp } | { kind: 'none'
 /** The trigger, in one place, so the two surfaces that offer it look the same
  *  whichever of them renders it. */
 export function CatchMeUpButton({ onClick }: { onClick: () => void }) {
+  const t = useT();
   return (
     <Button variant="soft" size="sm" onClick={onClick}>
-      <Sparkles size={15} aria-hidden /> Catch me up
+      <Sparkles size={15} aria-hidden /> {t('books.catchMeUp')}
     </Button>
   );
 }
 
 /** The same offer as a full-width row, for a list of other rows. */
 export function CatchMeUpRow({ onClick }: { onClick: () => void }) {
+  const t = useT();
   return (
     <button type="button" className="catchUp__row" onClick={onClick}>
       <Sparkles size={13} aria-hidden />
-      <span className="catchUp__label">Catch me up</span>
-      <span className="catchUp__hint">the story so far, no spoilers</span>
+      <span className="catchUp__label">{t('books.catchMeUp')}</span>
+      <span className="catchUp__hint">{t('books.catchMeUpHint')}</span>
     </button>
   );
 }
@@ -79,6 +103,7 @@ export function CatchMeUp({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
+  const t = useT();
   const [self, setSelf] = useState(false);
   const open = openProp ?? self;
   const setOpen = useCallback(
@@ -157,17 +182,23 @@ export function CatchMeUp({
         open={open}
         onClose={() => setOpen(false)}
         size="md"
-        title="Catch me up"
+        title={t('books.catchMeUp')}
         description={track.album || track.title}
         footer={
           got ? (
             <div className="catchUp__foot">
+              {/* One sentence, not "Up to" + a mark + a tail: where the recap
+                  stops and how fresh it is are read together, and only the
+                  freshest case has nothing to add. */}
               <Text size="xs" tone="muted">
-                Up to {got.upto.label}
-                {got.stale ? ' · kept from earlier' : got.cached ? ' · written earlier' : ''}
+                {got.stale
+                  ? t('books.recapUpToKept', { mark: got.upto.label })
+                  : got.cached
+                    ? t('books.recapUpToEarlier', { mark: got.upto.label })
+                    : t('books.recapUpTo', { mark: got.upto.label })}
               </Text>
               <Button variant="ghost" size="sm" onClick={() => void run(true)}>
-                <RotateCw size={14} aria-hidden /> Write it again
+                <RotateCw size={14} aria-hidden /> {t('books.recapWriteAgain')}
               </Button>
             </div>
           ) : undefined
@@ -178,14 +209,14 @@ export function CatchMeUp({
             <div className="catchUp__wait">
               <Spinner size="md" aria-label="" />
               <Text size="sm" tone="muted">
-                Reading back to where you stopped. This can take a minute.
+                {t('books.recapReadingBack')}
               </Text>
             </div>
           )}
 
           {ask?.kind === 'none' && (
             <Text size="sm" tone="muted">
-              {whyNot(ask.why)}
+              {t(WHY_NOT[ask.why])}
             </Text>
           )}
 
@@ -193,7 +224,7 @@ export function CatchMeUp({
             <>
               {got.clipped && (
                 <Text size="xs" tone="muted" className="catchUp__clip">
-                  The earliest chapters are left out - this picks up part way in.
+                  {t('books.recapClipped')}
                 </Text>
               )}
               {got.recap.map((para, i) => (
@@ -203,10 +234,10 @@ export function CatchMeUp({
               ))}
               {got.threads.length > 0 && (
                 <div className="catchUp__threads">
-                  <span className="catchUp__threadsTitle">Where things stand</span>
+                  <span className="catchUp__threadsTitle">{t('books.recapThreads')}</span>
                   <ul>
-                    {got.threads.map((t, i) => (
-                      <li key={i}>{t}</li>
+                    {got.threads.map((thread, i) => (
+                      <li key={i}>{thread}</li>
                     ))}
                   </ul>
                 </div>

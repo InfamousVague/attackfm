@@ -3,6 +3,7 @@ import { KeyRound, User } from '@glacier/icons';
 import { useState, type FormEvent } from 'react';
 import { login, loginRecovery, signup, type RegistrySession } from './registry.ts';
 import { enrolDevice } from './deviceKey.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 export type AccountMode = 'signin' | 'create' | 'recovery';
 
@@ -35,6 +36,7 @@ export function AccountForm({
   className?: string;
   submitClassName?: string;
 }) {
+  const t = useT();
   const [mode, setMode] = useState<AccountMode>(defaultMode);
   const [handle, setHandle] = useState('');
   const [secret, setSecret] = useState('');
@@ -64,7 +66,7 @@ export function AccountForm({
       void enrolDevice(s);
       onDone(s);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'That did not work.');
+      setError(err instanceof Error ? err.message : t('servers.accountFormFailed'));
     } finally {
       setBusy(false);
     }
@@ -78,12 +80,15 @@ export function AccountForm({
 
   return (
     <form className={className} onSubmit={go}>
-      <Field label="Handle" hint={mode === 'create' ? '3-24 letters, digits, . _ or -' : undefined}>
+      <Field
+        label={t('servers.handle')}
+        hint={mode === 'create' ? t('servers.handleHint') : undefined}
+      >
         <Input
           value={handle}
           onChange={(e) => setHandle(e.currentTarget.value)}
-          placeholder="yourname"
-          aria-label="Handle"
+          placeholder={t('servers.handlePlaceholder')}
+          aria-label={t('servers.handle')}
           leadingIcon={icons ? <User size={16} /> : undefined}
           autoCapitalize="none"
           autoCorrect="off"
@@ -92,12 +97,12 @@ export function AccountForm({
         />
       </Field>
       {mode === 'recovery' ? (
-        <Field label="Recovery code" hint="One of the codes you saved from Settings → Account. Each works once.">
+        <Field label={t('servers.recoveryCode')} hint={t('servers.recoveryCodeHint')}>
           <Input
             value={secret}
             onChange={(e) => setSecret(e.currentTarget.value.toUpperCase())}
-            placeholder="XXXX-XXXX-XXXX"
-            aria-label="Recovery code"
+            placeholder={t('servers.recoveryCodePlaceholder')}
+            aria-label={t('servers.recoveryCode')}
             leadingIcon={icons ? <KeyRound size={16} /> : undefined}
             autoCapitalize="characters"
             autoCorrect="off"
@@ -106,12 +111,15 @@ export function AccountForm({
           />
         </Field>
       ) : (
-        <Field label="Password" hint={mode === 'create' ? 'At least 8 characters.' : undefined}>
+        <Field
+          label={t('servers.password')}
+          hint={mode === 'create' ? t('servers.passwordHint') : undefined}
+        >
           <Input
             type="password"
             value={secret}
             onChange={(e) => setSecret(e.currentTarget.value)}
-            aria-label="Password"
+            aria-label={t('servers.password')}
             leadingIcon={icons ? <KeyRound size={16} /> : undefined}
             autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
           />
@@ -126,20 +134,22 @@ export function AccountForm({
           </Text>
         ))}
       <Button type="submit" variant="solid" size="lg" className={submitClassName} disabled={!ready}>
+        {/* Four different labels for four states, not one string with a hole:
+            each is its own entry so a language can word them independently. */}
         {busy
-          ? 'Just a moment…'
+          ? t('servers.accountFormWorking')
           : mode === 'create'
-            ? 'Create account'
+            ? t('servers.accountFormCreate')
             : mode === 'recovery'
-              ? 'Sign in with the code'
-              : 'Sign in'}
+              ? t('servers.accountFormSignInWithCode')
+              : t('servers.accountFormSignIn')}
       </Button>
       <Button type="button" variant="ghost" size="md" onClick={() => swap(mode === 'create' ? 'signin' : 'create')}>
-        {mode === 'create' ? 'I already have an account' : 'Create an account instead'}
+        {mode === 'create' ? t('servers.accountFormHaveOne') : t('servers.accountFormCreateInstead')}
       </Button>
       {mode === 'signin' && (
         <Button type="button" variant="ghost" size="sm" onClick={() => swap('recovery')}>
-          Lost the password? Use a recovery code
+          {t('servers.accountFormLostPassword')}
         </Button>
       )}
     </form>

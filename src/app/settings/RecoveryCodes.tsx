@@ -3,6 +3,7 @@ import { Copy, KeyRound } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { mintRecoveryCodes, REGISTRY_URL } from '../servers/registry.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * Recovery codes, on the account pane.
@@ -14,6 +15,7 @@ import { mintRecoveryCodes, REGISTRY_URL } from '../servers/registry.ts';
  * "show them again"; there is only "make a new sheet", which retires the old.
  */
 export function RecoveryCodesSection() {
+  const t = useT();
   const registry = useRegistryOptional();
   const token = registry?.session?.token ?? null;
   const { toast } = useToast();
@@ -42,7 +44,9 @@ export function RecoveryCodesSection() {
     try {
       setCodes(await mintRecoveryCodes(token));
     } catch (e) {
-      toast({ message: e instanceof Error ? e.message : 'Could not make codes right now.' });
+      // A registry error arrives as prose from the server and is shown as it
+      // came; only our own fallback is ours to translate.
+      toast({ message: e instanceof Error ? e.message : t('recovery.mintFailed') });
     } finally {
       setBusy(false);
     }
@@ -52,9 +56,9 @@ export function RecoveryCodesSection() {
     if (!codes) return;
     try {
       await navigator.clipboard.writeText(codes.join('\n'));
-      toast({ message: 'Copied - keep them somewhere that is not this device.' });
+      toast({ message: t('recovery.copied') });
     } catch {
-      toast({ message: 'Could not copy; write them down.' });
+      toast({ message: t('recovery.copyFailed') });
     }
   };
 
@@ -62,25 +66,33 @@ export function RecoveryCodesSection() {
     <section className="serversSettings__part">
       <header className="serversSettings__partHead">
         <Heading level={3} noMargin>
-          Recovery codes
+          {t('recovery.title')}
         </Heading>
         <Text size="sm" tone="muted">
+          {/* Three different things to say, not one sentence with a number
+              in it: not knowing yet, having none, and having some. Only the
+              last counts, and it counts through the catalogue's plural forms
+              rather than an English one-or-many test. */}
           {left === null
-            ? 'One-time codes that get you back into your account if the password is gone and no device is signed in.'
+            ? t('recovery.explain')
             : left === 0
-              ? 'You have no recovery codes. Make a sheet and keep it somewhere that is not this device.'
-              : `${left} unused ${left === 1 ? 'code' : 'codes'} on your sheet. Making a new sheet retires it.`}
+              ? t('recovery.none')
+              : t('recovery.left', { count: left })}
         </Text>
       </header>
       <Button variant="outline" size="sm" disabled={busy} onClick={() => void mint()}>
-        <KeyRound size={14} /> {left ? 'Make a new sheet' : 'Make recovery codes'}
+        <KeyRound size={14} /> {left ? t('recovery.makeNew') : t('recovery.makeFirst')}
       </Button>
 
-      <Modal open={codes !== null} onClose={() => setCodes(null)} title="Your recovery codes" size="sm">
+      <Modal
+        open={codes !== null}
+        onClose={() => setCodes(null)}
+        title={t('recovery.sheetTitle')}
+        size="sm"
+      >
         <div className="recoveryCodes">
           <Text size="sm" tone="muted">
-            Each works once, and this is the only time they are shown. Sign in with one from the
-            front door under “Lost the password?”.
+            {t('recovery.shownOnce')}
           </Text>
           <ol className="recoveryCodes__list">
             {(codes ?? []).map((c) => (
@@ -91,10 +103,10 @@ export function RecoveryCodesSection() {
           </ol>
           <div className="recoveryCodes__actions">
             <Button variant="solid" size="sm" onClick={() => void copy()}>
-              <Copy size={14} /> Copy all
+              <Copy size={14} /> {t('recovery.copyAll')}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setCodes(null)}>
-              I have saved them
+              {t('recovery.saved')}
             </Button>
           </div>
         </div>

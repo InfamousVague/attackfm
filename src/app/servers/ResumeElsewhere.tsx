@@ -4,6 +4,7 @@ import { Laptop, X } from '@glacier/icons';
 import { fetchResume, type ResumePoint } from './resumeSync.ts';
 import { sharePositionEnabled } from '../settings/behaviourPrefs.ts';
 import { setPendingSeek } from '../player/pendingSeek.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useLibrary } from '../library/library.tsx';
 import type { Track } from '../core/tauri.ts';
 
@@ -30,6 +31,7 @@ export function ResumeElsewhere({
 }: {
   onPlay: (track: Track, context?: Track[]) => void;
 }) {
+  const t = useT();
   const { tracks, books } = useLibrary();
   const [point, setPoint] = useState<ResumePoint | null>(null);
   const [gone, setGone] = useState(false);
@@ -79,19 +81,27 @@ export function ResumeElsewhere({
         <Laptop size={16} />
       </span>
       <span className="resumeElsewhere__text">
-        <span className="resumeElsewhere__title">Pick up where you left off</span>
+        <span className="resumeElsewhere__title">{t('servers.resumeTitle')}</span>
         <Text tone="muted" size="xs">
-          {point.title}
-          {point.artist ? ` · ${point.artist}` : ''} · {clock(point.position)} in
+          {/* One sentence, not four fragments: "5:12 in" puts the position
+              before the word in English and after it in plenty of languages,
+              and the artist is absent often enough to be its own entry. */}
+          {point.artist
+            ? t('servers.resumeAtWithArtist', {
+                title: point.title,
+                artist: point.artist,
+                time: clock(point.position),
+              })
+            : t('servers.resumeAt', { title: point.title, time: clock(point.position) })}
         </Text>
       </span>
       <Button variant="soft" size="sm" onClick={take}>
-        Resume
+        {t('servers.resumeAction')}
       </Button>
       <button
         type="button"
         className="resumeElsewhere__dismiss"
-        aria-label="Not now"
+        aria-label={t('servers.resumeDismiss')}
         onClick={() => setGone(true)}
       >
         <X size={14} />
@@ -100,7 +110,13 @@ export function ResumeElsewhere({
   );
 }
 
-/** h:mm:ss for anything past an hour, m:ss below - a book is usually the first. */
+/**
+ * h:mm:ss for anything past an hour, m:ss below - a book is usually the first.
+ *
+ * Not `ux/format.ts`'s formatClock, which has no hours form; it keeps the same
+ * two rules that matter, and for the same reasons given there. Latin digits
+ * deliberately, floored rather than rounded so it can never print ":60".
+ */
 function clock(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   const h = Math.floor(s / 3600);

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { fetchDateCandidates } from '../api/curator.ts';
+import { translate } from '../i18n/LocaleShell.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { discoveryNoticesEnabled } from '../settings/behaviourPrefs.ts';
 import { dismissNotice, noteNotice } from './notices.ts';
@@ -116,11 +117,10 @@ export function MusicDateNotices() {
       noteNotice({
         id,
         kind: 'dates',
-        title: 'Waiting to meet you',
-        body:
-          total === 1
-            ? 'A song is queued for a date — art and sound, no names.'
-            : `${total} songs are queued for a date — art and sound, no names.`,
+        // The bell's own name for this kind of news, shared with the Settings
+        // row that switches it on and off.
+        title: translate('notices.datesLabel'),
+        body: translate('notices.datesQueued', { count: total }),
         // The top card's cover, a remote catalogue URL. Straight through, not
         // via artSized (which is for library art ids); null draws the disc glyph.
         art: pool.cards[0]?.cover || null,

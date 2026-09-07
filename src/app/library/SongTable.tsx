@@ -22,15 +22,13 @@ import { useOriginLabeler } from '../servers/serverNames.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
 import placeholderArt from '../../assets/attack-wave.png';
 import { usePrefetchArt } from '../ux/artPrefetch.ts';
-import { formatClock } from '../ux/format.ts';
+import { formatClock, formatDate, formatNumber } from '../ux/format.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 
 /** The translator, as this file passes it around. Named `tr` rather than the
  *  usual `t` because `t` is already the name every helper here gives the TRACK
  *  it is handed, and shadowing that would be a rename waiting to go wrong. */
 type Tr = ReturnType<typeof useT>;
-
-const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
 /** How many rows a flow-mode table draws before it has been scrolled, and how
  *  many more each time the foot comes near. A screenful with room to spare, so
@@ -419,7 +417,15 @@ function buildColumns(tr: Tr): DataGridColumn[] {
       sortable: true,
       width: '10rem',
       sortValue: (row) => row.addedAt as number,
-      render: (row) => <span className="songMuted">{DATE_FORMAT.format(new Date(row.addedAt as number))}</span>,
+      // Through the house formatter, not a module-scope Intl.DateTimeFormat:
+      // that one was built once at import with the BROWSER's locale, so it
+      // kept printing "Mar 4, 2026" in a Japanese app and never noticed the
+      // language picker. formatDate reads the locale LocaleShell set.
+      render: (row) => (
+        <span className="songMuted">
+          {formatDate(new Date(row.addedAt as number), { month: 'short', day: 'numeric', year: 'numeric' })}
+        </span>
+      ),
     },
     {
       /*
@@ -701,7 +707,10 @@ export function SongTable({
               render: (row) => {
                 const id = trackIdFromPath(row.id as string);
                 const n = id === null ? undefined : plays.get(id);
-                return <span className="songMuted">{n === undefined ? '' : n.toLocaleString()}</span>;
+                // formatNumber rather than toLocaleString: the bare method
+                // groups by the browser's locale, which is not necessarily the
+                // one the app is being read in.
+                return <span className="songMuted">{n === undefined ? '' : formatNumber(n)}</span>;
               },
             }
           : col.key === 'onDevice'

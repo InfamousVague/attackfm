@@ -18,6 +18,7 @@ import {
   revokeUserStreams,
   type ServerUser,
 } from '../server.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useServerSession } from './serverSession.tsx';
 
 /**
@@ -30,6 +31,7 @@ import { useServerSession } from './serverSession.tsx';
  * AlertDialog because it is the one irreversible thing on this pane.
  */
 export function UsersSection() {
+  const t = useT();
   const { session } = useServerSession();
   const [users, setUsers] = useState<ServerUser[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,8 +51,10 @@ export function UsersSection() {
         setUsers(list);
         setError(null);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load accounts'));
-  }, [session]);
+      // The server's own message when there is one - it says WHICH thing went
+      // wrong and is already in the reader's hands; ours is only the fallback.
+      .catch((err) => setError(err instanceof Error ? err.message : t('servers.usersLoadFailed')));
+  }, [session, t]);
   useEffect(() => refresh(), [refresh]);
 
   if (!session) return null;
@@ -60,13 +64,13 @@ export function UsersSection() {
     setError(null);
     try {
       await register(session.url, newName.trim(), newPassword, session.token);
-      setNotice(`Added ${newName.trim()}.`);
+      setNotice(t('servers.userAdded', { name: newName.trim() }));
       setAdding(false);
       setNewName('');
       setNewPassword('');
       refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add the account');
+      setError(err instanceof Error ? err.message : t('servers.userAddFailed'));
     } finally {
       setBusy(false);
     }
@@ -76,9 +80,9 @@ export function UsersSection() {
     setError(null);
     try {
       await revokeUserStreams(session, user.id);
-      setNotice(`${user.username}'s devices were signed out everywhere.`);
+      setNotice(t('servers.userRevoked', { name: user.username }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not revoke');
+      setError(err instanceof Error ? err.message : t('servers.userRevokeFailed'));
     }
   };
 
@@ -87,24 +91,23 @@ export function UsersSection() {
     setError(null);
     try {
       await deleteUser(session, user.id);
-      setNotice(`Deleted ${user.username}.`);
+      setNotice(t('servers.userDeleted', { name: user.username }));
       refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete the account');
+      setError(err instanceof Error ? err.message : t('servers.userDeleteFailed'));
     }
   };
 
   return (
     <div className="prefsSection">
-      <Label>Accounts</Label>
+      <Label>{t('servers.accounts')}</Label>
       <Text tone="muted" size="sm">
-        Everyone with a sign-in on this server. Listeners share the library and keep
-        their own favourites, playlists, and history.
+        {t('servers.accountsBlurb')}
       </Text>
 
       {users === null && !error ? (
         <Text tone="muted" size="sm">
-          Loading accounts…
+          {t('servers.accountsLoading')}
         </Text>
       ) : (
         <div className="userRows">
@@ -113,12 +116,16 @@ export function UsersSection() {
               <Avatar name={u.username} size="sm" />
               <span className="userRow__name">
                 <Text size="sm" weight="medium">
-                  {u.username}
-                  {u.username === session.username ? ' (you)' : ''}
+                  {/* One name, marked when it is the reader's own - the whole
+                      label is a single entry so a language that marks it with
+                      something other than a trailing parenthetical can. */}
+                  {u.username === session.username
+                    ? t('servers.accountNameYou', { name: u.username })
+                    : u.username}
                 </Text>
                 {u.isAdmin && (
                   <Pill size="sm" tone="accent">
-                    Owner
+                    {t('servers.accountOwner')}
                   </Pill>
                 )}
               </span>
@@ -126,19 +133,19 @@ export function UsersSection() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  title="Sign this account's devices out everywhere"
+                  title={t('servers.accountRevokeTitle')}
                   onClick={() => void revoke(u)}
                 >
-                  <KeyRound size={14} /> Revoke
+                  <KeyRound size={14} /> {t('servers.accountRevoke')}
                 </Button>
                 {u.username !== session.username && (
                   <Button
                     variant="ghost"
                     size="sm"
-                    title="Delete this account"
+                    title={t('servers.accountDeleteTitle')}
                     onClick={() => setCondemned(u)}
                   >
-                    <Trash2 size={14} /> Delete
+                    <Trash2 size={14} /> {t('common.delete')}
                   </Button>
                 )}
               </span>
@@ -156,22 +163,25 @@ export function UsersSection() {
 
       {adding ? (
         <div className="userAdd">
-          <Field label="Username">
+          <Field label={t('servers.accountUsername')}>
             <Input
               value={newName}
               onChange={(e) => setNewName(e.currentTarget.value)}
-              aria-label="New username"
+              aria-label={t('servers.accountNewUsername')}
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
             />
           </Field>
-          <Field label="Password" hint="At least 8 characters. They can change nothing about the server - just listen.">
+          <Field
+            label={t('servers.accountPassword')}
+            hint={t('servers.accountPasswordHint')}
+          >
             <Input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.currentTarget.value)}
-              aria-label="New password"
+              aria-label={t('servers.accountNewPassword')}
               autoComplete="new-password"
             />
           </Field>
@@ -182,17 +192,17 @@ export function UsersSection() {
               disabled={busy || newName.trim().length === 0 || newPassword.length < 8}
               onClick={() => void add()}
             >
-              {busy ? 'Adding…' : 'Add listener'}
+              {busy ? t('servers.accountAdding') : t('servers.accountAdd')}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
           </div>
         </div>
       ) : (
         <div className="prefsActions">
           <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
-            <UserPlus size={14} /> Add listener…
+            <UserPlus size={14} /> {t('servers.accountAddOpen')}
           </Button>
         </div>
       )}
@@ -201,10 +211,10 @@ export function UsersSection() {
         open={condemned !== null}
         onClose={() => setCondemned(null)}
         tone="danger"
-        title={`Delete ${condemned?.username ?? ''}?`}
-        description="Their favourites, playlists, and listening history go with the account. The music stays - the library belongs to the server."
-        actionLabel="Delete account"
-        cancelLabel="Keep it"
+        title={t('servers.accountDeleteConfirm', { name: condemned?.username ?? '' })}
+        description={t('servers.accountDeleteConfirmBody')}
+        actionLabel={t('servers.accountDeleteAction')}
+        cancelLabel={t('servers.accountDeleteCancel')}
         onAction={() => {
           if (condemned) void remove(condemned);
         }}

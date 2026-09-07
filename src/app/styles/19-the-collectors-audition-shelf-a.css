@@ -472,9 +472,9 @@
    * Matched by label rather than by hiding the whole row, so a plugin's own
    * button in `player-trailing` still has somewhere to be.
    */
-  .appPlayer [class*="_controls_"] [aria-label="Queue"],
-  .appPlayer [class*="_controls_"] [aria-label="Playing on"],
-  .appPlayer [class*="_controls_"] [aria-label$="favourites"] {
+  .appPlayer [class*="_controls_"] [data-strip="queue"],
+  .appPlayer [class*="_controls_"] [data-strip="device"],
+  .appPlayer [class*="_controls_"] [data-afm="favourite"] {
     display: none;
   }
 
@@ -560,11 +560,14 @@
   /* Shuffle and repeat stay off the strip - they belong to the full-screen Now
      Playing, where there is room for them. The heart keeps its seat in the
      leading rail, opposite the lyrics mic. Smart shuffle renames the control
-     (PlayerStrip relabels it for the badge), so its name is matched here
-     too, or the third state would walk straight out from behind this rule. */
-  .appPlayer [aria-label="Shuffle"],
-  .appPlayer [aria-label^="Smart shuffle"],
-  .appPlayer [aria-label^="Repeat"] {
+     Matched by `data-afm`, which PlayerStrip stamps on the kit's own
+     buttons. It used to be matched by aria-label - and that held only while
+     the app was English, because the kit translates its labels: in any other
+     language the rule stopped matching and both controls came back to a strip
+     with no room for them. Smart shuffle needs no special case now; renaming
+     the control cannot move it out from behind an attribute. */
+  .appPlayer [data-afm="shuffle"],
+  .appPlayer [data-afm="repeat"] {
     display: none;
   }
 

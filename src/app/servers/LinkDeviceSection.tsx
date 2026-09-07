@@ -5,6 +5,8 @@ import { pairStart } from '../server.ts';
 import { pairPayload } from './pairing.ts';
 import { useServerSession } from './serverSession.tsx';
 import QRCode from 'qrcode';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 /**
  * Link a device: mints a one-time code on the server this device is signed into
@@ -14,6 +16,7 @@ import QRCode from 'qrcode';
  * button mints a fresh one when it lapses.
  */
 export function LinkDeviceSection() {
+  const t = useT();
   const { session } = useServerSession();
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState<string | null>(null);
@@ -40,11 +43,11 @@ export function LinkDeviceSection() {
       setCopied(false);
       setLeft(expiresIn);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create a code');
+      setError(err instanceof Error ? err.message : t('servers.pairMintFailed'));
     } finally {
       setBusy(false);
     }
-  }, [session]);
+  }, [session, t]);
 
   // Count the code down to its expiry; a lapsed code stays on screen but greys
   // out, so the QR never silently becomes one that will be refused.
@@ -58,10 +61,7 @@ export function LinkDeviceSection() {
 
   return (
     <div className="prefsSection">
-      <Field
-        label="Link a device"
-        hint="Sign a phone in without typing a password: show a one-time code here and scan or enter it on the phone."
-      >
+      <Field label={t('servers.pairTitle')} hint={t('servers.pairHint')}>
         {!open ? (
           <div className="prefsActions">
             <Button
@@ -72,7 +72,7 @@ export function LinkDeviceSection() {
                 void mint();
               }}
             >
-              <Smartphone size={14} /> Link a device
+              <Smartphone size={14} /> {t('servers.pairTitle')}
             </Button>
           </div>
         ) : (
@@ -81,12 +81,12 @@ export function LinkDeviceSection() {
               <img
                 className="linkDevice__qr"
                 src={qr}
-                alt="Pairing QR code"
+                alt={t('servers.pairQrAlt')}
                 data-expired={expired || undefined}
               />
             )}
             {code && (
-              <div className="linkDevice__code" aria-label="Pairing code">
+              <div className="linkDevice__code" aria-label={t('servers.pairCodeLabel')}>
                 {code.length === 6 ? code.replace(/(.{3})(.{3})/, '$1 $2') : code}
               </div>
             )}
@@ -107,24 +107,28 @@ export function LinkDeviceSection() {
                   }}
                 >
                   {copied ? <Check size={14} /> : <Copy size={14} />}
-                  {copied ? 'Copied' : 'Copy code'}
+                  {copied ? t('servers.inviteCopied') : t('servers.pairCopyCode')}
                 </Button>
               </div>
             )}
             {error && <Banner tone="danger">{error}</Banner>}
             <Text tone="muted" size="sm">
+              {/* The countdown is a duration, so Intl names the unit - some
+                  locales put it in front of the number. */}
               {expired
-                ? 'This code has expired.'
+                ? t('servers.pairExpired')
                 : busy
-                  ? 'Making a code…'
-                  : `On the phone, open the sign-in screen → “Log in with a code”. Expires in ${left}s.`}
+                  ? t('servers.pairMinting')
+                  : t('servers.pairHowTo', {
+                      left: formatNumber(left, { style: 'unit', unit: 'second', unitDisplay: 'narrow' }),
+                    })}
             </Text>
             <div className="prefsActions">
               <Button variant={expired ? 'solid' : 'ghost'} size="sm" disabled={busy} onClick={() => void mint()}>
-                <RefreshCw size={14} /> New code
+                <RefreshCw size={14} /> {t('servers.pairNewCode')}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
-                Done
+                {t('common.done')}
               </Button>
             </div>
           </div>

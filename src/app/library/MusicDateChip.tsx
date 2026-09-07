@@ -8,6 +8,8 @@ import { dateActivityVersion, subscribeDateActivity } from '../date/dateActivity
 import { LibChipMosaic, LibChipStat } from './LibChipFace.tsx';
 import { musicDateDoorOpen, openMusicDate } from '../nav/musicDateDoor.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 /**
  * Music Date, as a door: the card with the big number.
@@ -30,6 +32,7 @@ export function MusicDateChip({ mine }: {
   mine: Track[];
 }) {
   const { session } = useServerSession();
+  const t = useT();
   // The pool's preview dates count too, or this chip promises six while the
   // deck deals hundreds - the mismatch got reported within a day.
   const [poolCount, setPoolCount] = useState(0);
@@ -78,16 +81,16 @@ export function MusicDateChip({ mine }: {
       // two are not mistaken for each other at a glance.
       style={{ '--libChipHue': 352, '--libChipHue2': 18, '--art': `url("${dateChip}")` } as CSSProperties}
       onClick={openMusicDate}
-      aria-label="Open Music Date"
+      aria-label={t('library.musicDateOpen')}
     >
       <img className="libChip__art" src={dateChip} alt="" loading="lazy" />
       <LibChipMosaic covers={covers} />
-      <LibChipStat value={waiting > 0 ? String(waiting) : undefined} />
-      <span className="libChip__name">Music Date</span>
+      <LibChipStat value={waiting > 0 ? formatNumber(waiting) : undefined} />
+      <span className="libChip__name">{t('library.musicDate')}</span>
       <span className="libChip__count">
         {waiting > 0
-          ? `${waiting} waiting, art and sound, no names`
-          : 'Meet what the collector found'}
+          ? t('library.musicDateWaiting', { count: waiting })
+          : t('library.musicDateEmpty')}
       </span>
     </Button>
   );

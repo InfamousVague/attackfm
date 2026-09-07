@@ -5,6 +5,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { AddToPlaylistDialog, type PlaylistWantTarget } from '../playlists/AddToPlaylist.tsx';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { artistDoorOpen, openArtist } from '../nav/artistDoor.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The context menu for a song you do NOT own yet - a catalogue result, a
@@ -42,6 +43,7 @@ export function CatalogTrackMenu({
   /** Whether this song is already loved, so the item reads as done. */
   liked?: boolean;
 }) {
+  const t = useT();
   const [filing, setFiling] = useState(false);
   // Mounted on first use, like TrackMenu: this wraps every row of long
   // catalogue lists, and the dialog's hooks per row are what to avoid.
@@ -60,26 +62,27 @@ export function CatalogTrackMenu({
     <>
       <ContextMenu
         {...hold}
-        aria-label={`${target.title} actions`}
+        aria-label={t('library.songActions', { title: target.title })}
         className={wrapClass}
         content={
           <MenuStop>
             <MenuItem icon={<ListMusic size={15} />} onSelect={() => setFiling(true)}>
-              Add to playlist…
+              {t('playlists.addToPlaylistMenu')}
             </MenuItem>
             {onAdd && (
               <MenuItem icon={<Plus size={15} />} onSelect={onAdd}>
-                Add to library
+                {t('library.addToLibrary')}
               </MenuItem>
             )}
             {onLike && (
               <MenuItem icon={<Heart size={15} />} onSelect={onLike}>
-                {liked ? 'Loved' : 'Love this song'}
+                {/* Done and to-do, not one word in two numbers: two keys. */}
+                {liked ? t('library.loved') : t('library.loveThisSong')}
               </MenuItem>
             )}
             {artistDoorOpen() && artist !== '' && (
               <MenuItem icon={<UserRound size={15} />} onSelect={() => openArtist(artist)}>
-                Go to artist
+                {t('library.goToArtist')}
               </MenuItem>
             )}
           </MenuStop>

@@ -3,6 +3,8 @@ import { Button, Spinner, Text } from '@glacier/react';
 import { Download } from '@glacier/icons';
 import { isMusicImportLink, useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { watchIfPlaylist } from '../nav/downloadsDoor.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 /**
  * A pasted music link, in any search field, becomes an import.
@@ -20,6 +22,7 @@ import { watchIfPlaylist } from '../nav/downloadsDoor.ts';
  */
 export function ImportFromSearch({ query }: { query: string }) {
   const downloads = useDownloadsOptional();
+  const t = useT();
   const link = isMusicImportLink(query) ? query.trim() : null;
   const [error, setError] = useState<string | null>(null);
   // Which links this mount has already handed over. Enqueue is idempotent on
@@ -33,13 +36,13 @@ export function ImportFromSearch({ query }: { query: string }) {
     sent.current.add(link);
     setError(null);
     void Promise.resolve(downloads.enqueue(link)).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : 'That link could not be queued.');
+      setError(err instanceof Error ? err.message : t('search.importQueueFailed'));
     });
     // A playlist takes minutes and many songs; open the Downloads pane so it
     // lands somewhere you can watch, rather than behind the search you pasted
     // into. A single or an album is done before you would look, so it stays.
     watchIfPlaylist(link);
-  }, [link, downloads]);
+  }, [link, downloads, t]);
 
   if (!link) return null;
 
@@ -49,10 +52,7 @@ export function ImportFromSearch({ query }: { query: string }) {
     return (
       <div className="searchImport">
         <Download size={16} />
-        <Text size="sm" tone="muted">
-          That looks like a music link, but the Music import plugin is not
-          running. Turn it on under Settings &rarr; Plugins to download it.
-        </Text>
+        <Text size="sm" tone="muted">{t('search.importPluginOff')}</Text>
       </div>
     );
   }
@@ -60,25 +60,33 @@ export function ImportFromSearch({ query }: { query: string }) {
   const job = downloads.jobs.find((j) => j.url === link);
   const done = job?.state === 'done';
   const failed = job?.state === 'error';
+  // Four states, four whole sentences. A job with no title yet is still
+  // something the person can be told about, so it borrows the bell's word for
+  // an unnamed link rather than leaving a hole in the middle of the sentence.
+  const what = job?.title || t('notices.thatLink');
+  const importLine = done
+    ? t('search.imported', { title: what })
+    : failed
+      ? t('search.importFailed', { title: what })
+      : job
+        ? t('search.importing', { title: what })
+        : t('search.importingLink');
+  // "3 of 40" is two numbers, so they are grouped the way this locale groups
+  // them; the track name, when the server has told us one, rides along in the
+  // same entry so its separator can move with the language.
+  const counts = { done: formatNumber(job?.completed ?? 0), total: formatNumber(job?.total ?? 0) };
+  const progressLine = job?.currentTrack
+    ? t('search.importProgressTrack', { ...counts, track: job.currentTrack })
+    : t('search.importProgress', counts);
 
   return (
     <div className="searchImport">
       {job && !done && !failed ? <Spinner size="sm" aria-label="" /> : <Download size={16} />}
       <div className="searchImport__body">
-        <Text size="sm">
-          {done
-            ? `Imported ${job?.title || 'that link'}.`
-            : failed
-              ? `Could not import ${job?.title || 'that link'}.`
-              : job
-                ? `Importing ${job.title || 'that link'}…`
-                : 'Importing this link…'}
-        </Text>
+        <Text size="sm">{importLine}</Text>
         {job && !done && !failed && (
           <Text size="xs" tone="muted">
-            {job.total
-              ? `${job.completed} of ${job.total}${job.currentTrack ? ` · ${job.currentTrack}` : ''}`
-              : 'Working out what this is…'}
+            {job.total ? progressLine : t('search.importWorkingOut')}
           </Text>
         )}
         {(error || (failed && job?.error)) && (
@@ -89,12 +97,12 @@ export function ImportFromSearch({ query }: { query: string }) {
       </div>
       {job && !done && !failed && (
         <Button variant="ghost" size="sm" onClick={() => downloads.cancel(job.id)}>
-          Cancel
+          {t('common.cancel')}
         </Button>
       )}
       {failed && (
         <Button variant="outline" size="sm" onClick={() => downloads.retry(job!.id)}>
-          Retry
+          {t('search.retryImport')}
         </Button>
       )}
     </div>

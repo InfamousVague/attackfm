@@ -3,6 +3,7 @@ import { Check, ListMusic } from '@glacier/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { clearPlaylistLink, onPlaylistLink } from '../servers/deepLink.ts';
 import { fetchPlaylistShare, type SharedPlaylist } from '../servers/registry.ts';
+import { useT, useSongCount } from '../i18n/LocaleShell.tsx';
 import { useOwned } from '../library/owned.ts';
 import { usePlaylists } from './playlists.tsx';
 
@@ -26,6 +27,8 @@ export function SharedPlaylistBridge() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const t = useT();
+  const songCount = useSongCount();
   const owned = useOwned();
   const { create, addWant } = usePlaylists();
 
@@ -48,12 +51,12 @@ export function SharedPlaylistBridge() {
         if (live) setShare(s);
       })
       .catch((e: unknown) => {
-        if (live) setError(e instanceof Error ? e.message : 'Could not open that playlist.');
+        if (live) setError(e instanceof Error ? e.message : t('playlists.shareOpenFailed'));
       });
     return () => {
       live = false;
     };
-  }, [code]);
+  }, [code, t]);
 
   // Each song, and the copy of it this library holds, if any.
   const rows = useMemo(
@@ -85,25 +88,28 @@ export function SharedPlaylistBridge() {
         }
       }
       const missing = rows.length - paths.length - wanted;
+      // Four independent clauses rather than one sentence with three holes:
+      // each is optional, so a single catalogue entry would have to carry every
+      // combination of them. The separator is punctuation, not words.
       setDone(
         [
-          `Added “${share.name}”.`,
-          paths.length ? `${paths.length} ${paths.length === 1 ? 'song' : 'songs'} from your library` : null,
-          wanted ? `${wanted} on ${wanted === 1 ? 'its' : 'their'} way` : null,
-          missing ? `${missing} not fetchable here` : null,
+          t('playlists.shareAdded', { name: share.name }),
+          paths.length ? t('playlists.shareFromLibrary', { count: paths.length }) : null,
+          wanted ? t('playlists.shareOnTheWay', { count: wanted }) : null,
+          missing ? t('playlists.shareNotFetchable', { count: missing }) : null,
         ]
           .filter(Boolean)
           .join(' · '),
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not add it just now.');
+      setError(e instanceof Error ? e.message : t('playlists.shareAddFailed'));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal open onClose={close} title="Shared playlist" size="sm">
+    <Modal open onClose={close} title={t('playlists.sharedTitle')} size="sm">
       <div className="sharedPlaylist">
         {error && (
           <Text tone="danger" size="sm">
@@ -111,9 +117,7 @@ export function SharedPlaylistBridge() {
           </Text>
         )}
         {!share && !error && (
-          <Text tone="muted" size="sm">
-            Opening…
-          </Text>
+          <Text tone="muted" size="sm">{t('playlists.shareOpening')}</Text>
         )}
         {share && (
           <>
@@ -127,9 +131,17 @@ export function SharedPlaylistBridge() {
               )}
               <div className="sharedPlaylist__who">
                 <h3 className="sharedPlaylist__name">{share.name}</h3>
+                {/* Three whole phrases joined by punctuation rather than one
+                    sentence: the last clause is conditional, and a translator
+                    reorders inside each phrase without needing all of them. */}
                 <Text tone="muted" size="sm">
-                  by @{share.by} · {share.tracks.length} {share.tracks.length === 1 ? 'song' : 'songs'}
-                  {haveCount > 0 ? ` · ${haveCount} already in your library` : ''}
+                  {[
+                    t('playlists.shareBy', { who: share.by }),
+                    songCount(share.tracks.length),
+                    haveCount > 0 ? t('playlists.shareAlreadyHave', { count: haveCount }) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </Text>
                 {share.description && (
                   <Text tone="muted" size="sm">
@@ -148,30 +160,25 @@ export function SharedPlaylistBridge() {
               ))}
             </ol>
             {rows.length > 40 && (
-              <Text tone="muted" size="xs">
-                and {rows.length - 40} more
-              </Text>
+              <Text tone="muted" size="xs">{t('playlists.andMore', { count: rows.length - 40 })}</Text>
             )}
             {done ? (
               <Text size="sm">{done}</Text>
             ) : (
-              <Text tone="muted" size="xs">
-                Adding files it as a playlist of yours. Songs you own go straight in; the rest your
-                server goes and gets, and they fill in as they land.
-              </Text>
+              <Text tone="muted" size="xs">{t('playlists.shareAddExplainer')}</Text>
             )}
             <div className="sharedPlaylist__actions">
               {done ? (
                 <Button variant="solid" size="sm" onClick={close}>
-                  Done
+                  {t('common.done')}
                 </Button>
               ) : (
                 <>
                   <Button variant="ghost" size="sm" onClick={close}>
-                    Not now
+                    {t('common.notNow')}
                   </Button>
                   <Button variant="solid" size="sm" disabled={busy} onClick={() => void add()}>
-                    {busy ? 'Adding…' : 'Add to my playlists'}
+                    {busy ? t('playlists.shareAdding') : t('playlists.shareAddToMine')}
                   </Button>
                 </>
               )}

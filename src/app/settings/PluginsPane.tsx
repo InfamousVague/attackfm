@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import type { Plugin } from '../../plugins/types.ts';
 import { uninstallPlugin, type RemotePluginListing } from '../../plugins/remote.ts';
 import { usePlugins } from '../../plugins/runtime.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 import {
   isNewer,
   listingsOf,
@@ -19,17 +20,19 @@ import {
  * than declared in its listing - contributions derived from the contract
  * cannot drift from what actually mounts.
  */
-function pluginContributions(p: Plugin): string[] {
+function pluginContributions(p: Plugin, t: ReturnType<typeof useT>): string[] {
   return [
-    ...(p.slots?.['titlebar-end'] ? ['A title bar button'] : []),
-    ...(p.slots?.['player-trailing'] ? ['A player strip control'] : []),
+    ...(p.slots?.['titlebar-end'] ? [t('settings.pluginAddsTitlebar')] : []),
+    ...(p.slots?.['player-trailing'] ? [t('settings.pluginAddsPlayer')] : []),
+    // The tab NAMES come from the plugin, not the catalogue - a plugin ships
+    // its own labels - so only the sentence around them is translated.
     ...(p.settingsSections?.length
-      ? [`A settings tab: ${p.settingsSections.map((s) => s.label).join(', ')}`]
+      ? [t('settings.pluginAddsSettings', { tabs: p.settingsSections.map((s) => s.label).join(', ') })]
       : []),
-    ...(p.playlistTiles?.length ? ['Playlist tiles on the home strip'] : []),
-    ...(p.downloads?.length ? ['A queue on the Downloads page'] : []),
-    ...(p.usePaletteCommands ? ['Command palette actions'] : []),
-    ...(p.Provider ? ['A background service while enabled'] : []),
+    ...(p.playlistTiles?.length ? [t('settings.pluginAddsTiles')] : []),
+    ...(p.downloads?.length ? [t('settings.pluginAddsDownloads')] : []),
+    ...(p.usePaletteCommands ? [t('settings.pluginAddsPalette')] : []),
+    ...(p.Provider ? [t('settings.pluginAddsProvider')] : []),
   ];
 }
 
@@ -52,12 +55,13 @@ function PluginCard({
   onToggle: (on: boolean) => void;
   onOpen: () => void;
 }) {
+  const t = useT();
   return (
     <Card interactive className="pluginCard">
       <button
         type="button"
         className="pluginCardOpen"
-        aria-label={`About ${plugin.name}`}
+        aria-label={t('settings.pluginAbout', { name: plugin.name })}
         onClick={onOpen}
       />
       <div className="pluginCardTop">
@@ -67,7 +71,7 @@ function PluginCard({
         {/* Above the doorway, so a flip is a flip and never a navigation. */}
         <span className="pluginCardSwitch">
           <Switch
-            aria-label={`Enable ${plugin.name}`}
+            aria-label={t('settings.pluginEnable', { name: plugin.name })}
             checked={enabled}
             onCheckedChange={onToggle}
           />
@@ -87,7 +91,7 @@ function PluginCard({
       <div className="pluginCardTags">
         {crashed && (
           <Pill size="sm" tone="danger">
-            Crashed
+            {t('settings.pluginCrashed')}
           </Pill>
         )}
         {(plugin.tags ?? []).map((tag) => (
@@ -111,6 +115,7 @@ function UninstallButton({
   onDone: () => void;
 }) {
   const { reloadRemote } = usePlugins();
+  const t = useT();
   return (
     <Button
       variant="danger"
@@ -119,9 +124,9 @@ function UninstallButton({
         reloadRemote();
         onDone();
       }}
-      aria-label={`Uninstall ${name}`}
+      aria-label={t('settings.pluginUninstallNamed', { name })}
     >
-      <Trash2 size={15} /> <span>Uninstall</span>
+      <Trash2 size={15} /> <span>{t('settings.pluginUninstall')}</span>
     </Button>
   );
 }
@@ -133,6 +138,7 @@ function UninstallButton({
  * being toggled owns the selected section.
  */
 export function PluginsSettings() {
+  const t = useT();
   const { all, isEnabled, setEnabled, failures, remoteInstalled, reloadRemote } = usePlugins();
   // The id, not the object: a plugin pulled mid-session closes its dialog
   // instead of showing a ghost of it.
@@ -175,22 +181,24 @@ export function PluginsSettings() {
       <PluginUpdates updates={updates} busyId={busyId} onUpdate={(s, l) => void install(s, l)} />
 
       <SegmentedControl
-        aria-label="Plugins view"
+        aria-label={t('settings.pluginsView')}
         fullWidth
         value={tab}
         onValueChange={(next) => setTab(next as typeof tab)}
         options={[
-          { value: 'browse', label: 'Browse' },
-          { value: 'sources', label: 'Sources' },
+          { value: 'browse', label: t('settings.pluginsBrowse') },
+          { value: 'sources', label: t('settings.pluginsSources') },
         ]}
       />
 
       {tab === 'browse' ? (
         <>
+          {/* One entry, not "N plugins" + " · " + "M enabled": the count and
+              the sentence around it have to be reorderable together, and the
+              plural rides on the plugin count while `enabled` is a plain
+              number inside the same sentence. */}
           <Text size="sm" tone="muted">
-            {all.length === 1 ? '1 plugin' : `${all.length} plugins`} · {enabledCount} enabled.
-            Flip one on to add what it carries, off to put it away. Plugins install
-            from the repositories under Sources and run locally once installed.
+            {t('settings.pluginsIntro', { count: all.length, enabled: enabledCount })}
           </Text>
           <div className="pluginMarket">
             {all.map((p) => (
@@ -209,14 +217,11 @@ export function PluginsSettings() {
             ))}
           </div>
           <Text tone="subtle" size="xs">
-            Toggles apply immediately; switching a plugin may briefly restart playback.
-            Work a plugin already handed to the app&rsquo;s engine - queued downloads,
-            say - carries on in the background without its controls until it is
-            switched back on.
+            {t('settings.pluginsToggleNote')}
           </Text>
 
           <div className="prefsSection">
-            <Label>Available</Label>
+            <Label>{t('settings.pluginsAvailable')}</Label>
             <PluginBrowse
               feeds={feeds}
               remoteInstalled={remoteInstalled}
@@ -273,7 +278,7 @@ export function PluginsSettings() {
                 variant={isEnabled(open.id) ? 'ghost' : 'solid'}
                 onClick={() => setEnabled(open.id, !isEnabled(open.id))}
               >
-                {isEnabled(open.id) ? 'Disable' : 'Enable'}
+                {isEnabled(open.id) ? t('settings.pluginTurnOff') : t('settings.pluginTurnOn')}
               </Button>
             </>
           )
@@ -283,7 +288,7 @@ export function PluginsSettings() {
           <div className="pluginDetail">
             {openFailure !== undefined && (
               <Text size="sm" tone="danger">
-                Crashed this session ({openFailure}). Disable and enable to try again.
+                {t('settings.pluginCrashedDetail', { reason: openFailure })}
               </Text>
             )}
             <div className="pluginCardTags">
@@ -294,13 +299,13 @@ export function PluginsSettings() {
               ))}
             </div>
             <Text size="sm">{open.details ?? open.description}</Text>
-            {pluginContributions(open).length > 0 && (
+            {pluginContributions(open, t).length > 0 && (
               <div className="pluginDetailAdds">
                 <Text size="xs" tone="subtle" weight="semibold">
-                  Adds to the app
+                  {t('settings.pluginAdds')}
                 </Text>
                 <ul className="pluginDetailList">
-                  {pluginContributions(open).map((line) => (
+                  {pluginContributions(open, t).map((line) => (
                     <li key={line}>
                       <Text as="span" size="sm" tone="muted">
                         {line}

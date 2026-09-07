@@ -3,6 +3,7 @@ import { X } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { forgetProfile, otherProfiles, type Profile } from './household.ts';
 import { useServerSession } from './serverSession.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The household: the other accounts this device has been signed into, one tap
@@ -17,6 +18,7 @@ import { useServerSession } from './serverSession.tsx';
  * had the credentials, and forgetting one takes it off this device.
  */
 export function HouseholdSection() {
+  const t = useT();
   const { session, applySession } = useServerSession();
   const [known, setKnown] = useState<Profile[]>(() => otherProfiles(session));
 
@@ -30,10 +32,9 @@ export function HouseholdSection() {
 
   return (
     <div className="prefsSection">
-      <Label>Household</Label>
+      <Label>{t('servers.household')}</Label>
       <Text size="sm" tone="muted">
-        Other accounts this device knows. Switching keeps each person&rsquo;s own plays, mixes
-        and resume points.
+        {t('servers.householdHint')}
       </Text>
       <div className="householdRow">
         {known.map((p) => (
@@ -48,12 +49,12 @@ export function HouseholdSection() {
                 setKnown(otherProfiles(p.session));
               }}
             >
-              Switch
+              {t('servers.householdSwitch')}
             </Button>
             <IconButton
               variant="ghost"
               size="sm"
-              aria-label={`Forget ${p.session.username} on this device`}
+              aria-label={t('servers.householdForget', { name: p.session.username })}
               onClick={() => {
                 forgetProfile(p.session);
                 setKnown(otherProfiles(session));

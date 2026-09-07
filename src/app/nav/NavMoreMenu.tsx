@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { CounterBadge } from '@glacier/react';
 import { ChartNoAxesColumn, Download, EllipsisVertical, Settings } from '@glacier/icons';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import type { NavDest } from './navSeats.ts';
 
 /**
@@ -34,10 +35,17 @@ export function NavMoreMenu({
   onOpenDownloads: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
   // The queue's presence, for the Downloads row and the count riding the ⋮.
   const dl = useDownloadsOptional();
   const pulling = dl?.active.length ?? 0;
   const failed = dl?.jobs.filter((j) => j.state === 'error').length ?? 0;
+  // The badge says one thing or the other, never both: what is still pulling
+  // while anything is, and otherwise what is left broken. Both are counts, so
+  // both are plurals rather than a number glued to a word.
+  const badgeLabel = pulling > 0
+    ? t('notices.downloading', { count: pulling })
+    : t('downloads.failedCount', { count: failed });
   /*
    * When the scrim last closed the menu.
    *
@@ -93,7 +101,7 @@ export function NavMoreMenu({
          */
         data-active={onMenuDest || undefined}
         data-open={open || undefined}
-        aria-label="More"
+        aria-label={t('nav.more')}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => {
@@ -112,10 +120,10 @@ export function NavMoreMenu({
             max={99}
             size="sm"
             tone={pulling === 0 ? 'danger' : 'accent'}
-            aria-label={pulling > 0 ? `${pulling} downloading` : `${failed} failed`}
+            aria-label={badgeLabel}
           />
         </span>
-        <span className="appNavBarTab__label">More</span>
+        <span className="appNavBarTab__label">{t('nav.more')}</span>
       </button>
       {/* PORTALLED to the body, and that is load-bearing rather than tidiness:
           backdrop-filter cannot reach past an ancestor that already has one,
@@ -138,7 +146,7 @@ export function NavMoreMenu({
                 setOpen(false);
               }}
             />
-            <div className="appNavMore__menu" role="menu" aria-label="More">
+            <div className="appNavMore__menu" role="menu" aria-label={t('nav.more')}>
         {/* The destinations the bar had no room for. Same order they would have
             taken up there, so widening the window promotes them from the top of
             this list rather than in some order of its own. */}
@@ -183,7 +191,7 @@ export function NavMoreMenu({
           <span className="appNavBarPlugins__itemIcon" aria-hidden>
             <ChartNoAxesColumn size={18} />
           </span>
-          <span className="appNavBarPlugins__itemLabel">Stats</span>
+          <span className="appNavBarPlugins__itemLabel">{t('nav.stats')}</span>
         </button>
 
         {/* The queue, whenever an importer exists at all - not only mid-pull:
@@ -204,14 +212,14 @@ export function NavMoreMenu({
             <span className="appNavBarPlugins__itemIcon" aria-hidden>
               <Download size={18} />
             </span>
-            <span className="appNavBarPlugins__itemLabel">Downloads</span>
+            <span className="appNavBarPlugins__itemLabel">{t('nav.downloads')}</span>
             <CounterBadge
               className="appNavBadge--row"
               count={pulling > 0 ? pulling : failed}
               max={99}
               size="sm"
               tone={pulling === 0 ? 'danger' : 'accent'}
-              aria-label={pulling > 0 ? `${pulling} downloading` : `${failed} failed`}
+              aria-label={badgeLabel}
             />
           </button>
         )}
@@ -228,7 +236,7 @@ export function NavMoreMenu({
           <span className="appNavBarPlugins__itemIcon" aria-hidden>
             <Settings size={18} />
           </span>
-          <span className="appNavBarPlugins__itemLabel">Settings</span>
+          <span className="appNavBarPlugins__itemLabel">{t('nav.settings')}</span>
         </button>
             </div>
           </>,

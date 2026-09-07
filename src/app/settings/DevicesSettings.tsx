@@ -5,6 +5,7 @@ import { deviceKind, deviceName } from '../player/connect.ts';
 import { DeviceList } from '../player/DevicePicker.tsx';
 import { useConnect } from '../player/playbackSync.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The Devices pane: this device's Connect identity, and every other device on
@@ -18,6 +19,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
  * disagree about what is connected.
  */
 export function DevicesSettings() {
+  const t = useT();
   const { session } = useServerSession();
   const { connected, devices, renameDevice } = useConnect();
   const [name, setName] = useState(() => deviceName());
@@ -40,11 +42,7 @@ export function DevicesSettings() {
     return (
       <div className="prefsBody">
         <div className="prefsSection">
-          <Text tone="muted" size="sm">
-            Devices appear here once you are signed into a server — AttackFM
-            Connect links every signed-in device so any of them can control, or
-            take over, what is playing. Sign in under Servers first.
-          </Text>
+          <Text tone="muted" size="sm">{t('devices.signInFirst')}</Text>
         </div>
       </div>
     );
@@ -58,43 +56,37 @@ export function DevicesSettings() {
             <KindGlyph size={22} />
           </span>
           <div className="deviceIdentity__meta">
-            <Text weight="semibold">This device</Text>
+            <Text weight="semibold">{t('devices.thisDevice')}</Text>
             <span className="deviceIdentity__status">
               <StatusDot tone={connected ? 'success' : 'neutral'} pulse={connected} size="sm" />
               <Text size="sm" tone="muted">
-                {connected
-                  ? `Connected · ${online} ${online === 1 ? 'device' : 'devices'} online`
-                  : 'Not connected to the hub'}
+                {/* One sentence with the tally inside it: "device"/"devices"
+                    is the count's grammar, not a choice this file can make. */}
+                {connected ? t('devices.connected', { count: online }) : t('devices.offline')}
               </Text>
             </span>
           </div>
         </div>
-        <Field
-          label="Device name"
-          hint="What the other devices' pickers call this one. Saved names announce immediately."
-        >
+        <Field label={t('devices.name')} hint={t('devices.nameHint')}>
           <div className="deviceRename" data-setting="device-rename">
             <Input
               value={name}
               onChange={(e) => setName(e.currentTarget.value)}
-              aria-label="Device name"
+              aria-label={t('devices.name')}
               maxLength={40}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') save();
               }}
             />
             <Button variant="outline" size="sm" onClick={save}>
-              <Save size={14} /> {savedFlash ? 'Saved' : 'Save'}
+              <Save size={14} /> {savedFlash ? t('devices.saved') : t('common.save')}
             </Button>
           </div>
         </Field>
       </div>
 
       <div className="prefsSection">
-        <Field
-          label="Play on"
-          hint="Every device signed into this account. Tap one to move playback there — it picks up mid-song."
-        >
+        <Field label={t('devices.playOn')} hint={t('devices.playOnHint')}>
           <DeviceList />
         </Field>
       </div>

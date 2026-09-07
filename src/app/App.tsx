@@ -77,6 +77,7 @@ import { useFilePlan } from './downloads/useFilePlan.ts';
 import type { FileOutcome, FilePlan } from './downloads/filePlan.ts';
 import wordmark from '../assets/attack-white.png';
 import { deckHandoff } from './player/deckHandoff.ts';
+import { useT } from './i18n/LocaleShell.tsx';
 
 // Window chrome only makes sense where there is a window to decorate: a desktop
 // Tauri build. A phone build is inside Tauri too, but has no frame and no
@@ -302,6 +303,7 @@ export function App() {
   // the player's skips and autoplay walk through. Snapshotted at open, the
   // way a play context should be: re-sorting the table later reorders the
   // table, not the record already spinning.
+  const t = useT();
   const [queue, setQueue] = useState<Track[]>(handoff?.queue ?? []);
   /*
    * The songs YOU put in the line, which is a different thing from the list you
@@ -696,7 +698,7 @@ export function App() {
                       <IconButton
                         variant="ghost"
                         size="sm"
-                        aria-label="Back"
+                        aria-label={t('nav.back')}
                         disabled={!canGoBack}
                         onClick={backFromAnywhere}
                       >
@@ -705,7 +707,7 @@ export function App() {
                       <IconButton
                         variant="ghost"
                         size="sm"
-                        aria-label="Forward"
+                        aria-label={t('nav.forward')}
                         disabled={!canForward}
                         onClick={forward}
                       >
@@ -746,7 +748,7 @@ export function App() {
                     <IconButton
                       variant="ghost"
                       size="sm"
-                      aria-label="Settings"
+                      aria-label={t('nav.settings')}
                       onClick={openSettings}
                     >
                       <Settings size={16} />
@@ -772,7 +774,7 @@ export function App() {
                   <IconButton
                     variant="ghost"
                     size="sm"
-                    aria-label="Back"
+                    aria-label={t('nav.back')}
                     disabled={!canGoBack}
                     onClick={backFromAnywhere}
                   >
@@ -781,7 +783,7 @@ export function App() {
                   <IconButton
                     variant="ghost"
                     size="sm"
-                    aria-label="Forward"
+                    aria-label={t('nav.forward')}
                     disabled={!canForward}
                     onClick={forward}
                   >
@@ -1005,7 +1007,7 @@ export function App() {
                 <button
                   type="button"
                   className="dateLayer__close"
-                  aria-label="Leave Music Date"
+                  aria-label={t('date.leave')}
                   onClick={() => setDateOpen(false)}
                 >
                   <ChevronLeft size={20} />
@@ -1054,7 +1056,7 @@ export function App() {
                 ref={summonDismissRef}
                 className="searchSummon"
                 role="dialog"
-                aria-label="Search"
+                aria-label={t('nav.search')}
               >
                 {/* The drawer's handle: a visible way out, and the honest
                     hint that this is a sheet you can pull. The gesture has
@@ -1064,7 +1066,7 @@ export function App() {
                 <button
                   type="button"
                   className="searchSummon__handle"
-                  aria-label="Close search"
+                  aria-label={t('search.close')}
                   onClick={() => setSearchOpen(false)}
                 >
                   <span aria-hidden="true" />

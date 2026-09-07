@@ -3,6 +3,8 @@ import { Check, Disc3, Plus, X } from '@glacier/icons';
 import { AlbumMenu } from './AlbumMenu.tsx';
 import { artSized } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 import type { Track } from '../core/tauri.ts';
 import type { AddingState } from './artistAcquire.ts';
 import type { DiscRow } from './artistData.ts';
@@ -42,6 +44,7 @@ function DiscCard({
   onPlay,
   onOpenAlbum,
 }: DiscCardProps) {
+  const t = useT();
   const state = adding[row.key];
   const canAdd = !row.owned && canAddAlbum(row.title);
   const act = row.owned
@@ -67,12 +70,12 @@ function DiscCard({
       disabled={!act}
       title={
         row.owned
-          ? `Open ${row.title}`
+          ? t('library.openRecord', { title: row.title })
           : state === 'missing'
-            ? `${row.title} is not on Spotify to import`
+            ? t('library.recordNotOnSpotify', { title: row.title })
             : canAdd
-              ? `Add ${row.title}`
-              : `${row.title} — no way to add this; enable Music import or Buy in Plugins`
+              ? t('library.addRecord', { title: row.title })
+              : t('library.recordNoWayToAdd', { title: row.title })
       }
       onClick={act}
     >
@@ -92,7 +95,7 @@ function DiscCard({
           </span>
         ) : state === 'finding' ? (
           <span className="artistAlbumBadge" data-busy>
-            <span className="artistAlbumSpin" aria-label="Finding it on Spotify" />
+            <span className="artistAlbumSpin" aria-label={t('library.findingOnSpotify')} />
           </span>
         ) : state === 'added' ? (
           <span className="artistAlbumBadge" data-have>
@@ -111,19 +114,25 @@ function DiscCard({
       <span className="artistAlbumName">{row.title}</span>
       <span className="artistAlbumSub">
         {state === 'finding'
-          ? 'Finding it…'
+          ? t('library.findingIt')
           : state === 'added'
             ? hasDownloads
-              ? 'Added to downloads'
-              : 'Sent to add'
+              ? t('library.addedToDownloads')
+              : t('library.sentToAdd')
             : state === 'missing'
-              ? 'Not on Spotify'
+              ? t('library.notOnSpotify')
               : [
                   row.year,
+                  // "4 of 11" while you own part of it, otherwise the sleeve's
+                  // own length - both counts, so both go through the plural
+                  // rather than being spelled out here.
                   row.owned
-                    ? `${row.owned.list.length} of ${row.trackCount ?? row.owned.list.length}`
+                    ? t('library.countOfTotal', {
+                        count: row.owned.list.length,
+                        total: row.trackCount ?? row.owned.list.length,
+                      })
                     : row.trackCount
-                      ? `${row.trackCount} tracks`
+                      ? t('library.songCount', { count: row.trackCount })
                       : null,
                 ]
                   .filter(Boolean)
@@ -167,6 +176,7 @@ export function ArtistDiscography({
   onPlay,
   onOpenAlbum,
 }: ArtistDiscographyProps) {
+  const t = useT();
   if (discography.records.length === 0 && discography.singles.length === 0) return null;
   const ownedRecords = discography.records.filter((r) => r.owned).length;
   const discCard = (row: DiscRow) => (
@@ -188,9 +198,14 @@ export function ArtistDiscography({
       {discography.records.length > 0 && (
         <section className="homeShelf">
           <h2 className="homeShelfTitle">
-            Albums
+            {t('library.albums')}
+            {/* "3 of 12" is one phrase, not a number either side of the word
+                "of": the order of the two counts is the translator's to set. */}
             <span className="artistDiscCount">
-              {ownedRecords} of {discography.records.length}
+              {t('library.countOfTotal', {
+                count: ownedRecords,
+                total: discography.records.length,
+              })}
             </span>
           </h2>
           {/* A grid rather than the horizontal shelf the rest of the page
@@ -204,8 +219,10 @@ export function ArtistDiscography({
       {discography.singles.length > 0 && (
         <section className="homeShelf">
           <h2 className="homeShelfTitle">
-            Singles &amp; EPs
-            <span className="artistDiscCount">{discography.singles.length}</span>
+            {t('library.singlesAndEps')}
+            {/* A bare count, but still a NUMBER: Intl groups it and writes it
+                in the locale's own digits, which a JSX `{n}` does not. */}
+            <span className="artistDiscCount">{formatNumber(discography.singles.length)}</span>
           </h2>
           <div className="artistDisc">{discography.singles.map(discCard)}</div>
         </section>
@@ -215,8 +232,7 @@ export function ArtistDiscography({
           tap away, it just takes a beat to find first. */}
       {[...discography.records, ...discography.singles].some((r) => !r.owned) && (
         <Text tone="muted" size="sm" className="artistDiscNote">
-          Tap anything you do not own and it is looked up on Spotify and sent to your
-          downloads.
+          {t('library.tapToAcquireNote')}
         </Text>
       )}
     </>

@@ -1075,8 +1075,7 @@ button.jamCard:disabled {
    play button wears a thin ring until the next beat clears it. Subtle on
    purpose - the button already reads the press optimistically. */
 .playerBarShell[data-sent] .stripTransport__play,
-.playerBarShell[data-sent] [class*="_transport_"] button[aria-label="Play"],
-.playerBarShell[data-sent] [class*="_transport_"] button[aria-label="Pause"] {
+.playerBarShell[data-sent] [data-afm="play"] {
   box-shadow: 0 0 0 2px var(--glacier-surface-raised), 0 0 0 3.5px var(--glacier-accent-7);
 }
 

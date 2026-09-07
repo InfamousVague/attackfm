@@ -12,6 +12,7 @@ import {
   watchBundle,
 } from './appUpdate.ts';
 import { UpdateModal } from './UpdateModal.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * "There is a newer version, and it is already on the device."
@@ -26,6 +27,7 @@ import { UpdateModal } from './UpdateModal.tsx';
  * the banner; the rest is one tap away.
  */
 function UpdateReady({ version }: { version: string }) {
+  const t = useT();
   const [dismissed, setDismissed] = useState(false);
   const [applying, setApplying] = useState(false);
 
@@ -41,8 +43,10 @@ function UpdateReady({ version }: { version: string }) {
             restart; the changelog is the modal's job, one turn per version,
             and repeating it here is how it ended up on the home screen twice. */}
         <span className="updateBanner__text">
-          <span className="updateBanner__title">Update ready</span>
-          <span className="updateBanner__sub">Version {version} is on this device.</span>
+          <span className="updateBanner__title">{t('settings.updateReady')}</span>
+          <span className="updateBanner__sub">
+            {t('settings.updateOnDevice', { version })}
+          </span>
         </span>
         <button
           type="button"
@@ -53,12 +57,12 @@ function UpdateReady({ version }: { version: string }) {
             applyStagedBundle();
           }}
         >
-          {applying ? 'Restarting…' : 'Restart'}
+          {applying ? t('settings.updateRestarting') : t('settings.updateRestartNow')}
         </button>
         <button
           type="button"
           className="updateBanner__close"
-          aria-label="Not now"
+          aria-label={t('settings.updateNotNow')}
           onClick={() => setDismissed(true)}
         >
           <X size={14} />

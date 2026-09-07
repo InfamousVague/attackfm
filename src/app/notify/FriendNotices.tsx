@@ -3,6 +3,7 @@ import { fetchFriends as fetchRegistryFriends } from '../servers/registry.ts';
 import { clearFriendsGlance, publishFriendsGlance } from '../profile/friendsGlance.ts';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { dismissNotice, noteNotice } from './notices.ts';
+import { translate } from '../i18n/LocaleShell.tsx';
 
 /**
  * Somebody asked to be friends, in the bell.
@@ -76,8 +77,10 @@ export function FriendNotices() {
           noteNotice({
             id,
             kind: 'friends',
-            title: `@${ask.handle} wants to be friends`,
-            body: 'Open Friends to answer.',
+            // translate(), not useT(): this runs in a poll, and a notice is
+            // written into the store once and read back later.
+            title: translate('notices.friendRequest', { handle: ask.handle }),
+            body: translate('notices.friendRequestBody'),
             art: null,
             door: 'friends',
             at: Date.now(),

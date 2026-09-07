@@ -6,6 +6,7 @@ import {
   HANDBOOK_PAGES,
 } from './handbookPages.tsx';
 import { useT } from '../../i18n/LocaleShell.tsx';
+import { formatNumber } from '../../ux/format.ts';
 
 /** The reader's place, kept across sessions - a manual that forgets where you
  *  were is a manual read once. */
@@ -223,8 +224,17 @@ export function HandbookPane() {
           trigger={
             <button type="button" className="handbook__where" title={t('settings.handbookOpenIndex')}>
               <TableOfContents size={14} aria-hidden="true" />
+              {/* One entry, not "chapter", "·", "n", "/", "total" as five
+                  siblings: where the page number sits relative to the chapter
+                  name, and whether a slash is even the separator, is the
+                  translator's call. The numbers go through formatNumber so a
+                  locale with its own digits gets them. */}
               <span>
-                {t(chapter.titleKey)} · {index + 1} / {pages.length}
+                {t('settings.handbookWhere', {
+                  chapter: t(chapter.titleKey),
+                  page: formatNumber(index + 1),
+                  total: formatNumber(pages.length),
+                })}
               </span>
             </button>
           }

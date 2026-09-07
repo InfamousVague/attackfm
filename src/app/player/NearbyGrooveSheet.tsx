@@ -6,6 +6,7 @@ import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
 import { FriendAvatar } from '../profile/RegistryFriends.tsx';
 import { MOBILE_PLAYER_QUERY } from './deckShared.ts';
 import { useJamOptional } from './jam.tsx';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * "Leo started a groove nearby" - the offer to join a room on this network.
@@ -32,6 +33,7 @@ import { useJamOptional } from './jam.tsx';
  * many are listening, and two targets of at least 44px.
  */
 export function NearbyGrooveSheet() {
+  const t = useT();
   const jam = useJamOptional();
   const phone = useMediaQuery(MOBILE_PLAYER_QUERY);
   const room = jam?.nearbyOffer ?? null;
@@ -73,7 +75,7 @@ export function NearbyGrooveSheet() {
           </span>
         </span>
         <span className="nearSheet__text">
-          <span className="nearSheet__line">{host} started a groove nearby</span>
+          <span className="nearSheet__line">{t('player.grooveNearbyLine', { host })}</span>
           {room.trackTitle && (
             <span className="nearSheet__song">
               <Music size={12} aria-hidden />
@@ -83,13 +85,17 @@ export function NearbyGrooveSheet() {
               </span>
             </span>
           )}
+          {/* One entry, dot and all: "two listening, on this network" is a
+              single fact in most languages and they do not all put the two
+              halves in this order. The separator rides in the string as a
+              component so it keeps its own styling. */}
           <span className="nearSheet__meta">
             <Users size={12} aria-hidden />
-            {count === 1 ? '1 listening' : `${count} listening`}
-            <span className="nearSheet__dot" aria-hidden>
-              ·
-            </span>
-            on your network
+            <Trans
+              i18nKey="player.grooveNearbyMeta"
+              count={count}
+              components={{ dot: <span className="nearSheet__dot" aria-hidden /> }}
+            />
           </span>
         </span>
       </div>
@@ -102,16 +108,16 @@ export function NearbyGrooveSheet() {
           autoFocus
         >
           <Users size={16} aria-hidden />
-          Join {host}&rsquo;s groove
+          {t('player.joinHostGroove', { host })}
         </button>
         <button type="button" className="jamAction" disabled={busy} onClick={notNow}>
-          Not now
+          {t('player.notNow')}
         </button>
       </div>
     </div>
   );
 
-  const title = 'Groove nearby';
+  const title = t('player.grooveNearby');
   return phone ? (
     <Drawer open onClose={notNow} side="bottom" size="sm" title={title} className="nearDrawer">
       {body}

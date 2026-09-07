@@ -20,6 +20,7 @@ import { EqualizerProvider } from '../app/player/equalizer.tsx';
 import { useArtTint } from '../app/player/artTint.ts';
 import { PluginsContext, type PluginsContextValue } from '../plugins/pluginsContext.ts';
 import type { Track } from '../app/core/tauri.ts';
+import { LocaleShell, useSongCount, useT } from '../app/i18n/LocaleShell.tsx';
 
 /** The strip's plugin slots, with no plugins: nothing to draw. */
 const NO_PLUGINS: PluginsContextValue = {
@@ -99,7 +100,21 @@ export interface SharedPlaylistDoc {
  * has none, and `/p/{code}/art/{i}` with the catalogue's cover for the row.
  * Nothing from any hub is served here; full songs play in AttackFM.
  */
+/** The shell, for the reason spelled out in InviteLanding: this bundle never
+ *  mounts App, so each page starts i18next and stamps the document itself.
+ *  This page needs it most - it borrows the app's own PlayerStrip, which
+ *  translates its own labels and would otherwise draw raw keys. */
 export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
+  return (
+    <LocaleShell>
+      <PlaylistCard share={share} />
+    </LocaleShell>
+  );
+}
+
+function PlaylistCard({ share }: { share: SharedPlaylistDoc }) {
+  const t = useT();
+  const songCount = useSongCount();
   const audio = useRef<HTMLAudioElement | null>(null);
   const [current, setCurrent] = useState<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
@@ -370,13 +385,13 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
   // and keys by it.
   const nowTrack = useMemo<Track | null>(() => {
     if (current === null) return null;
-    const t = share.tracks[current];
-    if (!t) return null;
+    const row = share.tracks[current];
+    if (!row) return null;
     return {
       path: `preview://${share.code}/${current}`,
-      title: t.title,
-      artist: t.artist,
-      album: t.album ?? '',
+      title: row.title,
+      artist: row.artist,
+      album: row.album ?? '',
       duration: duration,
       addedAt: 0,
       artwork: art,
@@ -458,7 +473,10 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
           </div>
           <h1>{share.name}</h1>
           <Text tone="muted" size="sm">
-            {count} {count === 1 ? 'song' : 'songs'} · shared by @{share.by} on AttackFM
+            {/* How many songs, then who sent it - two clauses a middot joins,
+                so the count keeps its own plural rules and the credit stays a
+                sentence a translator can rewrite. */}
+            {`${songCount(count)} · ${t('landing.sharedBy', { who: share.by })}`}
           </Text>
           {share.description && (
             <Text tone="muted" size="sm" className="desc">
@@ -467,22 +485,22 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
           )}
           <div className="actions">
             <Button variant="solid" onClick={() => (window.location.href = `attackfm://p/${share.code}`)}>
-              Open in AttackFM
+              {t('landing.openInApp')}
             </Button>
             <Button variant="outline" onClick={() => (window.location.href = 'https://attack.fm')}>
-              Get the app
+              {t('landing.getTheApp')}
             </Button>
           </div>
         </div>
 
         <div className="list">
           <ol>
-            {share.tracks.map((t, i) => {
+            {share.tracks.map((track, i) => {
               const on = current === i;
               const dead = none.has(i);
               return (
                 <li
-                  key={`${t.artist}|${t.title}|${i}`}
+                  key={`${track.artist}|${track.title}|${i}`}
                   className="row"
                   data-on={on || undefined}
                   data-none={dead || undefined}
@@ -492,7 +510,11 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
                     variant={on ? 'solid' : 'ghost'}
                     size="md"
                     className="row__play"
-                    aria-label={on && playing ? `Pause ${t.title}` : `Preview ${t.title}`}
+                    aria-label={
+                      on && playing
+                        ? t('landing.pauseTrack', { title: track.title })
+                        : t('landing.previewTrack', { title: track.title })
+                    }
                     aria-disabled={dead || undefined}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -506,17 +528,19 @@ export function PlaylistLanding({ share }: { share: SharedPlaylistDoc }) {
                       <Play size={18} fill="currentColor" className="row__glyph" />
                     )}
                   </IconButton>
-                  <span className="row__t">{t.title}</span>
+                  <span className="row__t">{track.title}</span>
                   <span className="row__a">
-                    {t.artist}
-                    {busy === i ? ' · finding a preview…' : dead ? ' · no preview' : ''}
+                    {track.artist}
+                    {/* Hung off the artist name by a middot: a state, not
+                        part of the credit. */}
+                    {busy === i ? ` · ${t('landing.findingPreview')}` : dead ? ` · ${t('landing.noPreview')}` : ''}
                   </span>
                 </li>
               );
             })}
           </ol>
           <Text tone="muted" size="xs" className="foot">
-            Thirty-second previews · full songs play in AttackFM
+            {t('landing.previewsFoot')}
           </Text>
         </div>
 

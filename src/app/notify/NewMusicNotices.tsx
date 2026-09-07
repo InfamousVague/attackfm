@@ -3,6 +3,7 @@ import { fetchNewMusic } from '../api/newMusic.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { discoveryNoticesEnabled } from '../settings/behaviourPrefs.ts';
 import { dismissNotice, noteNotice } from './notices.ts';
+import { translate } from '../i18n/LocaleShell.tsx';
 
 /**
  * "There's new music picked for you," in the bell.
@@ -123,11 +124,15 @@ export function NewMusicNotices() {
       noteNotice({
         id,
         kind: 'newmusic',
-        title: 'New music picked for you',
+        // translate(), not useT(): raised from a poll, and the row is stored.
+        title: translate('notices.newMusicTitle'),
+        // One arrival names the song; several are counted. Two sentences, so
+        // two keys - the plural on the second is for the languages that split
+        // "2" from "3-10", not for the one/many choice made here.
         body:
           fresh.length === 1
-            ? `“${lead.title}” by ${lead.artist} — in Discover.`
-            : `${fresh.length} fresh tracks picked for your taste — in Discover.`,
+            ? translate('notices.newMusicOne', { title: lead.title, artist: lead.artist })
+            : translate('notices.newMusicMany', { count: fresh.length }),
         // A catalogue cover, already a full remote URL. It must NOT go through
         // artSized (that rewrites a LIBRARY art id into a sized path and would
         // mangle this); null is a fine fallback and draws the compass glyph.

@@ -1,9 +1,11 @@
 import { Text } from '@glacier/react';
 import { useMemo, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 // The changelog rides inside the bundle: every device already downloads these
 // words with the app, so the timeline costs no request and works offline.
 import changelog from '../../../CHANGELOG.md?raw';
+import { formatNumber } from '../ux/format.ts';
 
 /**
  * What's new, as a timeline.
@@ -14,6 +16,11 @@ import changelog from '../../../CHANGELOG.md?raw';
  * The prose preamble above the first heading is the file's own documentation
  * and stays out; a section with no lines (shipped --no-notes) is skipped
  * rather than shown as an empty promise.
+ *
+ * The release lines themselves stay English on purpose - see the note in
+ * i18n/CONVENTIONS.md. They are ~800 lines of historical product copy that
+ * grows with every ship, so translating them means re-opening translation on
+ * every release. The chrome around them does translate.
  */
 
 interface Release {
@@ -48,6 +55,7 @@ function parse(md: string): Release[] {
 const FOLD = 5;
 
 export function WhatsNew() {
+  const t = useT();
   const releases = useMemo(() => parse(changelog), []);
   const [all, setAll] = useState(false);
   if (releases.length === 0) return null;
@@ -61,7 +69,7 @@ export function WhatsNew() {
             <div className="whatsNew__stamp">
               <span className="whatsNew__version">v{release.version}</span>
               {release.version === APP_VERSION && (
-                <span className="whatsNew__here">you are here</span>
+                <span className="whatsNew__here">{t('settings.whatsNewYouAreHere')}</span>
               )}
             </div>
             <ul className="whatsNew__lines">
@@ -78,7 +86,12 @@ export function WhatsNew() {
       </div>
       {releases.length > FOLD && (
         <button type="button" className="whatsNew__more" onClick={() => setAll((v) => !v)}>
-          {all ? 'Fewer' : `All ${releases.length} releases`}
+          {all
+            ? t('settings.whatsNewFewer')
+            : t('settings.whatsNewAll', {
+                count: releases.length,
+                n: formatNumber(releases.length),
+              })}
         </button>
       )}
     </div>

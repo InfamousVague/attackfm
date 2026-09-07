@@ -4,6 +4,7 @@ import { Modal } from '@glacier/react';
 import { ExternalLink } from '@glacier/icons';
 import type { AcquireTarget } from '../types.ts';
 import { openExternal } from '../../app/core/openExternal.ts';
+import { Trans, useT } from '../../app/i18n/LocaleShell.tsx';
 
 /**
  * The Buy plugin's opener: the acquire handler calls `open` with a song or
@@ -64,6 +65,7 @@ const STORES: readonly Store[] = [
  * album is handed to `open`.
  */
 export function BuyProvider({ children }: { children: ReactNode }) {
+  const t = useT();
   const [target, setTarget] = useState<AcquireTarget | null>(null);
   const query = target
     ? encodeURIComponent([target.artist, target.title].filter(Boolean).join(' ').trim())
@@ -73,18 +75,34 @@ export function BuyProvider({ children }: { children: ReactNode }) {
     <BuyContext.Provider value={{ open: setTarget }}>
       {children}
       {target && (
-        <Modal open onClose={() => setTarget(null)} title={`Buy “${target.title}”`} size="sm">
+        <Modal open onClose={() => setTarget(null)} title={t('buy.title', { title: target.title })} size="sm">
           <div className="buyModal">
+            {/* One sentence, one entry - the artist's name is a LINK inside it
+                rather than a fragment before it, so a language that puts the
+                act first can move it. Two keys, because a song with no artist
+                is a different sentence, not this one with a hole left in it. */}
             <p className="buyModal__blurb">
               {target.artist ? (
-                <>
-                  {target.title} · <ArtistLink artist={target.artist} beforeOpen={close} />
-                </>
+                <Trans
+                  i18nKey="buy.blurbWithArtist"
+                  // The name is a VALUE, interpolated inside the <artist> tag,
+                  // not text baked into the catalogue's tag body: ArtistLink
+                  // renders whatever children it is handed, so a catalogue
+                  // entry that wrote a word there would print that word instead
+                  // of the act. Passing it means a translator can move the
+                  // whole "by <name>" clause anywhere in the sentence.
+                  values={{ title: target.title, artist: target.artist }}
+                  components={{
+                    // Opening the artist navigates the page UNDER this sheet,
+                    // so the sheet has to go first. `close` on its own resolved
+                    // to window.close - a global, so it typechecked - and would
+                    // have left the modal standing over the artist page.
+                    artist: <ArtistLink artist={target.artist} beforeOpen={() => setTarget(null)} />,
+                  }}
+                />
               ) : (
-                target.title
-              )}{' '}
-              — open a store to
-              buy it as a download, then drop the file into your library folder.
+                <Trans i18nKey="buy.blurb" values={{ title: target.title }} />
+              )}
             </p>
             <div className="buyModal__stores">
               {STORES.map((store) => (

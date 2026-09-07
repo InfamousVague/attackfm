@@ -150,7 +150,9 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       label: t('settings.paneAppearance'),
       icon: <Palette size={16} />,
       content: <Appearance />,
-      summary: `${t(THEME_COPY[theme].labelKey)} · ${accentLabel(accent, t)}`,
+      // Two already-translated labels beside each other, joined rather than
+      // interpolated: the separator is punctuation, not a sentence.
+      summary: [t(THEME_COPY[theme].labelKey), accentLabel(accent, t)].join(' · '),
       tint: 'purple',
       group: 0,
     },
@@ -215,6 +217,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
         pb.saveHistory,
         sharePositionEnabled(),
         sharingWeek,
+        t,
       ),
       tint: 'blue',
       group: 1,
@@ -362,7 +365,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       label: t('settings.paneAbout'),
       icon: <Info size={16} />,
       content: <AboutSettings />,
-      summary: `AttackFM v${APP_VERSION}`,
+      summary: t('settings.summaryVersion', { version: APP_VERSION }),
       tint: 'slate',
       group: 3,
     },

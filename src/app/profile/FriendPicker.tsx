@@ -15,6 +15,10 @@ import {
   type FriendPickerMode,
 } from '../nav/friendPickerDoor.ts';
 import { FriendAvatar, isOnline } from './RegistryFriends.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
+
+/** What `t` is, for the two plain helpers below that are handed one. */
+type T = ReturnType<typeof useT>;
 
 /**
  * The friend picker - one multi-select for every "who?" in the app.
@@ -55,19 +59,19 @@ interface Person {
 }
 
 /** Why a dimmed row cannot be chosen, in the mode's own words. */
-function awayReason(mode: FriendPickerMode): string {
-  return mode === 'groove'
-    ? 'on another server · a groove stays on one'
-    : 'on another server · send them the link instead';
+function awayReason(mode: FriendPickerMode, t: T): string {
+  return mode === 'groove' ? t('profile.pickerAwayGroove') : t('profile.pickerAwayPlaylist');
 }
 
-function standingOf(p: Person, mode: FriendPickerMode): string {
-  if (p.where === 'elsewhere') return awayReason(mode);
+function standingOf(p: Person, mode: FriendPickerMode, t: T): string {
+  if (p.where === 'elsewhere') return awayReason(mode, t);
   if (p.groove) return p.groove;
   const bits: string[] = [];
-  if (p.playing) bits.push('listening now');
-  else if (p.online) bits.push('online');
-  bits.push(p.friend ? 'on this server' : 'a member here');
+  if (p.playing) bits.push(t('profile.pickerListeningNow'));
+  else if (p.online) bits.push(t('profile.pickerOnline'));
+  bits.push(p.friend ? t('profile.pickerOnThisServer') : t('profile.pickerMemberHere'));
+  // The separator is punctuation, not a word - it joins the same way in
+  // every language, and the pieces either side are each their own key.
   return bits.join(' · ');
 }
 
@@ -82,6 +86,7 @@ function rank(p: Person): number {
 function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: FriendPick | null) => void }) {
   const { request } = ask;
   const { mode } = request;
+  const t = useT();
   const { session } = useServerSession();
   const registry = useRegistryOptional();
   const jam = useJamOptional();
@@ -103,7 +108,7 @@ function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: Frie
     const roster = mode === 'playlist' && session ? fetchMembers(session).catch(() => null) : Promise.resolve(null);
     void Promise.all([friends, roster]).then(([known, members]) => {
       if (!live) return;
-      if (known === null) setError('Could not reach attack.fm just now - showing who this server knows.');
+      if (known === null) setError(t('profile.pickerRegistryUnreachable'));
       const byKey = new Map<string, Person>();
       for (const f of known ?? []) {
         const key = f.handle.toLowerCase();
@@ -145,7 +150,7 @@ function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: Frie
     return () => {
       live = false;
     };
-  }, [token, session, mode]);
+  }, [token, session, mode, t]);
 
   // Who is out of the question: the names the seat already has, and you.
   const hidden = useMemo(() => {
@@ -161,13 +166,14 @@ function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: Frie
     const m = new Map<string, string>();
     if (mode !== 'groove') return m;
     for (const room of jam?.friendJams ?? []) {
-      m.set(room.hostName.toLowerCase(), 'hosting a groove');
+      m.set(room.hostName.toLowerCase(), t('profile.pickerHostingGroove'));
       for (const name of room.members) {
-        if (name.toLowerCase() !== room.hostName.toLowerCase()) m.set(name.toLowerCase(), `in ${room.hostName}’s groove`);
+        if (name.toLowerCase() !== room.hostName.toLowerCase())
+          m.set(name.toLowerCase(), t('profile.pickerInGroove', { host: room.hostName }));
       }
     }
     return m;
-  }, [jam?.friendJams]);
+  }, [jam?.friendJams, mode, t]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -200,11 +206,11 @@ function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: Frie
   // The one empty sentence, chosen for what is actually the case.
   let empty: string | null = null;
   if (people !== null && rows.length === 0) {
-    if (query.trim()) empty = 'Nobody by that name.';
-    else if (everyone.length > 0) empty = 'Everyone is already in.';
-    else if (!token && !session) empty = 'Sign in to a server first - that is where the people are.';
-    else if (!token) empty = 'Sign into your AttackFM account under Profile to see your friends here.';
-    else empty = 'No friends yet - add some on the Profile tab.';
+    if (query.trim()) empty = t('profile.pickerNoMatch');
+    else if (everyone.length > 0) empty = t('profile.pickerEveryoneIn');
+    else if (!token && !session) empty = t('profile.pickerNeedServer');
+    else if (!token) empty = t('profile.pickerNeedAccount');
+    else empty = t('profile.pickerNoFriends');
   }
 
   return (
@@ -214,8 +220,8 @@ function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: Frie
           className="friendPicker__search"
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
-          placeholder="Find a friend"
-          aria-label="Find a friend"
+          placeholder={t('profile.pickerFind')}
+          aria-label={t('profile.pickerFind')}
           leadingIcon={<Search size={16} aria-hidden />}
           autoCapitalize="none"
           autoCorrect="off"
@@ -224,14 +230,14 @@ function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: Frie
       )}
 
       {picked.length > 0 && (
-        <div className="friendPicker__chips" role="list" aria-label="Chosen">
+        <div className="friendPicker__chips" role="list" aria-label={t('profile.pickerChosen')}>
           {picked.map((p) => (
             <button
               key={p.key}
               type="button"
               role="listitem"
               className="fpChip"
-              aria-label={`Remove ${p.handle}`}
+              aria-label={t('profile.pickerRemovePerson', { handle: p.handle })}
               onClick={() => toggle(p)}
             >
               <FriendAvatar handle={p.handle} size="sm" src={p.avatar} />
@@ -265,7 +271,7 @@ function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: Frie
           {empty}
         </Text>
       ) : (
-        <ul className="friendPicker__list" aria-label="People">
+        <ul className="friendPicker__list" aria-label={t('profile.pickerPeople')}>
           {rows.map((p) => {
             const on = chosen.includes(p.key);
             const away = p.where !== 'here';
@@ -287,7 +293,7 @@ function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: Frie
                     <span className="fpRow__name">{p.handle}</span>
                     <span className="fpRow__standing">
                       {(p.playing || p.online) && p.where === 'here' && <span className="fpRow__dot" aria-hidden />}
-                      {standingOf(p, mode)}
+                      {standingOf(p, mode, t)}
                     </span>
                   </span>
                   <span className="fpRow__check" aria-hidden>
@@ -302,9 +308,7 @@ function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: Frie
 
       {people !== null && rows.length > 0 && !reachable && (
         <Text tone="muted" size="xs" className="friendPicker__note">
-          {mode === 'groove'
-            ? 'Nobody on this server to invite yet - a groove is a room on one server.'
-            : 'Nobody on this server to seat yet - a playlist lives on one server. Send them the link instead.'}
+          {mode === 'groove' ? t('profile.pickerNoneHereGroove') : t('profile.pickerNoneHerePlaylist')}
         </Text>
       )}
 
@@ -314,22 +318,22 @@ function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: Frie
             <SegmentedControl
               size="sm"
               fullWidth
-              aria-label="Their seat"
+              aria-label={t('profile.pickerSeatLabel')}
               value={role}
               onValueChange={(v) => setRole(v === 'viewer' ? 'viewer' : 'editor')}
               options={[
-                { value: 'editor', label: 'As editors' },
-                { value: 'viewer', label: 'As viewers' },
+                { value: 'editor', label: t('profile.pickerAsEditors') },
+                { value: 'viewer', label: t('profile.pickerAsViewers') },
               ]}
             />
             <Text tone="muted" size="xs" className="friendPicker__roleWords">
-              {role === 'editor' ? 'Editors can put songs in and take them out.' : 'Viewers can see it and play it.'}
+              {role === 'editor' ? t('profile.pickerEditorWords') : t('profile.pickerViewerWords')}
             </Text>
           </div>
         )}
         <div className="friendPicker__actions">
           <Button variant="ghost" onClick={() => onDone(null)}>
-            Not now
+            {t('profile.pickerNotNow')}
           </Button>
           <Button variant="solid" disabled={count === 0} onClick={confirm} data-count={count}>
             {request.action(count)}
@@ -342,6 +346,7 @@ function PickerBody({ ask, onDone }: { ask: FriendPickerAsk; onDone: (pick: Frie
 
 /** Mounted once at app level (App.tsx). */
 export function FriendPicker() {
+  const t = useT();
   const [ask, setAsk] = useState<FriendPickerAsk | null>(null);
   const narrow = useNarrowViewport();
   useEffect(() => onFriendPicker((next) => setAsk(next)), []);
@@ -351,7 +356,7 @@ export function FriendPicker() {
     setAsk(null);
   };
   const open = ask !== null;
-  const title = ask?.request.title ?? 'Choose people';
+  const title = ask?.request.title ?? t('profile.pickerTitle');
   const body = ask ? <PickerBody key={ask.id} ask={ask} onDone={done} /> : null;
 
   if (narrow) {

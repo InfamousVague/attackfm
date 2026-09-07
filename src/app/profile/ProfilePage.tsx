@@ -23,6 +23,7 @@ import { type ImageKind } from './pickImage.ts';
 import { CropPhoto } from './CropPhoto.tsx';
 import { enterServer, remotePath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
+import { Trans, translate, useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * A press-and-hold menu, but only when the menu would have something in it.
@@ -103,6 +104,7 @@ function HoldMenu({
  */
 
 function LiveNow() {
+  const t = useT();
   const { session } = useServerSession();
   const jam = useJam();
   const { tracks } = useLibrary();
@@ -127,7 +129,7 @@ function LiveNow() {
           already happening. */}
       {jam.invites.length > 0 && (
         <section className="homeShelf">
-          <h2 className="homeShelfTitle">Asking to groove</h2>
+          <h2 className="homeShelfTitle">{t('profile.grooveAskingHeading')}</h2>
           <div className="jamRooms">
             {jam.invites.map((inv) => {
               // 'jam' = they host and want you in; 'along' = they want to hear
@@ -140,14 +142,14 @@ function LiveNow() {
                   </span>
                   <span className="jamRoom__name">{inv.from}</span>
                   <span className="jamRoom__meta">
-                    {toJam ? 'invited you to groove' : 'wants to hear along with you'}
+                    {toJam ? t('profile.grooveInvited') : t('profile.grooveWantsAlong')}
                   </span>
                   <span className="jamRoom__actions">
                     <Button variant="ghost" size="sm" onClick={() => void jam.declineInvite(inv.from)}>
-                      Dismiss
+                      {t('profile.grooveDismiss')}
                     </Button>
                     <Button variant="solid" size="sm" onClick={() => void jam.acceptInvite(inv.from)}>
-                      {toJam ? 'Join' : 'Start'}
+                      {toJam ? t('profile.grooveJoin') : t('profile.grooveStart')}
                     </Button>
                   </span>
                 </div>
@@ -159,7 +161,7 @@ function LiveNow() {
 
       {(jam.current || liveRooms.length > 0) && (
         <section className="homeShelf">
-          <h2 className="homeShelfTitle">Live now</h2>
+          <h2 className="homeShelfTitle">{t('profile.liveNowHeading')}</h2>
 
           {/* The room this listener is in: the one card on the page that is
               happening to THEM right now, so it reads as a place - cover art,
@@ -183,7 +185,9 @@ function LiveNow() {
               </span>
               <span className="jamLive__body">
                 <span className="jamLive__title">
-                  {jam.hosting ? 'Your groove' : `${jam.current.hostName}'s groove`}
+                  {jam.hosting
+                    ? t('player.yourGroove')
+                    : t('player.hostGroove', { host: jam.current.hostName })}
                 </span>
                 <span className="jamLive__song">
                   {currentTrack ? (
@@ -191,14 +195,17 @@ function LiveNow() {
                       {currentTrack.title} — <ArtistLink artist={currentTrack.artist} />
                     </>
                   ) : (
-                    'Waiting for the first song'
+                    t('profile.grooveWaiting')
                   )}
                 </span>
                 <span className="jamLive__meta">
-                  {jam.current.memberCount === 1
-                    ? 'Just you so far'
-                    : `${jam.current.memberCount} listening`}
-                  {jam.hosting ? ' · you set the pace' : ' · following along'}
+                  {/* One key, not a ternary: the singular form is a different
+                      sentence on purpose ("Just you so far"), and which counts
+                      get their own sentence is the translator's call - Arabic
+                      has a form for two, Japanese has none at all. */}
+                  {t('profile.grooveListeners', { count: jam.current.memberCount })}
+                  {' · '}
+                  {jam.hosting ? t('profile.grooveYouSetPace') : t('profile.grooveFollowing')}
                   {/* The code IS the invitation: read it out in a car, where
                       nobody shares your wifi and the person beside you may
                       not be in your friends list yet. */}
@@ -206,20 +213,23 @@ function LiveNow() {
                     <button
                       type="button"
                       className="jamLive__code"
-                      title="Copy the code"
+                      title={t('profile.grooveCopyCode')}
                       onClick={() => {
                         void navigator.clipboard
                           ?.writeText(jam.current!.id.toUpperCase())
                           .catch(() => {});
                       }}
                     >
-                      Code {jam.current.id.toUpperCase()}
+                      <Trans
+                        i18nKey="profile.grooveCode"
+                        values={{ code: jam.current.id.toUpperCase() }}
+                      />
                     </button>
                   )}
                 </span>
               </span>
               <Button variant="ghost" size="sm" onClick={() => void jam.leave()}>
-                Leave
+                {t('profile.grooveLeave')}
               </Button>
             </div>
           )}
@@ -245,17 +255,18 @@ function LiveNow() {
                     </span>
                     <span className="jamRoom__name">{room.hostName}</span>
                     <span className="jamRoom__meta">
-                      {playing ? playing.title : (room.trackTitle ?? 'Listening')}
-                      {` · ${room.memberCount} inside`}
+                      {playing ? playing.title : (room.trackTitle ?? t('profile.grooveSomeSong'))}
+                      {' · '}
+                      {t('profile.grooveInside', { count: room.memberCount })}
                     </span>
                     {room.nearby && (
-                      <span className="jamNearby" title="On your network">
+                      <span className="jamNearby" title={t('profile.grooveNearbyTitle')}>
                         <Wifi size={11} aria-hidden />
-                        <span>on your network</span>
+                        <span>{t('profile.grooveNearby')}</span>
                       </span>
                     )}
                     <Button variant="solid" size="sm" onClick={() => void jam.join(room.id)}>
-                      Join
+                      {t('profile.grooveJoin')}
                     </Button>
                   </div>
                 );
@@ -287,7 +298,9 @@ function hostOf(url: string): string {
 
 function messageOf(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err ?? '');
-  return raw.trim() || 'That did not work.';
+  // translate() rather than useT(): this is a plain module function, and what
+  // it returns is stashed in state as a one-off answer to a tap.
+  return raw.trim() || translate('profile.actionFailed');
 }
 
 export function ProfilePage({
@@ -300,6 +313,7 @@ export function ProfilePage({
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
 }) {
+  const t = useT();
   const { session, applySession } = useServerSession();
   const { session: registry, account, apply, signOut } = useRegistry();
   const sharing = useSharing();
@@ -349,7 +363,7 @@ export function ProfilePage({
    */
   useOfferShare(
     registry && account
-      ? { label: 'Share your profile', open: () => setSharingProfile(true) }
+      ? { label: t('profile.shareTitle'), open: () => setSharingProfile(true) }
       : null,
   );
 
@@ -414,7 +428,7 @@ export function ProfilePage({
           door is choosing the picture, and this is for the times the framing
           is what you want to change rather than the photograph. */}
       <MenuItem icon={<Crop size={15} />} disabled={picking !== null} onSelect={() => reposition(kind)}>
-        Reposition
+        {t('profile.pictureReposition')}
       </MenuItem>
       <MenuItem
         icon={<Trash2 size={15} />}
@@ -422,7 +436,7 @@ export function ProfilePage({
         disabled={picking !== null}
         onSelect={() => void removeImage(kind)}
       >
-        {kind === 'avatar' ? 'Remove picture' : 'Remove banner'}
+        {kind === 'avatar' ? t('profile.pictureRemoveFace') : t('profile.pictureRemoveBanner')}
       </MenuItem>
     </MenuStop>
   );
@@ -469,12 +483,16 @@ export function ProfilePage({
       try {
         const next = await enterServer(url.replace(/\/+$/, ''), registry.token);
         applySession(next);
-        setNote({ tone: 'ok', text: `Listening from ${hostOf(url)} now.`, at: 'friends' });
+        setNote({
+          tone: 'ok',
+          text: t('profile.nowListeningFrom', { host: hostOf(url) }),
+          at: 'friends',
+        });
       } catch (err) {
         setNote({ tone: 'bad', text: messageOf(err), at: 'friends' });
       }
     },
-    [registry, applySession],
+    [registry, applySession, t],
   );
 
   if (profileFor) {
@@ -553,7 +571,7 @@ export function ProfilePage({
           <HoldMenu
             when={!!registry.bannerUrl}
             hold={holdBanner}
-            label="Banner actions"
+            label={t('profile.bannerActions')}
             className="profileHero__cover"
             data-bannered={registry.bannerUrl && !bannerBroken ? '' : undefined}
             content={() => pictureMenu('banner')}
@@ -584,8 +602,8 @@ export function ProfilePage({
                 variant="ghost"
                 size="sm"
                 className="profileHero__coverButton"
-                aria-label={registry.bannerUrl ? 'Change your banner' : 'Add a banner'}
-                title={registry.bannerUrl ? 'Change your banner' : 'Add a banner'}
+                aria-label={registry.bannerUrl ? t('profile.bannerChange') : t('profile.bannerAdd')}
+                title={registry.bannerUrl ? t('profile.bannerChange') : t('profile.bannerAdd')}
                 disabled={picking !== null}
                 onClick={() => pick('banner')}
               >
@@ -597,14 +615,14 @@ export function ProfilePage({
           <HoldMenu
             when={!!registry.avatarUrl}
             hold={holdFace}
-            label="Picture actions"
+            label={t('profile.pictureActions')}
             className="profileHero__faceHold"
             content={() => pictureMenu('avatar')}
           >
             <button
               type="button"
               className="profileHero__faceButton"
-              aria-label={registry.avatarUrl ? 'Change your picture' : 'Choose a picture'}
+              aria-label={registry.avatarUrl ? t('profile.pictureChange') : t('profile.pictureChoose')}
               disabled={picking !== null}
               onClick={() => pick('avatar')}
             >
@@ -631,9 +649,17 @@ export function ProfilePage({
               </Text>
             )}
             <span className="profileHero__caption">
+              {/* Two keys rather than one with an optional clause: the login
+                  name sits mid-sentence, and a language that needs it before
+                  the host cannot get there from something appended. */}
               {session
-                ? `Listening from ${hostOf(session.url)}${session.username ? ` as ${session.username}` : ''}`
-                : 'Your account, on every server'}
+                ? session.username
+                  ? t('profile.listeningFromAs', {
+                      host: hostOf(session.url),
+                      name: session.username,
+                    })
+                  : t('profile.listeningFrom', { host: hostOf(session.url) })
+                : t('profile.accountEverywhere')}
             </span>
           </span>
         </header>
@@ -662,7 +688,7 @@ export function ProfilePage({
       {registry && account && (
         <section className="homeShelf profileFriends">
           <Heading level={2} noMargin className="homeShelfTitle">
-            Friends
+            {t('profile.friendsHeading')}
           </Heading>
           {note?.at === 'friends' && (
             <Text size="sm" tone={note.tone === 'ok' ? 'success' : 'danger'}>
@@ -679,16 +705,14 @@ export function ProfilePage({
           />
           <footer className="friendsPage__foot">
             <Text size="xs" tone="subtle">
-              {sharing
-                ? 'Friends on this server can open your full profile - your stats and your liked songs. Friends elsewhere see your minutes, top artist and streak for the week, nothing more.'
-                : 'You are not sharing your listening, so your card is blank and your profile is a closed door.'}
+              {sharing ? t('profile.sharingOpenNote') : t('profile.sharingClosedNote')}
             </Text>
             <button
               type="button"
               className="friendsPage__shareToggle"
               onClick={() => setSharing(!sharing)}
             >
-              {sharing ? 'Stop sharing my listening' : 'Share my listening'}
+              {sharing ? t('profile.sharingStop') : t('profile.sharingStart')}
             </button>
           </footer>
         </section>
@@ -711,7 +735,9 @@ export function ProfilePage({
       {registry && account && (
         <button type="button" className="profileSignOut" onClick={signOut}>
           <LogOut size={15} />
-          <span>Sign out of @{account.handle}</span>
+          <span>
+            <Trans i18nKey="profile.signOutOf" values={{ handle: account.handle }} />
+          </span>
         </button>
       )}
     </div>

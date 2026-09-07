@@ -37,6 +37,8 @@ import { useLibrary } from '../library/library.tsx';
 import { useRoomTrack, useRoomTracks } from './roomTrack.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatAgo, formatLocale, formatNumber, formatTotal } from '../ux/format.ts';
 import { artSized, trackIdFromPath, type Jam, type JamPerson } from '../server.ts';
 import type { ServerSession } from '../api/http.ts';
 import type { Track } from '../core/tauri.ts';
@@ -80,17 +82,44 @@ const FACES = 4;
 /** A stable empty line-up, so a room with no queue keys the same each render. */
 const NO_IDS: number[] = [];
 
-// --- time, in words --------------------------------------------------------
+// --- time and lists, in words ----------------------------------------------
 
-/** A span of hub time, coarse on purpose: nobody wants seconds here. `null`
- *  under a minute so the caller can say "just now" its own way. */
+/**
+ * A span of hub time, coarse on purpose: nobody wants seconds here. `null`
+ * under a minute so the caller can say "just now" its own way.
+ *
+ * The UNITS come from Intl rather than this file: "min", "h" and "d" are
+ * English, and a locale decides not only how it spells them but which side of
+ * the number they sit on.
+ */
 function spanWords(ms: number): string | null {
   const m = Math.floor(Math.max(0, ms) / 60_000);
   if (m < 1) return null;
-  if (m < 60) return `${m} min`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
-  return `${Math.floor(h / 24)} d`;
+  // Inside a day the house running-time formatter already says it ("5 min",
+  // "1 hr 20 min"); past that it would go on counting hours.
+  if (m < 24 * 60) return formatTotal(m * 60);
+  return formatNumber(Math.floor(m / (24 * 60)), {
+    style: 'unit',
+    unit: 'day',
+    unitDisplay: 'short',
+  });
+}
+
+/** How long ago something happened, at the same coarseness: anything inside
+ *  the last minute reads as "now" rather than as a count of seconds. */
+function agoWords(at: number, now: number): string {
+  return formatAgo(now - at < 60_000 ? now : at, now);
+}
+
+/** Names in a line, the way this language lists things - the separator is
+ *  language too, and Arabic does not spell it ", ". */
+function sayNames(names: string[]): string {
+  try {
+    return new Intl.ListFormat(formatLocale(), { style: 'short', type: 'unit' }).format(names);
+  } catch {
+    // An engine without ListFormat still has to say something.
+    return names.join(', ');
+  }
 }
 
 /** The hub's clock as of this read: `now` and every stamp on the room are
@@ -99,13 +128,23 @@ function hubNow(room: Jam): number {
   return room.now ?? room.receivedAt ?? Date.now();
 }
 
-/** Who is here, in words - the names when there are few enough to say. */
-function whoIsHere(names: string[], me: string, count: number): string {
+/** Who is here, in words - the names when there are few enough to say.
+ *  Each shape is its own entry rather than a list built with "and": the word
+ *  before the last name, and whether "you" comes first at all, are decisions
+ *  a language makes, not this function. */
+function whoIsHere(
+  t: ReturnType<typeof useT>,
+  names: string[],
+  me: string,
+  count: number,
+): string {
   const others = names.filter((n) => n.toLowerCase() !== me.toLowerCase());
-  if (count <= 1) return 'Just you so far';
-  if (count === 2 && others.length === 1) return `You and ${others[0]}`;
-  if (count === 3 && others.length === 2) return `You, ${others[0]} and ${others[1]}`;
-  return `${count} listening`;
+  if (count <= 1) return t('player.grooveJustYou');
+  if (count === 2 && others.length === 1) return t('player.grooveYouAnd', { name: others[0] });
+  if (count === 3 && others.length === 2) {
+    return t('player.grooveYouAndTwo', { first: others[0], second: others[1] });
+  }
+  return t('player.grooveListeningCount', { count });
 }
 
 /** The room's people with their standing, or - from an older hub that only
@@ -237,6 +276,7 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
   const { tracks, forYou } = useLibrary();
   const { track: playing } = useNowPlayingMotion();
   const { toast } = useToast();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -351,16 +391,20 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
         setBusy(false);
       }
     };
-    const title = playing && playing.kind !== 'book' ? `Groove to ${playing.title}` : 'Listen together';
-    const blurb = 'Whoever starts it sets the pace; everyone follows; anyone can add.';
+    const title =
+      playing && playing.kind !== 'book'
+        ? t('player.grooveToSong', { title: playing.title })
+        : t('player.grooveListenTogether');
+    const blurb = t('player.grooveStartBlurb');
     // Start WITH people: the picker first (hoisted, so the panel may close
     // under it), then the room, then everyone asked - one toast for the lot.
     const startWith = async () => {
       const pick = await openFriendPicker({
-        title: 'Start with friends',
-        hint: 'They get an invite the moment the room opens',
+        title: t('player.grooveStartWithTitle'),
+        hint: t('player.grooveStartWithHint'),
         mode: 'groove',
-        action: (n) => (n ? `Start with ${n}` : 'Start'),
+        // The picker asks with 0 too, for the disabled button.
+        action: (n) => (n ? t('player.grooveStartWithCount', { count: n }) : t('player.grooveStartConfirm')),
       });
       if (!pick || pick.people.length === 0 || busy) return;
       setBusy(true);
@@ -376,12 +420,12 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
     return (
       <Popover
         placement="top-end"
-        aria-label="Start a groove"
+        aria-label={t('player.grooveStart')}
         className="popoverSheet jamPanel"
         open={open}
         onOpenChange={setOpen}
         trigger={
-          <IconButton variant="ghost" size="sm" className="jamTrigger" aria-label="Start a groove">
+          <IconButton variant="ghost" size="sm" className="jamTrigger" aria-label={t('player.grooveStart')}>
             <Users size={16} />
           </IconButton>
         }
@@ -391,7 +435,9 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
           <button
             type="button"
             className="jamCard jamHero jamHero--start"
-            aria-label={busy ? 'Starting a groove' : `Start a groove: ${title}. ${blurb}`}
+            aria-label={
+              busy ? t('player.grooveStarting') : t('player.grooveStartAria', { title, blurb })
+            }
             aria-busy={busy || undefined}
             disabled={busy}
             onClick={() => void startJam()}
@@ -409,11 +455,11 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
             <span className="jamHero__text">
               <span className="jamHero__eyebrow">
                 <Users size={12} aria-hidden />
-                Start a groove
+                {t('player.grooveStart')}
               </span>
               <span className="jamHero__title">{title}</span>
               <span className="jamHero__blurb" role={busy ? 'status' : undefined}>
-                {busy ? 'Opening the room…' : blurb}
+                {busy ? t('player.grooveOpeningRoom') : blurb}
               </span>
             </span>
             <span className="jamHero__go" aria-hidden>
@@ -422,7 +468,7 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
           </button>
           {failed && (
             <Text tone="danger" size="xs">
-              This server could not start a groove. It may be running an older build.
+              {t('player.grooveStartFailed')}
             </Text>
           )}
 
@@ -432,7 +478,7 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
           <button
             type="button"
             className="jamCard jamCodeDoor jamStartWith"
-            aria-label="Start a groove with friends"
+            aria-label={t('player.grooveStartWithAria')}
             disabled={busy}
             onClick={() => {
               setOpen(false);
@@ -443,8 +489,8 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
               <UserPlus size={16} />
             </span>
             <span className="jamCodeDoor__text">
-              <span className="jamCodeDoor__title">Start with friends…</span>
-              <span className="jamCodeDoor__sub">Pick who to invite; the room opens as they&rsquo;re asked</span>
+              <span className="jamCodeDoor__title">{t('player.grooveStartWithLabel')}</span>
+              <span className="jamCodeDoor__sub">{t('player.grooveStartWithSub')}</span>
             </span>
           </button>
 
@@ -455,7 +501,7 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
           <button
             type="button"
             className="jamCard jamCodeDoor"
-            aria-label="Have a code? Join a groove by its code or link"
+            aria-label={t('player.grooveCodeDoorAria')}
             onClick={() => {
               setOpen(false);
               openGrooveCode();
@@ -465,24 +511,29 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
               <KeyRound size={16} />
             </span>
             <span className="jamCodeDoor__text">
-              <span className="jamCodeDoor__title">Have a code?</span>
-              <span className="jamCodeDoor__sub">Join a friend&rsquo;s groove by its code or link</span>
+              <span className="jamCodeDoor__title">{t('player.grooveHaveCode')}</span>
+              <span className="jamCodeDoor__sub">{t('player.grooveHaveCodeSub')}</span>
             </span>
           </button>
 
           {/* 8. Asks: friends waiting on an answer from you. */}
           {invites.length > 0 && (
-            <Section label="Invites">
+            <Section label={t('player.grooveInvites')}>
               {invites.map((inv) => {
                 const line =
                   inv.kind === 'jam'
-                    ? `${inv.from} is hosting — come in`
-                    : `${inv.from} asked you to listen along`;
+                    ? t('player.grooveInviteJam', { who: inv.from })
+                    : t('player.grooveInviteListen', { who: inv.from });
                 // How long they have been waiting, on this device's clock
                 // against the hub's stamp - close enough for minutes, and
                 // left unsaid past a day, when the ask is stale anyway.
                 const waited = Date.now() - inv.at;
-                const ago = waited < 86_400_000 ? spanWords(waited) : null;
+                const when = waited < 86_400_000 ? agoWords(inv.at, Date.now()) : null;
+                // Which pace applies, and how long they have waited, as ONE
+                // entry: the two are separate thoughts joined by a middot in
+                // English, and a language may want them the other way round.
+                const pace =
+                  inv.kind === 'jam' ? t('player.grooveTheirPace') : t('player.grooveYourPace');
                 return (
                   <div key={`${inv.from}-${inv.at}`} className="jamCard jamAsk" role="group" aria-label={line}>
                     <span className="jamAsk__head">
@@ -490,8 +541,7 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                       <span className="jamAsk__text">
                         <span className="jamAsk__line">{line}</span>
                         <span className="jamAsk__when">
-                          {inv.kind === 'jam' ? 'their room, their pace' : 'your player sets the pace'}
-                          {ago ? ` · ${ago} ago` : waited < 60_000 ? ' · just now' : ''}
+                          {when ? t('player.grooveAskWhen', { pace, when }) : pace}
                         </span>
                       </span>
                     </span>
@@ -499,22 +549,26 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                       <button
                         type="button"
                         className="jamAction jamAction--yes"
-                        aria-label={inv.kind === 'jam' ? `Accept — join ${inv.from}'s groove` : `Accept — let ${inv.from} listen along`}
+                        aria-label={
+                          inv.kind === 'jam'
+                            ? t('player.grooveAcceptJamAria', { who: inv.from })
+                            : t('player.grooveAcceptListenAria', { who: inv.from })
+                        }
                         disabled={busy}
                         onClick={() => void answer(inv.from, true)}
                       >
                         <Check size={16} aria-hidden />
-                        Accept
+                        {t('player.grooveAccept')}
                       </button>
                       <button
                         type="button"
                         className="jamAction"
-                        aria-label={`Decline ${inv.from}'s invite`}
+                        aria-label={t('player.grooveDeclineAria', { who: inv.from })}
                         disabled={busy}
                         onClick={() => void answer(inv.from, false)}
                       >
                         <X size={16} aria-hidden />
-                        Decline
+                        {t('player.grooveDecline')}
                       </button>
                     </span>
                   </div>
@@ -526,14 +580,14 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
           {/* 9. Live now: friends' and nearby rooms as doors, the whole card
               the Join. A room on this network wears the network mark. */}
           {joinable.length > 0 && (
-            <Section label="Live now">
+            <Section label={t('player.grooveLiveNow')}>
               <EdgeScrollRow className="jamDoors">
                 {joinable.map((r) => (
                   <button
                     key={r.id}
                     type="button"
                     className="jamCard jamDoor"
-                    aria-label={`Join ${r.hostName}'s groove`}
+                    aria-label={t('player.grooveJoinAria', { host: r.hostName })}
                     disabled={busy}
                     onClick={() => void join(r.id)}
                   >
@@ -541,14 +595,24 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                       <FriendAvatar handle={r.hostName} size="md" />
                       <span className="jamPulse" />
                     </span>
-                    <span className="jamDoor__name">{r.hostName}&rsquo;s groove</span>
+                    <span className="jamDoor__name">
+                      {t('player.hostGroove', { host: r.hostName })}
+                    </span>
+                    {/* One entry, not a `> 1` ternary: "Alone so far" IS the
+                        one-form of "N inside", and which counts get their own
+                        wording is a decision the plural rules make - English
+                        splits at one, Arabic at six places, Japanese nowhere. */}
                     <span className="jamDoor__meta">
-                      {r.memberCount > 1 ? `${r.memberCount} inside` : 'alone so far'}
+                      {t('player.grooveInside', { count: r.memberCount })}
                     </span>
                     {r.nearby && (
-                      <span className="jamNearby" title="On your network">
+                      /* The tooltip and the chip say the same thing at
+                         different weights - a chip in a line of chips is
+                         lower case in English, and which case a language
+                         wants where is not something one entry can hold. */
+                      <span className="jamNearby" title={t('player.grooveNearbyTitle')}>
                         <Wifi size={11} aria-hidden />
-                        <span>on your network</span>
+                        <span>{t('player.onYourNetwork')}</span>
                       </span>
                     )}
                     {r.trackTitle && (
@@ -582,46 +646,87 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
   const nowArtist = room.trackArtist ?? onTrack?.artist ?? null;
   const nowArt = onTrack ? artSized(onTrack.artwork, 160) : null;
   const nowBy = room.trackId != null ? room.addedBy?.[String(room.trackId)] : undefined;
+  // The song on, said three ways. Each layer is a whole entry with named
+  // holes rather than a fragment glued on, so "by" and ", added by" can move
+  // to wherever a language puts them - Japanese puts both before the title.
+  const nowState = room.playing ? t('player.groovePlaying') : t('player.groovePaused');
+  const nowSong = nowArtist
+    ? t('player.grooveSongByArtist', { title: nowTitle, artist: nowArtist })
+    : (nowTitle ?? '');
+  const nowAriaBase = t('player.grooveNowAria', { state: nowState, line: nowSong });
+  const nowAria = nowBy
+    ? t('player.grooveAddedByAria', { line: nowAriaBase, who: nowBy })
+    : nowAriaBase;
+  // The line under the title: the artist, and who put the song in. Two
+  // independent facts, not a sentence - hence the middot rather than a key.
+  const nowSub = [nowArtist, nowBy ? t('player.grooveAddedBy', { who: nowBy }) : null]
+    .filter(Boolean)
+    .join(' · ');
 
   // The queue, and the adds still waiting on the host's player - the
   // provider's list either way (the room's own rows for the host, none of
   // them withdrawable from here; a follower's own sends marked as such).
   const queue = room.queue.slice(0, 6);
   const pend: PendingAdd[] = jam.pending;
-  const pendNames = [...new Set(pend.map((p) => (p.mine ? 'you' : p.by)))];
+  // Your own name in this list is "you", lower case: it sits among other
+  // people's names rather than starting a sentence, which is why it is not
+  // common.you.
+  const pendNames = [...new Set(pend.map((p) => (p.mine ? t('player.grooveYouInList') : p.by)))];
   const mine = pend.filter((p) => p.mine);
+  // One sentence with three holes in it, and the same one the screen reader
+  // gets: it used to be built twice, with a colon in the label and a dash on
+  // screen, which is two entries to translate for one thing to say.
+  const pendingLine = t('player.groovePending', {
+    count: pend.length,
+    where: hosting ? t('player.grooveWaitingOnYou') : t('player.grooveWaitingOnHost'),
+    names: sayNames(pendNames),
+  });
 
   // The most recent thing that happened, said once under the people.
   const events = [...(room.events ?? [])].sort((a, b) => b.at - a.at).slice(0, 2);
   const eventsLine = events
     .map((e) => {
-      const ago = spanWords(now - e.at);
-      const when = ago ? `${ago} ago` : 'just now';
+      const when = agoWords(e.at, now);
       return e.kind === 'joined'
-        ? `${e.who} joined ${when}`
+        ? t('player.grooveEventJoined', { who: e.who, when })
         : e.kind === 'left'
-          ? `${e.who} left ${when}`
+          ? t('player.grooveEventLeft', { who: e.who, when })
           : e.kind === 'host'
-            ? `${e.who} took the clock ${when}`
-            : `${e.who} ${e.kind} ${when}`;
+            ? t('player.grooveEventHost', { who: e.who, when })
+            : // A kind this build has no words for. The hub's own word for it
+              // goes through untranslated - it is a wire value, not prose -
+              // but the line around it can still be put in order.
+              t('player.grooveEventOther', { who: e.who, what: e.kind, when });
     })
     .join(' · ');
 
   // The hero's words.
-  const eyebrow = hosting ? 'Your groove' : `${room.hostName}'s groove`;
+  const eyebrow = hosting ? t('player.yourGroove') : t('player.hostGroove', { host: room.hostName });
   const title = whoIsHere(
+    t,
     people.map((p) => p.name),
     me,
     room.memberCount,
   );
   const going = room.createdAt ? spanWords(now - room.createdAt) : null;
   // Where a follower hears it, on the hero's line and on its own card below.
+  // Lower case and its own entry: these read mid-line here, where the cards
+  // below open with them, so they are not player.onThisDevice.
   const hear: HearMode | null = hosting ? null : (jam.hear ?? 'device');
-  const hearWords = hear === 'speaker' ? `on ${room.hostName}'s speaker` : 'on this device';
-  const pace = hosting ? 'you set the pace' : `${room.hostName} sets the pace`;
-  const blurb = quiet
-    ? 'the host’s player has gone quiet — the room is about to change hands'
-    : `${pace}${hear ? ` · ${hearWords}` : ''} · ${going ? `going ${going}` : 'just started'}`;
+  const hearWords =
+    hear === 'speaker'
+      ? t('player.grooveOnHostSpeaker', { host: room.hostName })
+      : t('player.grooveOnThisDevice');
+  const pace = hosting
+    ? t('player.grooveYouSetPace')
+    : t('player.hostSetsPace', { host: room.hostName });
+  // Not a sentence: two or three independent phrases the eye reads as a list,
+  // each its own entry so a translator moves the words INSIDE one. The middot
+  // between them is punctuation, and stays here.
+  const blurbParts = [pace];
+  if (hear) blurbParts.push(hearWords);
+  blurbParts.push(going ? t('player.grooveGoing', { span: going }) : t('player.grooveJustStarted'));
+  const blurb = quiet ? t('player.grooveQuietBlurb') : blurbParts.join(' · ');
   const faces = people.slice(0, FACES);
   const extraFaces = Math.max(0, people.length - FACES);
 
@@ -631,7 +736,7 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      toast({ message: `The code is ${code}` });
+      toast({ message: t('player.grooveCodeIs', { code }) });
     }
   };
   const share = () => {
@@ -645,19 +750,21 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
   const inviteFriends = () => {
     setOpen(false);
     void openFriendPicker({
-      title: 'Invite friends',
-      hint: hosting ? 'Into your groove' : `Into ${room.hostName}’s groove`,
+      title: t('player.grooveInviteFriends'),
+      hint: hosting
+        ? t('player.grooveIntoYourGroove')
+        : t('player.grooveIntoHostGroove', { host: room.hostName }),
       mode: 'groove',
       exclude: people.map((p) => p.name),
-      action: (n) => (n ? `Invite ${n}` : 'Invite'),
+      action: (n) => (n ? t('player.grooveInviteCount', { count: n }) : t('player.grooveInvite')),
     }).then((pick) => {
       if (pick && pick.people.length) void jam.inviteAll(pick.people.map((p) => p.handle), 'jam');
     });
   };
 
   const trigName = hosting
-    ? `Your groove — ${room.memberCount} listening`
-    : `In ${room.hostName}'s groove — ${room.memberCount} listening`;
+    ? t('player.grooveTriggerHosting', { count: room.memberCount })
+    : t('player.grooveTriggerFollowing', { host: room.hostName, count: room.memberCount });
 
   return (
     <>
@@ -682,7 +789,7 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                 rhythm is unchanged whether or not a groove is on. */}
             {room.memberCount > 1 && (
               <span className="jamTrigger__count" aria-hidden>
-                {room.memberCount}
+                {formatNumber(room.memberCount)}
               </span>
             )}
           </IconButton>
@@ -690,7 +797,11 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
       >
         <div className="jamPanel__body jamDeck" data-quiet={quiet || undefined}>
           {/* 1. The room: the song's sleeve as its face, the people on it. */}
-          <div className="jamCard jamHero" role="group" aria-label={`${eyebrow}: ${title}. ${blurb}`}>
+          <div
+            className="jamCard jamHero"
+            role="group"
+            aria-label={t('player.grooveHeroAria', { eyebrow, title, blurb })}
+          >
             <Wash src={nowArt} />
             <span className="jamHero__face" aria-hidden>
               <Sleeve src={nowArt} className="jamHero__art" glyph={26} />
@@ -698,7 +809,7 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                 {faces.map((p) => (
                   <FriendAvatar key={p.id} handle={p.name} size="sm" className="jamHero__avatar" />
                 ))}
-                {extraFaces > 0 && <span className="jamHero__more">+{extraFaces}</span>}
+                {extraFaces > 0 && <span className="jamHero__more">+{formatNumber(extraFaces)}</span>}
               </span>
               <span className="jamPulse jamHero__pulse" data-quiet={quiet || undefined} />
             </span>
@@ -718,22 +829,14 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
           {/* 2. Now: what the room is hearing, by name - the one line a member
               whose library lacks the song still gets. */}
           {nowTitle && (
-            <Section label="Now">
-              <div
-                className="jamCard jamNow"
-                role="group"
-                aria-label={`${room.playing ? 'Playing' : 'Paused'}: ${nowTitle}${nowArtist ? ` by ${nowArtist}` : ''}${nowBy ? `, added by ${nowBy}` : ''}`}
-              >
+            <Section label={t('player.grooveNow')}>
+              <div className="jamCard jamNow" role="group" aria-label={nowAria}>
                 <Wash src={nowArt} />
                 <Sleeve src={nowArt} className="jamNow__art" />
                 <span className="jamNow__text">
-                  <span className="jamNow__eyebrow">{room.playing ? 'Playing' : 'Paused'}</span>
+                  <span className="jamNow__eyebrow">{nowState}</span>
                   <span className="jamNow__title">{nowTitle}</span>
-                  <span className="jamNow__sub">
-                    {nowArtist}
-                    {nowArtist && nowBy ? ' · ' : ''}
-                    {nowBy ? `added by ${nowBy}` : ''}
-                  </span>
+                  <span className="jamNow__sub">{nowSub}</span>
                 </span>
                 <span className="jamNow__state" data-playing={room.playing || undefined} aria-hidden>
                   {room.playing ? <Waves size={16} /> : <Pause size={16} />}
@@ -747,8 +850,8 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
               at once (PlayerHost reads the choice) and is remembered for
               this room. A host hears their own deck and sees no card. */}
           {hear && (
-            <Section label="Hearing it on">
-              <div className="jamHear" role="radiogroup" aria-label="Where the music plays">
+            <Section label={t('player.grooveHearingOn')}>
+              <div className="jamHear" role="radiogroup" aria-label={t('player.grooveHearAria')}>
                 <button
                   type="button"
                   role="radio"
@@ -761,8 +864,8 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                     <Smartphone size={18} />
                   </span>
                   <span className="jamHear__text">
-                    <span className="jamHear__name">This device</span>
-                    <span className="jamHear__sub">Plays here, in time with the room</span>
+                    <span className="jamHear__name">{t('player.grooveHearDevice')}</span>
+                    <span className="jamHear__sub">{t('player.grooveHearDeviceSub')}</span>
                   </span>
                   {hear === 'device' && <Check className="jamHear__check" size={16} aria-hidden />}
                 </button>
@@ -778,8 +881,10 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                     <Speaker size={18} />
                   </span>
                   <span className="jamHear__text">
-                    <span className="jamHear__name">{room.hostName}&rsquo;s speaker</span>
-                    <span className="jamHear__sub">This phone stays quiet; your controls steer the room</span>
+                    <span className="jamHear__name">
+                      {t('player.grooveHearSpeaker', { host: room.hostName })}
+                    </span>
+                    <span className="jamHear__sub">{t('player.grooveHearSpeakerSub')}</span>
                   </span>
                   {hear === 'speaker' && <Check className="jamHear__check" size={16} aria-hidden />}
                 </button>
@@ -789,30 +894,25 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
 
           {/* 3. Up next: the guests' waiting adds ahead of the room's line. */}
           {(queue.length > 0 || pend.length > 0) && (
-            <Section label="Up next">
+            <Section label={t('player.grooveUpNext')}>
               {pend.length > 0 && (
-                <div
-                  className="jamCard jamPending"
-                  role="group"
-                  aria-label={`${pend.length} waiting ${hosting ? 'on your player' : 'for the host'}: ${pendNames.join(', ')}`}
-                >
+                <div className="jamCard jamPending" role="group" aria-label={pendingLine}>
                   <span className="jamPending__head">
                     <Hourglass size={14} aria-hidden />
-                    <span>
-                      {pend.length} waiting {hosting ? 'on your player' : 'for the host'} — {pendNames.join(', ')}
-                    </span>
+                    <span>{pendingLine}</span>
                   </span>
                   {mine.length > 0 && (
                     <span className="jamPending__mine">
                       {mine.map((p) => {
-                        const t = p.track ?? byId.get(p.trackId);
-                        const name = t?.title ?? 'your add';
+                        // `row`, not `t` - the translator owns that name here.
+                        const row = p.track ?? byId.get(p.trackId);
+                        const name = row?.title ?? t('player.grooveYourAdd');
                         return (
                           <button
                             key={p.trackId}
                             type="button"
                             className="jamChip jamChip--withdraw"
-                            aria-label={`Withdraw ${name}`}
+                            aria-label={t('player.grooveWithdraw', { name })}
                             onClick={() => void jam.withdraw(p.trackId)}
                           >
                             <span>{name}</span>
@@ -825,23 +925,31 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                 </div>
               )}
               {queue.length > 0 && (
-                <EdgeScrollRow className="jamNext" role="list" aria-label="The room's queue">
+                <EdgeScrollRow className="jamNext" role="list" aria-label={t('player.grooveQueueAria')}>
                   {queue.map((id, i) => {
                     // The library's row, or the hub's; "not in your library"
                     // only once the hub has said it has no such track, and
                     // an ellipsis while it is still being asked.
                     const answer = roomLine.get(id);
-                    const t = byId.get(id) ?? answer ?? undefined;
+                    // `row`, not `t` - the translator owns that name here.
+                    const row = byId.get(id) ?? answer ?? undefined;
                     const by = room.addedBy?.[String(id)];
-                    const name = t?.title ?? (answer === null ? 'Not in your library' : '…');
+                    const name = row?.title ?? (answer === null ? t('player.notInLibrary') : '…');
+                    const line = row?.artist
+                      ? t('player.grooveSongByArtist', { title: name, artist: row.artist })
+                      : name;
+                    const spoken = t('player.grooveQueueItemAria', {
+                      index: formatNumber(i + 1),
+                      line,
+                    });
                     return (
                       <div
                         key={`${id}-${i}`}
                         role="listitem"
                         className="jamCard jamNext__card"
-                        aria-label={`${i + 1}. ${name}${t?.artist ? ` by ${t.artist}` : ''}${by ? `, added by ${by}` : ''}`}
+                        aria-label={by ? t('player.grooveAddedByAria', { line: spoken, who: by }) : spoken}
                       >
-                        <Sleeve src={t ? artSized(t.artwork, 160) : null} className="jamNext__art" glyph={20} />
+                        <Sleeve src={row ? artSized(row.artwork, 160) : null} className="jamNext__art" glyph={20} />
                         <span className="jamNext__title" aria-hidden>
                           {name}
                         </span>
@@ -860,38 +968,46 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
           )}
 
           {/* 4. People: named, with their standing - and who has the clock. */}
-          <Section label="People">
+          <Section label={t('player.groovePeople')}>
             <ul className="jamCard jamPeople">
               {people.map((p) => {
                 const isMe = p.name.toLowerCase() === me.toLowerCase();
                 const here = p.joinedAt > 0 ? spanWords(now - p.joinedAt) : null;
                 const fresh = isMe || (p.seenAt > 0 && now - p.seenAt < FRESH_MS);
                 const known = p.seenAt > 0 || isMe;
+                // Their standing as ONE line rather than three JSX siblings:
+                // "listening" and "here 5 min" are separate facts, and only
+                // this side knows which of them there is anything to say
+                // about. The dot stays a mark, not a word.
+                const standing = [
+                  known ? (fresh ? t('player.grooveListening') : t('player.grooveQuiet')) : null,
+                  p.joinedAt > 0
+                    ? (here ? t('player.grooveHereFor', { span: here }) : t('player.grooveJustArrived'))
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
                 return (
                   <li key={p.id} className="jamPerson">
                     <FriendAvatar handle={p.name} size="md" />
                     <span className="jamPerson__text">
                       <span className="jamPerson__name">
                         {p.name}
-                        {isMe && <span className="jamPerson__you"> · you</span>}
+                        {isMe && <span className="jamPerson__you"> · {t('player.grooveYouInList')}</span>}
                       </span>
-                      {(known || here !== null || p.joinedAt > 0) && (
+                      {standing && (
                         <span className="jamPerson__standing">
                           {known && (
-                            <>
-                              <span className="jamPerson__dot" data-fresh={fresh || undefined} aria-hidden />
-                              {fresh ? 'listening' : 'quiet'}
-                            </>
+                            <span className="jamPerson__dot" data-fresh={fresh || undefined} aria-hidden />
                           )}
-                          {known && p.joinedAt > 0 ? ' · ' : ''}
-                          {p.joinedAt > 0 ? (here ? `here ${here}` : 'just arrived') : ''}
+                          {standing}
                         </span>
                       )}
                     </span>
                     {p.host && (
                       <span className="jamPill jamPill--host">
                         <Crown size={10} aria-hidden />
-                        Host
+                        {t('player.grooveHost')}
                       </span>
                     )}
                   </li>
@@ -910,27 +1026,32 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
               server, the QR and the link for everybody else. Anyone in the
               room can pass it on; being in it is the permission, and the hub
               still decides who gets through the door. */}
-          <Section label="Invite">
+          {/* The heading and the button below both say "Invite" in English;
+              they are two entries because a heading and a verb are not the
+              same word in German. */}
+          <Section label={t('player.grooveInviteSection')}>
             <div className="jamCard jamInvite">
               <span className="jamInvite__main">
-                <span className="jamInvite__eyebrow">Code</span>
+                <span className="jamInvite__eyebrow">{t('player.grooveCode')}</span>
                 <button
                   type="button"
                   className="jamInvite__code"
-                  aria-label={copied ? 'Copied the code' : `Copy the code ${code}`}
+                  aria-label={
+                    copied ? t('player.grooveCodeCopied') : t('player.grooveCodeCopy', { code })
+                  }
                   aria-live="polite"
                   onClick={() => void copyCode()}
                 >
                   <span className="jamInvite__mono">{code}</span>
                   <span className="jamInvite__copy" data-done={copied || undefined}>
                     {copied ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
-                    {copied ? 'Copied' : 'Copy'}
+                    {copied ? t('player.grooveCopied') : t('player.grooveCopy')}
                   </span>
                 </button>
               </span>
               <span className="jamInvite__qr" data-ready={qr ? '' : undefined}>
                 {qr ? (
-                  <img src={qr} alt="The room's link as a QR code" />
+                  <img src={qr} alt={t('player.grooveQrAlt')} />
                 ) : (
                   <span className="jamInvite__qrBlank" aria-hidden>
                     <QrCode size={22} />
@@ -941,20 +1062,20 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                 <button
                   type="button"
                   className="jamAction jamInvite__friends"
-                  aria-label="Invite friends to this groove"
+                  aria-label={t('player.grooveInviteAria')}
                   onClick={inviteFriends}
                 >
                   <UserPlus size={16} aria-hidden />
-                  Invite friends…
+                  {t('player.grooveInviteFriendsAction')}
                 </button>
                 <button
                   type="button"
                   className="jamAction"
-                  aria-label="Share a link to this groove"
+                  aria-label={t('player.grooveShareAria')}
                   onClick={share}
                 >
                   <Share2 size={16} aria-hidden />
-                  Share link
+                  {t('player.grooveShareLink')}
                 </button>
               </span>
             </div>
@@ -963,16 +1084,16 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
           {/* 6. The way out. A host has two: hand the room on, or close it.
               Leaving used to end it for everyone, which is the one thing a
               host stepping out for a moment never meant. */}
-          <div className="jamActions" role="group" aria-label="Leave or end">
+          <div className="jamActions" role="group" aria-label={t('player.grooveLeaveOrEnd')}>
             {!hosting && (
               <button
                 type="button"
                 className="jamAction"
-                aria-label="Leave the groove"
+                aria-label={t('player.grooveLeaveAria')}
                 onClick={() => void jam.leave()}
               >
                 <LogOut size={16} aria-hidden />
-                Leave
+                {t('player.grooveLeave')}
               </button>
             )}
             {hosting && others === 0 && (
@@ -980,11 +1101,11 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                 type="button"
                 className="jamAction"
                 data-tone="danger"
-                aria-label="End the groove"
+                aria-label={t('player.grooveEnd')}
                 onClick={() => void jam.end()}
               >
                 <Power size={16} aria-hidden />
-                End the groove
+                {t('player.grooveEnd')}
               </button>
             )}
             {hosting && others > 0 && (
@@ -992,21 +1113,21 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                 <button
                   type="button"
                   className="jamAction"
-                  aria-label="Leave, and hand the groove on"
+                  aria-label={t('player.grooveHandOnAria')}
                   onClick={() => void jam.leave()}
                 >
                   <LogOut size={16} aria-hidden />
-                  Leave, hand it on
+                  {t('player.grooveHandOn')}
                 </button>
                 <button
                   type="button"
                   className="jamAction"
                   data-tone="danger"
-                  aria-label="End the groove for everyone"
+                  aria-label={t('player.grooveEndAllAria')}
                   onClick={() => void jam.end()}
                 >
                   <Power size={16} aria-hidden />
-                  End for everyone
+                  {t('player.grooveEndAll')}
                 </button>
               </>
             )}

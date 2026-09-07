@@ -21,6 +21,8 @@ import { QrScanner } from './QrScanner.tsx';
 import { hasLocalLibrary, isMobile } from '../core/platform.ts';
 import wordmark from '../../assets/attack-white.png';
 import { ArtWall } from './ArtWall.tsx';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 /** Once the listener chose to skip onboarding, they enter in local mode and are
  *  not asked again; joining or signing in later lives on the Friends page. */
@@ -118,18 +120,19 @@ function OnboardAccount({
   onConnectServer: () => void;
   onSkip: () => void;
 }) {
+  const t = useT();
   const { apply } = useRegistry();
 
   return (
     <div className="loginGate">
       <ArtWall />
       <div className="loginGate__hero">
-        <img className="loginGate__mark" src={wordmark} alt="AttackFM" />
+        <img className="loginGate__mark" src={wordmark} alt={t('common.appName')} />
         {/* The front door leads with what the app IS, the way attack.fm does -
             not with what to do next, which the fields and the button below
             already say. */}
         <Text className="loginGate__tag" tone="muted">
-          Lossless audio streaming
+          {t('servers.gateTagline')}
         </Text>
       </div>
       {/* The one account form (AccountForm.tsx); this door only frames it. */}
@@ -143,11 +146,11 @@ function OnboardAccount({
       />
       <div className="loginGate__alts">
         <Button variant="ghost" size="sm" onClick={onConnectServer}>
-          Sign into a server directly
+          {t('servers.gateSignInDirect')}
         </Button>
         {/* Honest about what it is: not a later, a without. */}
         <Button variant="ghost" size="sm" onClick={onSkip}>
-          Use without an account
+          {t('servers.gateWithoutAccount')}
         </Button>
       </div>
     </div>
@@ -166,6 +169,7 @@ function OnboardServer({
   onConnectServer: () => void;
   onSkip: () => void;
 }) {
+  const t = useT();
   const { session: registry } = useRegistry();
   const { applySession } = useServerSession();
   /*
@@ -195,11 +199,11 @@ function OnboardServer({
       try {
         applySession(await enterServer(url, registry.token));
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'That server did not let us in.');
+        setError(err instanceof Error ? err.message : t('servers.gateRefused'));
         setEntering(null);
       }
     },
-    [registry, applySession],
+    [registry, applySession, t],
   );
 
   useEffect(() => {
@@ -226,13 +230,13 @@ function OnboardServer({
     <div className="loginGate">
       <ArtWall />
       <div className="loginGate__hero">
-        <img className="loginGate__mark" src={wordmark} alt="AttackFM" />
+        <img className="loginGate__mark" src={wordmark} alt={t('common.appName')} />
         <Text className="loginGate__tag" tone="muted">
           {looking
-            ? 'Finding the servers on your account…'
+            ? t('servers.gateFindingServers')
             : saved && saved.length > 0
-              ? 'Your account already listens here. Pick one to carry on.'
-              : 'Now find some music. Join a server you were invited to, or run your own.'}
+              ? t('servers.gatePickSaved')
+              : t('servers.gateFindMusic')}
         </Text>
       </div>
       <div className="loginGate__form">
@@ -256,12 +260,12 @@ function OnboardServer({
                   </span>
                   <span className="loginGate__serverMeta">
                     {entering === m.serverUrl
-                      ? 'Signing in…'
+                      ? t('servers.gateSigningIn')
                       : m.serverName
                         ? m.serverUrl.replace(/^https?:\/\//, '')
                         : m.role === 'owner'
-                          ? 'Your server'
-                          : 'You are a member'}
+                          ? t('servers.gateYourServer')
+                          : t('servers.gateYouAreMember')}
                   </span>
                 </span>
               </button>
@@ -272,18 +276,17 @@ function OnboardServer({
           <>
             <JoinServer />
             <Text tone="subtle" size="sm">
-              No invite yet? Ask a friend who runs a server to send you one, then open their link
-              here.
+              {t('servers.gateNoInviteYet')}
             </Text>
           </>
         )}
       </div>
       <div className="loginGate__alts">
         <Button variant="ghost" size="sm" onClick={onConnectServer}>
-          Sign into a server directly
+          {t('servers.gateSignInDirect')}
         </Button>
         <Button variant="ghost" size="sm" onClick={onSkip}>
-          Use without a server
+          {t('servers.gateWithoutServer')}
         </Button>
       </div>
     </div>
@@ -301,6 +304,7 @@ type Step = 'server' | 'credentials' | 'code';
  * on a phone keyboard at all.
  */
 function ConnectScreen({ onBack }: { onBack?: () => void }) {
+  const t = useT();
   const [step, setStep] = useState<Step>('server');
   const { connect, applySession } = useServerSession();
 
@@ -331,14 +335,14 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
       setProbing(true);
       void fetchServerInfo(origin, controller.signal)
         .then((found) => setInfo(found))
-        .catch(() => setError('No AttackFM server answered at that address. You can still try to sign in.'))
+        .catch(() => setError(t('servers.gateNoServerThere')))
         .finally(() => setProbing(false));
     }, 600);
     return () => {
       window.clearTimeout(probeTimer.current);
       controller.abort();
     };
-  }, [url, step]);
+  }, [url, step, t]);
 
   const credsReady = username.trim().length > 0 && password.length > 0 && !busy;
 
@@ -351,7 +355,7 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
       if (info?.needsSetup) await register(origin, username, password);
       await connect(origin, username, password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not connect');
+      setError(err instanceof Error ? err.message : t('servers.gateCouldNotConnect'));
     } finally {
       setBusy(false);
     }
@@ -363,29 +367,24 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
       {onBack && step === 'server' && (
         <button type="button" className="loginGate__back" onClick={onBack}>
           <ArrowLeft size={15} />
-          <span>Back</span>
+          <span>{t('common.back')}</span>
         </button>
       )}
       <div className="loginGate__hero">
-        <img className="loginGate__mark" src={wordmark} alt="AttackFM" />
+        <img className="loginGate__mark" src={wordmark} alt={t('common.appName')} />
         <Text className="loginGate__tag" tone="muted">
-          {step === 'code'
-            ? 'Scan or enter a code from a device that’s already signed in.'
-            : 'Sign in to your music server to start listening.'}
+          {step === 'code' ? t('servers.gateCodeTagline') : t('servers.gateSignInTagline')}
         </Text>
       </div>
 
       {step === 'server' && (
         <div className="loginGate__form">
-          <Field
-            label="Server address"
-            hint="Where your server is reachable, e.g. music.example.com."
-          >
+          <Field label={t('servers.address')} hint={t('servers.addressHint')}>
             <Input
               value={url}
               onChange={(e) => setUrl(e.currentTarget.value)}
-              placeholder="music.example.com"
-              aria-label="Server address"
+              placeholder={t('servers.addressPlaceholder')}
+              aria-label={t('servers.address')}
               leadingIcon={<Cloud size={16} />}
               autoCapitalize="none"
               autoCorrect="off"
@@ -398,14 +397,21 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
           </Field>
           {probing && (
             <Text tone="muted" size="sm">
-              Looking for a server…
+              {t('servers.gateLooking')}
             </Text>
           )}
           {info && (
             <Banner tone={info.needsSetup ? 'warning' : 'success'}>
               {info.needsSetup
-                ? `${info.name} has no accounts yet — you’ll create the owner account next.`
-                : `Found ${info.name} · ${info.tracks.toLocaleString()} tracks`}
+                ? t('servers.gateNeedsSetup', { name: info.name })
+                : // `count` picks the plural form, `tracks` is the number a
+                  // person reads - a library runs to six figures and wants its
+                  // thousands grouped the way this locale groups them.
+                  t('servers.gateFound', {
+                    name: info.name,
+                    count: info.tracks,
+                    tracks: formatNumber(info.tracks),
+                  })}
             </Banner>
           )}
           {error && <Banner tone="warning">{error}</Banner>}
@@ -432,11 +438,11 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
             disabled={!normalizeServerUrl(url) || busy}
             onClick={() => setStep('credentials')}
           >
-            Continue
+            {t('servers.gateContinue')}
           </Button>
           <Button variant="ghost" size="md" onClick={() => setStep('code')}>
             <QrCode size={16} />
-            <span>Log in with a code</span>
+            <span>{t('servers.gateUseCode')}</span>
           </Button>
         </div>
       )}
@@ -447,11 +453,11 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
             <ArrowLeft size={15} />
             <span>{info ? info.name : url}</span>
           </button>
-          <Field label={info?.needsSetup ? 'Choose a username' : 'Username'}>
+          <Field label={info?.needsSetup ? t('servers.gateChooseUsername') : t('servers.username')}>
             <Input
               value={username}
               onChange={(e) => setUsername(e.currentTarget.value)}
-              aria-label="Username"
+              aria-label={t('servers.username')}
               leadingIcon={<User size={16} />}
               autoCapitalize="none"
               autoCorrect="off"
@@ -460,14 +466,14 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
             />
           </Field>
           <Field
-            label={info?.needsSetup ? 'Choose a password' : 'Password'}
-            hint={info?.needsSetup ? 'At least 8 characters.' : undefined}
+            label={info?.needsSetup ? t('servers.gateChoosePassword') : t('servers.password')}
+            hint={info?.needsSetup ? t('servers.gatePasswordRule') : undefined}
           >
             <Input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.currentTarget.value)}
-              aria-label="Password"
+              aria-label={t('servers.password')}
               leadingIcon={<KeyRound size={16} />}
               autoComplete={info?.needsSetup ? 'new-password' : 'current-password'}
               onKeyDown={(e) => {
@@ -483,7 +489,11 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
             disabled={!credsReady}
             onClick={() => void signIn()}
           >
-            {busy ? 'Connecting…' : info?.needsSetup ? 'Create account & connect' : 'Sign in'}
+            {busy
+              ? t('servers.gateConnecting')
+              : info?.needsSetup
+                ? t('servers.gateCreateAndConnect')
+                : t('servers.gateSignIn')}
           </Button>
         </div>
       )}
@@ -514,6 +524,7 @@ function CodeStep({
   onBack: () => void;
   onClaim: (session: Awaited<ReturnType<typeof pairClaim>>) => void;
 }) {
+  const t = useT();
   const [url, setUrl] = useState(initialUrl);
   const [code, setCode] = useState('');
   const [camera, setCamera] = useState(true);
@@ -523,7 +534,7 @@ function CodeStep({
   const claim = async (serverUrl: string, pairCode: string) => {
     const origin = normalizeServerUrl(serverUrl);
     if (!origin) {
-      setError('Enter the server address first.');
+      setError(t('servers.gateAddressFirst'));
       return;
     }
     setBusy(true);
@@ -532,7 +543,7 @@ function CodeStep({
       const session = await pairClaim(origin, pairCode);
       onClaim(session);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'That code did not work');
+      setError(err instanceof Error ? err.message : t('servers.gateCodeRefused'));
     } finally {
       setBusy(false);
     }
@@ -542,7 +553,7 @@ function CodeStep({
     <div className="loginGate__form">
       <button type="button" className="loginGate__back" onClick={onBack}>
         <ArrowLeft size={15} />
-        <span>Back</span>
+        <span>{t('common.back')}</span>
       </button>
 
       {camera && (
@@ -558,17 +569,23 @@ function CodeStep({
         />
       )}
 
+      {/* One sentence per case rather than a shared opening and two tails:
+          the tails are a clause each, and a language that puts the verb last
+          cannot hang one off the end of a phrase written for English. */}
       <Text tone="muted" size="sm">
-        On a device that’s already signed in, open <strong>Settings → Link a device</strong>
-        {camera ? ' and scan the code, or enter it here.' : ' and enter the code shown.'}
+        {camera ? (
+          <Trans i18nKey="servers.gateCodeWhereScan" components={{ b: <strong /> }} />
+        ) : (
+          <Trans i18nKey="servers.gateCodeWhereType" components={{ b: <strong /> }} />
+        )}
       </Text>
 
-      <Field label="Server address">
+      <Field label={t('servers.address')}>
         <Input
           value={url}
           onChange={(e) => setUrl(e.currentTarget.value)}
-          placeholder="music.example.com"
-          aria-label="Server address"
+          placeholder={t('servers.addressPlaceholder')}
+          aria-label={t('servers.address')}
           leadingIcon={<Cloud size={16} />}
           autoCapitalize="none"
           autoCorrect="off"
@@ -576,12 +593,12 @@ function CodeStep({
           inputMode="url"
         />
       </Field>
-      <Field label="Pairing code">
+      <Field label={t('servers.pairingCode')}>
         <Input
           value={code}
           onChange={(e) => setCode(e.currentTarget.value.toUpperCase())}
           placeholder="123456"
-          aria-label="Pairing code"
+          aria-label={t('servers.pairingCode')}
           leadingIcon={<QrCode size={16} />}
           autoCapitalize="characters"
           autoCorrect="off"
@@ -599,7 +616,7 @@ function CodeStep({
         disabled={!code.trim() || busy}
         onClick={() => void claim(url, code)}
       >
-        {busy ? 'Linking…' : 'Connect'}
+        {busy ? t('servers.gateLinking') : t('servers.gateConnect')}
       </Button>
     </div>
   );

@@ -14,8 +14,9 @@ import {
   type ServerSession,
   type ServerStats,
 } from '../server.ts';
-import { formatBytes } from '../ux/format.ts';
+import { formatBytes, formatNumber } from '../ux/format.ts';
 import { latencyBand } from './serverFormat.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import {
   addMirror,
   healthOf,
@@ -46,12 +47,42 @@ import { rememberSession } from './sessions.ts';
  * itself, not a copy of it. Everything below it is a delivery route.
  */
 
+/**
+ * The four latency bands, as catalogue keys.
+ *
+ * serverFormat decides WHICH band a round-trip falls in and this decides what
+ * that band is called, keyed on the band's `tone` rather than its `label`:
+ * the tone is an identifier - it is the CSS hook on the value beside it too -
+ * where the label is prose, and prose belongs in the catalogue with the rest
+ * of this page's.
+ */
+const BAND_KEY: Record<'best' | 'good' | 'ok' | 'slow', string> = {
+  best: 'servers.latencySameNetwork',
+  good: 'servers.latencyClose',
+  ok: 'servers.latencyFar',
+  slow: 'servers.latencyVeryFar',
+};
+
 /** Latency, said the way a person would judge it - bands from serverFormat,
- *  the same ones the header's dot reads. */
-function nearness(ms: number | null, ok: boolean): { value: string; label: string; tone: string } {
-  if (!ok) return { value: 'offline', label: 'unreachable', tone: 'bad' };
-  if (ms == null) return { value: '—', label: 'checking…', tone: 'idle' };
-  return { value: `${Math.round(ms)} ms`, ...latencyBand(ms) };
+ *  the same ones the header's dot reads. Returns keys rather than words, so
+ *  the words are resolved in the render that shows them. */
+function nearness(
+  ms: number | null,
+  ok: boolean,
+): { value: string | null; valueKey: string | null; labelKey: string; tone: string } {
+  if (!ok) {
+    return { value: null, valueKey: 'servers.latencyOffline', labelKey: 'servers.latencyUnreachable', tone: 'bad' };
+  }
+  if (ms == null) return { value: '—', valueKey: null, labelKey: 'servers.latencyChecking', tone: 'idle' };
+  const { tone } = latencyBand(ms);
+  return {
+    // Intl knows where the unit sits and how it is abbreviated; "150 ms" is
+    // not "150 ms" everywhere.
+    value: formatNumber(Math.round(ms), { style: 'unit', unit: 'millisecond', unitDisplay: 'short' }),
+    valueKey: null,
+    labelKey: BAND_KEY[tone],
+    tone,
+  };
 }
 
 interface Row {
@@ -67,6 +98,7 @@ interface Row {
 }
 
 export function ServersPanel() {
+  const t = useT();
   const { session } = useServerSession();
   const [mirrors, setMirrors] = useState<Mirror[]>(mirrorList);
   const [stats, setStats] = useState<Record<string, ServerStats | null>>({});
@@ -129,7 +161,7 @@ export function ServersPanel() {
     const home = healthOf(session.url);
     const first: Row = {
       url: session.url,
-      name: stats[session.url]?.name ?? 'This server',
+      name: stats[session.url]?.name ?? t('servers.thisServerName'),
       primary: true,
       isAdmin: session.isAdmin,
       held: libraryKeys.size,
@@ -156,7 +188,7 @@ export function ServersPanel() {
     // `tick` is the redraw signal after a probe: latency lives in a module map
     // rather than state, deliberately (the heartbeat writes it from outside
     // React), so the page asks to be re-read rather than being told.
-  }, [session, mirrors, stats, libraryKeys, tick]);
+  }, [session, mirrors, stats, libraryKeys, tick, t]);
 
   // Which box would actually serve a song right now, by the same rule the
   // resolver uses - shown so the routing is legible instead of mysterious.
@@ -194,26 +226,31 @@ export function ServersPanel() {
     <div className="serversPanel">
       <header className="serversPage__head">
         <div>
-          <Heading level={3} noMargin>Streaming</Heading>
+          <Heading level={3} noMargin>{t('servers.streamingTitle')}</Heading>
           <Text size="sm" tone="muted">
+            {/* One server is advice and several is a status - two different
+                sentences, not two halves of one, so they are two keys. The
+                second still counts, because Arabic says "2 servers" with a
+                different form than "5 servers". */}
             {rows.length === 1
-              ? 'One server. Add another to keep a second copy and stream from whichever is closer.'
-              : `${rows.length} servers · playing from ${fastest?.name ?? 'the nearest that has the song'}`}
+              ? t('servers.onlyOne')
+              : t('servers.playingFromCount', {
+                  count: rows.length,
+                  name: fastest?.name ?? t('servers.nearestHolder'),
+                })}
           </Text>
         </div>
         <Button variant="ghost" onClick={() => void refresh()} disabled={busy}>
           <RefreshCw size={16} />
-          {busy ? 'Checking…' : 'Re-check'}
+          {busy ? t('servers.checking') : t('servers.recheck')}
         </Button>
       </header>
 
       {mirrors.length > 0 && (
         <label className="serversPage__routing">
           <span>
-            <Text>Stream from the closest server</Text>
-            <Text size="sm" tone="muted">
-              Off plays everything from this server, however far away it is.
-            </Text>
+            <Text>{t('servers.routeClosest')}</Text>
+            <Text size="sm" tone="muted">{t('servers.routeClosestHint')}</Text>
           </span>
           <Switch
             checked={routing}
@@ -262,8 +299,10 @@ function ServerCard({
   onManage?: () => void;
   onForget?: () => void;
 }) {
+  const t = useT();
   const near = nearness(row.latencyMs, row.ok);
-  const pct = libraryTotal > 0 ? Math.round((row.held / libraryTotal) * 100) : 0;
+  const pct = libraryTotal > 0 ? row.held / libraryTotal : 0;
+  const pctLabel = formatNumber(pct, { style: 'percent' });
   const used = row.stats?.bytesUsed ?? 0;
   const quota = row.stats?.quotaBytes ?? 0;
   const free = row.stats?.diskFreeBytes ?? null;
@@ -271,6 +310,10 @@ function ServerCard({
   // 110 GB quota is a 110 GB server.
   const ceiling = quota > 0 && (free == null || quota - used < free) ? quota : used + (free ?? 0);
   const fullPct = ceiling > 0 ? Math.min(100, Math.round((used / ceiling) * 100)) : 0;
+  // One sentence, said twice: the bar's accessible name and the caption under
+  // it. Built once so a translator cannot end up with two different readings
+  // of the same number.
+  const heldHere = t('servers.libraryHere', { pct: pctLabel });
 
   return (
     <section className="serverCard" data-serving={serving || undefined}>
@@ -282,13 +325,18 @@ function ServerCard({
           <Text>{row.name}</Text>
           <Text size="sm" tone="muted">
             {row.url.replace(/^https?:\/\//, '')}
-            {row.primary ? ' · your library' : ''}
-            {row.isAdmin ? ' · you host this' : ''}
+            {/* Host, then whichever of the two asides applies. Joined here
+                rather than written as adjacent fragments so each aside is a
+                whole phrase a translator can move. */}
+            {[row.primary && t('servers.yourLibrary'), row.isAdmin && t('servers.youHostThis')]
+              .filter(Boolean)
+              .map((part) => ` · ${part}`)
+              .join('')}
           </Text>
         </div>
-        {serving && <span className="serverCard__badge">playing from here</span>}
+        {serving && <span className="serverCard__badge">{t('servers.playingHere')}</span>}
         {onForget && (
-          <button type="button" className="serverCard__forget" onClick={onForget} aria-label="Forget this server">
+          <button type="button" className="serverCard__forget" onClick={onForget} aria-label={t('servers.forgetThis')}>
             <X size={16} />
           </button>
         )}
@@ -297,23 +345,25 @@ function ServerCard({
       <div className="serverCard__metrics">
         <div className="serverMetric">
           <span className="serverMetric__value" data-tone={near.tone}>
-            {near.value}
+            {near.valueKey ? t(near.valueKey) : near.value}
           </span>
-          <span className="serverMetric__label">{near.label}</span>
+          <span className="serverMetric__label">{t(near.labelKey)}</span>
         </div>
         <div className="serverMetric">
           <span className="serverMetric__value">
             {row.stats || row.held > 0 ? (
               <>
-                {row.held.toLocaleString()}
-                {!row.primary && libraryTotal > 0 ? ` · ${pct}%` : ''}
+                {formatNumber(row.held)}
+                {!row.primary && libraryTotal > 0 ? ` · ${pctLabel}` : ''}
               </>
             ) : (
               <Skeleton variant="text" width="2.5rem" />
             )}
           </span>
           <span className="serverMetric__label">
-            {row.primary ? 'songs' : 'of your songs'}
+            {/* Not a plural: the count sits above, and these two captions say
+                whose songs are being counted, not how many. */}
+            {row.primary ? t('servers.metricSongs') : t('servers.metricOfYours')}
           </span>
         </div>
         <div className="serverMetric">
@@ -321,7 +371,7 @@ function ServerCard({
             {row.stats ? formatBytes(used) : <Skeleton variant="text" width="3rem" />}
           </span>
           <span className="serverMetric__label">
-            {ceiling > 0 ? `of ${formatBytes(ceiling)} used` : 'stored'}
+            {ceiling > 0 ? t('servers.metricOfUsed', { size: formatBytes(ceiling) }) : t('servers.metricStored')}
           </span>
         </div>
       </div>
@@ -335,12 +385,10 @@ function ServerCard({
         */}
       {!row.primary && libraryTotal > 0 && (
         <div className="serverCard__gauge">
-          <div className="serverCard__bar" data-kind="held" role="img" aria-label={`${pct}% of your library is here`}>
-            <span className="serverCard__barFill" style={{ inlineSize: `${pct}%` }} />
+          <div className="serverCard__bar" data-kind="held" role="img" aria-label={heldHere}>
+            <span className="serverCard__barFill" style={{ inlineSize: `${Math.round(pct * 100)}%` }} />
           </div>
-          <Text size="sm" tone="muted">
-            {pct}% of your library is here
-          </Text>
+          <Text size="sm" tone="muted">{heldHere}</Text>
         </div>
       )}
       {ceiling > 0 && (
@@ -353,13 +401,13 @@ function ServerCard({
             />
           </div>
           <Text size="sm" tone="muted">
-            {formatBytes(Math.max(0, ceiling - used))} free
+            {t('servers.freeSpace', { size: formatBytes(Math.max(0, ceiling - used)) })}
           </Text>
         </div>
       )}
       {onManage && (
         <Button variant="ghost" className="serverCard__manage" onClick={onManage}>
-          Free up space
+          {t('servers.freeUpSpace')}
         </Button>
       )}
     </section>
@@ -377,6 +425,7 @@ function ServerCard({
  * avoid.
  */
 function AddServer({ onAdded }: { onAdded: () => void }) {
+  const t = useT();
   const { session: registry } = useRegistry();
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState('');
@@ -426,7 +475,7 @@ function AddServer({ onAdded }: { onAdded: () => void }) {
       setCode('');
       onAdded();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'That did not work.');
+      setError(e instanceof Error ? e.message : t('servers.addFailed'));
     } finally {
       setBusy(false);
     }
@@ -436,27 +485,27 @@ function AddServer({ onAdded }: { onAdded: () => void }) {
     return (
       <Button variant="soft" onClick={() => setOpen(true)}>
         <HardDrive size={16} />
-        Add another server
+        {t('servers.addAnother')}
       </Button>
     );
   }
 
   return (
     <section className="serversPage__add">
-      <Text>Add a server</Text>
+      <Text>{t('servers.addTitle')}</Text>
       <Text size="sm" tone="muted">
-        {registry
-          ? 'The address is enough for a server your account already belongs to. For anyone else\u2019s, open its Settings and tap \u201cLink a device\u201d for a code.'
-          : 'On the other server, open Settings and tap \u201cLink a device\u201d for a six-digit code.'}
+        {registry ? t('servers.addHintSignedIn') : t('servers.addHintCodeOnly')}
       </Text>
-      <Field label="Address">
+      {/* The placeholder is an example ADDRESS, not a word - it is a key so
+          a translator can localise the "music" part, or leave it as it is. */}
+      <Field label={t('servers.addressLabel')}>
         <Input
-          placeholder="music.example.com"
+          placeholder={t('servers.addressPlaceholder')}
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
       </Field>
-      <Field label={registry ? 'Code (only if it is not yours)' : 'Code'}>
+      <Field label={registry ? t('servers.codeLabelOptional') : t('servers.codeLabel')}>
         <Input
           placeholder="123456"
           inputMode="numeric"
@@ -471,7 +520,7 @@ function AddServer({ onAdded }: { onAdded: () => void }) {
       )}
       <div className="serversPage__addActions">
         <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
-          Cancel
+          {t('common.cancel')}
         </Button>
         {/* The code is required only when there is nothing else to prove you
             with. submit() has taken an address alone since `enterServer` was
@@ -482,7 +531,7 @@ function AddServer({ onAdded }: { onAdded: () => void }) {
           onClick={() => void submit()}
           disabled={busy || !url.trim() || (!registry && !code.trim())}
         >
-          {busy ? 'Linking…' : 'Link'}
+          {busy ? t('servers.linking') : t('servers.link')}
         </Button>
       </div>
     </section>
@@ -500,6 +549,7 @@ function AddServer({ onAdded }: { onAdded: () => void }) {
  * travelled.
  */
 function SavedServers({ linked, onLinked }: { linked: string[]; onLinked: () => void }) {
+  const t = useT();
   const { session: registry } = useRegistry();
   const [saved, setSaved] = useState<Membership[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -518,9 +568,7 @@ function SavedServers({ linked, onLinked }: { linked: string[]; onLinked: () => 
   const missing = saved.filter((m) => !linked.includes(m.serverUrl.replace(/\/+$/, '')));
   if (!registry) {
     return (
-      <Text size="sm" tone="muted">
-        Sign in to your AttackFM account to save these servers and get them back on your next device.
-      </Text>
+      <Text size="sm" tone="muted">{t('servers.signInToSave')}</Text>
     );
   }
   if (missing.length === 0) return null;
@@ -543,7 +591,7 @@ function SavedServers({ linked, onLinked }: { linked: string[]; onLinked: () => 
       await forgetServerEverywhere(m.serverUrl);
       setSaved((prev) => prev.filter((x) => x.serverUrl !== m.serverUrl));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not forget that server.');
+      setError(e instanceof Error ? e.message : t('servers.forgetFailed'));
     } finally {
       setBusy(null);
     }
@@ -566,7 +614,7 @@ function SavedServers({ linked, onLinked }: { linked: string[]; onLinked: () => 
       await refreshHoldings({ ...next, addedAt: Date.now() } as Mirror);
       onLinked();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'That server would not let this device in.');
+      setError(e instanceof Error ? e.message : t('servers.connectRefused'));
     } finally {
       setBusy(null);
     }
@@ -574,27 +622,25 @@ function SavedServers({ linked, onLinked }: { linked: string[]; onLinked: () => 
 
   return (
     <section className="serversPage__saved">
-      <Text>Saved to your account</Text>
-      <Text size="sm" tone="muted">
-        Signed in elsewhere. Connect to stream from them here too.
-      </Text>
+      <Text>{t('servers.savedTitle')}</Text>
+      <Text size="sm" tone="muted">{t('servers.savedHint')}</Text>
       {missing.map((m) => (
         <div key={m.serverUrl} className="serversPage__savedRow">
           <span>
             <Text>{m.serverName || m.serverUrl.replace(/^https?:\/\//, '')}</Text>
             <Text size="sm" tone="muted">
               {m.serverUrl.replace(/^https?:\/\//, '')}
-              {m.role === 'owner' ? ' · you host this' : ''}
+              {m.role === 'owner' ? ` · ${t('servers.youHostThis')}` : ''}
             </Text>
           </span>
           <span className="serversPage__savedActions">
             <Button variant="soft" disabled={busy !== null} onClick={() => void connect(m)}>
-              {busy === m.serverUrl ? 'Connecting…' : 'Connect'}
+              {busy === m.serverUrl ? t('servers.connecting') : t('servers.connect')}
             </Button>
             <button
               type="button"
               className="serverCard__forget"
-              aria-label={`Forget ${m.serverName || m.serverUrl}`}
+              aria-label={t('servers.forgetNamed', { name: m.serverName || m.serverUrl })}
               disabled={busy !== null}
               onClick={() => void forget(m)}
             >

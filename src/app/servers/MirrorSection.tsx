@@ -14,6 +14,8 @@ import {
   revokeMirrorSource,
 } from './mirrorSource.ts';
 import { gbLabel } from './serverFormat.ts';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 /**
  * Copying one library into another.
@@ -25,11 +27,15 @@ import { gbLabel } from './serverFormat.ts';
  * pulling, so the source needs nothing done to it - no new port, no visit.
  */
 export function MirrorSection() {
+  const t = useT();
   const { session } = useServerSession();
   const [source, setSource] = useState(() => readMirrorSource());
   const [status, setStatus] = useState<MirrorStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  // The note carries its own tone. It used to be a bare string whose colour was
+  // decided by `note.startsWith('Started')` - which is a sentence being read as
+  // a flag, and the first translation would have painted every success red.
+  const [note, setNote] = useState<{ tone: 'muted' | 'danger'; text: string } | null>(null);
   const [showKeys, setShowKeys] = useState(false);
 
   // Carrying only the listened-to set. Default ON: a server you are filling
@@ -94,17 +100,29 @@ export function MirrorSection() {
   }, [session, source, here, hotOnly]);
   const running = status?.running === true;
 
+  /** "12 copied · 40 already here · 1 failed — indexing". Independent tallies
+   *  joined by a middot rather than one sentence: each keeps its own plural,
+   *  and the trailing note is the SERVER's word for what it is doing, passed
+   *  through as it arrives. */
+  const tally = (s: MirrorStatus): string => {
+    const parts = [
+      t('servers.mirrorCopied', { count: s.copied }),
+      t('servers.mirrorSkipped', { count: s.skipped }),
+    ];
+    if (s.failed > 0) parts.push(t('servers.mirrorFailed', { count: s.failed }));
+    const line = parts.join(' · ');
+    return s.note ? `${line} — ${s.note}` : line;
+  };
+
   if (!session) return null;
 
   return (
     <div className="prefsSection">
-      <Label>Copy a library</Label>
+      <Label>{t('servers.mirrorTitle')}</Label>
 
       {/* Half one: authorize the library you are standing in as a source. */}
       <Text tone="muted" size="sm">
-        {here
-          ? 'This library is authorized to be copied. Sign into the server you want to fill, and start the copy there.'
-          : 'Authorize this library so another server can copy from it. The other server does the work — nothing has to change here.'}
+        {here ? t('servers.mirrorSourceReady') : t('servers.mirrorAuthorizeHint')}
       </Text>
       <div className="prefsActions">
         <Button
@@ -112,7 +130,7 @@ export function MirrorSection() {
           size="sm"
           onClick={() => setSource(authorizeMirrorSource(session, session.url))}
         >
-          {here ? 'Re-authorize this library' : 'Authorize this library'}
+          {here ? t('servers.mirrorReauthorize') : t('servers.mirrorAuthorize')}
         </Button>
         {source && (
           <Button
@@ -124,7 +142,7 @@ export function MirrorSection() {
               setShowKeys(false);
             }}
           >
-            Revoke
+            {t('servers.mirrorRevoke')}
           </Button>
         )}
       </div>
@@ -133,11 +151,15 @@ export function MirrorSection() {
       {source && !here && (
         <>
           <Text size="sm">
-            Ready to copy from <strong>{source.name}</strong> ({source.username}).
+            <Trans
+              i18nKey="servers.mirrorReadyToCopy"
+              values={{ name: source.name, username: source.username }}
+              components={{ b: <strong /> }}
+            />
           </Text>
           {!session.isAdmin && (
             <Text tone="muted" size="xs">
-              Only the owner of this server can fill it.
+              {t('servers.mirrorOwnerOnly')}
             </Text>
           )}
           {/* Everything, or only what gets listened to.
@@ -149,17 +171,19 @@ export function MirrorSection() {
               about WHAT to carry, not how much. */}
           <div className="mirrorScope">
             <Switch
-              label="Only songs I actually listen to"
+              label={t('servers.mirrorHotOnly')}
               checked={hotOnly}
               onCheckedChange={setHotOnly}
             />
             {hotOnly && (
               <Text tone="muted" size="xs">
                 {hotSize
-                  ? `About ${hotSize.tracks.toLocaleString()} songs (${gbLabel(hotSize.bytes)}) of ${(
-                      hotSummary?.libraryTracks ?? 0
-                    ).toLocaleString()} — played twice or more, plus anything liked. Whatever will not fit is left behind, coldest first, and songs that go cold later are let go so this stays a working set rather than filling up again.`
-                  : 'Played twice or more, plus anything liked. Songs that go cold are let go.'}
+                  ? t('servers.mirrorHotSize', {
+                      tracks: formatNumber(hotSize.tracks),
+                      size: gbLabel(hotSize.bytes),
+                      total: formatNumber(hotSummary?.libraryTracks ?? 0),
+                    })
+                  : t('servers.mirrorHotHint')}
               </Text>
             )}
           </div>
@@ -172,18 +196,21 @@ export function MirrorSection() {
                 setBusy(true);
                 setNote(null);
                 void startMirror(session, source, hotOnly ? { minPlays: 2 } : undefined)
-                  .then(() => setNote('Started. It will keep going with the app closed.'))
+                  .then(() => setNote({ tone: 'muted', text: t('servers.mirrorStarted') }))
                   .catch((e: unknown) =>
-                    setNote(e instanceof Error ? e.message : 'Could not start the copy.'),
+                    setNote({
+                      tone: 'danger',
+                      text: e instanceof Error ? e.message : t('servers.mirrorStartFailed'),
+                    }),
                   )
                   .finally(() => setBusy(false));
               }}
             >
               {running
-                ? 'Copying…'
+                ? t('servers.mirrorCopying')
                 : hotOnly
-                  ? `Copy what I listen to from ${source.name}`
-                  : `Copy ${source.name} into this server`}
+                  ? t('servers.mirrorCopyHot', { name: source.name })
+                  : t('servers.mirrorCopyAll', { name: source.name })}
             </Button>
           </div>
         </>
@@ -193,19 +220,17 @@ export function MirrorSection() {
         <>
           <ProgressBar
             value={status.total > 0 ? (status.copied / status.total) * 100 : 0}
-            aria-label="Copy progress"
+            aria-label={t('servers.mirrorProgress')}
           />
           <Text tone="muted" size="xs">
-            {status.copied} copied · {status.skipped} already here
-            {status.failed > 0 ? ` · ${status.failed} failed` : ''}
-            {status.note ? ` — ${status.note}` : ''}
+            {tally(status)}
           </Text>
         </>
       )}
 
       {note && (
-        <Text tone={note.startsWith('Started') ? 'muted' : 'danger'} size="sm">
-          {note}
+        <Text tone={note.tone} size="sm">
+          {note.text}
         </Text>
       )}
 
@@ -214,16 +239,20 @@ export function MirrorSection() {
       {source && (
         <>
           <Button variant="ghost" size="sm" onClick={() => setShowKeys((v) => !v)}>
-            {showKeys ? 'Hide keys' : 'Show keys'}
+            {showKeys ? t('servers.mirrorHideKeys') : t('servers.mirrorShowKeys')}
           </Button>
           {showKeys && (
             <div className="prefsSection">
               <Text tone="danger" size="xs">
-                These read your library. Treat them like a password, and Revoke when done.
+                {t('servers.mirrorKeysWarning')}
               </Text>
-              <Input readOnly aria-label="Source URL" value={source.url} />
-              <Input readOnly aria-label="Source token" value={source.token} />
-              <Input readOnly aria-label="Source stream token" value={source.streamToken} />
+              <Input readOnly aria-label={t('servers.mirrorSourceUrl')} value={source.url} />
+              <Input readOnly aria-label={t('servers.mirrorSourceToken')} value={source.token} />
+              <Input
+                readOnly
+                aria-label={t('servers.mirrorSourceStreamToken')}
+                value={source.streamToken}
+              />
             </div>
           )}
         </>

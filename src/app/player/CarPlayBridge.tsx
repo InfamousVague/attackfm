@@ -11,6 +11,8 @@ import {
 import { searchLibrary } from '../search/trackSearch.ts';
 import { remotePath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
+import { translate } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 
 /**
  * Turns a tap on the car screen into playback here, where the audio lives.
@@ -120,27 +122,55 @@ export function buildCarTree(
       else byAlbum.set(key, [t]);
     }
   }
-  const songs = (n: number) => (n === 1 ? '1 song' : `${n} songs`);
+  // translate(), not useT(): this tree is built outside React and handed
+  // straight to the car, which caches it natively. Not reactive, and it does
+  // not need to be - the effect that publishes it re-runs on every library
+  // change, and a car re-reads the tree when it reconnects.
+  const songs = (n: number) => translate('library.songCount', { count: n });
   const alpha = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' });
 
   nodes[ROOT] = [
-    { id: 'collection:liked', name: 'Liked', subtitle: songs(favoriteTracks.length) },
-    { id: 'collection:all', name: 'All songs', subtitle: songs(tracks.length) },
-    { id: 'collection:shuffle', name: 'Shuffle all', subtitle: 'Everything, surprised' },
+    { id: 'collection:liked', name: translate('player.carLiked'), subtitle: songs(favoriteTracks.length) },
+    { id: 'collection:all', name: translate('player.carAllSongs'), subtitle: songs(tracks.length) },
+    {
+      id: 'collection:shuffle',
+      name: translate('player.carShuffleAll'),
+      subtitle: translate('player.carShuffleBlurb'),
+    },
   ];
   // A branch with nothing behind it is the dead end this feature removes, so
   // an empty one is not published at all.
   if (byArtist.size) {
-    nodes[ROOT].push({ id: 'branch:artists', name: 'Artists', subtitle: String(byArtist.size), browsable: true });
+    nodes[ROOT].push({
+      id: 'branch:artists',
+      name: translate('player.carArtists'),
+      subtitle: formatNumber(byArtist.size),
+      browsable: true,
+    });
   }
   if (byAlbum.size) {
-    nodes[ROOT].push({ id: 'branch:albums', name: 'Albums', subtitle: String(byAlbum.size), browsable: true });
+    nodes[ROOT].push({
+      id: 'branch:albums',
+      name: translate('player.carAlbums'),
+      subtitle: formatNumber(byAlbum.size),
+      browsable: true,
+    });
   }
   if (books.length) {
-    nodes[ROOT].push({ id: 'branch:books', name: 'Books', subtitle: songs(books.length), browsable: true });
+    nodes[ROOT].push({
+      id: 'branch:books',
+      name: translate('player.carBooks'),
+      subtitle: songs(books.length),
+      browsable: true,
+    });
   }
   if (playlists.length) {
-    nodes[ROOT].push({ id: 'branch:playlists', name: 'Playlists', subtitle: String(playlists.length), browsable: true });
+    nodes[ROOT].push({
+      id: 'branch:playlists',
+      name: translate('player.carPlaylists'),
+      subtitle: formatNumber(playlists.length),
+      browsable: true,
+    });
   }
 
   nodes['branch:artists'] = [...byArtist.keys()]
@@ -175,13 +205,17 @@ export function CarPlayBridge({ onPlay }: { onPlay: (track: Track, queue: Track[
    * draws the real list - Android Auto asks faster than a page stands up.
    * The count rides as the subtitle because a dashboard row with no second
    * line looks unfinished next to the three built-ins above it.
+   *
+   * The same `songs()` the tree below uses, and for the same reason: a count
+   * is a plural, and a plural is the catalogue's job - a `=== 1` here would
+   * be asserting that every language has two forms with the break at one.
    */
   useEffect(() => {
     publishNativeCollections(
       playlists.map((p) => ({
         id: `playlist:${p.id}`,
         name: p.name,
-        subtitle: p.paths.length === 1 ? '1 song' : `${p.paths.length} songs`,
+        subtitle: translate('library.songCount', { count: p.paths.length }),
       })),
     );
   }, [playlists]);

@@ -1,6 +1,7 @@
 import { IconButton, SeekBar } from '@glacier/react';
 import { Heart, Pause, Play, SkipBack, SkipForward } from '@glacier/icons';
 import { formatClock } from '../ux/format.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The home-screen widget, drawn with the app's own components.
@@ -73,11 +74,15 @@ export function WidgetFace({
   durationSecs,
   favourite,
 }: WidgetFaceProps) {
+  // Nobody ever hears these labels - the face is photographed, not screen-read.
+  // They are translated anyway because the picture ships in the launcher's
+  // language, and a label left in English is the one that gets copied onward.
+  const t = useT();
   const bar = durationSecs > 0 && (
     <SeekBar
       duration={durationSecs}
       value={Math.min(positionSecs, durationSecs)}
-      aria-label="Seek"
+      aria-label={t('player.seek')}
       shape="swell"
       tone="accent"
       fill="solid"
@@ -99,20 +104,20 @@ export function WidgetFace({
     </div>
   );
   const heart = favourite == null ? null : (
-    <IconButton variant="ghost" aria-label="Favourite" data-on={favourite || undefined}>
+    <IconButton variant="ghost" aria-label={t('player.favourite')} data-on={favourite || undefined}>
       <Heart size={face === 'large' ? 20 : 18} fill={favourite ? 'currentColor' : 'none'} />
     </IconButton>
   );
   const transport = (
     <div className="wface__transport">
-      <IconButton variant="ghost" aria-label="Previous">
+      <IconButton variant="ghost" aria-label={t('player.previous')}>
         <SkipBack size={face === 'compact' ? 18 : 22} fill="currentColor" />
       </IconButton>
       <span className="wface__disc" data-playing={playing || undefined}>
         {playing ? <Pause size={face === 'large' ? 26 : 22} fill="currentColor" />
                  : <Play size={face === 'large' ? 26 : 22} fill="currentColor" />}
       </span>
-      <IconButton variant="ghost" aria-label="Next">
+      <IconButton variant="ghost" aria-label={t('player.next')}>
         <SkipForward size={face === 'compact' ? 18 : 22} fill="currentColor" />
       </IconButton>
     </div>
@@ -166,13 +171,13 @@ export function WidgetFace({
       </div>
       <div className="wface__transport wface__transport--wide">
         {heart}
-        <IconButton variant="ghost" aria-label="Previous">
+        <IconButton variant="ghost" aria-label={t('player.previous')}>
           <SkipBack size={22} fill="currentColor" />
         </IconButton>
         <span className="wface__disc" data-playing={playing || undefined}>
           {playing ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" />}
         </span>
-        <IconButton variant="ghost" aria-label="Next">
+        <IconButton variant="ghost" aria-label={t('player.next')}>
           <SkipForward size={22} fill="currentColor" />
         </IconButton>
         <span className="wface__spacer" />

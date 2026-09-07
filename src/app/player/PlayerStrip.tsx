@@ -1,10 +1,10 @@
 import { fireFelt } from '../core/haptics.ts';
 import { originFromPath } from '../server.ts';
-import { SMART_SHUFFLE_LABEL } from './smartShuffle.ts';
+import { SMART_SHUFFLE_LABEL_KEY } from './smartShuffle.ts';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { JamBadge } from './JamBadge.tsx';
-import { useRef, useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from 'react';
 import {
   ContextMenu,
   CounterBadge,
@@ -33,7 +33,7 @@ import {
   Users,
 } from '@glacier/icons';
 import { SoundConsole } from './SoundConsole.tsx';
-import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
+import { soundChangesDetail, useSoundChanges } from './soundChanges.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { BeatWave } from './BeatWave.tsx';
@@ -55,6 +55,7 @@ import {
 } from './deckShared.ts';
 import type { Track } from '../core/tauri.ts';
 import { useOriginLabeler } from '../servers/serverNames.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The docked strip along the bottom of the window: the kit's PlayerBar plus
@@ -62,6 +63,57 @@ import { useOriginLabeler } from '../servers/serverNames.ts';
  * every value and handler arrives through props from the deck core. The
  * disp* props swap between local playback and mirroring the active device.
  */
+/**
+ * NAMING THE KIT'S OWN BUTTONS.
+ *
+ * Ten stylesheet rules used to find the transport controls by their
+ * aria-label - hide shuffle and repeat on the touch strip, badge the smart
+ * one, ring the play button while a press is in flight.
+ *
+ * The kit does not translate these itself: PlayerBar carries hard-coded
+ * English defaults and takes a `labels` prop, so for years the label was a
+ * stable string and matching on it worked. It stops working the moment the
+ * app supplies translated labels - which it now must, because an aria-label
+ * left in English is read out in English to somebody using the app in
+ * Arabic. Pass the labels and every one of those rules silently stops
+ * matching: the controls the strip was hiding reappear in a row with no room
+ * for them, and the badge goes out.
+ *
+ * An accessible name is a sentence for a screen reader. It is not a selector,
+ * and the two want opposite things - one changes with the language, the other
+ * must not. So the buttons are stamped here and the stylesheet hangs off the
+ * stamp.
+ *
+ * By POSITION inside the kit's own containers, because the kit gives its
+ * buttons no class of their own: `_transport_` holds shuffle, play, repeat in
+ * that order, and the only button in `_rail_` that is not ours is the heart.
+ * Re-run through a MutationObserver, since the kit rebuilds these when the
+ * transport's props change.
+ */
+function useNamedControls(ref: MutableRefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const stamp = () => {
+      const transport = root.querySelector('[class*="_transport_"]');
+      if (transport) {
+        const order = ['shuffle', 'play', 'repeat'];
+        transport.querySelectorAll(':scope > button').forEach((b, i) => {
+          if (order[i]) b.setAttribute('data-afm', order[i]);
+        });
+      }
+      // Ours already carry data-strip; whatever is left in the rail is the kit's.
+      root
+        .querySelectorAll('[class*="_rail_"] > button:not([data-strip])')
+        .forEach((b) => b.setAttribute('data-afm', 'favourite'));
+    };
+    stamp();
+    const watch = new MutationObserver(stamp);
+    watch.observe(root, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, [ref]);
+}
+
 export function PlayerStrip({
   shellRef,
   dismissed,
@@ -177,6 +229,7 @@ export function PlayerStrip({
   // and whichever component calls it re-renders at that rate. This strip is
   // the small surface that actually draws the beat; the Player it used to
   // live in is 2,500 lines mounted app-wide.
+  const t = useT();
   const beat = useBeat({ meter, active: audible, at: progress });
   const live = useLiveLevels({ meter, progress, active: audible });
   /*
@@ -224,6 +277,50 @@ export function PlayerStrip({
   /* Frozen for the length of a drag. Without it, dragging past a chapter's
      mark re-scopes the bar under the finger and the thumb jumps to the far
      end of a window that changed shape mid-gesture. */
+  // Names the kit's transport buttons for the stylesheet - see the hook.
+  useNamedControls(shellRef);
+
+  /*
+   * What the kit's own controls are called, out loud.
+   *
+   * PlayerBar defaults every one of these to English (play, pause, "Previous
+   * track", "Add to favourites") and offers this prop as the way out. Nothing
+   * passed it but the smart-shuffle rename, so a listener running the app in
+   * Arabic still heard an English transport read to them - the one part of the
+   * strip a screen-reader user has to rely on.
+   *
+   * `repeat` is a function because the kit names the MODE it is in.
+   */
+  const barLabels = useMemo(
+    () => ({
+      play: t('player.play'),
+      pause: t('player.pause'),
+      stop: t('player.stop'),
+      skipBack: t('player.previousTrack'),
+      skipForward: t('player.nextTrack'),
+      shuffle: shuffle && smart ? t(SMART_SHUFFLE_LABEL_KEY) : t('player.shuffle'),
+      repeat: (mode: PlayerRepeat) =>
+        // camelCase, NOT `repeatMode_one`: to i18next `_one` is a plural
+        // category, so that key would be read as the singular of
+        // `player.repeatMode` rather than as the repeat-one mode.
+        t('player.repeatMode', {
+          mode: t(`player.repeatMode${mode.charAt(0).toUpperCase()}${mode.slice(1)}`),
+        }),
+      group: t('player.transportGroup'),
+      seek: t('player.seek'),
+      favorite: t('player.addFavourite'),
+      unfavorite: t('player.unfavourite'),
+      mute: t('player.mute'),
+      unmute: t('player.unmute'),
+      volume: t('player.volume'),
+      quality: t('player.quality'),
+      qualityLow: t('player.qualityLow'),
+      qualityMedium: t('player.qualityMedium'),
+      qualityHigh: t('player.qualityHigh'),
+      qualityLossless: t('player.qualityLossless'),
+    }),
+    [t, shuffle, smart],
+  )
   const scrubWin = useRef<{ start: number; len: number } | null>(null);
   const barWin = scrubWin.current ?? chapterWin;
   const barDuration = barWin ? barWin.len : dispDuration;
@@ -319,10 +416,10 @@ export function PlayerStrip({
    * the document. The click is already a no-op without the handler.
    */
   const compactTransport = (
-    <div className="stripTransport" role="group" aria-label="Playback controls">
+    <div className="stripTransport" role="group" aria-label={t('player.playbackControls')}>
       <IconButton
         variant="ghost"
-        aria-label="Previous track"
+        aria-label={t('player.previousTrack')}
         aria-disabled={!onSkipBackDisp || undefined}
         data-off={!onSkipBackDisp || undefined}
         skeleton={listLoading}
@@ -333,7 +430,7 @@ export function PlayerStrip({
       <IconButton
         variant="solid"
         className="stripTransport__play"
-        aria-label={dispPlaying ? 'Pause' : 'Play'}
+        aria-label={dispPlaying ? t('player.pause') : t('player.play')}
         aria-disabled={!onPlayingChangeDisp || undefined}
         data-off={!onPlayingChangeDisp || undefined}
         skeleton={listLoading}
@@ -343,7 +440,7 @@ export function PlayerStrip({
       </IconButton>
       <IconButton
         variant="ghost"
-        aria-label="Next track"
+        aria-label={t('player.nextTrack')}
         aria-disabled={!onSkipForwardDisp || undefined}
         data-off={!onSkipForwardDisp || undefined}
         skeleton={listLoading}
@@ -361,7 +458,7 @@ export function PlayerStrip({
   const originLabel = useOriginLabeler();
   const playerArtwork = (
         <ContextMenu
-          aria-label="Artwork style"
+          aria-label={t('player.artworkStyle')}
           className="artViewTarget"
           content={npArtMenu}
         >
@@ -419,13 +516,15 @@ export function PlayerStrip({
   const roomLine = following
     ? following.trackTitle
       ? `${following.trackTitle}${following.trackArtist ? ` · ${following.trackArtist}` : ''}`
-      : 'Nothing playing yet'
+      : t('player.nothingPlayingYet')
     : null;
   // Said only once the hub has answered that it has no such track - not
   // while the row is still on its way (roomTrack.ts), when a note would be
   // a guess that the next frame retracts.
   const roomMissing = !!following && !following.hosting && !!following.trackTitle && following.trackMissing;
-  const roomNote = roomMissing ? <span className="stripRoom__note">Not in your library</span> : undefined;
+  const roomNote = roomMissing ? (
+    <span className="stripRoom__note">{t('player.notInLibrary')}</span>
+  ) : undefined;
   // No length to draw a bar against: a host with nothing on, or a song the
   // library lacks. The transport can still speak to the room; the bar cannot.
   const roomNoClock = !!following && dispDuration <= 0;
@@ -446,6 +545,7 @@ export function PlayerStrip({
         data-noclock={roomNoClock || undefined}
         data-idle={following?.hosting || undefined}
         data-sent={following && following.controls > 0 ? '' : undefined}
+        data-smart={shuffle && smart ? '' : undefined}
         onClick={mobileControls ? openNowPlaying : undefined}
       >
       <PlayerBar
@@ -479,8 +579,8 @@ export function PlayerStrip({
         title={
           following
             ? following.hosting
-              ? 'Your groove'
-              : `${following.hostName}'s groove`
+              ? t('player.yourGroove')
+              : t('player.hostGroove', { host: following.hostName })
             : (dispTrack?.title ?? 'Funky Chunk')
         }
         subtitle={
@@ -498,7 +598,7 @@ export function PlayerStrip({
           ) : activeElsewhere ? (
             <>
               <ArtistLink artist={dispTrack?.artist} />
-              {activeDeviceName ? ` · on ${activeDeviceName}` : ''}
+              {activeDeviceName ? t('player.dotOnDevice', { device: activeDeviceName }) : ''}
             </>
           ) : track?.artist ? (
             // A door on desktop, where the strip is the only chrome and the
@@ -550,7 +650,7 @@ export function PlayerStrip({
         // rather than off a hashed kit class that could change under us. The
         // touch strip's hide rule (chapter 19) matches this name too, so the
         // relabelled control stays off the phone's strip with the rest.
-        labels={shuffle && smart ? { shuffle: SMART_SHUFFLE_LABEL } : undefined}
+        labels={barLabels}
         repeat={following ? undefined : repeat}
         onRepeatChange={following ? undefined : setRepeat}
         favorite={following ? undefined : favorite}
@@ -566,10 +666,10 @@ export function PlayerStrip({
           mobileControls || following ? undefined : (
           <Popover
             placement="top"
-            aria-label="Lyrics"
+            aria-label={t('player.lyrics')}
             className="lyricsPopoverPanel"
             trigger={
-              <IconButton variant="ghost" size="sm" aria-label="Lyrics" skeleton={listLoading}>
+              <IconButton variant="ghost" size="sm" aria-label={t('player.lyrics')} skeleton={listLoading}>
                 <Mic size={16} />
               </IconButton>
             }
@@ -619,7 +719,7 @@ export function PlayerStrip({
               <PluginSlot id="player-trailing" />
               <Popover
                 placement="top-end"
-                aria-label="Player options"
+                aria-label={t('player.playerOptions')}
                 className="morePopoverPanel"
                 open={moreOpen}
                 onOpenChange={(open) => {
@@ -634,7 +734,14 @@ export function PlayerStrip({
                       playback controls; lyrics already open full-screen from
                       there; and volume belongs to the phone's own buttons (see
                       the mobile volume note). */
-                  <IconButton variant="ghost" size="sm" aria-label="Playing on">
+                  /* `data-strip`, not the label. The stylesheet used to find
+                      this seat and the queue by their aria-label, which held
+                      only while the app was English - the day somebody picked
+                      another language the rule stopped matching and both
+                      controls reappeared in a strip with no room for them. An
+                      accessible name is for a screen reader; the selector gets
+                      an attribute of its own. */
+                  <IconButton variant="ghost" size="sm" data-strip="device" aria-label={t('player.playingOnLabel')}>
                     <MonitorSpeaker size={18} />
                   </IconButton>
                 }
@@ -655,7 +762,8 @@ export function PlayerStrip({
               <IconButton
                 variant="ghost"
                 size="sm"
-                aria-label="Queue"
+                data-strip="queue"
+                aria-label={t('player.queue')}
                 onClick={(event: React.MouseEvent) => {
                   // The strip's dead space opens Now Playing plain; this is a
                   // control, so it must not also ride that tap up.
@@ -694,7 +802,7 @@ export function PlayerStrip({
                   Volume is, so the fader keeps its own seat. */}
               <Popover
                 placement="top-end"
-                aria-label="Player options"
+                aria-label={t('player.playerOptions')}
                 className="popoverSheet eqPopoverPanel"
                 open={moreOpen}
                 onOpenChange={(open) => {
@@ -706,10 +814,16 @@ export function PlayerStrip({
                     className="soundTrigger"
                     variant="ghost"
                     size="sm"
+                    // soundChangesDetail, not soundChangesLabel with its
+                    // opening sliced back off: that slice matched the English
+                    // "Sound — " and would have left the whole opening in
+                    // place in every other language.
                     aria-label={
                       changes.total > 0
-                        ? `Player options — ${soundChangesLabel(changes).replace('Sound — ', '')}`
-                        : 'Player options'
+                        ? t('player.playerOptionsSound', {
+                            detail: soundChangesDetail(changes, t),
+                          })
+                        : t('player.playerOptions')
                     }
                   >
                     <EllipsisVertical size={18} />
@@ -734,7 +848,7 @@ export function PlayerStrip({
                         onClick={() => setMoreView('eq')}
                       >
                         <AudioLines size={16} />
-                        Equalizer
+                        {t('player.equalizer')}
                         {changes.total > 0 && (
                           <CounterBadge
                             className="moreMenuItem__badge"
@@ -758,7 +872,7 @@ export function PlayerStrip({
                           }}
                         >
                           <ListPlus size={16} />
-                          Add to playlist
+                          {t('player.addToPlaylist')}
                         </button>
                       )}
                       {devicesAvailable && (
@@ -768,7 +882,7 @@ export function PlayerStrip({
                           onClick={() => setMoreView('devices')}
                         >
                           <MonitorSpeaker size={16} />
-                          Connect to a device
+                          {t('player.connectToDevice')}
                         </button>
                       )}
                     </div>
@@ -780,7 +894,7 @@ export function PlayerStrip({
                       onClick={() => setMoreView('menu')}
                     >
                       <ChevronLeft size={14} />
-                      {moreView === 'devices' ? 'Devices' : 'Equalizer'}
+                      {moreView === 'devices' ? t('player.devices') : t('player.equalizer')}
                     </button>
                   )}
                   {moreView === 'eq' && (

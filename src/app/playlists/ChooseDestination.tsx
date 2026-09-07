@@ -1,6 +1,7 @@
 import { Modal, Text } from '@glacier/react';
 import { Heart, ListMusic, Plus } from '@glacier/icons';
 import { usePlaylists } from './playlists.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { openNewPlaylist } from '../nav/newPlaylistDoor.ts';
 import type { FileDestination } from '../downloads/filePlan.ts';
 
@@ -29,6 +30,7 @@ export function ChooseDestination({
   onChoose: (dest: FileDestination | null) => void;
 }) {
   const { playlists } = usePlaylists();
+  const t = useT();
 
   const pick = (dest: FileDestination | null) => {
     onChoose(dest);
@@ -45,7 +47,7 @@ export function ChooseDestination({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Add to" size="sm">
+    <Modal open={open} onClose={onClose} title={t('playlists.destinationTitle')} size="sm">
       <div className="chooseDest">
         <Text tone="muted" size="sm" className="chooseDest__what">
           {title}
@@ -55,7 +57,7 @@ export function ChooseDestination({
           <span className="chooseDest__icon" data-tint="pink" aria-hidden>
             <Heart size={16} />
           </span>
-          <span className="chooseDest__label">Liked songs</span>
+          <span className="chooseDest__label">{t('library.likedSongs')}</span>
         </button>
 
         {playlists.map((p) => (
@@ -76,13 +78,13 @@ export function ChooseDestination({
           <span className="chooseDest__icon" aria-hidden>
             <Plus size={16} />
           </span>
-          <span className="chooseDest__label">New playlist…</span>
+          <span className="chooseDest__label">{t('playlists.newPlaylistAction')}</span>
         </button>
 
         {/* The way out that is not a destination: the song still lands in the
             library, which is what Add did before any of this existed. */}
         <button type="button" className="chooseDest__plain" onClick={() => pick(null)}>
-          Just add it to my library
+          {t('playlists.libraryOnly')}
         </button>
       </div>
     </Modal>

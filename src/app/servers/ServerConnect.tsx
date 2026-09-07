@@ -7,10 +7,13 @@ import {
   register,
   type ServerInfo,
 } from '../server.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatNumber } from '../ux/format.ts';
 import { useServerSession } from './serverSession.tsx';
 
 /** The sign-in / first-run form. */
 export function ConnectForm() {
+  const t = useT();
   const { connect } = useServerSession();
   const [url, setUrl] = useState('');
   const [username, setUsername] = useState('');
@@ -36,14 +39,14 @@ export function ConnectForm() {
       setProbing(true);
       void fetchServerInfo(origin, controller.signal)
         .then((found) => setInfo(found))
-        .catch(() => setError('No AttackFM server answered at that address.'))
+        .catch(() => setError(t('servers.noServerAtAddress')))
         .finally(() => setProbing(false));
     }, 600);
     return () => {
       window.clearTimeout(probeTimer.current);
       controller.abort();
     };
-  }, [url]);
+  }, [url, t]);
 
   const submit = async () => {
     setBusy(true);
@@ -56,7 +59,7 @@ export function ConnectForm() {
       if (info?.needsSetup) await register(origin, username, password);
       await connect(origin, username, password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not connect');
+      setError(err instanceof Error ? err.message : t('servers.couldNotConnect'));
     } finally {
       setBusy(false);
     }
@@ -68,14 +71,14 @@ export function ConnectForm() {
     <div className="prefsBody">
       <div className="prefsSection">
         <Field
-          label="Server address"
-          hint="Where your music server is reachable, e.g. music.example.com."
+          label={t('servers.addressLabel')}
+          hint={t('servers.addressHint')}
         >
           <Input
             value={url}
             onChange={(e) => setUrl(e.currentTarget.value)}
-            placeholder="music.example.com"
-            aria-label="Server address"
+            placeholder={t('servers.addressPlaceholder')}
+            aria-label={t('servers.addressLabel')}
             leadingIcon={<Cloud size={16} />}
             autoCapitalize="none"
             autoCorrect="off"
@@ -85,24 +88,30 @@ export function ConnectForm() {
         </Field>
         {probing && (
           <Text tone="muted" size="sm">
-            Looking for a server…
+            {t('servers.lookingForServer')}
           </Text>
         )}
         {info && (
           <Banner tone={info.needsSetup ? 'warning' : 'success'}>
             {info.needsSetup
-              ? `${info.name} has no accounts yet — the details below will create the owner account.`
-              : `Found ${info.name} · ${info.tracks.toLocaleString()} tracks`}
+              ? t('servers.noAccountsYet', { name: info.name })
+              : /* `count` picks the plural form; `n` is the number as it is
+                   printed, grouped the way this locale groups. */
+                t('servers.foundServer', {
+                  count: info.tracks,
+                  name: info.name,
+                  n: formatNumber(info.tracks),
+                })}
           </Banner>
         )}
       </div>
 
       <div className="prefsSection">
-        <Field label={info?.needsSetup ? 'Choose a username' : 'Username'}>
+        <Field label={info?.needsSetup ? t('servers.chooseUsername') : t('servers.username')}>
           <Input
             value={username}
             onChange={(e) => setUsername(e.currentTarget.value)}
-            aria-label="Username"
+            aria-label={t('servers.username')}
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
@@ -110,14 +119,14 @@ export function ConnectForm() {
           />
         </Field>
         <Field
-          label={info?.needsSetup ? 'Choose a password' : 'Password'}
-          hint={info?.needsSetup ? 'At least 8 characters.' : undefined}
+          label={info?.needsSetup ? t('servers.choosePassword') : t('servers.password')}
+          hint={info?.needsSetup ? t('servers.passwordMinLength') : undefined}
         >
           <Input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.currentTarget.value)}
-            aria-label="Password"
+            aria-label={t('servers.password')}
             autoComplete={info?.needsSetup ? 'new-password' : 'current-password'}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && ready) void submit();
@@ -127,7 +136,7 @@ export function ConnectForm() {
         {error && <Banner tone="danger">{error}</Banner>}
         <div className="prefsActions">
           <Button variant="solid" size="sm" disabled={!ready} onClick={() => void submit()}>
-            {busy ? 'Connecting…' : info?.needsSetup ? 'Create account & connect' : 'Connect'}
+            {busy ? t('servers.connecting') : info?.needsSetup ? t('servers.createAccountConnect') : t('servers.connect')}
           </Button>
         </div>
       </div>
@@ -154,6 +163,7 @@ const INSTALL_COMMAND =
  * common case of somebody adding their second device.
  */
 function NoServerYet() {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -176,43 +186,35 @@ function NoServerYet() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        <Server size={14} /> {open ? "Hide setup" : "I don't have a server yet"}
+        <Server size={14} /> {open ? t('servers.hideSetup') : t('servers.noServerYet')}
       </Button>
 
       {open && (
         <div className="serverSetup">
           <Text tone="muted" size="sm">
-            AttackFM plays music you own, from a machine you own. The server is a
-            single program you run on a spare computer, a NAS, or a cheap VPS — it
-            indexes a folder of music and streams it to your devices. Nobody else
-            is on it and nothing leaves your machine.
+            {t('servers.setupBlurb')}
           </Text>
 
-          <Label>1 · Run this on that machine</Label>
+          <Label>{t('servers.setupStepRun')}</Label>
           <div className="serverSetupCommand">
             <code>{INSTALL_COMMAND}</code>
             <Button variant="outline" size="sm" onClick={() => void copy()}>
               {copied ? <Check size={14} /> : <Copy size={14} />}
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? t('common.copied') : t('common.copy')}
             </Button>
           </div>
           <Text tone="muted" size="sm">
-            It asks where your music lives and whether you have a domain, then sets
-            everything up. With a domain it gets an HTTPS certificate automatically
-            so you can listen anywhere; without one it works on your home network.
+            {t('servers.setupRunBody')}
           </Text>
 
-          <Label>2 · Enter the address it prints</Label>
+          <Label>{t('servers.setupStepAddress')}</Label>
           <Text tone="muted" size="sm">
-            The installer finishes by showing the address to type into the field
-            above. The first account you create becomes the owner.
+            {t('servers.setupAddressBody')}
           </Text>
 
-          <Label>3 · Add your music</Label>
+          <Label>{t('servers.setupStepMusic')}</Label>
           <Text tone="muted" size="sm">
-            Point the installer at a folder you already have, or upload from the
-            desktop app once you are connected — files are filed by their own tags
-            and indexed as they arrive.
+            {t('servers.setupMusicBody')}
           </Text>
         </div>
       )}

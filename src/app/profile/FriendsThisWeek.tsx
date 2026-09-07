@@ -6,8 +6,12 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { fetchFriends, type RegistryFriend } from '../servers/registry.ts';
 import { setSharing, useSharing } from './listeningShare.tsx';
-import { fetchStatsSummary, fmtMinutes } from './stats.ts';
+import { fetchStatsSummary } from './stats.ts';
 import { Heading } from './StatsBits.tsx';
+// Shared with the friends grid rather than reached for from ./stats.ts:
+// `fmtMinutes` there spells "min" and "hr" in English (see listenedTime).
+import { listenedTime } from './RegistryFriends.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The leaderboard, such as it is: your week beside the friends who share
@@ -24,6 +28,7 @@ export function FriendsThisWeek({
   myMinutes: number | null;
   myStreak: number | null;
 }) {
+  const t = useT();
   const { session: registry } = useRegistry();
   const { session: server } = useServerSession();
   const sharing = useSharing();
@@ -71,7 +76,7 @@ export function FriendsThisWeek({
     .sort((a, b) => (b.weekMinutes ?? 0) - (a.weekMinutes ?? 0));
   const rows: { who: string; minutes: number; streak: number | null; top: string | null; me: boolean }[] = [
     ...(sharing && week
-      ? [{ who: 'You', minutes: week.minutes, streak: week.streak, top: null, me: true }]
+      ? [{ who: t('common.you'), minutes: week.minutes, streak: week.streak, top: null, me: true }]
       : []),
     ...sharers.map((f) => ({
       who: `@${f.handle}`,
@@ -85,22 +90,22 @@ export function FriendsThisWeek({
 
   return (
     <section className="statsSection">
-      <Heading icon={<Users size={14} />}>Friends this week</Heading>
+      <Heading icon={<Users size={14} />}>{t('profile.friendsThisWeek')}</Heading>
       <Switch
-        label="Share my listening with friends"
+        label={t('profile.shareMyListening')}
         checked={sharing}
         onCheckedChange={setSharing}
       />
+      {/* Two different notes for two states, not one sentence with a hole:
+          each says something the other does not. */}
       <p className="statsFriendsNote">
-        {sharing
-          ? 'Sharing minutes, streak and top artist — nothing more. Switch off and it fades from friends within the week.'
-          : 'Off: your numbers stay home. Friends who share still show below.'}
+        {sharing ? t('profile.sharingOn') : t('profile.sharingOff')}
       </p>
       {rows.length === 0 ? (
         <p className="statsFriendsNote">
           {friends.length === 0
-            ? 'No friends on the registry yet.'
-            : 'None of your friends share their listening yet.'}
+            ? t('profile.noRegistryFriends')
+            : t('profile.noFriendsShareListening')}
         </p>
       ) : (
         <ol className="statsFriends">
@@ -114,8 +119,8 @@ export function FriendsThisWeek({
                 />
               </span>
               <span className="statsFriendRow__meta">
-                {fmtMinutes(row.minutes)}
-                {row.streak != null && row.streak > 1 && ` · ${row.streak}d streak`}
+                {listenedTime(row.minutes)}
+                {row.streak != null && row.streak > 1 && ` · ${t('profile.dayStreakShort', { count: row.streak })}`}
                 {row.top && (
                   <>
                     {' · '}

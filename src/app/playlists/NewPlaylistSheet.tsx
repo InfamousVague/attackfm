@@ -1,6 +1,7 @@
 import { Button, Drawer, Input, Modal, Switch, Text, Textarea, useToast } from '@glacier/react';
 import { ListMusic, UserPlus, Users, X } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useNarrowViewport } from '../ux/useNarrowViewport.ts';
 import { openFriendPicker, sayNames, type PickedPerson } from '../nav/friendPickerDoor.ts';
@@ -27,6 +28,7 @@ import { usePlaylists } from './playlists.tsx';
  * do with the id) and closes.
  */
 export function NewPlaylistSheet() {
+  const t = useT();
   const [request, setRequest] = useState<NewPlaylistRequest | null>(null);
   const [tick, setTick] = useState(0);
   const narrow = useNarrowViewport();
@@ -48,13 +50,13 @@ export function NewPlaylistSheet() {
 
   if (narrow) {
     return (
-      <Drawer open={open} onClose={close} side="bottom" size="lg" title="New playlist" className="newPlaylistSheet">
+      <Drawer open={open} onClose={close} side="bottom" size="lg" title={t('playlists.newTitle')} className="newPlaylistSheet">
         {body}
       </Drawer>
     );
   }
   return (
-    <Modal open={open} onClose={close} title="New playlist" size="sm">
+    <Modal open={open} onClose={close} title={t('playlists.newTitle')} size="sm">
       {body}
     </Modal>
   );
@@ -64,6 +66,7 @@ function NewPlaylistBody({ request, onClose }: { request: NewPlaylistRequest; on
   const { create, setMeta, share, addWant } = usePlaylists();
   const { tracks } = useLibrary();
   const { toast } = useToast();
+  const t = useT();
   const [name, setName] = useState('');
   const [about, setAbout] = useState('');
   const [together, setTogether] = useState(false);
@@ -75,20 +78,22 @@ function NewPlaylistBody({ request, onClose }: { request: NewPlaylistRequest; on
   // The kit's dialog takes focus as it opens; the name field takes it back
   // once the sheet has settled - it is the whole sheet on a phone.
   useEffect(() => {
-    const t = window.setTimeout(() => field.current?.focus(), 180);
-    return () => window.clearTimeout(t);
+    const timer = window.setTimeout(() => field.current?.focus(), 180);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const paths = request.paths ?? [];
   const want = request.want ?? null;
   // What the list is born holding, said once under the name.
   const first = paths.length > 0 ? tracks.find((t) => t.path === paths[0]) : null;
+  // Three different sentences, not one with a variable in it: a wanted song
+  // says something the other two do not, and "starts with N songs" counts.
   const holding = want
-    ? `Starts with ${want.title} - it downloads as the list is made`
+    ? t('playlists.startsWithWant', { title: want.title })
     : paths.length === 1
-      ? `Starts with ${first?.title ?? 'this song'}`
+      ? t('playlists.startsWithOne', { title: first?.title ?? t('playlists.thisSong') })
       : paths.length > 1
-        ? `Starts with ${paths.length} songs`
+        ? t('playlists.startsWithCount', { count: paths.length })
         : null;
   const seed = request.seed?.trim() || want?.title || first?.title || '';
   // Only a server that shares can seat anyone; a local library's switch
@@ -97,11 +102,11 @@ function NewPlaylistBody({ request, onClose }: { request: NewPlaylistRequest; on
 
   const choose = async () => {
     const pick = await openFriendPicker({
-      title: 'Choose people',
-      hint: 'They can put songs in, and take them out.',
+      title: t('playlists.choosePeople'),
+      hint: t('playlists.choosePeopleHint'),
       mode: 'playlist',
       exclude: people.map((p) => p.handle),
-      action: (n) => (n ? `Choose ${n}` : 'Choose'),
+      action: (n) => (n ? t('playlists.chooseCount', { count: n }) : t('playlists.choose')),
     });
     if (!pick) return;
     setPeople((cur) => {
@@ -112,7 +117,7 @@ function NewPlaylistBody({ request, onClose }: { request: NewPlaylistRequest; on
 
   const make = async () => {
     if (busy) return;
-    const clean = name.trim() || seed || 'New Playlist';
+    const clean = name.trim() || seed || t('library.newPlaylist');
     setBusy(true);
     setError(null);
     try {
@@ -127,12 +132,21 @@ function NewPlaylistBody({ request, onClose }: { request: NewPlaylistRequest; on
             await share(id, { username: p.handle }, 'editor');
             seated.push(p.handle);
           } catch (e) {
-            refused.push(`${p.handle}: ${e instanceof Error && e.message ? e.message : 'could not be added'}`);
+            // One sentence, not a handle glued to a reason with a colon: which
+            // side of the message the name belongs on is a language's business.
+            refused.push(
+              t('playlists.seatRefusedFor', {
+                who: p.handle,
+                reason: e instanceof Error && e.message ? e.message : t('playlists.seatRefused'),
+              }),
+            );
           }
         }
       }
       toast({
-        message: seated.length ? `Made “${clean}” with ${sayNames(seated)}` : `Made “${clean}”`,
+        message: seated.length
+          ? t('playlists.madeWith', { name: clean, who: sayNames(seated) })
+          : t('playlists.made', { name: clean }),
       });
       for (const line of refused) toast({ message: line });
       onClose();
@@ -142,7 +156,7 @@ function NewPlaylistBody({ request, onClose }: { request: NewPlaylistRequest; on
       if (seated.length > 0) openPlaylistWith(id, { members: true });
       else if (!request.onCreated) openPlaylistWith(id);
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : 'Could not make the playlist just now.');
+      setError(e instanceof Error && e.message ? e.message : t('playlists.makeFailed'));
       setBusy(false);
     }
   };
@@ -156,13 +170,13 @@ function NewPlaylistBody({ request, onClose }: { request: NewPlaylistRequest; on
       }}
     >
       <label className="newPlaylist__field">
-        <span className="newPlaylist__label">Name</span>
+        <span className="newPlaylist__label">{t('playlists.nameLabel')}</span>
         <Input
           ref={field}
           value={name}
           onChange={(e) => setName(e.currentTarget.value)}
-          placeholder={seed || 'Name your playlist'}
-          aria-label="Playlist name"
+          placeholder={seed || t('playlists.namePrompt')}
+          aria-label={t('playlists.nameField')}
           enterKeyHint="done"
           disabled={busy}
         />
@@ -173,12 +187,12 @@ function NewPlaylistBody({ request, onClose }: { request: NewPlaylistRequest; on
         </Text>
       )}
       <label className="newPlaylist__field">
-        <span className="newPlaylist__label">About it</span>
+        <span className="newPlaylist__label">{t('playlists.aboutLabel')}</span>
         <Textarea
           value={about}
           onChange={(e) => setAbout(e.currentTarget.value)}
-          placeholder="What it’s for (optional)"
-          aria-label="Description"
+          placeholder={t('playlists.aboutPrompt')}
+          aria-label={t('playlists.description')}
           rows={2}
           disabled={busy}
         />
@@ -189,11 +203,11 @@ function NewPlaylistBody({ request, onClose }: { request: NewPlaylistRequest; on
           <label className="newPlaylist__switch">
             <span className="newPlaylist__switchText">
               <span className="newPlaylist__switchTitle">
-                <Users size={15} aria-hidden /> Collaborative
+                <Users size={15} aria-hidden /> {t('playlists.collaborative')}
               </span>
-              <span className="newPlaylist__switchSub">Friends you add can put songs in</span>
+              <span className="newPlaylist__switchSub">{t('playlists.collaborativeSub')}</span>
             </span>
-            <Switch checked={together} onCheckedChange={setTogether} aria-label="Collaborative" disabled={busy} />
+            <Switch checked={together} onCheckedChange={setTogether} aria-label={t('playlists.collaborative')} disabled={busy} />
           </label>
           {together && (
             <>
@@ -202,19 +216,23 @@ function NewPlaylistBody({ request, onClose }: { request: NewPlaylistRequest; on
                   <UserPlus size={16} />
                 </span>
                 <span className="fpDoor__text">
-                  <span className="fpDoor__title">{people.length ? 'Choose more people' : 'Choose people'}</span>
-                  <span className="fpDoor__sub">Anyone on this server, friends first</span>
+                  {/* Two labels for two states, not a plural: "more" is about
+                      whether anyone is chosen yet, not about how many. */}
+                  <span className="fpDoor__title">
+                    {people.length ? t('playlists.chooseMorePeople') : t('playlists.choosePeople')}
+                  </span>
+                  <span className="fpDoor__sub">{t('playlists.choosePeopleWho')}</span>
                 </span>
               </button>
               {people.length > 0 && (
-                <div className="friendPicker__chips" role="list" aria-label="Chosen">
+                <div className="friendPicker__chips" role="list" aria-label={t('playlists.chosen')}>
                   {people.map((p) => (
                     <button
                       key={p.handle}
                       type="button"
                       role="listitem"
                       className="fpChip"
-                      aria-label={`Remove ${p.handle}`}
+                      aria-label={t('playlists.removePerson', { name: p.handle })}
                       disabled={busy}
                       onClick={() => setPeople((cur) => cur.filter((x) => x.handle !== p.handle))}
                     >
@@ -238,10 +256,10 @@ function NewPlaylistBody({ request, onClose }: { request: NewPlaylistRequest; on
 
       <div className="newPlaylist__actions">
         <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
-          Not now
+          {t('common.notNow')}
         </Button>
         <Button variant="solid" type="submit" disabled={busy}>
-          {busy ? 'Making…' : together && people.length ? `Create with ${people.length}` : 'Create'}
+          {busy ? t('playlists.making') : together && people.length ? t('playlists.createWith', { count: people.length }) : t('playlists.create')}
         </Button>
       </div>
     </form>

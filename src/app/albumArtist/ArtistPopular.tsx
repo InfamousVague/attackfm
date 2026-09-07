@@ -9,9 +9,46 @@ import { artSized, type CatalogTrack, type ServerSession } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
 import type { Track } from '../core/tauri.ts';
 import type { AddingState } from './artistAcquire.ts';
-import type { ArtistAudition } from './artistAudition.ts';
+import type { ArtistAudition, AuditionState } from './artistAudition.ts';
 import type { PopularRow } from './artistData.ts';
-import { formatClock } from '../ux/format.ts';
+import { formatClock, formatNumber } from '../ux/format.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+
+/*
+ * WHAT AN AUDITION'S STATE SAYS, in two registers: the two-word status the
+ * time cell wears, and the whole sentence a screen reader is read.
+ *
+ * KEYS, not strings, and deliberately so - these tables are evaluated at
+ * import, before any provider exists, so a translated string here would be
+ * frozen in whatever language the app booted in. The state names the key and
+ * the call site resolves it. A state absent from the word table has nothing
+ * to say in the cell, and the running time shows instead.
+ */
+const AUDITION_WORD = new Map<AuditionState, string>([
+  ['fetching', 'library.auditionFetching'],
+  ['missing', 'library.auditionMissing'],
+  ['unreachable', 'library.auditionUnreachable'],
+  ['refused', 'library.auditionRefused'],
+  ['held', 'library.auditionHeld'],
+  ['budget', 'library.auditionBudget'],
+  ['offline', 'library.auditionOffline'],
+  ['error', 'library.auditionError'],
+]);
+
+/** The label on the title button. Every one of these is handed the song's
+ *  title, even where the English sentence has no room for it, so that a
+ *  language which needs to name the song still can. */
+const AUDITION_SAID = new Map<AuditionState, string>([
+  ['ready', 'library.auditionListenTo'],
+  ['fetching', 'library.auditionOnWay'],
+  ['missing', 'library.auditionNotOnSpotify'],
+  ['unreachable', 'library.auditionUnreachableSaid'],
+  ['refused', 'library.auditionRefusedSaid'],
+  ['held', 'library.auditionHeldSaid'],
+  ['budget', 'library.auditionBudgetSaid'],
+  ['offline', 'library.auditionOfflineSaid'],
+  ['error', 'library.auditionErrorSaid'],
+]);
 
 /** A popular row's thumbnail: the same treatment at list size. */
 function CatalogArt({ src }: { src: string }) {
@@ -57,6 +94,7 @@ export function ArtistPopular({
   onPlay,
   audition,
 }: ArtistPopularProps) {
+  const t = useT();
   const { isFavorite, toggleFavorite } = useLibrary();
   // Whether the "add these to a playlist" sheet is up.
   const [filing, setFiling] = useState(false);
@@ -93,7 +131,7 @@ export function ArtistPopular({
   return (
     <section className="homeShelf">
       <div className="artistPopularHead">
-        <h2 className="homeShelfTitle">Popular</h2>
+        <h2 className="homeShelfTitle">{t('library.popular')}</h2>
         {/* Named by what it will actually file, never by what is on screen: a
             chart of ten songs you own three of files three, and a button that
             says "Add all" and adds three is a button that lied. */}
@@ -101,8 +139,8 @@ export function ArtistPopular({
           <Button variant="ghost" size="sm" onClick={() => setFiling(true)}>
             <ListPlus size={15} />
             {ownedHere.length === popular.length
-              ? 'Add all'
-              : `Add ${ownedHere.length} of these`}
+              ? t('player.addAll')
+              : t('library.addSomeOfThese', { count: ownedHere.length })}
           </Button>
         )}
       </div>
@@ -113,68 +151,37 @@ export function ArtistPopular({
           counts survive as a line on the rows you do own. A song you have
           plays; the rest are one tap from your downloads. */}
       <ol className="catalogTracks">
-        {popular.map((t, index) => {
-          const state = adding[t.id];
-          const mine = t.mine;
+        {popular.map((song, index) => {
+          const state = adding[song.id];
+          const mine = song.mine;
           const plays = mine ? playsFor(mine.path) : null;
           // A song you do not own can still be HEARD when something can
           // fetch it: a temporary copy, on tap. Once a copy is here the row
           // plays it whatever the downloader is doing now. An owned row is
           // out of this entirely - its own controls already play it.
-          const heard = t.catalogue && !mine ? audition.stateOf(t.catalogue) : 'idle';
-          const copy = t.catalogue && !mine ? audition.copyOf(t.catalogue) : null;
-          const canListen = t.catalogue !== null && !mine && (heard === 'ready' || audition.can);
-          const word =
-            heard === 'fetching'
-              ? 'fetching…'
-              : heard === 'missing'
-                ? 'not found'
-                : heard === 'unreachable'
-                  ? 'try later'
-                  : heard === 'refused'
-                    ? 'library full'
-                    : heard === 'held'
-                      ? 'unavailable'
-                      : heard === 'budget'
-                        ? 'no room'
-                        : heard === 'offline'
-                          ? 'downloader off'
-                          : heard === 'error'
-                            ? 'try again'
-                            : null;
-          const said =
-            heard === 'ready'
-              ? `Listen to ${t.title}`
-              : heard === 'fetching'
-                ? `${t.title} is on its way`
-                : heard === 'missing'
-                  ? `${t.title} is not on Spotify`
-                  : heard === 'unreachable'
-                    ? `The catalogue could not be reached for ${t.title}`
-                    : heard === 'refused'
-                      ? `The library is full`
-                      : heard === 'held'
-                        ? `${t.title} is not available to fetch`
-                        : heard === 'budget'
-                          ? `The collector is out of room`
-                          : heard === 'offline'
-                            ? `The download box is not answering`
-                            : heard === 'error'
-                              ? `${t.title} could not be fetched`
-                              : `Fetch a copy of ${t.title} to listen to`;
+          const heard = song.catalogue && !mine ? audition.stateOf(song.catalogue) : 'idle';
+          const copy = song.catalogue && !mine ? audition.copyOf(song.catalogue) : null;
+          const canListen = song.catalogue !== null && !mine && (heard === 'ready' || audition.can);
+          const wordKey = AUDITION_WORD.get(heard);
+          const word = wordKey ? t(wordKey) : null;
+          const said = t(AUDITION_SAID.get(heard) ?? 'library.auditionFetchToListen', {
+            title: song.title,
+          });
           // A row you OWN is a song and wears the song menu; a row that is
           // still only in the catalogue is an offer, and there is nothing
           // to queue or file yet.
           const row = (
             <li
-              key={t.id}
+              key={song.id}
               className="catalogTrack"
               data-fetching={heard === 'fetching' || undefined}
               data-listen={canListen || undefined}
             >
-              <span className="catalogTrack__rank">{index + 1}</span>
-              {t.cover ? (
-                <CatalogArt src={t.cover} />
+              {/* The chart position, in the locale's digits - the same
+                  treatment the trending shelves give their ranks. */}
+              <span className="catalogTrack__rank">{formatNumber(index + 1)}</span>
+              {song.cover ? (
+                <CatalogArt src={song.cover} />
               ) : (
                 <span className="catalogTrack__art catalogTrack__art--glyph" aria-hidden>
                   <Music size={16} />
@@ -188,7 +195,7 @@ export function ArtistPopular({
                   className="catalogTrack__title catalogTrack__title--play"
                   onClick={() => onPlay(mine, theirs)}
                 >
-                  {t.title}
+                  {song.title}
                 </button>
               ) : canListen ? (
                 /* Not owned, but one tap from being heard: the tap asks for
@@ -204,27 +211,30 @@ export function ArtistPopular({
                   /* Not `disabled`: that drops the focus a keyboard just put
                      here. The hook ignores a tap while it is fetching. */
                   aria-disabled={heard === 'fetching' || undefined}
-                  onClick={() => audition.listen(t.catalogue!)}
+                  onClick={() => audition.listen(song.catalogue!)}
                 >
-                  <span className="catalogTrack__titleText">{t.title}</span>
+                  <span className="catalogTrack__titleText">{song.title}</span>
                   {heard === 'ready' && (
                     <Headphones size={12} className="catalogTrack__temp" aria-hidden />
                   )}
                 </button>
               ) : (
-                <span className="catalogTrack__title">{t.title}</span>
+                <span className="catalogTrack__title">{song.title}</span>
               )}
               {/* Your own count, where the server has one - the part of the
                   old shelf worth keeping. */}
               {plays !== null && (
                 <span className="catalogTrack__plays">
-                  {plays.toLocaleString()} {plays === 1 ? 'play' : 'plays'}
+                  {/* The NUMBER is grouped by Intl and the WORD is picked by
+                      the plural rules - two different jobs, so the count goes
+                      in twice: once to choose the form, once already written. */}
+                  {t('library.playCount', { count: plays, n: formatNumber(plays) })}
                 </span>
               )}
               {/* The time cell doubles as the word, so the bar is never the
                   only thing saying what the row is doing. */}
               <span className="catalogTrack__time" aria-live={canListen ? 'polite' : undefined}>
-                {word ?? formatClock(t.duration, '--:--')}
+                {word ?? formatClock(song.duration, '--:--')}
               </span>
               {/* No heart and no add on the row itself. Every row here wears
                   a long-press menu already - TrackMenu when you own the song,
@@ -246,13 +256,13 @@ export function ArtistPopular({
                   type="button"
                   className="catalogTrack__add"
                   data-state="owned"
-                  aria-label={`Play ${t.title}`}
+                  aria-label={t('library.playSong', { title: song.title })}
                   onClick={() => onPlay(mine, theirs)}
                 >
                   <Check size={14} className="catalogTrack__have" />
                   <Play size={14} className="catalogTrack__go" />
                 </button>
-              ) : !t.catalogue ? (
+              ) : !song.catalogue ? (
                 <span className="catalogTrack__add" data-state="added" aria-hidden>
                   <Check size={14} />
                 </span>
@@ -264,7 +274,7 @@ export function ArtistPopular({
                   type="button"
                   className="catalogTrack__add"
                   data-state="owned"
-                  aria-label={`Listen to ${t.title}`}
+                  aria-label={t('library.auditionListenTo', { title: song.title })}
                   onClick={() => onPlay(copy, [copy])}
                 >
                   <Check size={14} className="catalogTrack__have" />
@@ -286,17 +296,21 @@ export function ArtistPopular({
                   /* Not while a copy is on its way: two doors, one song. */
                   disabled={state !== undefined || !session || heard === 'fetching'}
                   aria-label={
-                    state === 'missing' ? `${t.title} is not on Spotify` : `Add ${t.title}`
+                    state === 'missing'
+                      ? t('library.auditionNotOnSpotify', { title: song.title })
+                      : t('library.addTrack', { title: song.title })
                   }
                   title={
-                    state === 'missing' ? `${t.title} is not on Spotify to import` : undefined
+                    state === 'missing'
+                      ? t('library.trackNotOnSpotifyToImport', { title: song.title })
+                      : undefined
                   }
-                  onClick={() => void addSong(t.catalogue!)}
+                  onClick={() => void addSong(song.catalogue!)}
                 >
                   {state === 'added' ? (
                     <Check size={14} />
                   ) : state === 'finding' ? (
-                    <span className="artistAlbumSpin" aria-label="Finding it on Spotify" />
+                    <span className="artistAlbumSpin" aria-label={t('library.findingOnSpotify')} />
                   ) : state === 'missing' ? (
                     <X size={14} />
                   ) : (
@@ -308,22 +322,22 @@ export function ArtistPopular({
                 <span
                   className="catalogTrack__bar"
                   role="progressbar"
-                  aria-label="Downloading a copy to listen to"
+                  aria-label={t('library.auditionDownloading')}
                 />
               )}
             </li>
           );
           return mine ? (
-            <TrackMenu key={t.id} track={mine} className="catalogTrackMenu">
+            <TrackMenu key={song.id} track={mine} className="catalogTrackMenu">
               {row}
             </TrackMenu>
-          ) : t.catalogue ? (
+          ) : song.catalogue ? (
             // A catalogue row gets its own long-press menu - the not-owned
             // twin, whose reason to exist is "file it into a playlist to
             // acquire". Add and Love are the same acts as the row's buttons.
             <CatalogTrackMenu
-              key={t.id}
-              target={{ artist, title: t.title, url: t.catalogue.url }}
+              key={song.id}
+              target={{ artist, title: song.title, url: song.catalogue.url }}
               /* The same copy-aware acts as the row's own buttons: a landed
                  copy is kept, not fetched again; one on its way is only
                  promised. */
@@ -332,14 +346,14 @@ export function ArtistPopular({
                 if (copy) {
                   if (!isFavorite(copy.path)) toggleFavorite(copy.path);
                 } else if (heard !== 'fetching') {
-                  void addSong(t.catalogue!);
+                  void addSong(song.catalogue!);
                 }
               }}
               onLike={() => {
                 if (copy) toggleFavorite(copy.path);
-                else loveSong(t.catalogue!, heard !== 'fetching');
+                else loveSong(song.catalogue!, heard !== 'fetching');
               }}
-              liked={copy ? isFavorite(copy.path) : loved.has(t.id)}
+              liked={copy ? isFavorite(copy.path) : loved.has(song.id)}
             >
               {row}
             </CatalogTrackMenu>

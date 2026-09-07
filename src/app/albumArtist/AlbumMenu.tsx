@@ -7,6 +7,7 @@ import { fireNativeHaptic } from '../core/haptics.ts';
 import { useQueueControls } from '../player/queueControls.tsx';
 import { useJamOptional } from '../player/jam.tsx';
 import { shuffled } from '../ux/shuffle.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -41,6 +42,7 @@ export function AlbumMenu({
   const { playNext, addToQueue, following } = useQueueControls();
   const inJam = !!useJamOptional()?.current;
   const { toast } = useToast();
+  const t = useT();
   /*
    * The same hold TrackMenu carries, for the same two reasons: the kit only
    * answers a touch long-press and does nothing about the release - so on a
@@ -71,44 +73,57 @@ export function AlbumMenu({
       for (const track of tracks) addToQueue(track);
     }
     fireNativeHaptic('light');
-    const said = following
-      ? next
-        ? 'sent to play next in the groove'
-        : 'sent to the groove'
-      : inJam
+    /*
+     * Six whole sentences rather than a count glued to a phrase. The count and
+     * the verb are one clause - a language that inflects the verb for number,
+     * or puts it before the count, cannot be served by assembling the two - so
+     * the state picks the KEY and the plural picks the form inside it.
+     *
+     * These are the SELECTION BAR'S six keys, not a second set of the same
+     * sentences: this menu queues a record where the bar queues a batch, and
+     * both say the identical thing. Two key sets would be the one sentence
+     * translated twice, free to drift apart in seven languages at once.
+     */
+    const said = (key: string) => t(key, { count: tracks.length });
+    toast({
+      message: following
         ? next
-          ? 'playing next in the groove'
-          : 'added to the groove'
-        : next
-          ? 'playing next'
-          : 'added to the queue';
-    toast({ message: `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'} ${said}` });
+          ? said('library.selectionSentNextGroove')
+          : said('library.selectionSentGroove')
+        : inJam
+          ? next
+            ? said('library.selectionPlayingNextGroove')
+            : said('library.selectionAddedGroove')
+          : next
+            ? said('library.selectionPlayingNext')
+            : said('library.selectionAddedQueue'),
+    });
   };
 
   return (
     <ContextMenu
       {...hold}
-      aria-label={`${first.album || first.title} actions`}
+      aria-label={t('library.albumActions', { name: first.album || first.title })}
       className={className}
       content={
         <MenuStop>
           <MenuItem icon={<Play size={15} />} onSelect={() => onPlay(first, tracks)}>
-            Play
+            {t('player.play')}
           </MenuItem>
           <MenuItem icon={<Shuffle size={15} />} onSelect={shuffle}>
-            Shuffle
+            {t('player.shuffle')}
           </MenuItem>
           {/* The whole record into the line, in order - front of it or back.
               In a groove, hosting or following, the line is the groove's. */}
           <MenuItem icon={<ListStart size={15} />} onSelect={() => queued(true)}>
-            {inJam ? 'Play next in the groove' : 'Play next'}
+            {inJam ? t('player.playNextGroove') : t('player.playNext')}
           </MenuItem>
           <MenuItem icon={following ? <Users size={15} /> : <ListEnd size={15} />} onSelect={() => queued(false)}>
-            {following ? 'Add to the groove' : inJam ? 'Add to the groove queue' : 'Add to queue'}
+            {following ? t('player.addToGroove') : inJam ? t('player.addToGrooveQueue') : t('player.addToQueue')}
           </MenuItem>
           {onOpenArtist && artistName && (
             <MenuItem icon={<User size={15} />} onSelect={() => onOpenArtist(artistName)}>
-              Go to artist
+              {t('library.goToArtist')}
             </MenuItem>
           )}
         </MenuStop>

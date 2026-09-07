@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { applyStagedBundle, checkForUpdate } from './appUpdate.ts';
 import { isTauri } from '../core/tauri.ts';
+import { initialLocale, startI18n } from '../i18n/index.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import wordmark from '../../assets/attack-white.png';
 
 /**
@@ -76,6 +78,15 @@ function markApplied(version: string): void {
 }
 
 export function LaunchUpdate({ children }: { children: ReactNode }) {
+  // This gate renders OUTSIDE LocaleShell (see main.tsx), so nothing has
+  // started i18next yet and useT() would hand back raw keys. Starting it here
+  // is safe and idempotent - LocaleShell asks for the same initialLocale() and
+  // its own call becomes the no-op. Only the bundled English catalogue is up:
+  // a chosen language is fetched by LocaleShell, which mounts after this gate
+  // has already let go, so a two-word splash stays English for that one launch
+  // rather than blocking it on a download.
+  startI18n(initialLocale());
+  const t = useT();
   // Decided before the first render rather than in an effect, so neither a
   // browser tab nor an old binary ever flashes a gate it is not subject to.
   const [phase, setPhase] = useState<Phase>(() =>
@@ -127,7 +138,7 @@ export function LaunchUpdate({ children }: { children: ReactNode }) {
   if (phase === 'done') return <>{children}</>;
 
   return (
-    <div className="launchGate" role="status" aria-live="polite" aria-label="AttackFM is starting">
+    <div className="launchGate" role="status" aria-live="polite" aria-label={t('settings.launchStarting')}>
       {/* The wordmark IS the loader: the wave sweeps through the letters'
           own negative space rather than along a bar beneath them. The PNG is
           white-on-transparent, so it doubles as the mask that clips the
@@ -144,7 +155,9 @@ export function LaunchUpdate({ children }: { children: ReactNode }) {
         />
       </span>
       <p className="launchGate__say">
-        {phase === 'installing' && version ? `Installing ${version}…` : 'Checking for updates…'}
+        {phase === 'installing' && version
+          ? t('settings.launchInstalling', { version })
+          : t('settings.launchChecking')}
       </p>
     </div>
   );

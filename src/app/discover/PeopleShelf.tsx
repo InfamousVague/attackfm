@@ -2,6 +2,7 @@ import { Flame, Headphones, Radio } from '@glacier/icons';
 import { useMemo } from 'react';
 import dateChip from '../../assets/chip-music-date.webp';
 import { Shelf } from '../home/homeCards.tsx';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
 import { useDiscoverFeed } from '../home/DiscoverFeed.tsx';
 import { useFriendsGlance } from '../profile/friendsGlance.ts';
 import { FriendAvatar } from '../profile/RegistryFriends.tsx';
@@ -32,6 +33,7 @@ export function PeopleShelf({
   const registry = useRegistryOptional();
   const friends = useFriendsGlance();
   const jam = useJamOptional();
+  const t = useT();
 
   // Online, or heard from with a song on: the registry's own two signals.
   const live = useMemo(
@@ -54,7 +56,7 @@ export function PeopleShelf({
   if (cards.length === 0) return null;
 
   return (
-    <Shelf title="People" count={cards.length}>
+    <Shelf title={t('discover.people')} count={cards.length}>
       {cards}
     </Shelf>
   );
@@ -62,6 +64,7 @@ export function PeopleShelf({
 
 /** Friends hearing something right now: their faces, and what the first is on. */
 function FriendsLiveCard({ friends, onOpen }: { friends: RegistryFriend[]; onOpen?: () => void }) {
+  const t = useT();
   const playing = friends.find((f) => f.nowPlaying?.playing) ?? friends[0]!;
   const song = playing.nowPlaying;
   const others = friends.length - 1;
@@ -77,12 +80,32 @@ function FriendsLiveCard({ friends, onOpen }: { friends: RegistryFriend[]; onOpe
       </span>
       <span className="peopleCard__text">
         <span className="peopleCard__title">
-          {friends.length === 1 ? `@${playing.handle} is listening` : `${friends.length} friends listening`}
+          {/* One friend is named, several are counted - which is a plural
+              form, not two sentences: languages that count differently at two
+              or at eleven get to say so in the catalogue. */}
+          {t('discover.friendsLive', { count: friends.length, handle: playing.handle })}
         </span>
         <span className="peopleCard__blurb">
+          {/* One whole sentence per case rather than a line assembled here.
+              The handle, the song and the "+2 others" tail read in this order
+              in English and the separators between them are English
+              punctuation; a translator who only ever sees the pieces cannot
+              move either. `count` is the OTHERS, so a language with a dual
+              form gets to say "and two more" its own way. */}
           {song?.playing
-            ? `@${playing.handle} · ${song.title} — ${song.artist}${others > 0 ? ` · +${others}` : ''}`
-            : 'Online now'}
+            ? others > 0
+              ? t('discover.friendPlayingMore', {
+                  count: others,
+                  handle: playing.handle,
+                  title: song.title,
+                  artist: song.artist,
+                })
+              : t('discover.friendPlaying', {
+                  handle: playing.handle,
+                  title: song.title,
+                  artist: song.artist,
+                })
+            : t('discover.onlineNow')}
         </span>
       </span>
     </button>
@@ -97,24 +120,35 @@ function FriendsLiveCard({ friends, onOpen }: { friends: RegistryFriend[]; onOpe
  * All of it comes off the room poll the provider already runs.
  */
 function JamCard({ jam, onJoin }: { jam: Jam; onJoin: () => void }) {
-  const title = jam.trackTitle ? `${jam.trackTitle} — ${jam.trackArtist ?? ''}`.trim() : 'Nothing on yet';
-  const who = whoIsIn(jam);
+  const t = useT();
+  // Two entries, because a room with no artist name is not the same sentence
+  // with a hole left in it: the dash between title and artist is a separator
+  // this language chose, and it has nothing to separate when the artist is
+  // unknown.
+  const title = jam.trackTitle
+    ? jam.trackArtist
+      ? t('discover.songLine', { title: jam.trackTitle, artist: jam.trackArtist })
+      : jam.trackTitle
+    : t('discover.nothingOnYet');
+  const who = whoIsIn(jam, t);
   return (
     <button
       type="button"
       className="peopleCard peopleCard--groove"
       onClick={onJoin}
-      aria-label={`Join ${jam.hostName}'s groove — ${who}`}
+      aria-label={t('discover.joinGrooveAria', { host: jam.hostName, who })}
     >
       <span className="peopleCard__face peopleCard__face--jam" aria-hidden>
         <FriendAvatar handle={jam.hostName} size="lg" />
         <span className="peopleCard__glyph peopleCard__glyph--live">
           <Radio size={16} />
         </span>
-        <span className="peopleCard__cta">Join</span>
+        <span className="peopleCard__cta">{t('discover.join')}</span>
       </span>
       <span className="peopleCard__text">
-        <span className="peopleCard__title">{jam.hostName} is hosting a groove</span>
+        <span className="peopleCard__title">
+          <Trans i18nKey="discover.hostingGroove" values={{ host: jam.hostName }} />
+        </span>
         <span className="peopleCard__blurb peopleCard__who">{who}</span>
         <span className="peopleCard__blurb">{title}</span>
       </span>
@@ -123,14 +157,19 @@ function JamCard({ jam, onJoin }: { jam: Jam; onJoin: () => void }) {
 }
 
 /** "Matt, Ana, Ben", or "Matt +3" once there are more names than a line
- *  holds. The host leads either way. */
-function whoIsIn(jam: Jam): string {
+ *  holds. The host leads either way.
+ *
+ *  Takes the translator rather than reaching for one: this is a plain function
+ *  called from a render, and the overflow form is a COUNT - a language with a
+ *  dual form wants its own word for "and two more" - so it has to come out of
+ *  the catalogue with the number in it, not be glued together here. */
+function whoIsIn(jam: Jam, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const host = jam.hostName;
   const others = (jam.members ?? []).filter((m) => m.toLowerCase() !== host.toLowerCase());
   const names = [host, ...others];
   const count = Math.max(names.length, jam.memberCount);
   if (count <= 3 && names.length === count) return names.join(', ');
-  return `${host} +${count - 1}`;
+  return t('discover.whoPlusMore', { host, count: count - 1 });
 }
 
 /**
@@ -139,10 +178,11 @@ function whoIsIn(jam: Jam): string {
  * there is nothing to meet; with nothing waiting it wears the room's own art.
  */
 function MusicDateCard({ waiting }: { waiting: { artwork: string | null }[] }) {
-  const covers = useMemo(() => mosaicArts(waiting.map((t) => t.artwork), 4, 640), [waiting]);
+  const t = useT();
+  const covers = useMemo(() => mosaicArts(waiting.map((w) => w.artwork), 4, 640), [waiting]);
   const n = waiting.length;
   return (
-    <button type="button" className="peopleCard" onClick={openMusicDate} aria-label="Open Music Date">
+    <button type="button" className="peopleCard" onClick={openMusicDate} aria-label={t('discover.openMusicDate')}>
       <span
         className="peopleCard__face peopleCard__face--date"
         data-covers={covers.length > 0 ? covers.length : undefined}
@@ -158,9 +198,9 @@ function MusicDateCard({ waiting }: { waiting: { artwork: string | null }[] }) {
         </span>
       </span>
       <span className="peopleCard__text">
-        <span className="peopleCard__title">Music Date</span>
+        <span className="peopleCard__title">{t('discover.musicDate')}</span>
         <span className="peopleCard__blurb">
-          {n > 0 ? `${n} waiting, art and sound, no names` : 'Meet what the collector found'}
+          {n > 0 ? t('discover.dateWaiting', { count: n }) : t('discover.dateEmpty')}
         </span>
       </span>
     </button>

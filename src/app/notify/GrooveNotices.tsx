@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useJamOptional } from '../player/jam.tsx';
 import { dismissNotice, msOf, noteNotice } from './notices.ts';
+import { translate } from '../i18n/LocaleShell.tsx';
 
 /**
  * An ask into a groove, in the bell.
@@ -33,14 +34,17 @@ export function GrooveNotices() {
       noteNotice({
         id,
         kind: 'groove',
+        // Two asks, four keys - not one sentence with the verb swapped out.
+        // translate() rather than useT(): the row is written into the notice
+        // store here and rendered from there.
         title:
           inv.kind === 'jam'
-            ? `${inv.from} invited you to groove`
-            : `${inv.from} wants to listen along`,
+            ? translate('notices.grooveInvite', { actor: inv.from })
+            : translate('notices.grooveListenAlong', { actor: inv.from }),
         body:
           inv.kind === 'jam'
-            ? 'Tap to join their groove.'
-            : 'Tap to start a groove with your player as the clock.',
+            ? translate('notices.grooveInviteBody')
+            : translate('notices.grooveListenAlongBody'),
         art: null,
         door: 'groove',
         from: inv.from,

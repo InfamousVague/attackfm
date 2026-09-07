@@ -20,18 +20,20 @@ import { healthOf } from '../servers/mirrors.ts';
 import { isAndroid, isIOS } from '../core/platform.ts';
 import { isTauri } from '../core/tauri.ts';
 import { pushDeviceToken } from '../core/notifications.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
+import { formatDate } from '../ux/format.ts';
 
 /** Clock time, which is what someone comparing this against "it broke around
  *  ten past" actually needs; the copied report carries full ISO stamps. */
 function clockOf(at: number): string {
-  return new Date(at).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  // Through formatDate rather than the browser's own default locale: the
+  // person reading this row set the app's language, and a 24-hour clock in a
+  // 12-hour app (or the reverse) reads as a bug in the log itself.
+  return formatDate(at, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 export function DiagnosticsPane() {
+  const t = useT();
   const { session } = useServerSession();
   const [, setTick] = useState(0);
   const [copied, setCopied] = useState<'idle' | 'ok' | 'manual'>('idle');
@@ -48,7 +50,14 @@ export function DiagnosticsPane() {
   const entries = diagEntries();
   const health = session ? healthOf(session.url) : null;
 
-  // The header of the copied report. The server address is the single most
+  // The header of the copied report. DELIBERATELY ENGLISH, all of it: this
+  // text is not read here, it is pasted into a bug report, and diagReport's
+  // own lines around these values (`frontend 0.5.x`, `[fetch] could not
+  // reach…`) come from src/app/diag, which is developer output by contract.
+  // Half a report in Japanese is worth less to whoever debugs it than all of
+  // it in one language.
+  //
+  // The server address is the single most
   // diagnostic line in it - an `http://` or a `:8788` that cannot work from a
   // phone is visible here and nowhere else the listener can reach.
   const report = useMemo(
@@ -63,14 +72,14 @@ export function DiagnosticsPane() {
         // a token that exists registers itself on the next sign-in.
         push:
           pushToken === 'unknown'
-            ? 'probing'
+            ? t('settings.diagPushProbing')
             : pushToken === null
-              ? 'no device token - the shell cannot mint one on this build'
-              : 'device token held; registers on next sign-in',
+              ? t('settings.diagPushNoToken')
+              : t('settings.diagPushHeld'),
       }),
     // Rebuilt on every recorded entry: `entries` is the ring itself, so its
     // identity changing is the signal that there is something new to say.
-    [session, health, entries, pushToken],
+    [session, health, entries, pushToken, t],
   );
 
   const copy = async () => {
@@ -87,16 +96,17 @@ export function DiagnosticsPane() {
 
   return (
     <div className="diagPane">
-      <Text tone="muted" size="sm">
-        Every failure this device has hit recently — what could not be reached, and why. Kept on
-        the device only; nothing here is sent anywhere.
-      </Text>
+      <Text tone="muted" size="sm">{t('settings.diagIntro')}</Text>
 
       <div className="diagPane__actions">
         <Button variant="solid" size="sm" onClick={() => void copy()}>
           <Copy size={15} />
           <span>
-            {copied === 'ok' ? 'Copied' : copied === 'manual' ? 'Select it below' : 'Copy report'}
+            {copied === 'ok'
+              ? t('settings.diagCopied')
+              : copied === 'manual'
+                ? t('settings.diagSelectBelow')
+                : t('settings.diagCopyReport')}
           </span>
         </Button>
         <Button
@@ -106,7 +116,7 @@ export function DiagnosticsPane() {
           disabled={entries.length === 0}
         >
           <Trash2 size={15} />
-          <span>Clear</span>
+          <span>{t('settings.diagClear')}</span>
         </Button>
       </div>
 
@@ -117,9 +127,7 @@ export function DiagnosticsPane() {
 
       <div className="diagPane__list">
         {entries.length === 0 ? (
-          <Text tone="muted" size="sm">
-            Nothing recorded — everything this device has tried has worked.
-          </Text>
+          <Text tone="muted" size="sm">{t('settings.diagEmpty')}</Text>
         ) : (
           [...entries].reverse().map((e, i) => (
             <div key={`${e.at}-${i}`} className="diagRow">

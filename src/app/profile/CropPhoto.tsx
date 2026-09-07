@@ -3,6 +3,7 @@ import Cropper from 'react-easy-crop';
 import { Button, Modal, Slider, Text } from '@glacier/react';
 import { ZoomIn, ZoomOut } from '@glacier/icons';
 import { aspectOf, cropToBlob, type CropArea, type ImageKind } from './pickImage.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * Where in the picture, and how close.
@@ -47,6 +48,7 @@ export function CropPhoto({
   onCancel: () => void;
   onDone: (blob: Blob) => void;
 }) {
+  const t = useT();
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [area, setArea] = useState<CropArea | null>(null);
@@ -64,7 +66,7 @@ export function CropPhoto({
     try {
       onDone(await cropToBlob(src, area, kind));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'That picture could not be prepared.');
+      setError(err instanceof Error ? err.message : t('profile.cropFailed'));
     } finally {
       setCutting(false);
     }
@@ -78,20 +80,18 @@ export function CropPhoto({
       onClose={() => {
         if (!working) onCancel();
       }}
-      title={kind === 'avatar' ? 'Your picture' : 'Your banner'}
+      title={kind === 'avatar' ? t('profile.cropFaceTitle') : t('profile.cropBannerTitle')}
       description={
-        kind === 'avatar'
-          ? 'Drag to move, pinch or use the slider to zoom.'
-          : 'Drag to choose the strip that shows across the top.'
+        kind === 'avatar' ? t('profile.cropFaceHint') : t('profile.cropBannerHint')
       }
       size="md"
       footer={
         <div className="cropPhoto__actions">
           <Button variant="ghost" onClick={onCancel} disabled={working}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button variant="solid" onClick={() => void confirm()} disabled={!area || working}>
-            {working ? 'Saving…' : 'Use this'}
+            {working ? t('common.saving') : t('profile.cropUse')}
           </Button>
         </div>
       }
@@ -137,7 +137,7 @@ export function CropPhoto({
             min={MIN_ZOOM}
             max={MAX_ZOOM}
             step={0.01}
-            aria-label="Zoom"
+            aria-label={t('profile.cropZoom')}
             onValueChange={setZoom}
           />
           <ZoomIn size={16} aria-hidden />

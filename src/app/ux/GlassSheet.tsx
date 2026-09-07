@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useSystemBack } from '../nav/systemBack.ts';
 
 /**
@@ -36,6 +37,7 @@ export function GlassSheet({
   children: ReactNode;
   className?: string;
 }) {
+  const t = useT();
   const sheet = useRef<HTMLDivElement | null>(null);
   const [drag, setDrag] = useState(0);
   const dragRef = useRef(0);
@@ -138,7 +140,7 @@ export function GlassSheet({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
-        <button type="button" className="glassSheet__handle" aria-label="Close" onClick={onClose}>
+        <button type="button" className="glassSheet__handle" aria-label={t('common.close')} onClick={onClose}>
           <span aria-hidden="true" />
         </button>
         <div className="glassSheet__body" data-sheet-scroll>

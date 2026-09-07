@@ -6,6 +6,7 @@ import type { ConnectDevice } from './connect.ts';
 import { castConnect, castDisconnect, castDiscovery, useCastSnapshot } from './cast.ts';
 import { refreshSpeakers, speakerConnect, speakerDisconnect, useSpeakers } from './speakers.ts';
 import { isTauri, tauriCall } from '../core/tauri.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The Connect selector: which device is playing, and a tap to move it.
@@ -73,6 +74,7 @@ export function useDevicesAvailable(): boolean {
  *  nothing-to-pick case itself, since a menu that opened it may outlive the
  *  moment the second device went away. */
 export function DeviceList() {
+  const t = useT();
   const { connected, devices, activeDeviceId, thisDeviceId, transfer } = useConnect();
   const cast = useCastSnapshot();
   const airplay = useAirplay();
@@ -100,9 +102,7 @@ export function DeviceList() {
 
   if (!hasConnect && !hasCast && !airplay && net.speakers.length === 0) {
     return (
-      <Text tone="muted" size="sm">
-        No other devices to play on right now.
-      </Text>
+      <Text tone="muted" size="sm">{t('player.deviceNoneAvailable')}</Text>
     );
   }
 
@@ -126,12 +126,18 @@ export function DeviceList() {
           <KindIcon kind={d.kind} />
         </span>
         <span className="deviceRow__body">
+          {/* "(this device)" is part of the name it qualifies rather than a
+              fragment after it, so a language that marks it differently -
+              or puts it first - can. */}
           <span className="deviceRow__name">
-            {d.name}
-            {isThis ? ' (this device)' : ''}
+            {isThis ? t('player.deviceNameThis', { name: d.name }) : d.name}
           </span>
           <span className="deviceRow__state">
-            {isActive ? 'Playing here' : d.online ? 'Tap to play here' : 'Offline'}
+            {isActive
+              ? t('player.devicePlayingHere')
+              : d.online
+                ? t('player.deviceTapToPlayHere')
+                : t('player.deviceOffline')}
           </span>
         </span>
         {isActive && (
@@ -165,7 +171,7 @@ export function DeviceList() {
         <span className="deviceRow__body">
           <span className="deviceRow__name">{d.name}</span>
           <span className="deviceRow__state">
-            {isCasting ? 'Casting — tap to stop' : 'Tap to cast'}
+            {isCasting ? t('player.castStopHint') : t('player.castTapTo')}
           </span>
         </span>
         {isCasting && (
@@ -190,7 +196,7 @@ export function DeviceList() {
         </span>
         <span className="deviceRow__body">
           <span className="deviceRow__name">{castingTo}</span>
-          <span className="deviceRow__state">Casting — tap to stop</span>
+          <span className="deviceRow__state">{t('player.castStopHint')}</span>
         </span>
         <span className="deviceRow__check" aria-hidden>
           <Check size={16} />
@@ -204,7 +210,7 @@ export function DeviceList() {
       {hasConnect && (
         <>
           <Text tone="muted" size="xs" className="deviceList__head">
-            {activeElsewhere ? 'Playing on another device' : 'Play on'}
+            {activeElsewhere ? t('player.deviceHeadElsewhere') : t('player.deviceHeadPlayOn')}
           </Text>
           {online.map(row)}
         </>
@@ -212,7 +218,7 @@ export function DeviceList() {
       {hasCast && (
         <>
           <Text tone="muted" size="xs" className="deviceList__head">
-            Cast to
+            {t('player.deviceHeadCastTo')}
           </Text>
           {castRows}
         </>
@@ -224,7 +230,7 @@ export function DeviceList() {
       {net.speakers.length > 0 && (
         <>
           <Text tone="muted" size="xs" className="deviceList__head">
-            On your network
+            {t('player.deviceHeadNetwork')}
           </Text>
           {net.speakers.map((s) => {
             const on = net.session?.id === s.id;
@@ -242,7 +248,9 @@ export function DeviceList() {
                 <span className="deviceRow__body">
                   <span className="deviceRow__name">{s.name}</span>
                   <span className="deviceRow__state">
-                    {on ? 'Playing here — tap to stop' : (s.model ?? 'Tap to play here')}
+                    {/* A speaker's model is what the speaker calls itself
+                        on the wire, so it is left as the maker wrote it. */}
+                    {on ? t('player.speakerStopHint') : (s.model ?? t('player.deviceTapToPlayHere'))}
                   </span>
                 </span>
                 {on && (
@@ -265,7 +273,7 @@ export function DeviceList() {
       {airplay && (
         <>
           <Text tone="muted" size="xs" className="deviceList__head">
-            AirPlay
+            {t('player.deviceHeadAirplay')}
           </Text>
           <button
             type="button"
@@ -276,8 +284,8 @@ export function DeviceList() {
               <Airplay size={16} />
             </span>
             <span className="deviceRow__body">
-              <span className="deviceRow__name">Speakers &amp; TVs</span>
-              <span className="deviceRow__state">Tap to choose an AirPlay device</span>
+              <span className="deviceRow__name">{t('player.airplaySpeakersAndTvs')}</span>
+              <span className="deviceRow__state">{t('player.airplayTapToChoose')}</span>
             </span>
           </button>
         </>
@@ -290,6 +298,7 @@ export function DevicePicker({
   always = false,
   size = 'sm',
 }: { always?: boolean; size?: 'sm' | 'md' } = {}) {
+  const t = useT();
   const { connected, devices, activeDeviceId, thisDeviceId } = useConnect();
   const cast = useCastSnapshot();
   const airplay = useAirplay();
@@ -323,10 +332,10 @@ export function DevicePicker({
   // is not told "connect to a device" by a control whose panel will say there
   // are none.
   const label = activeElsewhere
-    ? 'Playing on another device — change'
+    ? t('player.deviceLabelElsewhere')
     : hasConnect || hasCast || airplay
-      ? 'Connect to a device'
-      : 'Playing on this device';
+      ? t('player.deviceLabelConnect')
+      : t('player.deviceLabelHere');
 
   return (
     <Popover

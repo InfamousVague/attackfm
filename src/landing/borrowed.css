@@ -307,12 +307,12 @@ body:has(.appNavBar) .playerBarShell > * {
   height: var(--app-dock-card-height) !important;
 }
 
-.appPlayer [aria-label^='Smart shuffle'] {
+.playerBarShell[data-smart] [data-afm='shuffle'] {
   position: relative;
   color: var(--glacier-accent-text);
 }
 
-.appPlayer [aria-label^='Smart shuffle']::after {
+.playerBarShell[data-smart] [data-afm='shuffle']::after {
   content: '';
   position: absolute;
   inset-block-start: 4px;
@@ -567,9 +567,9 @@ body:has(.appNavBar) .playerBarShell > * {
   }
 
   
-  .appPlayer [class*="_controls_"] [aria-label="Queue"],
-  .appPlayer [class*="_controls_"] [aria-label="Playing on"],
-  .appPlayer [class*="_controls_"] [aria-label$="favourites"] {
+  .appPlayer [class*="_controls_"] [data-strip="queue"],
+  .appPlayer [class*="_controls_"] [data-strip="device"],
+  .appPlayer [class*="_controls_"] [data-afm="favourite"] {
     display: none;
   }
 
@@ -630,9 +630,8 @@ body:has(.appNavBar) .playerBarShell > * {
   }
 
   
-  .appPlayer [aria-label="Shuffle"],
-  .appPlayer [aria-label^="Smart shuffle"],
-  .appPlayer [aria-label^="Repeat"] {
+  .appPlayer [data-afm="shuffle"],
+  .appPlayer [data-afm="repeat"] {
     display: none;
   }
 

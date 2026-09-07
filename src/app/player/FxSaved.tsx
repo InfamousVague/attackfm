@@ -5,6 +5,7 @@ import { request } from '../api/http.ts';
 import { nodeSpec, type FxNode } from './fxChain.ts';
 import { useChainEdit } from './fxEditing.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * The two things that act on the WHOLE chain: A/B, and saving it under a name.
@@ -48,6 +49,7 @@ function fromWire(chain: ServerPreset['chain']): FxNode[] {
 const AB_KEY = 'attackfm-hifi-lab-ab';
 
 export function FxSaved() {
+  const t = useT();
   const { chain, edit } = useChainEdit();
   const { session } = useServerSession();
   const [openList, setOpenList] = useState(false);
@@ -78,7 +80,7 @@ export function FxSaved() {
         if (live) setPresets(r.presets ?? []);
       })
       .catch(() => {
-        if (live) say('Could not reach the server for your saved chains.');
+        if (live) say(t('player.fxSavedFetchFailed'));
       });
     return () => {
       live = false;
@@ -120,9 +122,9 @@ export function FxSaved() {
         // chain appears twice until the next fetch.
         setPresets((prev) => [{ id, name: trimmed, chain: wire }, ...prev.filter((p) => p.name !== trimmed)]);
         setName('');
-        say(`Saved “${trimmed}”.`);
+        say(t('player.fxSavedSaved', { name: trimmed }));
       })
-      .catch(() => say('Could not save — is the server reachable?'));
+      .catch(() => say(t('player.fxSavedSaveFailed')));
   };
 
   const drop = (p: ServerPreset) => {
@@ -136,7 +138,7 @@ export function FxSaved() {
     // preset came back the next time the list was opened.
     void request(session.url, `/api/fx/presets/${p.id}`, { method: 'DELETE', token: session.token })
       .then(() => setPresets((prev) => prev.filter((x) => x.id !== p.id)))
-      .catch(() => say('Could not delete that one.'));
+      .catch(() => say(t('player.fxSavedDeleteFailed')));
   };
 
   return (
@@ -146,7 +148,7 @@ export function FxSaved() {
             is "this against that", not "on against off" - the master switch
             already covers the second one. */}
         <SegmentedControl
-          aria-label="Compare two chains"
+          aria-label={t('player.fxSavedCompare')}
           size="sm"
           value={slot}
           options={[
@@ -161,7 +163,7 @@ export function FxSaved() {
           aria-expanded={openList}
           onClick={() => setOpenList((v) => !v)}
         >
-          Saved chains
+          {t('player.fxSavedTitle')}
           {openList ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       </div>
@@ -170,14 +172,14 @@ export function FxSaved() {
         <div className="fxSaved__body">
           {!session ? (
             <Text tone="muted" size="xs">
-              Saved chains live on your server, so sign in to keep one.
+              {t('player.fxSavedNeedServer')}
             </Text>
           ) : (
             <>
               <div className="fxSaved__save">
                 <Input
-                  aria-label="Name this chain"
-                  placeholder="Name this chain"
+                  aria-label={t('player.fxSavedNamePlaceholder')}
+                  placeholder={t('player.fxSavedNamePlaceholder')}
                   size="sm"
                   value={name}
                   onChange={(e: { target: { value: string } }) => setName(e.target.value)}
@@ -189,15 +191,17 @@ export function FxSaved() {
                   onClick={save}
                 >
                   <Save size={14} />
-                  Save
+                  {t('common.save')}
                 </Button>
               </div>
               {/* Said out loud because it is the one surprising thing here:
                   a save takes the rack and the board together, and leaves out
                   whatever is bypassed. */}
+              {/* One sentence, one key: the count sits inside it, so a
+                  language that inflects "box" against the number — or puts the
+                  number somewhere else entirely — can. */}
               <Text tone="muted" size="xs">
-                Saves the {live} box{live === 1 ? '' : 'es'} currently switched in — rack and
-                pedals together. Bypassed boxes are left out.
+                {t('player.fxSavedScope', { count: live })}
               </Text>
 
               {presets.length > 0 && (
@@ -209,18 +213,18 @@ export function FxSaved() {
                         className="fxSaved__load"
                         onClick={() => {
                           edit(fromWire(p.chain));
-                          say(`Loaded “${p.name}”.`);
+                          say(t('player.fxSavedLoaded', { name: p.name }));
                         }}
                       >
                         <span className="fxSaved__name">{p.name}</span>
                         <span className="fxSaved__count">
-                          {p.chain.length} box{p.chain.length === 1 ? '' : 'es'}
+                          {t('player.fxSavedBoxCount', { count: p.chain.length })}
                         </span>
                       </button>
                       <button
                         type="button"
                         className="fxSaved__drop"
-                        aria-label={`Delete ${p.name}`}
+                        aria-label={t('player.fxSavedDelete', { name: p.name })}
                         onClick={() => drop(p)}
                       >
                         <Trash2 size={14} />

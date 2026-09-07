@@ -42,6 +42,7 @@ import {
 } from './cacheStore.ts';
 import { estimateBytes, extFor, qualityOfPath, wantedQuality } from './cacheQuality.ts';
 import { rankHotness } from './cacheHotness.ts';
+import { translate } from '../i18n/LocaleShell.tsx';
 import { persistManifest, setManifest, setManifestState, writeReport } from './cacheManifest.ts';
 
 // --- the sweep -------------------------------------------------------------
@@ -226,12 +227,13 @@ export async function sweepCache(
     const stored = cacheLimitBytes();
     writeReport({
       at: Date.now(),
-      note:
-        !isTauri()
-          ? 'Only the app can keep songs on a device'
-          : stored === 0
-            ? 'Keeping songs is switched off'
-            : 'No room on this device right now',
+      // translate(), not useT(): a sweep runs on a timer with no component
+      // around it. The note is written into the report and read back later.
+      note: !isTauri()
+        ? translate('downloads.sweepAppOnly')
+        : stored === 0
+          ? translate('downloads.sweepOff')
+          : translate('downloads.sweepNoRoom'),
       kept: 0,
       failed: 0,
       skippedUnknown: 0,
@@ -627,13 +629,23 @@ export async function sweepCache(
                   : 0,
             }),
             new Promise<never>((_, reject) =>
-              window.setTimeout(() => reject(new Error('gave up after 6 minutes')), 6 * 60 * 1000),
+              window.setTimeout(
+                // This message becomes the failure REASON on the tile, so it
+                // is prose, not a log line. The 4xx/503 test below reads the
+                // server's own wording, never this one, so translating it
+                // cannot change which failures are retried.
+                () => reject(new Error(translate('downloads.sweepGaveUp'))),
+                6 * 60 * 1000,
+              ),
             ),
           ]);
-          if (!ok) lastReason = `${host}: download did not finish`;
+          if (!ok) lastReason = translate('downloads.sweepFailIncomplete', { host });
         } catch (err: unknown) {
           const msg = String(err).replace(/^Error:\s*/, '').slice(0, 90);
-          lastReason = `${host}: ${msg}`;
+          // The detail is whatever the server or the network said and stays in
+          // its own words; only the shape that carries it - which side the host
+          // sits on, and what separates the two - belongs to the catalogue.
+          lastReason = translate('downloads.sweepFailOn', { host, detail: msg });
           // A refusal is not weather. 4xx is the existing case; 503 joins it
           // because that is precisely what a box with no ffmpeg answers to
           // every single transcode request, and retrying it twice more per
@@ -664,7 +676,7 @@ export async function sweepCache(
           if (remote.artId && cover) void rememberArt(cover);
         }
       } else {
-        const reason = lastReason || `${host}: download did not finish`;
+        const reason = lastReason || translate('downloads.sweepFailIncomplete', { host });
         failReasons.set(reason, (failReasons.get(reason) ?? 0) + 1);
         setManifestState(key, 'failed', reason);
         failed += 1;
@@ -701,16 +713,19 @@ export async function sweepCache(
   writeReport({
     at: Date.now(),
     note: (() => {
-      if (liked === -1) return 'Could not ask the server which songs you like';
+      if (liked === -1) return translate('downloads.sweepNoLikes');
       if (failed > 0) {
         const top = [...failReasons.entries()].sort((a, b) => b[1] - a[1])[0];
-        return `${failed} ${failed === 1 ? 'song' : 'songs'} would not download${top ? ` — ${top[0]}` : ''}`;
+        // Two keys rather than one with a trailing clause bolted on: where the
+        // reason sits in the sentence is the translator's call, not ours.
+        return top
+          ? translate('downloads.sweepFailedWhy', { count: failed, reason: top[0] })
+          : translate('downloads.sweepFailed', { count: failed });
       }
-      if (skippedUnknown > 0 && downloaded === 0)
-        return 'Waiting for this device to finish syncing the library';
+      if (skippedUnknown > 0 && downloaded === 0) return translate('downloads.sweepSyncing');
       if (budgetShort > 0)
-        return `${ours.length} kept — ${budgetShort} more would not fit in the space allowed`;
-      return `${ours.length} kept on this device`;
+        return translate('downloads.sweepShort', { count: ours.length, short: budgetShort });
+      return translate('downloads.sweepKept', { count: ours.length });
     })(),
     kept: ours.length,
     failed,

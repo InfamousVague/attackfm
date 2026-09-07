@@ -7,6 +7,7 @@ import { planFiling, type FileDestination } from '../downloads/filePlan.ts';
 import { watchIfPlaylist } from '../nav/downloadsDoor.ts';
 import { ChooseDestination } from '../playlists/ChooseDestination.tsx';
 import { openExternal } from '../core/openExternal.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * A Spotify link, previewed.
@@ -34,6 +35,7 @@ import { openExternal } from '../core/openExternal.ts';
  */
 
 export function SpotifyPreview() {
+  const t = useT();
   const downloads = useDownloadsOptional();
   const [link, setLink] = useState<string | null>(null);
   // The exact title, from Spotify's oEmbed (CORS-open). Only for naming the
@@ -83,7 +85,7 @@ export function SpotifyPreview() {
   const file = (dest: FileDestination | null) => {
     if (!downloads || !link) return;
     void Promise.resolve(downloads.enqueue(link)).then((job) => {
-      if (dest) planFiling(job.id, dest, title ?? 'This song');
+      if (dest) planFiling(job.id, dest, title ?? t('servers.spotifyUnnamedSong'));
     });
     // A playlist is many songs over minutes; take them to the queue to watch it
     // land. A single or an album finishes before they would look - no-op there.
@@ -96,20 +98,20 @@ export function SpotifyPreview() {
 
   return (
     <>
-      <Modal open={link !== null} onClose={close} title="From Spotify" size="sm">
+      <Modal open={link !== null} onClose={close} title={t('servers.spotifyCardTitle')} size="sm">
         <div className="spotPreview">
           {embed ? (
             <iframe
               className="spotPreview__embed"
               src={embed}
-              title="Spotify preview"
+              title={t('servers.spotifyEmbedTitle')}
               loading="lazy"
               allow="encrypted-media; clipboard-write"
             />
           ) : (
             <div className="spotPreview__pending">
               <Text tone="muted" size="sm">
-                This does not look like a track, album or playlist link.
+                {t('servers.spotifyNotALink')}
               </Text>
             </div>
           )}
@@ -121,31 +123,31 @@ export function SpotifyPreview() {
               </span>
               <Text size="sm">
                 {filed === null
-                  ? 'Added to your library — downloading now'
+                  ? t('servers.spotifyFiledLibrary')
                   : filed.kind === 'liked'
-                    ? 'Liked — downloading now'
-                    : `Added to ${filed.name} — downloading now`}
+                    ? t('servers.spotifyFiledLiked')
+                    : t('servers.spotifyFiledPlaylist', { name: filed.name })}
               </Text>
             </div>
           ) : (
             <div className="spotPreview__actions">
               <Button variant="solid" fullWidth disabled={!downloads} onClick={() => file({ kind: 'liked' })}>
                 <Heart size={16} />
-                Like
+                {t('servers.spotifyLike')}
               </Button>
               <Button variant="outline" fullWidth disabled={!downloads} onClick={() => setChoosing(true)}>
                 <ListPlus size={16} />
-                Add to playlist
+                {t('servers.spotifyAddToPlaylist')}
               </Button>
               {web && (
                 <Button variant="ghost" size="sm" onClick={() => void openExternal(web)}>
                   <ExternalLink size={15} />
-                  Open in Spotify
+                  {t('servers.spotifyOpenIn')}
                 </Button>
               )}
               {!downloads && (
                 <Text tone="muted" size="xs" className="spotPreview__hint">
-                  Sign in to a server that can download to Like or add this.
+                  {t('servers.spotifyNeedsServer')}
                 </Text>
               )}
             </div>
@@ -155,7 +157,7 @@ export function SpotifyPreview() {
 
       <ChooseDestination
         open={choosing}
-        title={title ?? 'This song'}
+        title={title ?? t('servers.spotifyUnnamedSong')}
         onClose={() => setChoosing(false)}
         onChoose={(dest) => file(dest)}
       />

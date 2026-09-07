@@ -14,6 +14,7 @@ import {
   importServerIsAutomatic,
 } from './importServer.ts';
 import { usePeerSyncStatus, type PeerSyncStatus } from './peerSyncStatus.ts';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { useServerSession } from './serverSession.tsx';
 import type { ServerSession } from '../server.ts';
 import type { ImportServerFault } from './importServer.ts';
@@ -31,6 +32,7 @@ import type { ImportServerFault } from './importServer.ts';
  * a row that is not there.
  */
 export function ImportServerPicker() {
+  const t = useT();
   const { session } = useServerSession();
   const targets = useImportTargets();
   const target = useImportServer();
@@ -53,30 +55,30 @@ export function ImportServerPicker() {
   // many other boxes this device knows, which is open-ended - and a segmented
   // control with 1fr columns stops fitting and starts overflowing without
   // warning somewhere around four.
-  const options = targets.map((t) => ({
-    value: t.url,
-    label: t.primary ? `${t.label} (signed in)` : t.label,
+  const options = targets.map((box) => ({
+    value: box.url,
+    label: box.primary ? t('servers.importTargetSignedIn', { label: box.label }) : box.label,
   }));
 
   return (
     <PaneSection
-      title="Where downloads run"
-      description="Imports are fetched by one server and land in its library. Pick the box with the downloader installed — it copies finished songs across to your library afterwards, so both end up with the file."
-      footer={pickerFooter(session, target, peerSync, fault, orphan, automatic)}
+      title={t('servers.whereDownloadsRun')}
+      description={t('servers.whereDownloadsRunHint')}
+      footer={pickerFooter(t, session, target, peerSync, fault, orphan, automatic)}
     >
       <SettingRow
         id="import-server"
-        label="Download on"
+        label={t('servers.downloadOn')}
         hint={hint}
         layout="stacked"
         // Disabled rather than hidden: a row that vanishes when it has nothing
         // to say teaches people the setting does not exist. With no mirrors it
         // still offers one option - the server you are on - which is the
         // honest answer, not an empty control.
-        disabledReason={session ? undefined : 'Needs a server'}
+        disabledReason={session ? undefined : t('servers.needsAServer')}
         control={
           <Select
-            aria-label="Download on"
+            aria-label={t('servers.downloadOn')}
             fullWidth
             value={target?.url ?? ''}
             options={options}
@@ -98,8 +100,13 @@ export function ImportServerPicker() {
  * Everything the choice can currently be going wrong, as a footnote under the
  * group rather than a fake row: the copy-to-hub backlog, a stalled outbox, and
  * the one case that needs a decision - the chosen box rejecting this device.
+ *
+ * Takes the translator as an argument rather than calling useT() itself: it is
+ * a plain function called from the picker's render, not a component, so a hook
+ * here would fire outside React's accounting on the branches that return null.
  */
 function pickerFooter(
+  t: ReturnType<typeof useT>,
   session: ServerSession | null,
   target: ServerSession | null,
   peerSync: PeerSyncStatus | null,
@@ -117,18 +124,17 @@ function pickerFooter(
   if (orphan) {
     return (
       <Text tone="danger" size="xs">
-        You chose {importServerHost(orphan)}, but this device has no sign-in for it any more, so
-        imports are running on{' '}
-        {target ? importServerHost(target.url) : 'the server you are signed into'}. Add it again
-        under Settings, Servers, or pick a different box above.
+        {t('servers.importChoiceOrphaned', {
+          chosen: importServerHost(orphan),
+          running: target ? importServerHost(target.url) : t('servers.theSignedInServer'),
+        })}
       </Text>
     );
   }
   if (automatic && target) {
     return (
       <Text tone="muted" size="xs">
-        Chosen for you: the server you are signed into does not download, and{' '}
-        {importServerHost(target.url)} does. Pick another above to override it.
+        {t('servers.importChoiceAutomatic', { host: importServerHost(target.url) })}
       </Text>
     );
   }
@@ -139,7 +145,10 @@ function pickerFooter(
     return (
       <>
         <Text tone="danger" size="xs">
-          {importServerHost(fault.url)} would not take the import: {fault.reason}
+          {t('servers.importRejected', {
+            host: importServerHost(fault.url),
+            reason: fault.reason,
+          })}
         </Text>
         {session && (
           <div className="prefsActions">
@@ -151,7 +160,7 @@ function pickerFooter(
                 setImportServerUrl(null);
               }}
             >
-              Run imports on {importServerHost(session.url)} instead
+              {t('servers.importRunHereInstead', { host: importServerHost(session.url) })}
             </Button>
           </div>
         )}
@@ -166,7 +175,7 @@ function pickerFooter(
   if (peerSync.stall) {
     return (
       <Text tone="danger" size="xs">
-        Copying to {peerSync.hub} is stopped: {peerSync.stall.reason}
+        {t('servers.copyStopped', { hub: peerSync.hub, reason: peerSync.stall.reason })}
       </Text>
     );
   }
@@ -174,8 +183,7 @@ function pickerFooter(
   if (peerSync.counts.failed > 0) {
     return (
       <Text tone="danger" size="xs">
-        {peerSync.counts.failed} {peerSync.counts.failed === 1 ? 'song' : 'songs'} could not be
-        copied to {peerSync.hub}. Settings &rarr; Server &rarr; Network has the list.
+        {t('servers.copyFailed', { count: peerSync.counts.failed, hub: peerSync.hub })}
       </Text>
     );
   }
@@ -184,13 +192,13 @@ function pickerFooter(
   if (waiting > 0) {
     return (
       <Text tone="muted" size="xs">
-        {waiting} {waiting === 1 ? 'song' : 'songs'} waiting to copy to {peerSync.hub}.
+        {t('servers.copyWaiting', { count: waiting, hub: peerSync.hub })}
       </Text>
     );
   }
   return (
     <Text tone="muted" size="xs">
-      Finished songs are copied to {peerSync.hub} automatically.
+      {t('servers.copyIdle', { hub: peerSync.hub })}
     </Text>
   );
 }
