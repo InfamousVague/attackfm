@@ -35,9 +35,17 @@ pub type Peer = Option<Extension<ConnectInfo<SocketAddr>>>;
 /// The caller's address as this hub best knows it: the proxy's word first,
 /// the socket's peer otherwise, nothing when neither says.
 pub fn client_addr(headers: &HeaderMap, peer: Option<SocketAddr>) -> Option<IpAddr> {
-    forwarded(headers, "x-forwarded-for")
-        .or_else(|| forwarded(headers, "x-real-ip"))
-        .or_else(|| peer.map(|p| canonical(p.ip())))
+    // A proxy that spoke at all has the last word: a forwarded header that
+    // is present but unparseable names NOBODY, rather than falling through
+    // to the socket - behind a proxy the socket is the proxy's own loopback,
+    // and "nearby to everyone the proxy carries" is the wrong answer for
+    // garbage. Only a bare connection (a home hub) is read off the socket.
+    let spoke = headers.contains_key("x-forwarded-for") || headers.contains_key("x-real-ip");
+    let named = forwarded(headers, "x-forwarded-for").or_else(|| forwarded(headers, "x-real-ip"));
+    if spoke {
+        return named;
+    }
+    named.or_else(|| peer.map(|p| canonical(p.ip())))
 }
 
 /// `client_addr` straight from a handler's extractors.
@@ -121,6 +129,17 @@ mod tests {
 
     fn ip(s: &str) -> IpAddr {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn a_garbage_forwarded_header_names_nobody_rather_than_the_proxy() {
+        let peer = "127.0.0.1:5555".parse().ok();
+        let h = headers(&[("x-forwarded-for", "not-an-address")]);
+        assert_eq!(client_addr(&h, peer), None);
+        let h = headers(&[("x-forwarded-for", "garbage"), ("x-real-ip", "198.51.100.7")]);
+        assert_eq!(client_addr(&h, peer), "198.51.100.7".parse().ok());
+        let h = headers(&[]);
+        assert_eq!(client_addr(&h, peer), "127.0.0.1".parse().ok());
     }
 
     #[test]
