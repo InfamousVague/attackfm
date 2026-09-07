@@ -15,7 +15,7 @@ import {
   Users,
   X,
 } from '@glacier/icons';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { OnRepeatChip } from '../library/OnRepeatChip.tsx';
 import { usePlaylists, type Playlist } from './playlists.tsx';
@@ -25,7 +25,7 @@ import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { useLikedStems } from '../servers/likedStems.ts';
-import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
+import { playlistPlayedAt } from './playlistRecency.ts';
 import { openMix } from '../nav/openMix.ts';
 import { openNewPlaylist } from '../nav/newPlaylistDoor.ts';
 import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
@@ -246,12 +246,12 @@ function resolveFolderLabel(t: (key: string) => string, folder: string): string 
 }
 
 export function PlaylistShowcase({
-  onPlay,
   onOpenPlaylist,
   onOpenSongs,
-  onOpenArtist,
   show = 'personal',
 }: {
+  /** Accepted but unused since the tile strip's modal went: the rows that
+   *  played a list from here left with it. Kept so both callers pass one. */
   onPlay: (track: Track, queue: Track[]) => void;
   /** Opens one of the user's own lists as a full page - where it can be
    *  reordered, renamed and deleted. That editing is what separates it from the
@@ -261,7 +261,8 @@ export function PlaylistShowcase({
    *  newest arrivals - full rather than in a sheet. They are the collection's
    *  own big views: a fixed order, nothing to edit, and the same frame each. */
   onOpenSongs: (view: import('../library/SongPage.tsx').SongCollection) => void;
-  /** Opens an artist's page from a modal row's artist line. */
+  /** Opened an artist from a modal row's artist line. Accepted but unused
+   *  since that modal went. */
   onOpenArtist?: (artist: string) => void;
   /**
    * Which half of the lists to draw. 'personal' (the Library): the doors,
@@ -282,7 +283,7 @@ export function PlaylistShowcase({
   // count from the cached feed; that read used to live here and went with it.
   // removeTrack went with the strip's modal - shedding a row was only ever
   // offered there, and Recent never offered it at all.
-  const { playlists, create, remove, rename, setMeta, setCover, setAutoStem } = usePlaylists();
+  const { playlists, remove, rename, setMeta, setCover, setAutoStem } = usePlaylists();
   // Which shared lists this device has opened - the New badge is the
   // complement. The hub scopes the ledger, since two hubs both have a list 7.
   const { session } = useServerSession();

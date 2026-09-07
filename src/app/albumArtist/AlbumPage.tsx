@@ -6,7 +6,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import type { AcquireTarget } from '../../plugins/types.ts';
-import { PROBE_URL, importable, resolveImportable } from '../search/resolveImport.ts';
+import { importable, resolveImportable } from '../search/resolveImport.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
 import { shuffled } from '../ux/shuffle.ts';
 import { artSized, fetchAlbumTracks, type AlbumTrack } from '../server.ts';
@@ -254,9 +254,9 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
       }
     }
     return { ordered: songs, albumGhosts: ghosts };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- gapsByDisc is rebuilt each render from `missing`
     // `t` is a dependency because the disc break's title is a translated
     // string: without it a language change leaves "Disc 2" in the old one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- gapsByDisc and shownDiscs are rebuilt every render from `missing` and `list`, which ARE listed; shownDiscs.join(',') is their value-identity key, since a fresh array of the same discs must not rebuild the table.
   }, [list, shownDiscs.join(','), labelDiscs, missing, t]);
 
   /**

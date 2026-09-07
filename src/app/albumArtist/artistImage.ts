@@ -98,7 +98,7 @@ export async function resolveArtistImage(
   if (already) return already;
 
   const run = (async () => {
-    let url: string | null = null;
+    let url: string | null;
     try {
       const artist = await fetchCatalogArtist(session, '', clean, signal);
       url = artist.picture ?? null;

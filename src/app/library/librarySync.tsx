@@ -279,7 +279,7 @@ export function LibrarySyncProvider({ children }: { children: ReactNode }) {
     if (!autoUploadEnabled(serverUrl, session?.isAdmin === true)) return;
     const timer = window.setTimeout(syncNow, 3000);
     return () => window.clearTimeout(timer);
-  }, [serverUrl, syncNow]);
+  }, [serverUrl, session?.isAdmin, syncNow]);
 
   const value = useMemo<LibrarySyncContextValue>(() => ({ status, syncNow }), [status, syncNow]);
 

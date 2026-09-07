@@ -711,6 +711,7 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         await refresh();
       },
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- metaFor() above reads the playlistMeta module store the rule cannot see; metaRev is the useSyncExternalStore tick that says it moved.
   }, [remote, others, session, mutate, refresh, metaRev, settle]);
 
   return <PlaylistsContext.Provider value={value}>{children}</PlaylistsContext.Provider>;

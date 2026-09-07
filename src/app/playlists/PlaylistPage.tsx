@@ -27,7 +27,6 @@ import { formatClock, formatTotal, formatBytes } from '../ux/format.ts';
 import { estimateSetBytes } from '../cache/cacheQuality.ts';
 import { cacheQualityKbps } from '../cache/cacheStore.ts';
 import { shuffled } from '../ux/shuffle.ts';
-import { RowArt } from './RowArt.tsx';
 import { RowMain } from './RowMain.tsx';
 import { SongTable, type GhostRow, type SongTableShape } from '../library/SongTable.tsx';
 
@@ -216,7 +215,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     () => new Set(tracks.map((t) => `${fold(t.artist)}|${titleKey(t.title)}`)),
     [tracks],
   );
-  const wants = playlist?.wants ?? [];
+  const wants = useMemo(() => playlist?.wants ?? [], [playlist]);
   const arriving = useMemo(() => wants.filter((w) => !ownedKeys.has(w.k)), [wants, ownedKeys]);
   // Reconcile the fast path: the moment a want's song is in the library, ask
   // the box to file it into this list rather than wait for its own sweep. The

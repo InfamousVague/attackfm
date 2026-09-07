@@ -189,6 +189,7 @@ export function SharePlaylistDrawer({
     return () => {
       live = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` only labels a failure inside the catch; listing it would refetch the seat list on a language change, which is a round trip nobody asked for.
   }, [open, session, members, playlist.id]);
 
   const seated = current ?? [];

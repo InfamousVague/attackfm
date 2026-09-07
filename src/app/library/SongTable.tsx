@@ -619,7 +619,7 @@ export function SongTable({
       ...(selecting ? [] : (incoming ?? []).filter((t) => !t.leaving).map((g) => ghostOfIncoming(g, tr))),
       ...(ghosts ?? []),
     ],
-    [incoming, selecting, ghosts],
+    [incoming, selecting, ghosts, tr],
   );
   const ghostById = useMemo(
     () => new Map(ghostList.map((g) => [`ghost:${g.key}`, g] as const)),
@@ -849,7 +849,7 @@ export function SongTable({
     // onDevice belongs here and was missing: the columns READ it, so without it
     // a download landing rebuilt nothing and the mark only appeared later, when
     // some unrelated dependency happened to change.
-    [onOpenArtist, narrow, byPath, plays, onDevice, justLanded, ghostById, originLabel, nowPlaying, shape],
+    [onOpenArtist, narrow, byPath, plays, onDevice, justLanded, ghostById, originLabel, nowPlaying, shape, tr],
   );
 
   // Memoized on the library, not rebuilt per render: the grid memoizes its

@@ -12,7 +12,6 @@ import { useWallClips } from './wallClips.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { shuffled } from '../ux/shuffle.ts';
 import { useRippleWave } from '../ux/rippleWave.ts';
-import { usePlaylists } from '../playlists/playlists.tsx';
 import { isFavouriteBook, shelve } from './bookShelf.ts';
 import { ShelfSkeleton } from '../ux/ShelfSkeleton.tsx';
 import { PlaylistShowcase } from '../playlists/PlaylistShowcase.tsx';
@@ -21,7 +20,6 @@ import { isDesktopApp } from '../core/platform.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { SongTable } from './SongTable.tsx';
 import type { Track } from '../core/tauri.ts';
-import placeholderArt from '../../assets/attack-wave.png';
 import { useSongCount, useT } from '../i18n/LocaleShell.tsx';
 
 /**
@@ -230,7 +228,6 @@ export function LibraryView({
   view,
   onPlay,
   onOpenArtist,
-  onOpenAlbum,
   onOpenPlaylist,
   onOpenSongs,
   onOpenDownloads,
@@ -240,7 +237,8 @@ export function LibraryView({
   view: 'summary' | 'all';
   onPlay: (track: Track, context?: Track[]) => void;
   onOpenArtist: (artist: string) => void;
-  /** Opens a record - the "Jump back in" covers are doors. */
+  /** Opens a record. Accepted but unused since "Jump back in" moved to
+   *  Discover - kept so AppMain can pass one door to every page. */
   onOpenAlbum?: (album: string, albumArtist: string) => void;
   onOpenPlaylist: (id: string) => void;
   /** Opens a whole-collection song page (Liked, or every song) from a tile. */
@@ -263,7 +261,6 @@ export function LibraryView({
     () => shelve(books).filter((b) => isFavouriteBook(b, isFavorite)),
     [books, isFavorite],
   );
-  const { playlists } = usePlaylists();
 
   // A library that is empty AT MOUNT is either truly empty or still on its
   // way; hold the page as skeletons so it assembles once, whole, instead of

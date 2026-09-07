@@ -121,7 +121,7 @@ export async function resolveAlbumArt(artist: string, album: string): Promise<st
   if (already) return already;
 
   const run = (async () => {
-    let url: string | null = null;
+    let url: string | null;
     try {
       url = await invoke<string | null>('music_album_art', { artist, album });
     } catch {

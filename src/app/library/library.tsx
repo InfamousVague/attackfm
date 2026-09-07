@@ -15,7 +15,6 @@ import {
   sessionsSnapshot,
   subscribeSessions,
   sessionForOrigin,
-  primarySession,
 } from '../servers/sessions.ts';
 import {
   defaultMusicDir,
@@ -577,6 +576,7 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
     return out;
     // sessionsTick changes when a server is added or removed, which is exactly
     // when this list should be rebuilt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- allSessions() and loadCachedIndex() are module state the rule cannot see; sessionsTick and secondaryRev ARE the signal that they moved.
   }, [session, sessionsTick, secondaryRev]);
 
   const mapped = useMemo(
@@ -710,7 +710,9 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
       choose: async () => {},
       reset: async () => {},
     };
-  }, [session, tracks, forYou, books, favorites, syncing, synced, sync, error]);
+    // otherFavorites and mapped are read above (Liked across hubs, allTracks):
+    // without them a heart on a SECOND hub changed state and nothing re-derived.
+  }, [session, tracks, forYou, books, mapped, favorites, otherFavorites, syncing, synced, sync, error]);
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }

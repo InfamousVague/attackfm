@@ -153,7 +153,7 @@ export function SongPage({
       if (id !== null) byId.set(id, t);
     }
     return heavyIds.map((id) => byId.get(id)).filter((t): t is Track => t !== undefined);
-  }, [heavyIds, tracks]);
+  }, [heavyIds, tracks, session]);
   /*
    * Recent is the newest arrivals, capped.
    *
@@ -292,7 +292,7 @@ export function SongPage({
       disabled: empty,
     });
     return () => setHeaderActions(null);
-  }, [stuck, empty, title, view]);
+  }, [stuck, empty, title, view, meta.glyph]);
 
   return (
     <div className={`homePage libraryPage songPage ${meta.tone}`} ref={pageRef}>
