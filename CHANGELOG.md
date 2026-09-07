@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.134
+
+- Settings on the desktop uses the whole window again. The right-hand side was
+  cut off partway down with empty space below it, and the taller your window
+  the more it lost.
+
 ## 0.5.133
 
 - AttackFM speaks eight languages. Settings → Appearance → Language, each one
