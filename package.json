@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "i18n:scan": "node scripts/i18n-scan.mjs",
     "i18n:check": "node scripts/i18n-scan.mjs --catalogues",
+    "i18n:verify": "node scripts/i18n-verify.mjs",
+    "i18n:gate": "node scripts/i18n-scan.mjs --max 0 && node scripts/i18n-scan.mjs --keys && node scripts/i18n-scan.mjs --catalogues && node scripts/i18n-verify.mjs --quiet",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
