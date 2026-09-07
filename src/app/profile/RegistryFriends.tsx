@@ -48,6 +48,7 @@ import {
   type RegistryFriend,
 } from '../servers/registry.ts';
 import { fmtMinutes } from './stats.ts';
+import { openFriendPicker } from '../nav/friendPickerDoor.ts';
 
 /**
  * A person, as a mark: a deterministic two-tone gradient from their handle
@@ -386,6 +387,22 @@ export function FriendsSection({
 
   const friends = [...(feed?.friends ?? [])].sort(byLiveness);
   const incoming = feed?.incoming ?? [];
+  // The bulk invite: the same picker the deck uses, with the room's people
+  // left out; a room opens if there is none. Offered while you own the
+  // room or have none - a follower does not hand out somebody else's keys.
+  const canGather = !!jam && !!server && (!jam.current || jam.hosting);
+  const gather = async () => {
+    if (!jam) return;
+    const pick = await openFriendPicker({
+      title: 'Invite to groove',
+      hint: jam.current ? 'Into your groove' : 'A room opens as they are asked',
+      mode: 'groove',
+      exclude: jam.current?.members ?? [],
+      action: (n) => (n ? `Invite ${n}` : 'Invite'),
+    });
+    if (!pick || pick.people.length === 0) return;
+    await jam.jamWithAll(pick.people.map((p) => p.handle));
+  };
   const listeningNow = friends.filter((f) => f.nowPlaying?.playing).length;
   const onlineNow = friends.filter(isOnline).length;
   const outgoing = feed?.outgoing ?? [];
@@ -513,9 +530,16 @@ export function FriendsSection({
               </span>
             )}
           </h2>
-          <Button variant="outline" size="sm" onClick={openAdd}>
-            <UserPlus size={15} /> <span>Add</span>
-          </Button>
+          <span className="friendsBar__actions">
+            {canGather && friends.length > 0 && (
+              <Button variant="outline" size="sm" onClick={() => void gather()} aria-label="Invite friends to a groove">
+                <Users size={15} /> <span>Invite to groove…</span>
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={openAdd}>
+              <UserPlus size={15} /> <span>Add</span>
+            </Button>
+          </span>
         </div>
         {feed === null && !feedError ? (
           /* Loading is NOT emptiness. Falling through to the empty state here

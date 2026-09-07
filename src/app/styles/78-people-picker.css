@@ -1,0 +1,586 @@
+/* --- people: the friend picker, the Members face, the New-playlist sheet --
+ *
+ * One multi-select for every "who?" (profile/FriendPicker.tsx, hoisted to
+ * app level; a bottom sheet on a phone, a dialog wider), the share sheet's
+ * Members face (playlists/SharePlaylist.tsx) and the New-playlist sheet
+ * (playlists/NewPlaylistSheet.tsx). All three wear the groove deck's
+ * vocabulary from styles/76 - a .jamCard for a door row, its tinted glyph
+ * disc, its pill - and every colour is a token, so the accent tints the
+ * check and the chips here as it tints the deck, and the light theme needs
+ * no rule of its own beyond the two fallbacks at the bottom. 44px is the
+ * floor on every control: the rows, the chips, the seats, the buttons.
+ */
+
+/* ── The picker ─────────────────────────────────────────────────────── */
+
+.friendPicker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+
+.friendPickerSheet .friendPicker {
+  inline-size: min(560px, 100%);
+  margin-inline: auto;
+}
+
+.friendPicker__search input {
+  min-block-size: max(2.75rem, 44px);
+}
+
+.friendPicker__note,
+.friendPicker__empty {
+  padding-block: var(--glacier-space-1);
+}
+
+.friendPicker__empty {
+  padding-block: var(--glacier-space-4);
+  text-align: center;
+}
+
+/* The chosen, as chips: face, name, and the x that un-chooses. A chip is a
+   whole control, so it is a button and it is 44px tall. */
+.friendPicker__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.fpChip {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  min-block-size: max(2.75rem, 44px);
+  padding: var(--glacier-space-1) var(--glacier-space-2) var(--glacier-space-1) var(--glacier-space-1);
+  border: var(--glacier-hairline) solid transparent;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.fpChip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+
+.fpChip > svg {
+  flex: none;
+  opacity: 0.8;
+}
+
+.fpChip:hover:not(:disabled) {
+  background: var(--glacier-accent-soft-hover, var(--glacier-accent-soft));
+  border-color: var(--glacier-accent-7);
+}
+
+.fpChip:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+.fpChip:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* The list: one row a person, a hairline between. */
+.friendPicker__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.friendPicker__list > li + li {
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* A row is a checkbox the size of a row: the face, the name over the
+   standing, the check. The whole width is the target. */
+.fpRow {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  inline-size: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--glacier-space-3);
+  min-block-size: max(3.25rem, 52px);
+  padding: var(--glacier-space-2) var(--glacier-space-1);
+  border: 0;
+  border-radius: var(--glacier-radius-md);
+  background: transparent;
+  color: var(--glacier-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.fpRow:hover:not([aria-disabled]) {
+  background: var(--glacier-hover, rgba(128, 128, 128, 0.12));
+}
+
+.fpRow:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: -2px;
+}
+
+.fpRow[aria-disabled] {
+  cursor: default;
+}
+
+.fpRow[aria-disabled] .friendAvatar,
+.fpRow[aria-disabled] .fpRow__name {
+  opacity: 0.55;
+}
+
+.fpRow--pending {
+  cursor: default;
+}
+
+.fpRow__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.fpRow__name {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fpRow__standing {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  line-height: 1.3;
+  min-inline-size: 0;
+}
+
+/* The live dot, the same green pulse the deck's people wear. */
+.fpRow__dot {
+  flex: none;
+  inline-size: 0.45rem;
+  block-size: 0.45rem;
+  border-radius: 50%;
+  background: var(--glacier-success-solid);
+  box-shadow: 0 0 0 3px var(--glacier-success-soft);
+}
+
+/* The check: an empty ring until chosen, then the accent disc with the mark.
+   Drawn here rather than borrowed from the kit's checkbox so the row can be
+   the control, and so it is the same disc the deck's glyphs sit in. */
+.fpRow__check {
+  flex: none;
+  inline-size: 1.6rem;
+  block-size: 1.6rem;
+  border-radius: 50%;
+  border: 2px solid var(--glacier-border-strong, var(--glacier-border));
+  display: grid;
+  place-items: center;
+  color: var(--glacier-accent-contrast, var(--glacier-text));
+  background: transparent;
+  transition:
+    background var(--glacier-duration-fast) var(--glacier-ease-out),
+    border-color var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.fpRow[data-on] .fpRow__check {
+  background: var(--glacier-accent-solid);
+  border-color: var(--glacier-accent-solid);
+}
+
+.fpRow[aria-disabled] .fpRow__check {
+  border-style: dashed;
+  opacity: 0.5;
+}
+
+/* The foot: the seat chooser, then Not now beside the counting button. On
+   a phone's sheet it sticks to the bottom over the list, so the button is
+   under the thumb however long the list. */
+.friendPicker__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding-block-start: var(--glacier-space-2);
+}
+
+/* The same material as the kit's drawer panel it sits in (glass-thick with
+   the blur), so it reads as the sheet's own floor in both themes rather
+   than a slab laid on it; the list scrolls under, seen through the glass. */
+.friendPickerSheet .friendPicker__foot {
+  position: sticky;
+  inset-block-end: 0;
+  padding-block: var(--glacier-space-3) max(12px, env(safe-area-inset-bottom));
+  background: var(--glacier-glass-thick);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  margin-block-start: var(--glacier-space-1);
+}
+
+.friendPicker__roles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.friendPicker__roleWords {
+  padding-inline: var(--glacier-space-1);
+}
+
+.friendPicker__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--glacier-space-2);
+}
+
+.friendPicker__actions > * {
+  min-block-size: max(2.75rem, 44px);
+}
+
+.friendPickerSheet .friendPicker__actions > * {
+  flex: 1 1 0;
+}
+
+/* ── A door row: "Add people…", "Choose people" ─────────────────────────
+   The deck's code-door shape (styles/77): a tinted glyph disc, a title over a
+   line, the whole card the button. */
+.fpDoor {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-3);
+  min-block-size: max(3.25rem, 52px);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--glacier-duration-fast) var(--glacier-ease-out),
+    border-color var(--glacier-duration-fast) var(--glacier-ease-out),
+    background var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.fpDoor:hover:not(:disabled) {
+  border-color: var(--glacier-accent-7);
+  background: var(--glacier-hover, rgba(128, 128, 128, 0.14));
+}
+
+.fpDoor:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.fpDoor:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+.fpDoor:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.fpDoor__glyph {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  flex: none;
+}
+
+.fpDoor__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.fpDoor__title {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.2;
+}
+
+.fpDoor__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  line-height: 1.3;
+}
+
+/* ── The Members face (share sheet) ─────────────────────────────────── */
+
+.shareSheet__row {
+  min-block-size: max(2.75rem, 44px);
+}
+
+.shareSheet__you {
+  color: var(--glacier-text-muted);
+  font-weight: var(--glacier-font-weight-regular, 400);
+}
+
+/* The owner's pill wears the crown in the accent, like the deck's Host. */
+.shareSheet__pill--owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  border-color: transparent;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  font-weight: var(--glacier-font-weight-semibold);
+}
+
+.shareSheet__pill[data-role='editor'] {
+  color: var(--glacier-text);
+}
+
+/* The seat toggle and the remove, each a 44px target however small the
+   kit draws them. */
+.shareSheet__seats {
+  gap: var(--glacier-space-2);
+}
+
+.shareSheet__seats > * {
+  min-block-size: max(2.75rem, 44px);
+}
+
+.shareSheet__remove {
+  min-inline-size: max(2.75rem, 44px);
+}
+
+.shareSheet__add {
+  margin-block-start: calc(var(--glacier-space-2) * -1);
+}
+
+/* How the last add went: a line a person, the mark in green, the hub's
+   words in the muted colour. */
+.shareSheet__outcomes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.shareSheet__outcome {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-block-size: 2.25rem;
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken);
+  font-size: var(--glacier-font-size-sm);
+  min-inline-size: 0;
+}
+
+.shareSheet__outcome[data-ok] {
+  background: var(--glacier-success-soft);
+}
+
+.shareSheet__outcomeName {
+  font-weight: var(--glacier-font-weight-semibold);
+  flex: none;
+}
+
+.shareSheet__outcomeWords {
+  flex: 1;
+  min-inline-size: 0;
+  color: var(--glacier-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.shareSheet__outcome[data-ok] .shareSheet__outcomeWords,
+.shareSheet__outcomeMark {
+  color: var(--glacier-success-text);
+}
+
+.shareSheet__outcome:not([data-ok]) .shareSheet__outcomeWords {
+  color: var(--glacier-danger-text);
+}
+
+/* The hint about friends elsewhere, and the way to the Link face under it -
+   a real button, 44px, not a word in the sentence. */
+.shareSheet__elsewhere {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-1);
+}
+
+.shareSheet__faceLink {
+  min-block-size: max(2.75rem, 44px);
+  color: var(--glacier-accent-text);
+}
+
+/* ── The New-playlist sheet ─────────────────────────────────────────── */
+
+.newPlaylist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+
+.newPlaylistSheet .newPlaylist {
+  inline-size: min(560px, 100%);
+  margin-inline: auto;
+  padding-block-end: max(12px, env(safe-area-inset-bottom));
+}
+
+.newPlaylist__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+.newPlaylist__label {
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+.newPlaylist__field input {
+  min-block-size: max(2.75rem, 44px);
+}
+
+.newPlaylist__holding {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  margin-block-start: calc(var(--glacier-space-2) * -1);
+}
+
+/* Collaborative: the switch row as a card, and the door + chips under it
+   once it is on. */
+.newPlaylist__together {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-sunken);
+}
+
+.newPlaylist__together[data-on] {
+  border-color: var(--glacier-accent-7);
+}
+
+.newPlaylist__switch {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-block-size: max(2.75rem, 44px);
+  padding-inline: var(--glacier-space-1);
+  cursor: pointer;
+}
+
+.newPlaylist__switchText {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.newPlaylist__switchTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+}
+
+.newPlaylist__switchSub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.newPlaylist__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--glacier-space-2);
+  padding-block-start: var(--glacier-space-1);
+}
+
+.newPlaylist__actions > * {
+  min-block-size: max(2.75rem, 44px);
+}
+
+.newPlaylistSheet .newPlaylist__actions > * {
+  flex: 1 1 0;
+}
+
+/* ── The Friends page's bar: two verbs side by side ─────────────────── */
+
+.friendsBar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex: none;
+}
+
+.friendsBar__actions > * {
+  min-block-size: max(2.75rem, 44px);
+}
+
+/* ── Light ──────────────────────────────────────────────────────────────
+   Everything above is tokens, which the theme swaps for us. The two things
+   that are not quite: the hover wash over a row (the token's fallback is a
+   grey that reads too dark on a light card), and the outcome rows' green,
+   which is fine in both. The theme is stamped as data-theme by
+   appearance.tsx; most phones carry none and follow the system - so light
+   is keyed both ways, exactly like the deck (styles/76). */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .fpRow:hover:not([aria-disabled]),
+  :root:not([data-theme]) .fpDoor:hover:not(:disabled) {
+    background: var(--glacier-hover, rgba(0, 0, 0, 0.05));
+  }
+}
+
+:root[data-theme='light'] .fpRow:hover:not([aria-disabled]),
+:root[data-theme='light'] .fpDoor:hover:not(:disabled) {
+  background: var(--glacier-hover, rgba(0, 0, 0, 0.05));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fpRow,
+  .fpDoor,
+  .fpRow__check {
+    transition: none;
+  }
+}

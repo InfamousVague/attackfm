@@ -9,6 +9,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { ServerError } from '../api/http.ts';
 import { syncRegistryFriendsToHub } from '../profile/friendMirror.ts';
+import { sayNames } from '../nav/friendPickerDoor.ts';
 import { trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 import {
@@ -144,6 +145,12 @@ interface JamValue {
   /** Invite an online friend to groove WITH you: start a room if you have
    *  none, then ask them to join it. The one-tap "come groove" verb. */
   jamWith: (to: string) => Promise<boolean>;
+  /** Several at once, from the friend picker: each asked in turn, ONE toast
+   *  summarising ("Invited Kayla, Sam and Ana"; a refusal named with the
+   *  hub's words). Resolves with who was asked and who was not. */
+  inviteAll: (to: string[], kind?: 'along' | 'jam') => Promise<InviteOutcome>;
+  /** `jamWith` for several: a room if you have none, then everyone asked. */
+  jamWithAll: (to: string[]) => Promise<InviteOutcome>;
   /** Say yes to an ask - for 'along' your player becomes the clock, for 'jam'
    *  you drop into their room. The server decides from the invite's kind. */
   acceptInvite: (from: string) => Promise<boolean>;
@@ -204,6 +211,12 @@ interface JamValue {
     queue?: number[];
     deviceId?: string;
   }) => Promise<JamBeatReply>;
+}
+
+/** How a batch of invites went. */
+export interface InviteOutcome {
+  invited: string[];
+  refused: { to: string; reason: string }[];
 }
 
 const JamContext = createContext<JamValue | null>(null);
@@ -561,6 +574,62 @@ export function JamProvider({ children }: { children: ReactNode }) {
     [session, start, invite],
   );
 
+  const inviteAll = useCallback(
+    async (to: string[], kind: 'along' | 'jam' = 'jam'): Promise<InviteOutcome> => {
+      const out: InviteOutcome = { invited: [], refused: [] };
+      if (!session) {
+        out.refused = to.map((t) => ({ to: t, reason: 'not signed in' }));
+        return out;
+      }
+      // The hub may not have mirrored a fresh friendship yet: hand it the
+      // list ONCE for the whole batch, on the first refusal, then retry.
+      let synced: boolean | null = null;
+      for (const handle of to) {
+        try {
+          try {
+            await inviteToJamApi(session, handle, kind, registryToken ?? undefined);
+          } catch (e) {
+            if (!(e instanceof ServerError && e.status === 403 && registryToken)) throw e;
+            if (synced === null) synced = await syncRegistryFriendsToHub(session, registryToken).catch(() => false);
+            if (!synced) throw e;
+            await inviteToJamApi(session, handle, kind, registryToken);
+          }
+          out.invited.push(handle);
+        } catch (e) {
+          out.refused.push({ to: handle, reason: e instanceof Error && e.message ? e.message : 'could not send that invite' });
+        }
+      }
+      const said = out.invited.length
+        ? kind === 'jam'
+          ? `Invited ${sayNames(out.invited)}`
+          : `Asked ${sayNames(out.invited)} to listen along`
+        : '';
+      const sorry = out.refused.map((r) => `${r.to}: ${r.reason}`).join(' · ');
+      if (said || sorry) toast({ message: [said, sorry].filter(Boolean).join(' · ') });
+      if (kind === 'along' && out.invited.length) {
+        let tries = 0;
+        const tick = () => {
+          if (jamRef.current) return;
+          void refresh().finally(() => {
+            if (!jamRef.current && ++tries < 30) window.setTimeout(tick, 3000);
+          });
+        };
+        window.setTimeout(tick, 3000);
+      }
+      return out;
+    },
+    [session, toast, refresh, registryToken],
+  );
+
+  const jamWithAll = useCallback(
+    async (to: string[]): Promise<InviteOutcome> => {
+      if (!session) return { invited: [], refused: to.map((t) => ({ to: t, reason: 'not signed in' })) };
+      if (!jamRef.current) await start();
+      return inviteAll(to, 'jam');
+    },
+    [session, start, inviteAll],
+  );
+
   const acceptInvite = useCallback(
     async (from: string): Promise<boolean> => {
       if (!session) return false;
@@ -781,6 +850,8 @@ export function JamProvider({ children }: { children: ReactNode }) {
       start,
       invite,
       jamWith,
+      inviteAll,
+      jamWithAll,
       acceptInvite,
       declineInvite,
       join,
@@ -805,6 +876,8 @@ export function JamProvider({ children }: { children: ReactNode }) {
       start,
       invite,
       jamWith,
+      inviteAll,
+      jamWithAll,
       acceptInvite,
       declineInvite,
       join,

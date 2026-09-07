@@ -24,6 +24,7 @@ import {
 import { hostWaiting, useJamOptional, type PendingAdd } from './jam.tsx';
 import type { HearMode } from './deckShared.ts';
 import { onGrooveArm, takeGrooveArm } from '../nav/grooveDoor.ts';
+import { openFriendPicker } from '../nav/friendPickerDoor.ts';
 import { openGrooveCode } from './grooveEntry.ts';
 import { nowPlayingDoorOpen } from '../nav/nowPlayingDoor.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -349,6 +350,26 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
     };
     const title = playing && playing.kind !== 'book' ? `Groove to ${playing.title}` : 'Listen together';
     const blurb = 'Whoever starts it sets the pace; everyone follows; anyone can add.';
+    // Start WITH people: the picker first (hoisted, so the panel may close
+    // under it), then the room, then everyone asked - one toast for the lot.
+    const startWith = async () => {
+      const pick = await openFriendPicker({
+        title: 'Start with friends',
+        hint: 'They get an invite the moment the room opens',
+        mode: 'groove',
+        action: (n) => (n ? `Start with ${n}` : 'Start'),
+      });
+      if (!pick || pick.people.length === 0 || busy) return;
+      setBusy(true);
+      setFailed(false);
+      try {
+        await jam.jamWithAll(pick.people.map((p) => p.handle));
+      } catch {
+        setFailed(true);
+      } finally {
+        setBusy(false);
+      }
+    };
     return (
       <Popover
         placement="top-end"
@@ -401,6 +422,28 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
               This server could not start a groove. It may be running an older build.
             </Text>
           )}
+
+          {/* 7a. Start with friends: pick who first, then the room opens and
+              they are asked in. The picker is hoisted (nav/friendPickerDoor)
+              for the same reason the code sheet is. */}
+          <button
+            type="button"
+            className="jamCard jamCodeDoor jamStartWith"
+            aria-label="Start a groove with friends"
+            disabled={busy}
+            onClick={() => {
+              setOpen(false);
+              void startWith();
+            }}
+          >
+            <span className="jamCodeDoor__glyph" aria-hidden>
+              <UserPlus size={16} />
+            </span>
+            <span className="jamCodeDoor__text">
+              <span className="jamCodeDoor__title">Start with friends…</span>
+              <span className="jamCodeDoor__sub">Pick who to invite; the room opens as they&rsquo;re asked</span>
+            </span>
+          </button>
 
           {/* 7b. Have a code? A friend's deck prints one and a link's page
               prints one; this is where either gets typed. The sheet itself is
@@ -588,6 +631,20 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
     // the two are never stacked, then raise the sheet.
     setOpen(false);
     setSharing(true);
+  };
+  // Anyone in the room may pass it on: the picker (hoisted) with the room's
+  // people left out, then one 'jam' invite each and one toast for the lot.
+  const inviteFriends = () => {
+    setOpen(false);
+    void openFriendPicker({
+      title: 'Invite friends',
+      hint: hosting ? 'Into your groove' : `Into ${room.hostName}’s groove`,
+      mode: 'groove',
+      exclude: people.map((p) => p.name),
+      action: (n) => (n ? `Invite ${n}` : 'Invite'),
+    }).then((pick) => {
+      if (pick && pick.people.length) void jam.inviteAll(pick.people.map((p) => p.handle), 'jam');
+    });
   };
 
   const trigName = hosting
@@ -872,15 +929,26 @@ export function JamBadge({ seat = 'sheet' }: { seat?: 'sheet' | 'strip' } = {}) 
                   </span>
                 )}
               </span>
-              <button
-                type="button"
-                className="jamAction jamInvite__share"
-                aria-label="Share a link to this groove"
-                onClick={share}
-              >
-                <Share2 size={16} aria-hidden />
-                Share link
-              </button>
+              <span className="jamActions jamInvite__share">
+                <button
+                  type="button"
+                  className="jamAction jamInvite__friends"
+                  aria-label="Invite friends to this groove"
+                  onClick={inviteFriends}
+                >
+                  <UserPlus size={16} aria-hidden />
+                  Invite friends…
+                </button>
+                <button
+                  type="button"
+                  className="jamAction"
+                  aria-label="Share a link to this groove"
+                  onClick={share}
+                >
+                  <Share2 size={16} aria-hidden />
+                  Share link
+                </button>
+              </span>
             </div>
           </Section>
 

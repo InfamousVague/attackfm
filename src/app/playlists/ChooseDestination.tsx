@@ -1,7 +1,7 @@
 import { Modal, Text } from '@glacier/react';
 import { Heart, ListMusic, Plus } from '@glacier/icons';
-import { useState } from 'react';
 import { usePlaylists } from './playlists.tsx';
+import { openNewPlaylist } from '../nav/newPlaylistDoor.ts';
 import type { FileDestination } from '../downloads/filePlan.ts';
 
 /**
@@ -28,30 +28,20 @@ export function ChooseDestination({
   onClose: () => void;
   onChoose: (dest: FileDestination | null) => void;
 }) {
-  const { playlists, create } = usePlaylists();
-  const [naming, setNaming] = useState(false);
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
+  const { playlists } = usePlaylists();
 
   const pick = (dest: FileDestination | null) => {
     onChoose(dest);
     onClose();
   };
 
-  const makeAndPick = async () => {
-    const clean = name.trim();
-    if (!clean || busy) return;
-    setBusy(true);
-    try {
-      // Born empty: the song that prompted it is not in the library yet, so
-      // there is no path to hand the new list. It arrives when it downloads.
-      const id = await create(clean);
-      pick({ kind: 'playlist', id, name: clean });
-    } finally {
-      setBusy(false);
-      setNaming(false);
-      setName('');
-    }
+  // "New playlist…" hands over to the one New-playlist sheet (hoisted). The
+  // list is born empty: the song that prompted it is not in the library
+  // yet, so there is no path to hand it - it arrives when it downloads, and
+  // the plan below files it there.
+  const makeNew = () => {
+    onClose();
+    openNewPlaylist({ onCreated: (id, name) => onChoose({ kind: 'playlist', id, name }) });
   };
 
   return (
@@ -82,31 +72,12 @@ export function ChooseDestination({
           </button>
         ))}
 
-        {naming ? (
-          <form
-            className="chooseDest__new"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void makeAndPick();
-            }}
-          >
-            <input
-              className="chooseDest__field"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Playlist name"
-              aria-label="Playlist name"
-              autoFocus
-            />
-          </form>
-        ) : (
-          <button type="button" className="chooseDest__row" onClick={() => setNaming(true)}>
-            <span className="chooseDest__icon" aria-hidden>
-              <Plus size={16} />
-            </span>
-            <span className="chooseDest__label">New playlist…</span>
-          </button>
-        )}
+        <button type="button" className="chooseDest__row" onClick={makeNew}>
+          <span className="chooseDest__icon" aria-hidden>
+            <Plus size={16} />
+          </span>
+          <span className="chooseDest__label">New playlist…</span>
+        </button>
 
         {/* The way out that is not a destination: the song still lands in the
             library, which is what Add did before any of this existed. */}

@@ -1,4 +1,4 @@
-import { Button, Drawer, Input, Text, useToast } from '@glacier/react';
+import { Drawer, Input, Text, useToast } from '@glacier/react';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import { Check, ListMusic, Plus, Search } from '@glacier/icons';
 import { useMemo, useState } from 'react';
@@ -6,6 +6,7 @@ import { useLibrary } from '../library/library.tsx';
 import { fold, titleKey } from '../library/owned.ts';
 import { MosaicCover } from './PlaylistShowcase.tsx';
 import { isGeneratedPlaylist, usePlaylists } from './playlists.tsx';
+import { openNewPlaylist } from '../nav/newPlaylistDoor.ts';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -48,7 +49,7 @@ function AddToPlaylistPanel({
   onDone: () => void;
 }) {
   const { toast } = useToast();
-  const { playlists: every, create, addTrack, removeTrack, addWant, removeWant } = usePlaylists();
+  const { playlists: every, addTrack, removeTrack, addWant, removeWant } = usePlaylists();
   const { tracks } = useLibrary();
   // Only the lists a person keeps. The server's chart and new-music lists
   // are playlists too, and they crowded this picker until the ones you made
@@ -63,10 +64,6 @@ function AddToPlaylistPanel({
   const wantKey = want ? `${fold(want.artist)}|${titleKey(want.title)}` : null;
   const songName = want ? want.title : (track?.title ?? '');
   const [query, setQuery] = useState('');
-  // Set while a new list is being named. Empty string is a live, empty field -
-  // distinct from null, which is "not naming one".
-  const [draft, setDraft] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -84,16 +81,24 @@ function AddToPlaylistPanel({
       ? (playlist.wants ?? []).some((w) => w.k === wantKey)
       : paths.length > 0 && paths.every((p) => playlist.paths.includes(p));
 
-  const createWithTrack = () => {
-    if (draft === null || busy) return;
-    setBusy(true);
-    // Named after the song when the field is left empty: a list called "New
-    // Playlist" tells you nothing, and this is the one name we can infer.
-    const name = draft.trim() || songName || 'New Playlist';
-    // A not-owned song is born into a fresh, empty list as a want; an owned one
-    // rides create()'s paths argument straight in.
-    const born = want && addWant ? create(name).then((id) => addWant(id, want)) : create(name, paths);
-    born.then(onDone).catch(() => setBusy(false));
+  /*
+   * "New playlist" hands over to the one New-playlist sheet (hoisted; see
+   * nav/newPlaylistDoor) with what this panel knows: the songs to file, and
+   * the song's title as the name to fall back on - a list called "New
+   * Playlist" tells you nothing, and this is the one name we can infer. This
+   * panel closes first; the sheet is at app level and outlives it.
+   */
+  const makeNew = () => {
+    onDone();
+    openNewPlaylist({
+      paths,
+      want,
+      seed: songName,
+      // The sheet's own toast says what was made and with whom; a second
+      // toast here would only push it off the screen. The motor still
+      // celebrates the way in, as it does for a tap on a list below.
+      onCreated: () => fireNativeHaptic('success'),
+    });
   };
 
   return (
@@ -118,34 +123,12 @@ function AddToPlaylistPanel({
         </div>
       )}
 
-      {draft === null ? (
-        <button type="button" className="addPlaylist__new" onClick={() => setDraft('')}>
-          <span className="addPlaylist__newIcon">
-            <Plus size={16} />
-          </span>
-          New playlist
-        </button>
-      ) : (
-        <form
-          className="addPlaylist__draft"
-          onSubmit={(e) => {
-            e.preventDefault();
-            createWithTrack();
-          }}
-        >
-          <Input
-            autoFocus
-            size="sm"
-            placeholder={songName}
-            value={draft}
-            onChange={(e) => setDraft(e.currentTarget.value)}
-            aria-label="New playlist name"
-          />
-          <Button type="submit" variant="solid" size="sm" disabled={busy}>
-            Create
-          </Button>
-        </form>
-      )}
+      <button type="button" className="addPlaylist__new" onClick={makeNew}>
+        <span className="addPlaylist__newIcon">
+          <Plus size={16} />
+        </span>
+        New playlist…
+      </button>
 
       {/* One scroller, the sheet's own: the old nested ScrollArea inside a
           modal capped itself at 16rem and swallowed touch drags (the

@@ -1,12 +1,12 @@
 import { Button, IconButton, SegmentedControl, Text, useToast } from '@glacier/react';
-import { Check, Copy, Download, ListMusic, LogOut, X } from '@glacier/icons';
+import { Check, Copy, Crown, Download, ListMusic, LogOut, UserPlus, X } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { fetchFriends, fetchMembers, mirrorFriendsToHub, type Friend, type Member } from '../api/friends.ts';
 import type { PlaylistMember } from '../api/playlists.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
-import { fetchFriends as fetchRegistryFriends, publishPlaylistShare } from '../servers/registry.ts';
+import { publishPlaylistShare } from '../servers/registry.ts';
+import { openFriendPicker } from '../nav/friendPickerDoor.ts';
 import { useLibrary } from '../library/library.tsx';
 import { artSized } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
@@ -30,15 +30,27 @@ import { usePlaylists, type Playlist } from './playlists.tsx';
  * everything on it sits on solid paint and every image is a data URL (a
  * hub's art URL would not draw inside the shot).
  *
- * FRIENDS: who on THIS server is in and the seat they hold; friends here one
- * tap from a seat; friends elsewhere named as out of reach. A hub playlist
- * is rows on one box, and so is a collaborator - that is what the link is
- * for. Friends, and only friends, because the friendship is the consent.
- * A member (not the owner) sees who else is in, and the door out.
+ * MEMBERS: who is in and the seat they hold - the owner, then everyone
+ * seated, each with a pill; the owner can change a seat or show someone
+ * out on the row. One button, "Add people…", opens the friend picker
+ * (profile/FriendPicker.tsx, hoisted): anyone on this server may be
+ * seated - being on the box is the hub's rule for a seat now - with
+ * friends elsewhere dimmed and pointed at the link, which files a COPY of
+ * the list onto their own server. Each person picked is added in turn and
+ * gets a line: added, or the hub's own reason why not. A member (not the
+ * owner) sees who else is in, and the door out.
  */
 
 type Seat = 'viewer' | 'editor';
-type Face = 'link' | 'friends';
+export type ShareFace = 'link' | 'members';
+
+/** How one "Add people" went for one person, said under the list. */
+interface Outcome {
+  handle: string;
+  ok: boolean;
+  /** "added as an editor", or the hub's words. */
+  words: string;
+}
 
 /** A cover shrunk to a square thumbnail data URL - a few kilobytes, drawn
  *  from the hub's own art, and the only form of picture the card's shot can
@@ -125,10 +137,13 @@ export function SharePlaylistDrawer({
   playlist,
   open,
   onClose,
+  initialFace = 'link',
 }: {
   playlist: Playlist;
   open: boolean;
   onClose: () => void;
+  /** Which face to open on. The New-playlist sheet lands on Members. */
+  initialFace?: ShareFace;
 }) {
   const { session } = useServerSession();
   const registry = useRegistryOptional();
@@ -136,55 +151,31 @@ export function SharePlaylistDrawer({
   const { members, share, unshare, leave } = usePlaylists();
   const { tracks } = useLibrary();
   const isOwner = !playlist.role || playlist.role === 'owner';
-  const [face, setFace] = useState<Face>('link');
+  const [face, setFace] = useState<ShareFace>(initialFace);
+  // The face asked for wins each time the sheet opens, not only the first.
+  useEffect(() => {
+    if (open) setFace(initialFace);
+  }, [open, initialFace]);
 
-  // ---- the friends face --------------------------------------------------
+  // ---- the members face --------------------------------------------------
 
-  const [friends, setFriends] = useState<Friend[] | null>(null);
   const [current, setCurrent] = useState<PlaylistMember[] | null>(null);
-  const [elsewhere, setElsewhere] = useState<string[]>([]);
-  // Everyone on this server, when the hub can say (null on an older hub, and
-  // the sheet falls back to friends only). Being here is the consent now -
-  // see the server's playlist_member_add.
-  const [roster, setRoster] = useState<Member[] | null>(null);
-  const [busy, setBusy] = useState<number | 'leave' | null>(null);
+  const [busy, setBusy] = useState<number | 'leave' | 'adding' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // How the last "Add people" went, a line a person - cleared on reopen.
+  const [outcomes, setOutcomes] = useState<Outcome[]>([]);
 
-  // Everything fetched fresh on every open: a friend made a minute ago should
-  // be here, and a member removed from another device should not.
+  // Fetched fresh on every open: a member removed from another device should
+  // not still be seated here.
   useEffect(() => {
     if (!open || !session) return;
     let live = true;
     setError(null);
-    const who = members ? members(playlist.id).catch(() => [] as PlaylistMember[]) : Promise.resolve([]);
-    const token = registry?.session?.token ?? null;
-    const account = token
-      ? fetchRegistryFriends(token)
-          .then((f) => f.friends.map((x) => x.handle))
-          .catch(() => [] as string[])
-      : Promise.resolve([] as string[]);
-    // The hub's friend list is a MIRROR of the registry's; mirror first, with
-    // the registry session so the hub verifies and settles at once, then ask
-    // who is a friend here. A friend you invited an hour ago is in this list
-    // on the first open, not the next.
-    const hubFriends = account
-      .then((handles) => (handles.length ? mirrorFriendsToHub(session, handles, token ?? undefined) : undefined))
-      .then(() => fetchFriends(session))
-      .then((f) => f.friends);
-    const everyone = fetchMembers(session).catch(() => null);
-    void Promise.all([hubFriends, who, account, everyone])
-      .then(([hub, seated, handles, all]) => {
-        if (!live) return;
-        setFriends(hub);
-        setCurrent(seated);
-        setRoster(all);
-        // "Here" is anyone on this server, not only the friends the registry
-        // could match: a handle that IS a member under another username was
-        // being filed as "not on this server", and the link that pill offers
-        // makes a copy on their side, never a seat at this list.
-        const here = new Set([...hub, ...(all ?? [])].map((f) => f.username.toLowerCase()));
-        const me = registry?.session?.account.handle.toLowerCase();
-        setElsewhere(handles.filter((h) => h.toLowerCase() !== me && !here.has(h.toLowerCase())));
+    setOutcomes([]);
+    const who = members ? members(playlist.id) : Promise.resolve([] as PlaylistMember[]);
+    void who
+      .then((seated) => {
+        if (live) setCurrent(seated);
       })
       .catch(() => {
         if (live) setError('Could not reach the server just now.');
@@ -192,14 +183,12 @@ export function SharePlaylistDrawer({
     return () => {
       live = false;
     };
-  }, [open, session, members, playlist.id, registry?.session]);
+  }, [open, session, members, playlist.id]);
 
   const seated = current ?? [];
-  const nameOf = (userId: number) =>
-    seated.find((m) => m.userId === userId)?.username ??
-    friends?.find((f) => f.userId === userId)?.username ??
-    roster?.find((f) => f.userId === userId)?.username ??
-    '';
+  const nameOf = (userId: number) => seated.find((m) => m.userId === userId)?.username ?? '';
+  const me = session?.username ?? '';
+  const ownerName = isOwner ? me : (playlist.ownerName ?? 'the owner');
 
   const setSeat = async (userId: number, seat: Seat | null) => {
     if (!share || !unshare || busy !== null) return;
@@ -237,23 +226,48 @@ export function SharePlaylistDrawer({
     }
   };
 
-  // Everyone on the server who is not yet seated, friends first; on an
-  // older hub with no roster, the friends alone, as before.
-  const candidates = useMemo(() => {
-    const me = (session?.username ?? '').toLowerCase();
-    const isFriend = new Set((friends ?? []).map((f) => f.userId));
-    const pool: Member[] = roster
-      ? roster.filter((m) => m.username.toLowerCase() !== me)
-      : (friends ?? []).map((f) => ({ userId: f.userId, username: f.username }));
-    return pool
-      .filter((f) => !seated.some((m) => m.userId === f.userId))
-      .sort(
-        (a, b) =>
-          Number(isFriend.has(b.userId)) - Number(isFriend.has(a.userId)) ||
-          a.username.localeCompare(b.username),
-      );
-  }, [friends, roster, seated, session?.username]);
-  const loading = friends === null && !error;
+  /**
+   * "Add people…": the picker, then each person in turn - by username, the
+   * name the hub seats by - and a line each for how it went. The hub's own
+   * words ride a refusal ("nobody by that name on this server"), never a
+   * paraphrase. The list is re-read behind it rather than trusted.
+   */
+  const addPeople = async () => {
+    if (!share || !members || busy !== null) return;
+    const pick = await openFriendPicker({
+      title: 'Add people',
+      hint: `To “${playlist.name}” - anyone on this server`,
+      mode: 'playlist',
+      roles: true,
+      exclude: [me, ...seated.map((m) => m.username)],
+      action: (n) => (n ? `Add ${n} to the playlist` : 'Add to the playlist'),
+    });
+    if (!pick || pick.people.length === 0) return;
+    setBusy('adding');
+    setError(null);
+    const out: Outcome[] = [];
+    for (const p of pick.people) {
+      try {
+        await share(playlist.id, { username: p.handle }, pick.role);
+        out.push({ handle: p.handle, ok: true, words: pick.role === 'editor' ? 'added as an editor' : 'added as a viewer' });
+      } catch (err) {
+        out.push({
+          handle: p.handle,
+          ok: false,
+          words: err instanceof Error && err.message ? err.message : 'could not be added',
+        });
+      }
+    }
+    setOutcomes(out);
+    try {
+      setCurrent(await members(playlist.id));
+    } catch {
+      // The lines above already say what happened; the next open re-reads.
+    } finally {
+      setBusy(null);
+    }
+  };
+  const loading = current === null && !error;
 
   // ---- the link face ------------------------------------------------------
 
@@ -420,10 +434,10 @@ export function SharePlaylistDrawer({
         fullWidth
         size="sm"
         value={face}
-        onValueChange={(v) => setFace(v === 'friends' ? 'friends' : 'link')}
+        onValueChange={(v) => setFace(v === 'members' ? 'members' : 'link')}
         options={[
           { value: 'link', label: 'Link' },
-          { value: 'friends', label: isOwner ? 'Friends' : 'Who has it' },
+          { value: 'members', label: isOwner ? 'Members' : 'Who has it' },
         ]}
       />
 
@@ -469,109 +483,133 @@ export function SharePlaylistDrawer({
         </div>
       )}
 
-      {face === 'friends' && (
+      {face === 'members' && (
         <>
           <p className="shareSheet__desc">
             {isOwner
-              ? 'Friends on this server can see it, or add to it. It stays yours.'
-              : `Shared by ${playlist.ownerName ?? 'a friend'} · you can ${playlist.role === 'editor' ? 'add and remove songs' : 'see and play it'}.`}
+              ? 'Who can see it, and who can add to it. It stays yours.'
+              : `Shared by ${ownerName} · you can ${playlist.role === 'editor' ? 'add and remove songs' : 'see and play it'}.`}
           </p>
           {error && (
-            <Text tone="danger" size="sm" className="shareSheet__note">
+            <Text tone="danger" size="sm" className="shareSheet__note" role="status">
               {error}
             </Text>
           )}
           {loading && (
             <Text tone="muted" size="sm" className="shareSheet__note">
-              Finding your friends…
+              Finding who is in…
             </Text>
           )}
 
           {!loading && (
             <section className="shareSheet__room">
               <h3 className="shareSheet__h">
-                Shared with
-                <span className="shareSheet__count">{seated.length}</span>
+                People
+                <span className="shareSheet__count">{seated.length + 1}</span>
               </h3>
-              {seated.length === 0 ? (
+              <ul className="shareSheet__list">
+                {/* The owner leads: never among the members the hub lists,
+                    always the first person on the list. */}
+                <li className="shareSheet__row">
+                  <FriendAvatar handle={ownerName} size="md" />
+                  <span className="shareSheet__name">
+                    {ownerName}
+                    {isOwner && <span className="shareSheet__you"> · you</span>}
+                  </span>
+                  <span className="shareSheet__pill shareSheet__pill--owner">
+                    <Crown size={11} aria-hidden />
+                    Owner
+                  </span>
+                </li>
+                {seated.map((m) => (
+                  <li key={m.userId} className="shareSheet__row">
+                    <FriendAvatar handle={m.username} size="md" />
+                    <span className="shareSheet__name">
+                      {m.username}
+                      {m.username.toLowerCase() === me.toLowerCase() && <span className="shareSheet__you"> · you</span>}
+                    </span>
+                    {isOwner && share ? (
+                      <span className="shareSheet__seats">
+                        <SegmentedControl
+                          size="sm"
+                          aria-label={`${m.username}'s seat`}
+                          value={m.role}
+                          disabled={busy !== null}
+                          onValueChange={(v) => void setSeat(m.userId, v === 'viewer' ? 'viewer' : 'editor')}
+                          options={[
+                            { value: 'editor', label: 'Editor' },
+                            { value: 'viewer', label: 'Viewer' },
+                          ]}
+                        />
+                        <IconButton
+                          size="sm"
+                          variant="ghost"
+                          className="shareSheet__remove"
+                          aria-label={`Remove ${m.username}`}
+                          disabled={busy !== null}
+                          onClick={() => void setSeat(m.userId, null)}
+                        >
+                          <X size={15} />
+                        </IconButton>
+                      </span>
+                    ) : (
+                      <span className="shareSheet__pill" data-role={m.role}>
+                        {m.role === 'editor' ? 'Editor' : 'Viewer'}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {seated.length === 0 && (
                 <Text tone="muted" size="sm" className="shareSheet__empty">
-                  {isOwner ? 'Nobody yet.' : 'Only you and the owner.'}
+                  {isOwner ? 'Nobody else yet.' : 'Only you and the owner.'}
                 </Text>
-              ) : (
-                <ul className="shareSheet__list">
-                  {seated.map((m) => (
-                    <li key={m.userId} className="shareSheet__row">
-                      <FriendAvatar handle={m.username} size="md" />
-                      <span className="shareSheet__name">{m.username}</span>
-                      {isOwner && share ? (
-                        <span className="shareSheet__seats" role="radiogroup" aria-label={`${m.username}'s seat`}>
-                          <Button size="sm" variant={m.role === 'viewer' ? 'solid' : 'ghost'} aria-pressed={m.role === 'viewer'} disabled={busy !== null} onClick={() => void setSeat(m.userId, 'viewer')}>
-                            View
-                          </Button>
-                          <Button size="sm" variant={m.role === 'editor' ? 'solid' : 'ghost'} aria-pressed={m.role === 'editor'} disabled={busy !== null} onClick={() => void setSeat(m.userId, 'editor')}>
-                            Edit
-                          </Button>
-                          <IconButton size="sm" variant="ghost" aria-label={`Remove ${m.username}`} disabled={busy !== null} onClick={() => void setSeat(m.userId, null)}>
-                            <X size={15} />
-                          </IconButton>
-                        </span>
-                      ) : (
-                        <span className="shareSheet__pill">{m.role === 'editor' ? 'Can edit' : 'Can view'}</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
               )}
             </section>
           )}
 
           {!loading && isOwner && share && (
-            <section className="shareSheet__room">
-              <h3 className="shareSheet__h">{roster ? 'On this server' : 'Friends on this server'}</h3>
-              {candidates.length === 0 ? (
-                <Text tone="muted" size="sm" className="shareSheet__empty">
-                  {(friends ?? []).length === 0
-                    ? 'No friends on this server yet. Add friends under Profile → Friends; once they are members here, they appear in this list.'
-                    : 'Everyone is in.'}
-                </Text>
-              ) : (
-                <ul className="shareSheet__list">
-                  {candidates.map((f) => (
-                    <li key={f.userId} className="shareSheet__row">
-                      <FriendAvatar handle={f.username} size="md" />
-                      <span className="shareSheet__name">{f.username}</span>
-                      <span className="shareSheet__seats">
-                        <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void setSeat(f.userId, 'viewer')}>
-                          Can view
-                        </Button>
-                        <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void setSeat(f.userId, 'editor')}>
-                          Can edit
-                        </Button>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            <button
+              type="button"
+              className="jamCard fpDoor shareSheet__add"
+              onClick={() => void addPeople()}
+              disabled={busy !== null}
+              aria-busy={busy === 'adding' || undefined}
+            >
+              <span className="fpDoor__glyph" aria-hidden>
+                <UserPlus size={16} />
+              </span>
+              <span className="fpDoor__text">
+                <span className="fpDoor__title">{busy === 'adding' ? 'Adding…' : 'Add people…'}</span>
+                <span className="fpDoor__sub">Anyone on this server, friends first</span>
+              </span>
+            </button>
           )}
 
-          {!loading && isOwner && elsewhere.length > 0 && (
-            <section className="shareSheet__room shareSheet__room--away">
-              <h3 className="shareSheet__h">Friends elsewhere</h3>
-              <ul className="shareSheet__list">
-                {elsewhere.map((h) => (
-                  <li key={h} className="shareSheet__row shareSheet__row--away">
-                    <FriendAvatar handle={h} size="md" />
-                    <span className="shareSheet__name">{h}</span>
-                    <span className="shareSheet__pill">Not on this server</span>
-                  </li>
-                ))}
-              </ul>
+          {outcomes.length > 0 && (
+            <ul className="shareSheet__outcomes" aria-label="How that went" role="status">
+              {outcomes.map((o) => (
+                <li key={o.handle} className="shareSheet__outcome" data-ok={o.ok || undefined}>
+                  <FriendAvatar handle={o.handle} size="sm" />
+                  <span className="shareSheet__outcomeName">{o.handle}</span>
+                  <span className="shareSheet__outcomeWords">{o.words}</span>
+                  {o.ok && <Check size={14} aria-hidden className="shareSheet__outcomeMark" />}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {!loading && isOwner && share && (
+            <div className="shareSheet__elsewhere">
               <Text tone="muted" size="xs" className="shareSheet__hint">
-                A playlist lives on one server, so only its members can be seated. Send them the link
-                instead - it files the list onto their own server.
+                A playlist lives on one server, so only its members can be seated. Friends
+                elsewhere get the link, which files a copy onto their own server.
               </Text>
-            </section>
+              <Button variant="ghost" size="sm" className="shareSheet__faceLink" onClick={() => setFace('link')}>
+                <Copy size={15} />
+                Get the link
+              </Button>
+            </div>
           )}
 
           {!isOwner && leave && (

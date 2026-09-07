@@ -44,6 +44,8 @@ import { SharedPlaylistBridge } from './playlists/SharedPlaylistBridge.tsx';
 import { JamLinkBridge } from './player/JamLinkBridge.tsx';
 import { JoinGrooveSheet } from './player/JoinGrooveSheet.tsx';
 import { GrooveHearSheet } from './player/GrooveHearSheet.tsx';
+import { FriendPicker } from './profile/FriendPicker.tsx';
+import { NewPlaylistSheet } from './playlists/NewPlaylistSheet.tsx';
 import { ProfileLinkBridge } from './profile/ProfileLinkBridge.tsx';
 import { NotifyBell } from './notify/NotifyBell.tsx';
 import { ShareServer } from './library/ShareServer.tsx';
@@ -969,6 +971,11 @@ export function App() {
                 plays - hoisted here for the same reason: the join that asks
                 it can come from anywhere, and the landing waits on the answer. */}
             <GrooveHearSheet />
+            {/* The friend picker and the New-playlist sheet, hoisted for the
+                same reason again: their seats are popovers, drawers and
+                menus, and a sheet inside one of those dies with it. */}
+            <FriendPicker />
+            <NewPlaylistSheet />
             <ProfileLinkBridge />
             {/* Music Date, fullscreen: over everything, chrome gone - no nav
                 bar, no player strip, just the introductions. A floating

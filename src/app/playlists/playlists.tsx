@@ -312,6 +312,23 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
   // left before an edit landed must not roll the screen (or the next
   // whole-array PUT) back to the past.
   const editSeq = useRef(0);
+  /*
+   * The latest list, for the verbs that are called from a closure taken
+   * BEFORE the list changed. The New-playlist sheet holds `share` from the
+   * render it opened on, creates a list (which refetches), then seats people
+   * in it - and a `share` reading the memo's `remote` would look the new id
+   * up in a list that predates it and find nothing. The sharing verbs read
+   * through this instead.
+   */
+  const remoteRef = useRef<RemotePlaylist[]>(remote);
+  remoteRef.current = remote;
+  // Written at the moment the list changes as well as on render: a caller
+  // that awaited `create` runs before React has re-rendered this provider,
+  // and the ref must already know the new list by then.
+  const settle = useCallback((next: RemotePlaylist[]) => {
+    remoteRef.current = next;
+    setRemote(next);
+  }, []);
 
   /*
    * The lists on every OTHER hub this account sits on, read-only. Their
@@ -356,14 +373,14 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
     try {
       const lists = await fetchRemotePlaylists(session);
       if (editSeq.current === seqAtAsk) {
-        setRemote(lists);
+        settle(lists);
         writeFeedCache(session, 'playlists', lists);
       }
     } catch {
       // Unreachable right now; whatever is on screen stays, and the next
       // heartbeat tries again.
     }
-  }, [session]);
+  }, [session, settle]);
 
   /*
    * Move decoration written before the server could hold it (0.3.282-285, the
@@ -495,6 +512,8 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
     const shares = (p: RemotePlaylist) => p.role !== undefined;
 
     const byId = (id: string) => remote.find((p) => String(p.id) === id);
+    // The same lookup against the list as it is NOW - see remoteRef.
+    const latest = (id: string) => remoteRef.current.find((p) => String(p.id) === id);
 
     return {
       playlists,
@@ -507,8 +526,10 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         ];
         const id = await createRemotePlaylist(session, trimmed, tracks);
         editSeq.current += 1;
-        setRemote((prev) => [...prev, { id, name: trimmed, updatedAt: Date.now(), tracks }]);
-        void refresh();
+        settle([...remoteRef.current, { id, name: trimmed, updatedAt: Date.now(), tracks }]);
+        // Awaited, not fired: the caller may seat people in the new list
+        // next, and `share` gates on the `role` only the refetch carries.
+        await refresh();
         return String(id);
       },
       remove: (id: string) => {
@@ -635,7 +656,9 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         );
       },
       setMeta: (id: string, patch: { description?: string; folder?: string }) => {
-        const target = byId(id);
+        // Through the ref: the New-playlist sheet describes a list it made a
+        // moment ago, before this provider has re-rendered with it.
+        const target = latest(id);
         if (!target) return;
         const clean = {
           ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
@@ -648,22 +671,22 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
           return;
         }
         mutate(
-          remote.map((p) => (p.id === target.id ? { ...p, ...clean } : p)),
+          remoteRef.current.map((p) => (p.id === target.id ? { ...p, ...clean } : p)),
           () => updateRemotePlaylist(session, target.id, clean),
         );
       },
       members: async (id: string) => {
-        const target = byId(id);
+        const target = latest(id);
         if (!target || !shares(target)) return [];
         return fetchPlaylistMembers(session, target.id);
       },
       share: async (id, who, role) => {
-        const target = byId(id);
+        const target = latest(id);
         if (!target || !shares(target)) return;
         await addPlaylistMember(session, target.id, who, role);
       },
       unshare: async (id, userId) => {
-        const target = byId(id);
+        const target = latest(id);
         if (!target || !shares(target)) return;
         await removePlaylistMember(session, target.id, userId);
       },
@@ -688,7 +711,7 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         await refresh();
       },
     };
-  }, [remote, others, session, mutate, refresh, metaRev]);
+  }, [remote, others, session, mutate, refresh, metaRev, settle]);
 
   return <PlaylistsContext.Provider value={value}>{children}</PlaylistsContext.Provider>;
 }

@@ -18,7 +18,8 @@ import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { fold, titleKey } from '../library/owned.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { SharePlaylistDrawer } from './SharePlaylist.tsx';
+import { SharePlaylistDrawer, type ShareFace } from './SharePlaylist.tsx';
+import { takeMembersHint } from '../nav/playlistDoor.ts';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { fetchPlaylistSuggestions, remotePath } from '../server.ts';
 import { serverLabelFor } from '../servers/serverNames.ts';
@@ -71,6 +72,9 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   const { toast } = useToast();
   const { session } = useServerSession();
   const [sharing, setSharing] = useState(false);
+  // Which face the share sheet opens on: the header's button means the
+  // link, the menu's "Share with friends…" means the people.
+  const [shareFace, setShareFace] = useState<ShareFace>('link');
   // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
   const refreshNonce = useRefreshNonce();
   // What else belongs here, from the server's own scoring of this list. Null
@@ -88,10 +92,22 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       ? {
           label:
             !playlist.role || playlist.role === 'owner' ? 'Share this playlist' : 'Who has this playlist',
-          open: () => setSharing(true),
+          open: () => {
+            setShareFace('link');
+            setSharing(true);
+          },
         }
       : null,
   );
+  // Arrived from the New-playlist sheet with people just seated: open on
+  // them. The hint is taken once and goes stale by itself (playlistDoor).
+  const arrivedId = playlist?.id ?? null;
+  useEffect(() => {
+    if (arrivedId && takeMembersHint(arrivedId)) {
+      setShareFace('members');
+      setSharing(true);
+    }
+  }, [arrivedId]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   /** The description being edited, or null when it is only being read. */
@@ -618,7 +634,13 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   provider leaves `share` out everywhere else. A guest gets the
                   door out instead. */}
               {share && playlist.role !== undefined && !playlist.origin && (
-                <MenuItem icon={<Users size={15} />} onSelect={() => setSharing(true)}>
+                <MenuItem
+                  icon={<Users size={15} />}
+                  onSelect={() => {
+                    setShareFace('members');
+                    setSharing(true);
+                  }}
+                >
                   {isOwner ? 'Share with friends…' : 'Who has this…'}
                 </MenuItem>
               )}
@@ -688,7 +710,12 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             share; against an older hub the item would open a drawer whose
             every tap went nowhere. */}
         {share && playlist.role !== undefined && !playlist.origin && (
-          <SharePlaylistDrawer playlist={playlist} open={sharing} onClose={() => setSharing(false)} />
+          <SharePlaylistDrawer
+            playlist={playlist}
+            open={sharing}
+            onClose={() => setSharing(false)}
+            initialFace={shareFace}
+          />
         )}
       </header>
       {/* Sits just under the hero: once this leaves the top of the page, the

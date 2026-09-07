@@ -15,7 +15,7 @@ import {
   Users,
   X,
 } from '@glacier/icons';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { OnRepeatChip } from '../library/OnRepeatChip.tsx';
 import { usePlaylists, type Playlist } from './playlists.tsx';
@@ -27,6 +27,7 @@ import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { useLikedStems } from '../servers/likedStems.ts';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
 import { openMix } from '../nav/openMix.ts';
+import { openNewPlaylist } from '../nav/newPlaylistDoor.ts';
 import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
 import { serverLabelFor } from '../servers/serverNames.ts';
 // The objects made for these four tiles. Their own colours are not used: each
@@ -291,7 +292,6 @@ export function PlaylistShowcase({
   const { toast } = useToast();
   const { enabled } = usePlugins();
   // The New Playlist dialog: null closed, otherwise the name being typed.
-  const [draftName, setDraftName] = useState<string | null>(null);
   /** The playlist being renamed from its tile, or null. */
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   /** The playlist a new folder is being made FOR, or null. */
@@ -472,16 +472,10 @@ export function PlaylistShowcase({
   // nothing to edit), so they earn the same frame. A user's own list still
   // opens as a page it can reorder; that is a different job.
 
-  const createDraft = (event: FormEvent) => {
-    event.preventDefault();
-    if (draftName === null) return;
-    const name = draftName;
-    setDraftName(null);
-    // Async because a server playlist's id is the server's to mint; the modal
-    // opens the moment it exists. A refused create reopens the dialog with
-    // the name still in it, which is also the retry.
-    create(name).then(onOpenPlaylist, () => setDraftName(name));
-  };
+  // "New Playlist" is the one sheet now (NewPlaylistSheet, hoisted): the
+  // name, what it is for, and who is in from the start. The page opens the
+  // moment the list exists.
+  const makeNew = () => openNewPlaylist({ onCreated: (id) => onOpenPlaylist(id) });
 
   return (
     <>
@@ -639,7 +633,7 @@ export function PlaylistShowcase({
                   <Plus size={24} />
                 </div>
               }
-              onOpen={() => setDraftName('')}
+              onOpen={makeNew}
             />
             {/* Plugin tiles trail the app's own, rendered with the house Tile
                 and modal so a plugin says what the playlist is, not what a
@@ -822,20 +816,6 @@ export function PlaylistShowcase({
         />
       </Modal>
 
-      <Modal open={draftName !== null} onClose={() => setDraftName(null)} title="New Playlist" size="sm">
-        <form className="playlistCreate" onSubmit={createDraft}>
-          <Input
-            autoFocus
-            placeholder="Name your playlist"
-            value={draftName ?? ''}
-            onChange={(e) => setDraftName(e.currentTarget.value)}
-            aria-label="Playlist name"
-          />
-          <Button type="submit" variant="solid">
-            Create
-          </Button>
-        </form>
-      </Modal>
     </>
   );
 }
