@@ -88,7 +88,7 @@ function read(): string[] {
     // Filtered against the catalogue on the way in - an id retired in a later
     // version would otherwise sit in storage forever, asking for a sound that
     // no longer exists - and put back in catalogue order, which is the same
-    // order `commit` writes. Without that last part a rack restored from
+    // order `_commit` writes. Without that last part a rack restored from
     // storage would spell its `fx` list differently from the identical rack
     // built by clicking, and the two would be different URLs for the same
     // sound: a needless re-encode, and a cache miss for nothing.
@@ -107,7 +107,12 @@ let active: string[] = read();
 /** Snapshot identity has to be stable, or useSyncExternalStore loops. */
 let snapshot: readonly string[] = active;
 
-function commit(next: string[]): void {
+/**
+ * The rack's writer, parked with the rack's UI (see the purge above): nothing
+ * calls it while there is no switch to press. Kept whole - and underscored,
+ * so the lint gate reads it as deliberate rather than as an oversight.
+ */
+function _commit(next: string[]): void {
   // Catalogue order, not click order, so the panel and the chain agree.
   active = EFFECTS.filter((e) => next.includes(e.id)).map((e) => e.id);
   snapshot = active;

@@ -1,5 +1,4 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
-import stationMark from '../../assets/attack-wave.png';
 import { BeatWave, type BeatWaveBeat } from './BeatWave.tsx';
 import { fireMicroTick, fireNativeHaptic } from '../core/haptics.ts';
 import { REDUCED_MOTION_QUERY } from '../ux/useReducedMotion.ts';
@@ -35,15 +34,15 @@ const SPOOL_UP_MS = 420;
 // dead rather than throwing it - so the numbers below and the freewheel branch
 // in the tick are dormant, kept whole so the throw can be handed back with one
 // line if it is ever wanted. See endScratch.
-const FLICK_MIN = 2;
+const _FLICK_MIN = 2;
 /** And the most a throw is allowed to carry - past this the art is a smear
  *  and the song a chipmunk chirp; nobody is served. */
-const FLICK_MAX = 9;
+const _FLICK_MAX = 9;
 /** The friction's time constant. A full-strength throw settles in ~2.5s. */
 const FLICK_TAU = 0.55;
 /** A hand that stopped moving this long before lifting was holding still -
  *  that is a stop, not a throw. */
-const FLICK_FRESH_MS = 120;
+const _FLICK_FRESH_MS = 120;
 /** Close enough to playing speed to hand the platter back to the transport. */
 const FLICK_SETTLED = 0.08;
 

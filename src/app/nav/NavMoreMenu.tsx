@@ -20,7 +20,6 @@ import type { NavDest } from './navSeats.ts';
  */
 export function NavMoreMenu({
   overflow,
-  tab,
   onTab,
   onSettings,
   onOpenDownloads,

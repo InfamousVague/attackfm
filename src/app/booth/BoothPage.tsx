@@ -13,14 +13,13 @@
 //! Everything degrades: an older server that 404s /api/features/status or
 //! /api/curator/pulls simply loses that line, never the page.
 
-import { Button, Modal, ProgressBar, Spinner, Text } from '@glacier/react';
+import { Button, Modal, ProgressBar, Spinner } from '@glacier/react';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import {
   AudioLines,
   AudioWaveform,
   BrainCircuit,
   CalendarClock,
-  CalendarHeart,
   ChevronRight,
   Disc3,
   Ear,
@@ -194,13 +193,13 @@ export function BoothPage({
       window.clearTimeout(t);
       ctrl.abort();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the whole `playing` object is replaced on every position tick; only a new path may re-fetch the platter.
   }, [session, playing?.path]);
 
   // Tune a mix: any curated crate opens into the trait mixer that built it.
   const [tuneMix, setTuneMix] = useState<{ title: string; tracks: Track[] } | null>(null);
 
   const pulse = pulseLine(feed, t);
-  const waiting = pulls?.recent?.filter((r) => r.state === 'landed').length ?? 0;
   // The seeded greeting arrives as a catalogue key rather than words (it is
   // built at import time, before there is a language to build it in), so the
   // caption has to resolve it - otherwise a fresh conversation reads as though

@@ -7,7 +7,7 @@ import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { clearStemDrop, noteStemsFor, setStemLevel, useStemDrop } from './stemDrop.ts';
 import { useStems } from './stemsReady.ts';
 import { chainRate, useFxChain } from './fxChain.ts';
-import { ENV_HZ, envelopeMeter, loadStemEnvelopes, type StemEnvelopes } from './stemLevels.ts';
+import { envelopeMeter, loadStemEnvelopes, type StemEnvelopes } from './stemLevels.ts';
 import { autoDownloadAllowed } from '../settings/behaviourPrefs.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 
@@ -55,7 +55,6 @@ function levelsFrom(env: Float32Array | undefined, buckets = 96): number[] | und
  * length changes with how many parts a track was separated into.
  */
 function StemPart({
-  part,
   label,
   Icon,
   gain,
@@ -305,6 +304,7 @@ export function StemsRoom() {
       if (!stop.signal.aborted && got.size > 0) setEnvelopes(got);
     })();
     return () => stop.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the track's PATH: the object gets a fresh identity on every library tick, and re-running would re-download the envelopes.
   }, [ready, track?.path, partsKey, session, settings.quality]);
 
   /**
@@ -451,7 +451,5 @@ export function StemsRoom() {
 /** The dot on the tab: whether anything is out of the song right now. */
 export function useStemsOut(): number {
   const drop = useStemDrop();
-  const { track } = useNowPlayingMotion();
-  const id = track ? trackIdFromPath(track.path) : null;
   return Object.values(drop.gains).filter((g) => g < 1).length;
 }

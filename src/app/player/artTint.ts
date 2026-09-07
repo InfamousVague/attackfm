@@ -221,7 +221,7 @@ export function useArtTint(url: string | null, enabled: boolean): ArtTint | null
 export async function artTint(url: string): Promise<ArtTint | null> {
   const hit = cache.get(url);
   if (hit !== undefined) return hit;
-  let tint: ArtTint | null = null;
+  let tint: ArtTint | null;
   try {
     tint = await readTint(url);
   } catch {

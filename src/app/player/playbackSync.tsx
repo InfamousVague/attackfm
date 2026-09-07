@@ -113,6 +113,7 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
     // somebody opens the picker, instead of appearing a second later under
     // their thumb.
     if (session) void refreshSpeakers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the session's url and token: the context hands over a fresh `session` object on every refresh, and re-running would re-warm the speaker list each time.
   }, [session?.url, session?.token]);
   const [connected, setConnected] = useState(false);
   const [devices, setDevices] = useState<ConnectDevice[]>([]);

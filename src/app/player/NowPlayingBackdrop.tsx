@@ -290,7 +290,6 @@ interface PosterCell {
  * and a seek lands on exactly the page that moment would always have shown.
  */
 function PosterLine({ path, active, lines, life }: LineProps) {
-  let pageStart = 0;
   let rows: PosterCell[][] = Array.from({ length: POSTER_ROWS }, () => []);
   let budgets = Array.from({ length: POSTER_ROWS }, () => POSTER_ROW_BUDGET);
 
@@ -324,7 +323,7 @@ function PosterLine({ path, active, lines, life }: LineProps) {
    */
   const POSTER_WINDOW = 48;
   const start = Math.max(0, Math.floor((active - POSTER_WINDOW) / POSTER_WINDOW) * POSTER_WINDOW);
-  pageStart = start;
+  let pageStart = start;
   for (let index = start; index <= active; index += 1) {
     const lineWords = wordsOf(lines[index]!.text);
     for (const [wordIndex, word] of lineWords.entries()) {

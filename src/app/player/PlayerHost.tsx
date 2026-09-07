@@ -133,6 +133,9 @@ export function PlayerHost({
    * here and a transport for it, and nothing to follow.
    */
   const mirroring = current === null && remoteTrack !== null;
+  // Whether this device holds a track of its own, as a plain value: the memo
+  // below turns on the FLIP, not on which track it is.
+  const noCurrent = current === null;
   const following = useMemo<FollowingRoom | null>(() => {
     if (!room || mirroring) return null;
     const receivedAt = room.receivedAt ?? Date.now();
@@ -173,6 +176,7 @@ export function PlayerHost({
       receivedAt,
       controls: room.controls ?? 0,
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the room's fields and on whether this device holds a track, not on either object's identity: the poll hands over a fresh `room` every few seconds and `current` changes with the song.
   }, [
     room?.id,
     room?.hostName,
@@ -189,8 +193,7 @@ export function PlayerHost({
     mirroring,
     roomTrack,
     roomMissing,
-    current === null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the room's fields, not its identity: the poll hands over a fresh object every few seconds
+    noCurrent,
   ]);
   /**
    * Whether the strip's track is this device's OWN deck, or a mirror of one

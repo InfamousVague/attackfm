@@ -193,7 +193,7 @@ export function useListenReporting({
       // the latest position before the interval dies.
       send();
     };
-  }, [track, playing]);
+  }, [track, playing, playSessionRef]);
 
   // The other half of the bookmark: a book section OPENS where the listener
   // left it. Runs once per track, only after the deck has learned a real

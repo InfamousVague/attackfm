@@ -1,7 +1,6 @@
 import { fireFelt } from '../core/haptics.ts';
 import { originFromPath } from '../server.ts';
 import { SMART_SHUFFLE_LABEL_KEY } from './smartShuffle.ts';
-import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { JamBadge } from './JamBadge.tsx';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from 'react';
@@ -25,9 +24,6 @@ import {
   MonitorSpeaker,
   Pause,
   Play,
-  Repeat,
-  Repeat1,
-  Shuffle,
   SkipBack,
   SkipForward,
   Users,
@@ -348,15 +344,6 @@ export function PlayerStrip({
   // badge exists to save you from opening.
   const changes = useSoundChanges();
   const [moreOpen, setMoreOpen] = useState(false);
-  /*
-   * The artwork's own hold. The kit opens the art-view chooser at 500ms and
-   * leaves the release alone - and the release bubbles to the shell's tap,
-   * which lifts the full-screen sheet ON TOP of the chooser the hold just
-   * summoned. Same defect, same cure as every song tile: swallow the click
-   * that ends a hold. The find() scopes it to presses that started on the
-   * artwork, so the rest of the strip's dead space stays a plain handle.
-   */
-  const artHold = useHoldToMenu((from) => from.closest('.artViewTarget'));
   // 'lyrics' and 'volume' are the phone's views; 'devices' is the desktop's -
   // one state serves both because only one trailing branch renders at a time.
   const [moreView, setMoreView] = useState<'menu' | 'eq' | 'lyrics' | 'volume' | 'devices'>('menu');

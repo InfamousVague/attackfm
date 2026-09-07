@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { CounterBadge, SegmentedControl, Switch } from '@glacier/react';
+import { CounterBadge, SegmentedControl } from '@glacier/react';
 import { EqPanel } from './EqPanel.tsx';
 import { FxRoom } from './FxRoom.tsx';
 import { FiltersRoom } from './FiltersRoom.tsx';
 import { StemsRoom, useStemsOut } from './StemsRoom.tsx';
 import { FILTERS, signature } from './filters.ts';
 import { FxSaved } from './FxSaved.tsx';
-import { FX_NODES, silenceFxChain, useFxChain } from './fxChain.ts';
+import { silenceFxChain, useFxChain } from './fxChain.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 
 /**

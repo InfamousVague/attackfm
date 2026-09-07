@@ -16,7 +16,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
-import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { ArtTint } from './artTint.ts';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
@@ -60,7 +60,6 @@ import {
 import { formatTotal } from '../ux/format.ts';
 import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
 import { subscribeGestures } from './deviceMotion.ts';
-import { isTauri, tauriCall } from '../core/tauri.ts';
 import {
   trackIdFromPath,
   originFromPath,
@@ -1375,9 +1374,11 @@ export function NowPlayingSheet({
    * badge. Memoised on the primitives, the pill is one element for the life of
    * a song, so the animation frames leave it alone.
    */
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the codec VALUES, not the track object: see the note above.
   const codecText = useMemo(() => (track ? codecLabel(track) : null), [track?.codec, track?.kind, track?.lossless]);
   const originText = useMemo(
     () => (track ? originLabel(originFromPath(track.path)) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the path, not the track object, for the same reason.
     [track?.path],
   );
   // Subscribed HERE rather than handed down - same reasoning as the strip:

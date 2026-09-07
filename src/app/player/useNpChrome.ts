@@ -106,7 +106,7 @@ export function useNpChrome({
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [mobileControls, audible, remoteOnly]);
+  }, [mobileControls, audible, remoteOnly, setNpOpen]);
 
   // The playing track's Spotify Canvas (a short looping clip), when the server
   // is set up to fetch one and the track has one. Null the rest of the time,
@@ -236,6 +236,7 @@ export function useNpChrome({
       });
     }
     return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the track's VALUES: the object is replaced on every library tick, and re-running would re-fetch the clip mid-song.
   }, [npOpen, track?.title, track?.artist, track?.kind, playSession]);
 
   return { npDimmed, setNpDimmed, pokeNpDim, npCanvas };

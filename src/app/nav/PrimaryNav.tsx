@@ -1,4 +1,3 @@
-import { NavBarItem } from '@glacier/react';
 import { useNavPill } from './useNavPill.ts';
 import { ArrowDownToLine, Disc3, LibraryBig, Search, Settings, Telescope } from '@glacier/icons';
 import { useMemo, useRef } from 'react';

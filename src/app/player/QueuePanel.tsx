@@ -57,7 +57,6 @@ export function QueuePanel({
   upNext,
   onUpNextChange,
   current,
-  onQueueChange,
   onPlayTrack,
   onClose,
   inJam = false,

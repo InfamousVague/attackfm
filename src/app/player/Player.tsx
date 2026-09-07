@@ -2139,6 +2139,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       };
     });
     return () => cleanups.forEach((cleanup) => cleanup());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the element listeners are wired once for the life of the deck; every value they read is reached through a ref, and re-binding them mid-song would drop events between the remove and the add.
   }, []);
 
   // Build the analyser on the first interaction with the app so its AudioContext
@@ -2156,6 +2157,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       window.removeEventListener('pointerdown', prime);
       window.removeEventListener('keydown', prime);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- primes the meter on the FIRST gesture only; re-running would re-arm the once-listeners after the graph is already live.
   }, []);
 
   /**

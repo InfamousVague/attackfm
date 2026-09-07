@@ -128,7 +128,9 @@ export function AppMain({
   // Downloads only exists while an importer runs; without one, a tab left on
   // 'downloads' from a past session falls through to Home rather than a page
   // that should not be here.
-  const hasDownloads = useDownloadsOptional() !== null;
+  // Called for its hook order alone now that nothing reads the answer - see
+  // the note below, and PrimaryNav's copy of it.
+  useDownloadsOptional();
   const hasQueue = useHasDownloadQueue();
   // Discover is a destination again, but nothing here gates on whether the
   // box can acquire: the page hides what it cannot act on itself.

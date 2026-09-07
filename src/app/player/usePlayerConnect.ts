@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MutableRefObject } from 'react';
+import { useEffect, useRef, type MutableRefObject } from 'react';
 import type { PlayerRepeat } from '@glacier/react';
 import { trackIdFromPath } from '../server.ts';
 import { VOLUME_MAX, VOLUME_UNITY } from './VolumeControl.tsx';
@@ -231,7 +231,7 @@ export function usePlayerConnect({
       release: () => liveRef.current.setPlayingState(false),
     });
     return () => connect.registerController(null);
-  }, [connect]);
+  }, [connect, liveRef, playbackRef, resumeRef]);
 
   // What this device hears, for friends who may know (profile/presence.ts).
   // Song and play state only - the bridge decides whether it travels.
@@ -418,6 +418,7 @@ export function usePlayerConnect({
       alive = false;
       window.clearInterval(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the jam's id and whether this device hosts it: `jam` itself is a fresh object on every poll, and re-running would restart the 2.5s beat.
   }, [jam?.current?.id, jam?.hosting]);
 
   // Following: steer to the host. A different song loads and resumes at their

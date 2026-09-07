@@ -1,4 +1,3 @@
-import type { LyricLine } from '@glacier/react';
 import { keepTranscript, keptTranscript } from './transcriptStore.ts';
 import { sessionForOrigin } from '../servers/sessions.ts';
 import { request } from '../api/http.ts';

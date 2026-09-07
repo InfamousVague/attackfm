@@ -85,6 +85,7 @@ export function FxSaved() {
     return () => {
       live = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` only words a failed fetch; a language change must not re-request the preset list.
   }, [session, openList]);
 
   /** Park the current chain in the slot being left, and bring back the other. */

@@ -16,7 +16,7 @@
 
 import { Button, Spinner } from '@glacier/react';
 import { Flame, Lightbulb, Mic, MoonStar, Play, Sparkles, Square, TrendingUp, Waves } from '@glacier/icons';
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { useTalkToDj } from './useTalkToDj.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';

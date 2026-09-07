@@ -63,6 +63,7 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
       })
       .finally(() => { if (!ctrl.signal.aborted) setBusy(false); });
     return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` is read only to word a failure; re-running on a language change would re-fetch the analysis and throw away the traits already chosen.
   }, [open, session, trackId, quick]);
 
   const chosen = useMemo(
