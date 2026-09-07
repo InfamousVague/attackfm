@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.135
+
+- The queue is yours again. Playing a big list no longer fills it with that whole list, so a song you add with “Add to queue” shows up at the top of the queue instead of behind nine hundred others — and it plays next, before the list carries on
+- What the list will play after your picks run out is still there, summarised underneath, so you can see where the music is going without it drowning out what you chose
+
 ## 0.5.134
 
 - Settings on the desktop uses the whole window again. The right-hand side was
