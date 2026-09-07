@@ -377,15 +377,15 @@ fn audio_fingerprint(samples: &[f32]) -> Option<Vec<f32>> {
         return None;
     }
     let mut out = Vec::with_capacity(BANDS * 3);
-    for i in 0..BANDS {
-        out.push((sum[i] / frames as f64) as f32);
+    for total in &sum {
+        out.push((total / frames as f64) as f32);
     }
     for i in 0..BANDS {
         let mean = sum[i] / frames as f64;
         out.push((sum_sq[i] / frames as f64 - mean * mean).max(0.0).sqrt() as f32);
     }
-    for i in 0..BANDS {
-        out.push((delta[i] / (frames - 1) as f64) as f32);
+    for moved in &delta {
+        out.push((moved / (frames - 1) as f64) as f32);
     }
     let norm = out.iter().map(|v| v * v).sum::<f32>().sqrt();
     (norm > 1e-9).then(|| out.into_iter().map(|v| v / norm).collect())
@@ -402,6 +402,27 @@ pub async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> A
         json!({ "analyzed": analyzed, "fingerprinted": fingerprinted,
             "fingerprintVersion": 1, "total": total, "ffmpeg": state.ffmpeg }),
     ))
+}
+
+/// `GET /api/tempo` - every known BPM, as `[trackId, bpm]` rows.
+///
+/// The looper needs a beat grid to cut a song on, and the server has already
+/// measured one for most of the library (tempo.rs). Publishing it saves every
+/// client re-deriving the same number from the same audio - and a client's
+/// own guess from a lossy transcode would be the worse of the two.
+pub async fn tempo_table(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> ApiResult {
+    crate::auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    let rows: Vec<serde_json::Value> = state
+        .db
+        .all_bpm()
+        .into_iter()
+        .map(|(id, bpm)| json!([id, (bpm * 10.0).round() / 10.0]))
+        .collect();
+    Ok(Json(json!({ "tracks": rows })))
 }
 
 #[cfg(test)]
@@ -442,25 +463,4 @@ mod tests {
         assert!((cosine(&low, &low) - 1.0).abs() < 0.001);
         assert!(cosine(&low, &nearby) > cosine(&low, &high));
     }
-}
-
-/// `GET /api/tempo` - every known BPM, as `[trackId, bpm]` rows.
-///
-/// The looper needs a beat grid to cut a song on, and the server has already
-/// measured one for most of the library (tempo.rs). Publishing it saves every
-/// client re-deriving the same number from the same audio - and a client's
-/// own guess from a lossy transcode would be the worse of the two.
-pub async fn tempo_table(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> ApiResult {
-    crate::auth::require_caller(&state.db, &headers)
-        .map_err(|s| (s, "sign in first".to_string()))?;
-    let rows: Vec<serde_json::Value> = state
-        .db
-        .all_bpm()
-        .into_iter()
-        .map(|(id, bpm)| json!([id, (bpm * 10.0).round() / 10.0]))
-        .collect();
-    Ok(Json(json!({ "tracks": rows })))
 }

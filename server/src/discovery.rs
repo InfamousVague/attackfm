@@ -1241,10 +1241,10 @@ async fn new_music_lists(state: &Arc<AppState>, user: i64) -> Vec<serde_json::Va
     // A restart used to empty this shelf for everyone: the cache was memory
     // alone, and a box that redeploys often served [] all day. The durable
     // copy seeds it back.
-    if !cache.contains_key(&user) {
+    if let std::collections::hash_map::Entry::Vacant(slot) = cache.entry(user) {
         if let Some((body, at)) = state.db.new_music_get(user) {
             if let Ok(pls) = serde_json::from_str::<Vec<serde_json::Value>>(&body) {
-                cache.insert(user, CachedNewMusic { playlists: pls, built_at: at, refreshing: false });
+                slot.insert(CachedNewMusic { playlists: pls, built_at: at, refreshing: false });
             }
         }
     }

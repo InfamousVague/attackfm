@@ -107,25 +107,6 @@ impl StationState {
     }
 }
 
-/*
- * Through `ai::setting`, NOT a raw env read.
- *
- * `setting` resolves the owner's choice in Settings first and the environment
- * only after. Reading the variable directly means this feature silently ignores
- * the pane that exists to configure it: the model row is changed, the pickers
- * confirm it, and this one carries on asking for whatever the unit file said -
- * with no error anywhere, because a model name is only ever wrong later.
- */
-
-/// Both halves, or nothing.
-///
-/// A model name is only ever wrong LATER - the request goes out, the endpoint
-/// refuses a model it does not have, and the feature reports as an AI that is
-/// not working. So "can this run" means a URL AND a model, the same rule
-/// `AiClient::new` applies, and the caller falls back to its heuristic exactly
-/// as it does when nothing is configured at all.
-
-
 /// `GET /api/dj/stations` - what the DJ suggests you tune to.
 pub async fn stations(
     State(state): State<Arc<AppState>>,

@@ -267,8 +267,8 @@ async fn installed_models() -> Vec<String> {
 ///
 /// One request rather than four because every part of it is cheap and the pane
 /// shows them together: four round trips would only buy four separate ways for
-/// the screen to be half-drawn. The probe is the exception and is NOT run here
-/// - it can take seconds against a cold Ollama, and a settings pane that takes
+/// the screen to be half-drawn. The probe is the exception and is NOT run here -
+/// it can take seconds against a cold Ollama, and a settings pane that takes
 /// eight seconds to appear is worse than one with a "check now" button.
 pub async fn report(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Reply {
     let caller = require_admin(&state.db, &headers)?;

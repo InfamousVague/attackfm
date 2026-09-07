@@ -1171,7 +1171,7 @@ pub(crate) async fn buy_outcome(
     // refuses a live row, so the second caller here finds somebody else's
     // marker on it and stands down.
     let Ok(pull_id) = state.db.record_pull(
-        user, &d.ext_id, "track", &d.title, &d.artist, &d.url, "", d.score as f64, crate::db::Db::PULL_PENDING,
+        user, &d.ext_id, "track", &d.title, &d.artist, &d.url, "", d.score, crate::db::Db::PULL_PENDING,
     ) else {
         return BuyOutcome::Refused("could not record the pull".into());
     };
@@ -1458,20 +1458,18 @@ pub async fn failed(
     let Some((_user, ext_id, kind)) = state.db.pull_owner_kind(body.pull_id) else {
         return Ok(Json(serde_json::json!({ "ok": true, "known": false })));
     };
-    if kind == "import" {
-        if state.db.fail_taken_pull(body.pull_id).unwrap_or(false) {
-            if let Some(job) = crate::imports::delegated_job_id(&ext_id) {
-                // A peer's own summary is short; the route is open to any
-                // signed-in caller like the rest of the channel, so the card
-                // takes a sentence, never a page.
-                let why: String = body.error.trim().chars().take(600).collect();
-                let why = if why.is_empty() {
-                    "The download box could not fetch it.".to_string()
-                } else {
-                    why
-                };
-                crate::imports::fail_delegated(&state, job, &why).await;
-            }
+    if kind == "import" && state.db.fail_taken_pull(body.pull_id).unwrap_or(false) {
+        if let Some(job) = crate::imports::delegated_job_id(&ext_id) {
+            // A peer's own summary is short; the route is open to any
+            // signed-in caller like the rest of the channel, so the card
+            // takes a sentence, never a page.
+            let why: String = body.error.trim().chars().take(600).collect();
+            let why = if why.is_empty() {
+                "The download box could not fetch it.".to_string()
+            } else {
+                why
+            };
+            crate::imports::fail_delegated(&state, job, &why).await;
         }
     }
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -2470,8 +2468,6 @@ pub async fn settings(
 
 #[cfg(test)]
 mod delegation_tests {
-    use super::*;
-
     /// A database of its own per test. Sharing one path across tests in the
     /// same process is two connections to one file and cargo runs them at the
     /// same time: the second gets "database is locked", not a real failure.
@@ -2622,10 +2618,12 @@ mod delegation_tests {
         db.claim_offered_pull().expect("first");
         db.claim_offered_pull().expect("second");
 
-        let mut track = crate::db::ScannedTrack::default();
-        track.rel_path = "Miles Davis/Kind of Blue/03 Blue in Green.flac".to_string();
-        track.title = "Blue in Green".to_string();
-        track.artist = "Miles Davis".to_string();
+        let track = crate::db::ScannedTrack {
+            rel_path: "Miles Davis/Kind of Blue/03 Blue in Green.flac".to_string(),
+            title: "Blue in Green".to_string(),
+            artist: "Miles Davis".to_string(),
+            ..Default::default()
+        };
         db.upsert_track(&track, 1).unwrap();
 
         // Nothing is owed until a peer says what it delivered.

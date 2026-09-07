@@ -454,6 +454,12 @@ fn apply(state: &Arc<AppState>, user: i64, plan: Plan) -> usize {
     n
 }
 
+// Eight parameters because `plan_daily` takes seven model inputs and this is
+// the one-line forwarder that hands them over with the state it writes through.
+// Bundling them into a struct would move the same eight values behind a name
+// and leave `build_daylist` and `build_moods`, which take the same inputs minus
+// one each, disagreeing with it in shape for no reader's benefit.
+#[allow(clippy::too_many_arguments)]
 pub fn build_daily(
     state: &Arc<AppState>,
     user: i64,

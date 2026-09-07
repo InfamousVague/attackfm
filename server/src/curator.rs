@@ -36,6 +36,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+/// One canned mood shelf, as the four things it takes to build one: slug,
+/// display name, blurb, and the test a track has to pass to belong in it.
+type Mood = (&'static str, &'static str, &'static str, fn(&TrackFeatures) -> bool);
+
 /// How long a track's lookup stands before it is worth asking again. Tempo
 /// does not change, but a track whose lyrics arrived later deserves a vector.
 const FEATURE_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1000;
@@ -1165,35 +1169,6 @@ pub(crate) fn user_taste_for(
     Some((taste, all))
 }
 
-/// The same three-term scoring the library uses, for something that is not a
-/// library row - a candidate from the catalogue, which has no track id and may
-/// be missing any of the three. Each term falls back to a neutral 0.5, so a
-/// candidate is never punished for what could not be measured.
-pub(crate) fn score_parts(
-    taste: &Taste,
-    lyric_vec: Option<&[f32]>,
-    bpm: Option<f64>,
-    genre: Option<&str>,
-) -> f32 {
-    let lyric = match (&taste.centroid, lyric_vec) {
-        (Some(c), Some(v)) => (cosine(c, v) + 1.0) / 2.0,
-        _ => 0.5,
-    };
-    let tempo = match (taste.tempo, bpm) {
-        (Some(t), Some(b)) => (-((t - b).abs() as f32) / 25.0).exp(),
-        _ => 0.5,
-    };
-    let g = match (taste.genres.is_empty(), genre) {
-        (false, Some(name)) => taste
-            .genres
-            .get(&name.to_lowercase())
-            .map(|s| (s * 3.0).min(1.0))
-            .unwrap_or(0.15),
-        _ => 0.5,
-    };
-    0.45 * lyric + 0.3 * tempo + 0.25 * g
-}
-
 /// Embeds arbitrary text with the configured model - what discovery uses for
 /// lyrics it fetched rather than lyrics the index already held.
 pub(crate) async fn embed_text(words: &str) -> Option<Vec<f32>> {
@@ -1352,7 +1327,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
         let named = name_lists(state, &blend, &lane_ids, &echo_ids, tempo_label, &top_genre).await;
 
         if blend.len() >= 8 {
-            let (n, b) = named.get(0).cloned().unwrap_or_else(|| {
+            let (n, b) = named.first().cloned().unwrap_or_else(|| {
                 (
                     "Made for you".into(),
                     "Built from what you have been playing.".into(),
@@ -1478,7 +1453,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
             .copied()
             .filter(|f| !taste.rejected.contains(&f.track_id) && !rejections.blocks(f))
             .collect();
-        let moods: [(&str, &str, &str, fn(&TrackFeatures) -> bool); 4] = [
+        let moods: [Mood; 4] = [
             ("mood-chill", "Chill", "Low energy, easy pace.", |f| {
                 f.energy.is_some_and(|e| e <= 0.4) && f.bpm.is_none_or(|b| b < 105.0)
             }),
@@ -1914,7 +1889,8 @@ pub(crate) fn lane_pools(
     now: i64,
 ) -> LanePools {
     let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
-    let arrived_lately = |id: &i64| by_id.get(id).map_or(false, |f| f.added_at >= now - NEW_WINDOW_MS);
+    let arrived_lately =
+        |id: &i64| by_id.get(id).is_some_and(|f| f.added_at >= now - NEW_WINDOW_MS);
     let mut new: HashSet<i64> =
         db.recently_added_for(caller, NEW_POOL).into_iter().filter(arrived_lately).collect();
     new.extend(db.unplayed(caller, NEW_POOL));

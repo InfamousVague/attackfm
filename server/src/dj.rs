@@ -100,7 +100,7 @@ impl<'a> Why<'a> {
         for f in feats {
             let lower = f.artist.to_lowercase();
             let likes_artist = hearted.contains(&lower)
-                || taste.artists.get(&taste::artist_key(&f.artist)).map_or(false, |a| *a > 0.0);
+                || taste.artists.get(&taste::artist_key(&f.artist)).is_some_and(|a| *a > 0.0);
             if likes_artist {
                 if !f.musicbrainz_id.is_empty() {
                     liked_mbids.entry(f.musicbrainz_id.clone()).or_insert_with(|| f.artist.clone());
@@ -153,7 +153,7 @@ impl<'a> Why<'a> {
             };
             let Some(mine) = mine.filter(|m| m.len() == v.len()) else { continue };
             let c = cosine(mine, v);
-            if c >= floor && best.map_or(true, |(b, _)| c > b) {
+            if c >= floor && best.is_none_or(|(b, _)| c > b) {
                 best = Some((c, name.as_str()));
             }
         }
@@ -171,7 +171,8 @@ impl<'a> Why<'a> {
         if self.liked.contains(&f.track_id) || self.hearted.contains(&lower) {
             return Some("hearted before".into());
         }
-        if self.taste.artists.get(&taste::artist_key(&f.artist)).map_or(false, |a| *a >= FINISHES_FLOOR) {
+        if self.taste.artists.get(&taste::artist_key(&f.artist)).is_some_and(|a| *a >= FINISHES_FLOOR)
+        {
             return Some(format!("you finish {}", f.artist.trim()));
         }
         if let Some(name) = self.scene_neighbour(f) {
@@ -223,8 +224,10 @@ fn contains_word(hay: &str, needle: &str) -> bool {
     while let Some(at) = hay[from..].find(needle) {
         let start = from + at;
         let end = start + needle.len();
-        let before_ok = start == 0 || !hay[..start].chars().next_back().map_or(false, char::is_alphanumeric);
-        let after_ok = end >= hay.len() || !hay[end..].chars().next().map_or(false, char::is_alphanumeric);
+        let before_ok =
+            start == 0 || !hay[..start].chars().next_back().is_some_and(char::is_alphanumeric);
+        let after_ok =
+            end >= hay.len() || !hay[end..].chars().next().is_some_and(char::is_alphanumeric);
         if before_ok && after_ok {
             return true;
         }
@@ -355,7 +358,7 @@ fn station_filter(
         return Some(
             feats
                 .iter()
-                .filter(|f| taste::tags_of(f).iter().any(|t| *t == want))
+                .filter(|f| taste::tags_of(f).contains(&want))
                 .map(|f| f.track_id)
                 .collect(),
         );
@@ -851,7 +854,7 @@ pub(crate) async fn build_reply(
     // is scored; the seed still steers inside it.
     let constrained: Option<HashSet<i64>> =
         ask.filter.and_then(|f| station_filter(&state.db, user, f, &feats));
-    let within = |f: &TrackFeatures| constrained.as_ref().map_or(true, |s| s.contains(&f.track_id));
+    let within = |f: &TrackFeatures| constrained.as_ref().is_none_or(|s| s.contains(&f.track_id));
 
     /*
      * Score the whole library, hold back the very-recently-played so the DJ
@@ -905,7 +908,7 @@ pub(crate) async fn build_reply(
     // "collaborative" matches.
     let collaborative_edges: HashSet<&str> = feats
         .iter()
-        .filter(|f| taste.artists.get(&taste::artist_key(&f.artist)).map_or(false, |a| *a > 0.0))
+        .filter(|f| taste.artists.get(&taste::artist_key(&f.artist)).is_some_and(|a| *a > 0.0))
         .flat_map(|f| f.listenbrainz_similar.iter().map(String::as_str))
         .collect();
     let liked: HashSet<i64> = state.db.favorites(user).into_iter().collect();
@@ -1500,9 +1503,8 @@ pub async fn analyze_seed(
         _ => "song",
     };
     let is_collection = tracks.len() > 1 || source != "song";
-    let dj_note = (!is_collection)
-        .then(|| state.db.dj_note(user, tracks[0].id))
-        .unwrap_or_default();
+    let dj_note =
+        if is_collection { Default::default() } else { state.db.dj_note(user, tracks[0].id) };
     let feature_by_id: HashMap<i64, TrackFeatures> = state
         .db
         .all_features()
@@ -2412,6 +2414,10 @@ mod ranking_tests {
 mod station_weights {
     use super::*;
 
+    // Deliberately assertions over constants: this test exists precisely to
+    // catch someone editing one of the four weights and leaving the blend not
+    // summing to 1. That clippy can fold it is the point - it costs nothing.
+    #[allow(clippy::assertions_on_constants)]
     #[test]
     fn the_budget_holds() {
         let sem = STATION_SEM_SONIC + STATION_SEM_LYRIC;

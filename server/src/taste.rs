@@ -73,6 +73,13 @@ const REPEAT_BONUS: f32 = 1.25;
 
 /// The terms of the score, in the order every `[f32; N_TERMS]` uses.
 pub const N_TERMS: usize = 8;
+// Read by the `eval` harness at the bottom of this file (the AFM_EVAL_DB
+// yardstick), which is `#[cfg(test)]` - so the serving build sees no caller.
+// Kept because it is also the only written record of the order every
+// `[f32; N_TERMS]` in this module uses: deleting it deletes that
+// specification. The allow is scoped to non-test builds so the lint still
+// speaks if the harness ever stops reading it.
+#[cfg_attr(not(test), allow(dead_code))]
 pub const TERM_NAMES: [&str; N_TERMS] =
     ["lyric", "sonic", "tempo", "tags", "energy", "texture", "scene", "era"];
 /// Indices into that array for the two centroid terms, which the DJ reads on
@@ -378,6 +385,13 @@ pub fn shrink(evidence: f32, k: f32) -> f32 {
 
 /// One listener's model.
 pub struct UserTaste {
+    // Whose model this is. Nothing reads it today; it is carried because
+    // `cold()` and `build()` are both handed a listener and every scorer in
+    // mixes.rs and discovery.rs takes a `user` alongside the `&UserTaste` -
+    // this field is the record of which listener a given model belongs to, and
+    // the thing a debug print of a model has to be able to say. Dropping it
+    // would only push the same id back out into an unused parameter.
+    #[allow(dead_code)]
     pub user_id: i64,
     /// Total absolute evidence behind this model - the sum of |weight|.
     pub evidence: f32,
@@ -571,7 +585,7 @@ fn accumulate(sum: &mut Vec<f32>, wsum: &mut f32, v: &[f32], w: f32) {
 /// inside the band and the whole term read ~1.0 for everyone. A term that
 /// cannot vary cannot predict, and the weight fitter duly learned to ignore
 /// it. Passing the floor is what brings the term back to life.
-fn spread_of(vals: &mut Vec<(f64, f32)>, floor: f64) -> Option<(f64, f64)> {
+fn spread_of(vals: &mut [(f64, f32)], floor: f64) -> Option<(f64, f64)> {
     if vals.len() < 3 {
         return None;
     }
@@ -613,7 +627,7 @@ pub fn tags_of(f: &TrackFeatures) -> Vec<String> {
             out.push(t);
         }
     };
-    for part in f.genre.split(|c| c == ',' || c == ';' || c == '/') {
+    for part in f.genre.split([',', ';', '/']) {
         push(part);
     }
     for g in &f.ai_genres {
@@ -1560,7 +1574,7 @@ mod eval {
         let users: Vec<(i64, String)> =
             db.list_users().into_iter().map(|(id, name, _)| (id, name)).collect();
 
-        println!("\n{:<18} {:>7} {:>9} {:>9}  {}", "listener", "test n", "OLD auc", "NEW auc", "weights");
+        println!("\n{:<18} {:>7} {:>9} {:>9}  weights", "listener", "test n", "OLD auc", "NEW auc");
         println!("{}", "-".repeat(78));
         for (uid, name) in users {
             let mut vs = db.taste_verdicts(uid, 0, 20_000);
