@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.142
+
+- A song you queued no longer stays in the queue after it has played. If it
+  came up on its own — rather than by pressing skip — it stayed on the list
+  while it was the very thing playing, and showed up twice on your other
+  devices.
+
 ## 0.5.141
 
 - Adding a song to the queue from a device that is watching another one play
