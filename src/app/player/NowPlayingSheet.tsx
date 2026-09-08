@@ -30,7 +30,6 @@ import { SoundConsole } from './SoundConsole.tsx';
 import { NpDjButton } from './NpDjButton.tsx';
 import { useDjTalking } from '../booth/djVoice.ts';
 import { useDjRun } from '../booth/djSession.ts';
-import { Thumbs } from '../booth/sayNo.tsx';
 import { useRadioOptional } from './radio.tsx';
 import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
@@ -2244,18 +2243,12 @@ export function NowPlayingSheet({
             book's screen stands it down: a DJ set over an audiobook is not a
             thing anyone means to start. */}
         {track?.kind !== 'book' && <NpDjButton />}
-        {/* The listener's word on the machine's pick, while it plays: a down
-            skips it (the same Next the transport presses) and tells the hub
-            how far in they were; an up is recorded and is NOT a heart. Only
-            on a song the DJ or the station chose - see machinePick. */}
-        {track && track.kind !== 'book' && machinePick && (
-          <Thumbs
-            track={track}
-            positionMs={position * 1000}
-            onDown={skipForward}
-            className="npScreen__thumbs"
-          />
-        )}
+        {/* The listener's word on the machine's pick has moved INSIDE the DJ's
+            popover, one seat to the left: the verdict belongs beside the voice
+            that chose the song, and two pairs of thumbs on one row - the
+            popover's and this one's - was the same question asked twice, a
+            glyph apart. `machinePick` survives as the gate on the popover's
+            own verdict row. */}
         </>
         )}
         {/* Who else is hearing this. Renders nothing outside a jam, so the row
