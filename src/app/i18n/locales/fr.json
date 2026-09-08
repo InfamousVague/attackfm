@@ -1832,7 +1832,6 @@
     "seek": "Position",
     "sendAriaNext": "à suivre, envoyé par {{who}}",
     "sendAriaWaiting": "en attente, envoyé par {{who}}",
-    "sendNeedsAName": "Envoi impossible : ce morceau a besoin d’un artiste et d’un titre",
     "sendNextBy": "à suivre · de {{who}}",
     "sendRowAriaNext": "{{title}} par {{artist}}, à suivre, envoyé par {{who}}",
     "sendRowAriaWaiting": "{{title}} par {{artist}}, en attente, envoyé par {{who}}",

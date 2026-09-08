@@ -1713,7 +1713,6 @@
     "seek": "Seek",
     "sendAriaNext": "playing next, sent by {{who}}",
     "sendAriaWaiting": "waiting, sent by {{who}}",
-    "sendNeedsAName": "Cannot send: this song needs an artist and a title",
     "sendNextBy": "playing next · by {{who}}",
     "sendRowAriaNext": "{{title}} by {{artist}}, playing next, sent by {{who}}",
     "sendRowAriaWaiting": "{{title}} by {{artist}}, waiting, sent by {{who}}",

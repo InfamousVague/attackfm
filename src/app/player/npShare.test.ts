@@ -60,16 +60,16 @@ describe('shareSeat - who gets offered a send', () => {
   it('greys the seat for a song with no name to send', () => {
     // The registry's own rule, checked here rather than met as a 400 after
     // the listener has already picked which friend to send it to.
-    expect(shareSeat({ ...SONG, artist: '' }, signedIn)).toBe('unnamed');
-    expect(shareSeat({ ...SONG, title: '' }, signedIn)).toBe('unnamed');
+    expect(shareSeat({ ...SONG, artist: '' }, signedIn)).toBe('none');
+    expect(shareSeat({ ...SONG, title: '' }, signedIn)).toBe('none');
     // Whitespace is not a name either - the server trims before it looks.
-    expect(shareSeat({ ...SONG, artist: '   ' }, signedIn)).toBe('unnamed');
+    expect(shareSeat({ ...SONG, artist: '   ' }, signedIn)).toBe('none');
   });
 
   it('greys the seat for the blank stand-in the deck holds while idle', () => {
     // IDLE_TRACK is a real shape this screen sees: not null, and named
     // nothing. It must not read as a sendable song.
-    expect(shareSeat(IDLE_TRACK, signedIn)).toBe('unnamed');
+    expect(shareSeat(IDLE_TRACK, signedIn)).toBe('none');
   });
 
   it('does not care where the file lives', () => {

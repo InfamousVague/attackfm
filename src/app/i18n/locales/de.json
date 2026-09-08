@@ -1713,7 +1713,6 @@
     "seek": "Spulen",
     "sendAriaNext": "läuft als Nächstes, geschickt von {{who}}",
     "sendAriaWaiting": "wartet, geschickt von {{who}}",
-    "sendNeedsAName": "Senden nicht möglich: Dieser Song braucht Interpret und Titel",
     "sendNextBy": "läuft als Nächstes · von {{who}}",
     "sendRowAriaNext": "{{title}} von {{artist}}, läuft als Nächstes, geschickt von {{who}}",
     "sendRowAriaWaiting": "{{title}} von {{artist}}, wartet, geschickt von {{who}}",

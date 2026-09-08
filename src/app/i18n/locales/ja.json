@@ -1594,7 +1594,6 @@
     "seek": "シーク",
     "sendAriaNext": "次に再生、{{who}}さんから",
     "sendAriaWaiting": "待機中、{{who}}さんから",
-    "sendNeedsAName": "送信できません：アーティスト名と曲名が必要です",
     "sendNextBy": "次に再生 · {{who}}さんから",
     "sendRowAriaNext": "{{artist}}の{{title}}、次に再生、{{who}}さんから",
     "sendRowAriaWaiting": "{{artist}}の{{title}}、待機中、{{who}}さんから",

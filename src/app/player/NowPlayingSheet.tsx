@@ -1982,13 +1982,7 @@ export function NowPlayingSheet({
           <IconButton
             variant="ghost"
             className="npScreen__send"
-            /* Greyed rather than gone when there is no name to send, and the
-               reason IS the accessible name - this app carries no tooltip
-               layer, so that is where a "why" lives. */
-            disabled={shareable === 'unnamed'}
-            aria-label={
-              shareable === 'unnamed' ? t('player.sendNeedsAName') : t('player.sendToFriend')
-            }
+            aria-label={t('player.sendToFriend')}
             onClick={() => setSending(track)}
           >
             <Send size={20} />

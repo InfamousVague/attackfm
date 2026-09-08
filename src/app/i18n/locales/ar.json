@@ -2189,7 +2189,6 @@
     "seek": "موضع التشغيل",
     "sendAriaNext": "التالية في التشغيل، أرسلها {{who}}",
     "sendAriaWaiting": "في الانتظار، أرسلها {{who}}",
-    "sendNeedsAName": "تعذّر الإرسال: هذه الأغنية تحتاج اسم فنان وعنوانًا",
     "sendNextBy": "التالية في التشغيل · من {{who}}",
     "sendRowAriaNext": "{{title}} لـ{{artist}}، التالية في التشغيل، أرسلها {{who}}",
     "sendRowAriaWaiting": "{{title}} لـ{{artist}}، في الانتظار، أرسلها {{who}}",
