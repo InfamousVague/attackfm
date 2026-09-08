@@ -40,7 +40,6 @@
     "listen:build": "AFM_WEB=1 vite build",
     "filters:check": "node scripts/check-filters.mjs",
     "prefs:check": "node scripts/check-prefs.mjs",
-    "ai-ui:check": "node scripts/check-ai-glacier.mjs",
     "check:styles": "node scripts/check-style-guard.mjs",
     "demo:fixtures": "node scripts/make-demo-fixtures.mjs",
     "demo:build": "vite build --config vite.demo.config.ts",

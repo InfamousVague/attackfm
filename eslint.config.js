@@ -311,6 +311,44 @@ export default tseslint.config(
     },
   },
 
+  /*
+   * The DJ's surfaces use the kit, and only the kit.
+   *
+   * This was `scripts/check-ai-glacier.mjs`: a lint rule written as a grep,
+   * run by hand, over four files. The rule it enforces is real - every
+   * control on an AI surface has to be a Glacier component so the theme, the
+   * focus ring, the disabled state and the reduced-motion behaviour come from
+   * one place rather than being reinvented per button - so it moves here,
+   * where it runs on every commit and reads the syntax tree instead of the
+   * characters.
+   *
+   * The script's other half, "the file must import @glacier/react", is not
+   * ported: a file with no controls in it has nothing to import, and it was
+   * only ever a proxy for the check above.
+   */
+  {
+    files: [
+      'src/app/booth/BoothPage.tsx',
+      'src/app/booth/DjLauncher.tsx',
+      'src/app/booth/DjPage.tsx',
+      'src/app/booth/DjTraitSheet.tsx',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'JSXOpeningElement[name.name=/^(button|input|textarea|select)$/]',
+          message:
+            'AI surfaces use GlacierUI primitives: Button, TextField, Textarea, Select - not a raw control.',
+        },
+        {
+          selector: "JSXAttribute[name.name='role'][value.value='progressbar']",
+          message: 'AI surfaces use the kit\'s Progress rather than a hand-rolled progressbar.',
+        },
+      ],
+    },
+  },
+
   /* DELIBERATELY UNCHANGED for tests: `@typescript-eslint/no-explicit-any`
      stays at `error`. A fixture is the one place `any` does real damage - it
      silently stops the compiler checking the fixture against the shape it is
