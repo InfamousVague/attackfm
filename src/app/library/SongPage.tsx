@@ -391,12 +391,30 @@ export function SongPage({
         </div>
       )}
 
+      {/*
+        Three answers, and the middle one is narrower than it looks.
+
+        A list with nothing in it says so - unless something is ON ITS WAY IN,
+        in which case the true thing to say is "it is coming", and the only
+        way this page has to say it is to draw the table so the ghosts have
+        somewhere to sit. That is the whole reason `hasIncoming` exists.
+
+        The middle arm is for a list that is empty because it has not FINISHED
+        (On repeat, waiting on its play counts): nothing at all beats a
+        premature "nothing on repeat yet". It used to read `empty && !loading`,
+        which is true of an incoming-but-empty list too - so it caught the
+        case the guard above had just let through, and a listener who kept a
+        song they did not own got a Liked page with no empty state, no ghost
+        and no explanation of where their song had gone. Keyed on
+        `!hasIncoming` instead, the two arms cannot overlap: whatever is
+        arriving is drawn whether the page is still loading or not.
+      */}
       {empty && !loading && !hasIncoming ? (
         <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name={meta.art} />
           <Text tone="muted">{t(meta.emptyKey)}</Text>
         </div>
-      ) : empty && !loading ? null : (
+      ) : empty && !hasIncoming ? null : (
         // The same table the "All" library face draws, so a collection reads
         // identically wherever it is opened. It carries its own bounded height
         // and scroll; the header sits above it.
