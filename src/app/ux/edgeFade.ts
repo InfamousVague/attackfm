@@ -54,8 +54,26 @@ export function useEdgeFade<T extends HTMLElement>() {
       const from = scrolledFromStart(el);
       const start = room <= 1 ? 0 : Math.min(FADE_PX, from);
       const end = room <= 1 ? 0 : Math.min(FADE_PX, room - from);
-      el.style.setProperty('--edge-start', `${start}px`);
-      el.style.setProperty('--edge-end', `${end}px`);
+      /*
+       * Published on the scroller AND on its wrapper.
+       *
+       * A mask can live on the scroller itself, but a BLUR cannot: an
+       * absolutely positioned child of a scroll container is placed against
+       * its padding box and scrolls with the content, so an overlay pinned
+       * that way slides off with the very icons it is meant to soften. Such an
+       * overlay has to be a SIBLING - and a sibling does not inherit what is
+       * set here, hence the parent.
+       *
+       * A plain 0..1 goes out beside the length because an overlay wants an
+       * opacity, and CSS cannot divide one length by another.
+       */
+      for (const node of [el, el.parentElement]) {
+        if (!node) continue;
+        node.style.setProperty('--edge-start', `${start}px`);
+        node.style.setProperty('--edge-end', `${end}px`);
+        node.style.setProperty('--edge-start-t', String(start / FADE_PX));
+        node.style.setProperty('--edge-end-t', String(end / FADE_PX));
+      }
     };
 
     measure();

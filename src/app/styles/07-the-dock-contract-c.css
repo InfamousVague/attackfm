@@ -263,14 +263,81 @@
 
 /* The secondary action row under the transport: the device hand-off and the
    equalizer, centred and quieter than the controls above them. */
+/* The wrapper holds the row's place in the column and gives the two edge panes
+   something to pin to. The row's own `flex: none` moved up here with it: the
+   scroller inside is now sized by this box, not by the sheet's column. */
+.npScreen__actionsWrap {
+  position: relative;
+  flex: none;
+  padding-block-start: var(--glacier-space-2);
+}
+
 .npScreen__actions {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--glacier-space-5);
   flex: none;
-  padding-block-start: var(--glacier-space-2);
   color: var(--glacier-text-muted);
+}
+
+/*
+ * The row's glyphs match the transport's above them.
+ *
+ * They are drawn by five different components - the queue and lyrics buttons
+ * here, the DJ, the groove badge, the device picker - and they disagreed: 20
+ * in this file's own markup, 16 in DevicePicker and the badge. Two sizes in
+ * one row of six reads as a mistake even when you cannot say which one is
+ * wrong. Sized here rather than by chasing five `size` props, for the reason
+ * the nav bar's glyphs are: one number, in the place that owns the row.
+ *
+ * 20 is the shuffle and repeat glyphs directly above - the flanking pair, not
+ * the transport's big centre - so the two rows read as a pair.
+ */
+.npScreen__actions svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+/*
+ * THE ENDS OF THE ROW: soft, then gone.
+ *
+ * `.edgeScroll`'s mask already fades the icons out at whichever end still has
+ * something on it. This is the other half Matt asked for - the icons going
+ * SOFT as they leave, not just faint - which a mask cannot do because a mask
+ * only removes.
+ *
+ * So a pane over each end with a backdrop-filter, its own gradient mask
+ * turning the blur off toward the middle. The blur is strongest at the very
+ * edge and gone a couple of glyphs in, which is what makes an icon dissolve
+ * rather than slide under a hard line.
+ *
+ * Its opacity follows the fade the scroller publishes (`--edge-start-t`, 0..1
+ * from useEdgeFade), so a row with nothing to scroll has no blur at all, and
+ * the blur grows in as you push off from an end rather than sitting there
+ * softening icons that are not going anywhere.
+ */
+.npScreen__actionsEdge {
+  position: absolute;
+  inset-block: 0;
+  inline-size: 3rem;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
+
+.npScreen__actionsEdge[data-side='start'] {
+  inset-inline-start: 0;
+  opacity: var(--edge-start-t, 0);
+  -webkit-mask-image: linear-gradient(to right, #000, transparent);
+  mask-image: linear-gradient(to right, #000, transparent);
+}
+
+.npScreen__actionsEdge[data-side='end'] {
+  inset-inline-end: 0;
+  opacity: var(--edge-end-t, 0);
+  -webkit-mask-image: linear-gradient(to left, #000, transparent);
+  mask-image: linear-gradient(to left, #000, transparent);
 }
 
 /* Lyrics as a full-screen view OVER the Now Playing sheet - it fills the whole

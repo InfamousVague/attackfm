@@ -2164,7 +2164,13 @@ export function NowPlayingSheet({
           INSTANCES - a join from inside the deck flipped the fork, the deck
           that had the arm was torn down mid-open, and the new one mounted
           with nothing left to take. Same slots, same instance, every time. */}
+      {/* The wrapper below exists for the edges. A blur pinned INSIDE a
+          scroller scrolls away with the content it is blurring - an absolutely
+          placed child is positioned against the padding box - so the two edge
+          panes are siblings of the scroller, and the fade the hook measures
+          reaches them through this element. */}
       {(following || track?.kind !== 'book' || !isMobile) && (
+      <div className="npScreen__actionsWrap">
       <div className="npScreen__actions edgeScroll" ref={actionsRef}>
         <IconButton variant="ghost" aria-label={t('player.queue')} onClick={() => setNpQueue(true)}>
           <ListMusic size={20} />
@@ -2293,6 +2299,11 @@ export function NowPlayingSheet({
         )}
         </>
         )}
+      </div>
+        {/* Painted over the two ends: what is scrolling past goes soft and
+           then goes. Inert, and asleep entirely when the row fits. */}
+        <span className="npScreen__actionsEdge" data-side="start" aria-hidden="true" />
+        <span className="npScreen__actionsEdge" data-side="end" aria-hidden="true" />
       </div>
       )}
 
