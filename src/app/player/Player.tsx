@@ -737,8 +737,33 @@ export function Player({
    * clearest possible statement that the player should be back.
    */
   const [dockDismissed, setDockDismissed] = useState(false);
+  /*
+   * WATCHING IS ALSO A REASON TO SHOW THE DOCK.
+   *
+   * Both of the terms below are false on a device that is mirroring another,
+   * and neither is wrong on its own: `deckOwned` is `current !== null` and a
+   * mirroring device deliberately holds no track of its own, and
+   * `deckEngaged` only turns on when somebody picks something HERE. Together
+   * they meant a desktop watching the phone play had no Now Playing pane at
+   * all - and since the pane is where the queue lives on a desktop, no way to
+   * see the queue either. You could add a song to it (the ask is routed to
+   * the phone) and then have nowhere to look at what you had done.
+   *
+   * The sheet has been wired to the remote's state for a while - see the disp*
+   * block and the note beside it - so there is nothing left to fix inside it;
+   * it was only ever the gate that hid it.
+   *
+   * `dispTrack` rather than plain `activeElsewhere`: a socket that says another
+   * device holds the seat before it has said what is playing would open an
+   * empty pane for a beat.
+   */
+  const watching = activeElsewhere && dispTrack !== null;
   const npDocked =
-    sheetShape && npWide && deckOwned && deckEngaged && !chromeHidden && !dockDismissed;
+    sheetShape &&
+    npWide &&
+    (watching || (deckOwned && deckEngaged)) &&
+    !chromeHidden &&
+    !dockDismissed;
   useEffect(() => {
     if (playing) setDockDismissed(false);
   }, [playing]);

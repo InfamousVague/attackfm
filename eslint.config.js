@@ -34,6 +34,17 @@ import reactRefresh from 'eslint-plugin-react-refresh';
    because a lint finding there invites exactly that lost edit. */
 const IGNORED = [
   'node_modules/**',
+  /* Agent worktrees. `git worktree add .claude/worktrees/<name>` puts a FULL
+     second checkout inside the repo, and several of them are usually live at
+     once - so eslint was linting the tree four or five times over.
+
+     It did not even get that far. Each copy carries its own `tsconfig.json`,
+     which is a second candidate for typescript-eslint's `tsconfigRootDir`, and
+     the parser refuses to guess between them: MEASURED on this tree, 16,558 of
+     16,897 findings were the same "No tsconfigRootDir was set" parse error,
+     burying 339 real ones. A gate whose output you have to sieve is not a
+     gate. Nothing under here is this commit's source. */
+  '.claude/**',
   'vendor/**',
   'dist/**',
   'dist-home/**',
