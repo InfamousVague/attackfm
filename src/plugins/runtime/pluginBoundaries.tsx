@@ -1,19 +1,7 @@
 import { Component, createContext, type ReactNode } from 'react';
 import { usePlugins } from '../pluginsContext.ts';
 import type { PluginSlotId } from '../types.ts';
-
-/**
- * An error rethrown out of a plugin's hook, tagged with the plugin that threw
- * so the boundary above knows exactly which plugin to pull.
- */
-export class PluginCrashError extends Error {
-  constructor(
-    readonly pluginId: string,
-    cause: unknown,
-  ) {
-    super(`Plugin "${pluginId}" crashed`, { cause });
-  }
-}
+import { PluginCrashError } from './pluginCrash.ts';
 
 interface PluginBoundaryProps {
   /** Attribute untagged errors to this plugin; tagged errors name their own. */

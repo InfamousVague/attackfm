@@ -186,7 +186,7 @@ export default tseslint.config(
           allowExportNames: [
           'EQ_BANDS', 'EQ_BANDS_NARROW', 'EQ_NARROW_INDICES', 'EQ_PRESETS',
           'EQ_PRESETS_NARROW', 'FACE_GEOMETRY', 'GENERATED_PLAYLIST_FOLDERS', 'GENRE_DOT',
-          'GENRE_TONES', 'HookScopeContext', 'LYRIC_WAYS', 'MOODS', 'PLATFORM_NAMES',
+          'GENRE_TONES', 'HookScopeContext', 'LYRIC_WAYS', 'MOODS', 
           'SongSelectionContext', 'UI_SCALES', 'useAcquire', 'useAppLocale', 'useAppearance',
           'useBuy', 'useConnect', 'useDevicesAvailable', 'useDiscoverFeed',
           'useDiscoverFeedOptional', 'useDjChat', 'useDjPlay', 'useEqualizer',

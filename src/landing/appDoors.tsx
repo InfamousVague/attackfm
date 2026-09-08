@@ -3,6 +3,7 @@ import { Download, LogIn } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { Trans, useT } from '../app/i18n/LocaleShell.tsx';
 import { formatBytes } from '../app/ux/format.ts';
+import { detectPlatform, PLATFORM_NAMES, type PlatformKey } from './platform.ts';
 
 /**
  * The two doors every landing page offers: open the app if it is on this
@@ -20,32 +21,9 @@ import { formatBytes } from '../app/ux/format.ts';
  * on failure: nothing tells the page the scheme went nowhere.
  */
 
-export type PlatformKey = 'macos' | 'windows' | 'linux' | 'android' | 'ios';
-
 const REPO = 'InfamousVague/attackfm';
 const RELEASES = `https://github.com/${REPO}/releases/latest`;
 const SITE = 'https://attack.fm/#download';
-
-/** Which build this browser's machine runs, read off the user agent. */
-export function detectPlatform(): PlatformKey {
-  const ua = navigator.userAgent;
-  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-  const hint = nav.userAgentData?.platform ?? '';
-  if (/iPhone|iPad|iPod/.test(ua) || (/Mac/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
-  if (/Android/.test(ua) || /Android/i.test(hint)) return 'android';
-  if (/Mac/.test(ua) || /macOS/i.test(hint)) return 'macos';
-  if (/Win/.test(ua) || /Windows/i.test(hint)) return 'windows';
-  return 'linux';
-}
-
-/** Product names, and so the same word in every language. */
-export const PLATFORM_NAMES: Record<PlatformKey, string> = {
-  macos: 'Mac',
-  windows: 'Windows',
-  linux: 'Linux',
-  android: 'Android',
-  ios: 'iPhone',
-};
 
 /** Picks a platform's installer out of a release's asset names - the same
  *  match attack.fm's download grid uses, so both link the same file. */

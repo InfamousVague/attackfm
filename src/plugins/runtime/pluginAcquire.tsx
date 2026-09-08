@@ -10,7 +10,8 @@ import {
 } from 'react';
 import { Button, Modal } from '@glacier/react';
 import { usePlugins } from '../pluginsContext.ts';
-import { HookScopeContext, PluginCrashError, PluginHookScope } from './pluginBoundaries.tsx';
+import { HookScopeContext, PluginHookScope } from './pluginBoundaries.tsx';
+import { PluginCrashError } from './pluginCrash.ts';
 import type { AcquireHandler, AcquireTarget } from '../types.ts';
 import { useT } from '../../app/i18n/LocaleShell.tsx';
 

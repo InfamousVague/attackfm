@@ -1,7 +1,8 @@
 import { useContext, type ReactNode } from 'react';
 import { useDownloadsOptional } from '../importsBridge.ts';
 import { usePlugins } from '../pluginsContext.ts';
-import { HookScopeContext, PluginCrashError, PluginFence } from './pluginBoundaries.tsx';
+import { HookScopeContext, PluginFence } from './pluginBoundaries.tsx';
+import { PluginCrashError } from './pluginCrash.ts';
 import type {
   DownloadItem,
   PaletteContext,
