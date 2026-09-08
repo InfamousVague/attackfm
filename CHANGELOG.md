@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.148
+
+- A computer that is watching another device play shows the player again — the
+  artwork, the controls, and the queue. Adding a song from there worked
+  already; now you can see where it went.
+
 ## 0.5.147
 
 - Under the floor: a thousand automated checks now run over the app before a
