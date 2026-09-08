@@ -15,11 +15,13 @@ import type { Track } from '../core/tauri.ts';
  * Saying no, every way the listener asked for it.
  *
  * Three surfaces share one verb: thumbs beside a song the machine chose
- * while it plays, a hold on a dealt row that opens "why this?" and the two
- * refusals, and the Date deck's pass with "less like this" on it. They all
- * come through here so a no means the same thing wherever it is said - the
- * card leaves at once, a toast confirms it, the sitting's ledger keeps it
- * from coming straight back, and the hub is told with the deck position.
+ * while it plays (the Booth's on-now strip, and the DJ's popover on the Now
+ * Playing row - the panel that belongs to the voice that made the pick), a
+ * hold on a dealt row that opens "why this?" and the verdicts, and the Date
+ * deck's pass with "less like this" on it. They all come through here so a no
+ * means the same thing wherever it is said - the card leaves at once, a toast
+ * confirms it, the sitting's ledger keeps it from coming straight back, and
+ * the hub is told with the deck position.
  *
  * The order is deliberate: LOCAL FIRST. The ledger is written and the row
  * removed before the request is even built, and the request's failure is
@@ -92,6 +94,7 @@ export function Thumbs({
   track,
   positionMs = 0,
   onDown,
+  disabled,
   className,
 }: {
   track: Track;
@@ -99,6 +102,10 @@ export function Thumbs({
   positionMs?: number;
   /** What a down does to the music - skip it, drop it from the queue. */
   onDown?: () => void;
+  /** Stood down with the surface around it - the DJ's deck greys every card
+   *  while a set is being cut, and a verdict that skipped the song mid-cue
+   *  would be fighting the thing the listener just asked for. */
+  disabled?: boolean;
   className?: string;
 }) {
   const t = useT();
@@ -116,6 +123,7 @@ export function Thumbs({
         aria-label={t('booth.moreLikeTitle', { title: track.title })}
         aria-pressed={said === 'up'}
         data-on={said === 'up' || undefined}
+        disabled={disabled}
         onClick={() => {
           setSaid('up');
           up(track, positionMs);
@@ -130,6 +138,7 @@ export function Thumbs({
         aria-label={t('booth.lessLikeTitle', { title: track.title })}
         aria-pressed={said === 'down'}
         data-on={said === 'down' || undefined}
+        disabled={disabled}
         onClick={() => {
           setSaid('down');
           down(track, { positionMs, onLeave: onDown });
@@ -151,24 +160,38 @@ export interface SayNoItemsProps {
   onTrack: () => void;
   /** Refuse the act. */
   onArtist: () => void;
-  /** Overrides for the two refusals. Left out, they read as the defaults
-   *  below - which have to be resolved at RENDER, not in a default parameter,
+  /** Approve the song, where the surface has no thumbs of its own to say it
+   *  with. Left out, the menu is refusals only - which is what the Date deck
+   *  wants, since a card there is already being passed on. */
+  onUp?: () => void;
+  /** Overrides for the rows. Left out, they read as the defaults below -
+   *  which have to be resolved at RENDER, not in a default parameter,
    *  because a parameter default is evaluated before any translator exists. */
+  upLabel?: string;
   trackLabel?: string;
   artistLabel?: string;
 }
 
 /**
  * The rows a hold reveals: the reason (as a label, not an action - it is
- * information), then "not this song" and "less like {artist}". Rendered
- * inside a menu that already exists (TrackMenu's `lead` slot) or the
+ * information), then the verdicts, best first - "more like this song" where
+ * the surface asked for it, then "not this song" and "less like {artist}".
+ * Rendered inside a menu that already exists (TrackMenu's `lead` slot) or the
  * standalone SayNoMenu below.
+ *
+ * The up is last in and first out on purpose. A hold is a deliberate act and
+ * the destructive rows should never be the ones under the finger by default;
+ * putting the approval at the top also means the queue's now row can hand
+ * over BOTH halves of the verdict from one gesture, which is what let its
+ * thumbs move to the DJ's popover without the up losing its door.
  */
 export function SayNoItems({
   why,
   artist,
   onTrack,
   onArtist,
+  onUp,
+  upLabel,
   trackLabel,
   artistLabel,
 }: SayNoItemsProps) {
@@ -177,6 +200,11 @@ export function SayNoItems({
   return (
     <>
       {why && <MenuLabel className="sayNoWhy">{why}</MenuLabel>}
+      {onUp && (
+        <MenuItem icon={<ThumbsUp size={15} />} onSelect={onUp}>
+          {upLabel ?? t('booth.moreLikeThisSong')}
+        </MenuItem>
+      )}
       <MenuItem icon={<Ban size={15} />} onSelect={onTrack}>
         {trackLabel ?? t('booth.notThisSong')}
       </MenuItem>

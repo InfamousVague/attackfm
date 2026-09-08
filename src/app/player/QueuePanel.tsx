@@ -11,7 +11,7 @@ import { fireNativeHaptic } from '../core/haptics.ts';
 import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { djReason } from '../booth/djReasons.ts';
 import { djWhy, useDjRun } from '../booth/djSession.ts';
-import { SayNoItems, Thumbs, useSayNo } from '../booth/sayNo.tsx';
+import { SayNoItems, useSayNo } from '../booth/sayNo.tsx';
 import { deckNext } from './mediaSession.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { trackIdFromPath } from '../server.ts';
@@ -135,7 +135,7 @@ export function QueuePanel({
   const run = useDjRun();
   const chosen = (track: Track): boolean => Boolean(radio?.on) || Boolean(run?.paths.has(track.path));
   const { position } = useNowPlayingMotion();
-  const { down } = useSayNo();
+  const { down, up } = useSayNo();
 
   /*
    * ONE queue in a groove.
@@ -270,6 +270,15 @@ export function QueuePanel({
    * line, a refused artist takes every upcoming row of theirs with it, and
    * a no on the song PLAYING moves the deck on. No undo toast here: the no
    * has its own, and the row was not the listener's to begin with.
+   *
+   * The queue says all of this through the HOLD, not through thumbs. The
+   * pair used to ride the now row as well, which made the queue the third
+   * place the same two circles appeared; they belong to the DJ's popover
+   * now, where the voice that made the pick is. Nothing was lost by that:
+   * the hold already carried the reason and both refusals at a granularity
+   * the thumbs never had - this song, or this artist - and it now carries
+   * the approval too, so every verdict is still one gesture from the row it
+   * is about, and the now row's title has the width back.
    */
   const dropRow = (path: string) => {
     const { queue: now, onQueueChange: apply } = latest.current;
@@ -378,6 +387,7 @@ export function QueuePanel({
                   <SayNoItems
                     why={djReason(trackIdFromPath(current.path)) ?? djWhy(current.path)}
                     artist={current.artist}
+                    onUp={() => up(current, position * 1000)}
                     onTrack={() => down(current, { positionMs: position * 1000, onLeave: skipNow })}
                     onArtist={() =>
                       down(current, {
@@ -403,16 +413,6 @@ export function QueuePanel({
                     return why ? <span className="queueRow__why">{why}</span> : null;
                   })()}
                 </div>
-                {/* The thumbs, on the song the machine is playing right now:
-                    a down skips it, an up is recorded and nothing more. */}
-                {chosen(current) && (
-                  <Thumbs
-                    track={current}
-                    positionMs={position * 1000}
-                    onDown={skipNow}
-                    className="queueRow__thumbs"
-                  />
-                )}
               </div>
             </TrackMenu>
           </div>

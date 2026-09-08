@@ -1,10 +1,10 @@
 /* --- Saying no --------------------------------------------------------------
  *
  * The listener's word on a song the machine chose: thumbs beside it while
- * it plays (the DJ page's on-now strip, the queue's now row, the Now Playing
- * action row), the "why" line a hold reveals above the two refusals, and
- * the box-less shells the hold wears on the Date card and its pass button.
- * Every colour is a token, so the pair reads the same in both themes.
+ * it plays (the DJ page's on-now strip, the DJ popover's verdict row, the
+ * Now Playing action row), the "why" line a hold reveals above the verdicts,
+ * and the box-less shells the hold wears on the Date card and its pass
+ * button. Every colour is a token, so the pair reads the same in both themes.
  */
 
 /* The pair. Each face is a 44px circle - these are pressed while the music
@@ -108,19 +108,15 @@
 }
 
 /* --- The queue's now row -----------------------------------------------------
-   The thumbs ride the far end of the playing row; the meta column gives way. */
-.queueRow--now {
-  display: flex;
-  align-items: center;
-}
-
+   The thumbs used to ride the far end of this row and took 5.5rem of it; with
+   them gone to the DJ's popover the meta column takes the whole width, which
+   is what the title, the artist and the "why" line wanted all along. The rule
+   stays because the base .queueRow__meta does not grow on its own - without
+   it the row shrink-wraps and the why line stops ellipsising against the
+   panel's edge. */
 .queueRow--now .queueRow__meta {
   flex: 1;
   min-inline-size: 0;
-}
-
-.queueRow__thumbs {
-  margin-inline-start: auto;
 }
 
 /* --- The "why" line in a hold menu -------------------------------------------

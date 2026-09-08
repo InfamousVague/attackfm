@@ -94,6 +94,7 @@
    drops. A follower's deck (data-locked) reads the same way for the same
    reason - the hero says why. */
 .npDj[data-cueing] .npDjCard:not(.npDjHero),
+.npDj[data-cueing] .npDjVerdict,
 .npDj[data-locked] .npDjCard:not(.npDjHero) {
   opacity: 0.45;
 }
@@ -287,9 +288,10 @@
   box-shadow: var(--glacier-shadow-1);
 }
 
-/* ── 2. More like this ─────────────────────────────────────────────────
+/* ── 2. This song ──────────────────────────────────────────────────────
    The song on the deck as a station of one: its sleeve, its name, and the
-   line that says where the set will wander. */
+   line that says where the set will wander - and beneath it the verdict on
+   the record actually spinning. */
 .npDjLike {
   display: flex;
   align-items: center;
@@ -344,6 +346,34 @@
   display: grid;
   place-items: center;
   flex: none;
+}
+
+/* The verdict, under the card. Deliberately NOT a .npDjCard: every card in
+   this deck promises sound on tap and a thumb makes none - it records an
+   opinion and, for a down, lets the deck move on. So no box, no hairline, no
+   press that gives; a caption in the section's own quiet voice at one end and
+   the pair at the other, sitting in the room the cards leave.
+
+   The inline padding is the card's padding, which is what puts the thumbs'
+   boxes on the same edge as the play disc above them and the caption on the
+   same edge as the title. */
+.npDjVerdict {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  padding-inline: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+/* Wraps rather than truncates. It is a short line, and a language that needs
+   more words than English for it should get a second row - an ellipsis on the
+   only label the pair has would leave two unexplained circles. */
+.npDjVerdict__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  line-height: 1.3;
+  min-inline-size: 0;
 }
 
 /* ── 3. Moods ──────────────────────────────────────────────────────────

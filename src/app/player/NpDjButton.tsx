@@ -8,6 +8,8 @@ import { usePlayNowOptional } from './playNow.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { useJamOptional } from './jam.tsx';
 import { startDjRun } from '../booth/djSession.ts';
+import { Thumbs } from '../booth/sayNo.tsx';
+import { deckNext } from './mediaSession.ts';
 import { MOODS } from '../booth/DjLauncher.tsx';
 import { moodLabel } from '../booth/moodLabel.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
@@ -29,12 +31,18 @@ import type { Track } from '../core/tauri.ts';
  * The panel is a small DECK of cards rather than a row of chips, and it
  * reads the room before it asks anything: the hour (the hub orders its
  * stations for it, and the card at the top says the time in words), the
- * song on the deck (a "more like this" card wearing its sleeve), the groove
- * (a host's set goes to the room; a follower is told the host sets the
- * pace), and what the listener asked for last (three chips). Every card is
- * one tap from sound, and the set it starts is the same shared run
- * (djSession) the Booth publishes - the bridge toasts the lines and speaks
- * the beats no matter which door opened the set.
+ * song on the deck (a "more like this" card wearing its sleeve, and the
+ * listener's verdict on it), the groove (a host's set goes to the room; a
+ * follower is told the host sets the pace), and what the listener asked for
+ * last (three chips). Every card is one tap from sound, and the set it
+ * starts is the same shared run (djSession) the Booth publishes - the bridge
+ * toasts the lines and speaks the beats no matter which door opened the set.
+ *
+ * The verdict is here because this is the panel that belongs to the voice
+ * that made the pick: a thumb is an answer to "why this?", and the question
+ * was asked by the machine behind this button. Loose on the action row
+ * outside, the pair was two unlabelled circles among the row's glyphs,
+ * appearing and vanishing with whether the song happened to be a machine's.
  *
  * Fetch discipline: the stations once an hour, one peek at what the top
  * card would play (cached per seed per hour), nothing at all for the moods.
@@ -290,7 +298,7 @@ export function NpDjButton() {
   const { session } = useServerSession();
   const { tracks, forYou } = useLibrary();
   const play = usePlayNowOptional();
-  const { track: playing } = useNowPlayingMotion();
+  const { track: playing, position } = useNowPlayingMotion();
   const jam = useJamOptional();
   const [open, setOpen] = useState(false);
   const [cue, setCue] = useState<Cue | null>(null);
@@ -472,9 +480,11 @@ export function NpDjButton() {
           )}
         </Section>
 
-        {/* 2. More like this: the song on the deck, as a station of one. */}
+        {/* 2. This song: what the deck is playing, and the two things the
+            listener can say about it - make a station of one out of it, or
+            give it a verdict. */}
         {playing && playing.kind !== 'book' && (
-          <Section label={t('booth.deckMoreLikeThis')}>
+          <Section label={t('booth.deckThisSong')}>
             <button
               type="button"
               className="npDjCard npDjLike"
@@ -507,6 +517,39 @@ export function NpDjButton() {
                 <Play size={14} fill="currentColor" />
               </span>
             </button>
+            {/* The verdict, on the song the voice is playing. Not a card: it
+                starts no sound, so it must not wear the shape that promises
+                some - a caption and the pair, in the deck's own frame.
+
+                A song with no library id renders no thumbs at all (the hub
+                could not record it), so the shell is gated on the id rather
+                than left to hold an empty row. A follower has no verdict
+                here for the same reason they have no deck: the music is the
+                host's, and nothing this panel does can move it.
+
+                A down shuts the panel BEFORE the deck moves on. Same hazard
+                the hero's start() documents, with one more edge: the next
+                song may be a book, and a book unmounts this whole seat - a
+                kit Popover unmounted while open strands its portalled panel
+                on screen. An up changes no music, so it stays open and the
+                thumb lights. */}
+            {!following && trackIdFromPath(playing.path) !== null && (
+              <div className="npDjVerdict">
+                <span className="npDjVerdict__label">{t('booth.yourWordOnThisPick')}</span>
+                <Thumbs
+                  track={playing}
+                  positionMs={position * 1000}
+                  disabled={busy}
+                  className="npDjVerdict__thumbs"
+                  onDown={() => {
+                    setOpen(false);
+                    void panelGone().then(() => {
+                      deckNext();
+                    });
+                  }}
+                />
+              </div>
+            )}
           </Section>
         )}
 
