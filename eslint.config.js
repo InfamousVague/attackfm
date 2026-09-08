@@ -275,6 +275,31 @@ export default tseslint.config(
     },
   },
 
+  /*
+   * The end-to-end suite.
+   *
+   * Node code (it starts a hub, a registry and a static server) that also
+   * hands strings to a browser, so it gets Node globals and the same house
+   * rules as everything else. It has its own `tsconfig.e2e.json` because the
+   * root tsconfig's `include` stops at `src`, and without a scope here the
+   * suite would be the one directory in the repo no gate reads at all.
+   *
+   * Nothing is turned off for it: the one rule that fights Playwright's own
+   * `async ({}, use) =>` fixture signature is answered by an annotated
+   * disable at the two places that need it, which says more than a blanket
+   * exemption would.
+   */
+  {
+    files: ['e2e/**/*.{ts,tsx}'],
+    extends: [js.configs.recommended, tseslint.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.node, ...globals.es2022 },
+    },
+    rules: { ...house },
+  },
+
   /* Scripts that run INSIDE a headless browser page (`page.evaluate` bodies
      and the built-bundle probes) see browser globals, not Node's. */
   {

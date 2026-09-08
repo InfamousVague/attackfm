@@ -80,7 +80,7 @@ export function startStatic(root: string): Promise<StaticServer> {
       return res.end('forbidden');
     }
 
-    let stat: ReturnType<typeof statSync> | null = null;
+    let stat: ReturnType<typeof statSync> | null;
     try {
       stat = statSync(path);
     } catch {

@@ -73,7 +73,8 @@ export function readWorld(): World {
   } catch (e) {
     throw new Error(
       `e2e: no world at ${file}. global-setup writes it; run through ` +
-        `\`npx playwright test\` rather than importing a spec directly.\n${String(e)}`,
+        `\`npx playwright test\` rather than importing a spec directly.`,
+      { cause: e },
     );
   }
   return cached;
