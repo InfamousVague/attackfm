@@ -502,8 +502,8 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
  */
 .appNavBarTab__icon svg,
 .appNavBarPlugins__itemIcon svg {
-  inline-size: 28px;
-  block-size: 28px;
+  inline-size: 26px;
+  block-size: 26px;
 }
 
 /*
@@ -518,11 +518,11 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
  * So both are back in the column and the tab centres the group, as it did
  * before the glyph grew. What the bigger glyph really wanted was air, not
  * repositioning, so the gap is the thing that changed: 2px was drawn for a
- * 24px icon and reads as crowding under a 28px one.
+ * 24px icon and reads as crowding under a bigger one.
  *
  * The sums still fit the seat, which is what the out-of-flow version was
- * buying: 28px glyph + 5px gap + a 0.5625rem label at line-height 1 (9px) is
- * 42px inside a 3.4rem (54.4px) tab, leaving the padding its room. Nothing
+ * buying: 26px glyph + 5px gap + a 0.5625rem label at line-height 1 (9px) is
+ * 40px inside a 3.4rem (54.4px) tab, leaving the padding its room. Nothing
  * here touches the tab's size, the bar's padding or the island's height, so
  * the dock contract is unchanged.
  *
@@ -637,8 +637,8 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
  * bar's own active state, which a glyph gets for free from its stroke.
  */
 .appNavBarTab__face {
-  inline-size: 28px;
-  block-size: 28px;
+  inline-size: 26px;
+  block-size: 26px;
   border-radius: 999px;
   object-fit: cover;
   display: block;

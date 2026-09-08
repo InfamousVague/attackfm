@@ -301,12 +301,12 @@ export function PrimaryNav({
       {inBar.map((d) => (
         <BarTab
           key={d.key}
-          /* Registered at the menu's size; the bar draws at 28 - and this
+          /* Registered at the menu's size; the bar draws at 26 - and this
              number has to match the stylesheet's, which sizes the svg box.
              When they disagreed the glyph was drawn at one size and stretched
              to the other, so the stroke came out at the wrong weight for the
              box it was in. */
-          icon={atSize(d.icon, 28)}
+          icon={atSize(d.icon, 26)}
           label={d.label}
           active={d.active}
           onClick={d.go}
