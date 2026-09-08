@@ -46,6 +46,56 @@
   border-start-end-radius: var(--glacier-radius-xl, 1.25rem);
   border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
   animation: summonDrop 0.26s var(--glacier-ease-out);
+  /*
+   * ON A DESKTOP WINDOW THIS IS A PALETTE, NOT A SCREEN.
+   *
+   * Everything above is the phone: a drawer the width of the screen, from the
+   * header's line to the bottom edge, and that is right there. On 1440 it was
+   * 1440 x 838 - the entire window - to show a search field and four rows,
+   * which is what "the drawers open too high and too wide" was about.
+   *
+   * The four values are the desktop sheet contract (chapter 71), not a rule of
+   * search's own: the same pair of gates that caps the share sheets caps this,
+   * so there is one place to change and one place to read. All four resolve to
+   * what was already here on a phone - 100% wide, `auto` tall between the two
+   * insets, square trailing shoulders, zero margins - so this block is the one
+   * description of the sheet at every width rather than a desktop copy of it.
+   *
+   * WHAT SEARCH SETS FOR ITSELF is its own width, because 32rem is a card's
+   * width and this is a page of results. 48rem was measured, not chosen: at
+   * 36-40rem eight elements in a result list clip, at 42rem five, at 44rem
+   * three, at 46rem two, and at 48rem none - the only ellipsis left at 48rem
+   * is the top-result card's own title, which clips identically at 1440. The
+   * value lives with the others in chapter 71.
+   *
+   * WHICH EDGE IT HANGS FROM is `margin-block-end: auto`: the header's line,
+   * with the results growing downward into the air below. The other anchor was
+   * tried - `margin-block: auto` centres it, which looks better standing still
+   * and is wrong the moment you type, because a palette that re-centres on
+   * every keystroke moves the field out from under the cursor. The field must
+   * not move; the list may.
+   *
+   * SHOULDERS ALL ROUND, from the same contract: on a phone the sheet is flush
+   * against the bottom edge and rounding those corners would cut two notches
+   * of page out of the bottom of the screen. Floating clear of it, square
+   * corners on a card that is not touching anything look like a mistake.
+   *
+   * HOW THIS COMPOSES WITH THE DOCKED NOW PLAYING. `body:has(.npScreen
+   * [data-docked]) .searchSummon` (chapter 05) rewrites `inset-inline-end` to
+   * the dock's width, which narrows the BOX this sheet is laid out in; it wins
+   * that property on specificity and this rule never touches it. What changes
+   * here is the sheet's width WITHIN that box, and `margin-inline: auto` then
+   * centres it in whatever box it was given. Docked, the column is 928px and
+   * the palette is 768 centred inside it; undocked it is 768 centred in 1440.
+   * The two rules answer different questions, which is why they compose.
+   */
+  inline-size: min(100%, var(--app-sheet-max));
+  margin-inline: auto;
+  block-size: var(--app-sheet-block);
+  max-block-size: var(--app-sheet-block-max);
+  margin-block-end: auto;
+  border-end-start-radius: var(--app-sheet-round-end);
+  border-end-end-radius: var(--app-sheet-round-end);
 }
 
 @keyframes summonDrop {

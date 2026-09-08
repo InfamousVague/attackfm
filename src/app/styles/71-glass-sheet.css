@@ -92,52 +92,130 @@
  *
  * These are bottom sheets: full width is right on a phone, where the screen IS
  * the sheet's width and anything narrower would be a card floating in a gutter.
- * On a desktop window the same rule throws a 420px invite card into the middle
- * of seventeen hundred pixels of glass, and the eye reads the empty half as the
+ * On a desktop window the same rule threw a 420px invite card into the middle
+ * of seventeen hundred pixels of glass, and the eye read the empty half as the
  * subject. It is also a lot of motion for a small thing - the whole window
  * changes state to show one card.
  *
- * So the width is capped and the sheet centres. Everything else is deliberately
- * unchanged: it still hangs from the header's line to the bottom edge, still
- * wears the same glass, still drags down to dismiss. It is the same object,
- * given a sensible width - not a different component for the desktop.
+ * So the width is capped and the sheet centres - and, since 0.6.4, the HEIGHT
+ * is capped too. The width alone was only half the complaint: a 512-wide sheet
+ * that still hung from the header's line to the bottom edge was 848px of glass
+ * carrying about 110px of content, which reads as a wall with a paragraph
+ * floating in it. On a desktop window a sheet is as tall as what is in it,
+ * up to a ceiling.
  *
- * THE NUMBER: 32rem is 512px, which leaves the 420px cards these sheets carry
- * (the invite, the share cards - all `min(100%, 420px)`) about 26px of air each
- * side after the body's own padding. Wider and the card is adrift again; much
- * narrower and it starts to squeeze.
+ * THE DESKTOP SHEET CONTRACT - four values, set together, read separately.
+ * The gate below decides them once; every surface that wants to be a panel on
+ * a wide window reads them and adds nothing of its own but which edge it hangs
+ * from. That is the whole point: the app already had FOUR disagreeing desktop
+ * treatments for overlays (this cap, .selectBar's own media query,
+ * useNarrowViewport picking a Modal at 34rem, and the Now Playing dock), and a
+ * fifth ad-hoc rule was not the answer.
+ *
+ *   --app-sheet-max        how wide it may get
+ *   --app-sheet-block      how its height is decided - the band between its
+ *                          two insets (`auto`, the phone), or its own content
+ *                          (`fit-content`, the desktop)
+ *   --app-sheet-block-max  how tall it may get
+ *   --app-sheet-round-end  the TRAILING shoulders: square while the sheet is
+ *                          flush against an edge, rounded once it floats clear
+ *                          of one (see .searchSummon in chapter 09)
+ *
+ * WHY AN AUTO MARGIN IS THE ANCHOR. A sheet has both block insets pinned, so
+ * once `--app-sheet-block` gives it a definite height the box is
+ * over-constrained and one auto margin absorbs the slack: `margin-block-start`
+ * pushes it onto the bottom edge, `margin-block-end` hangs it from the top
+ * one. That belongs to the surface, not to the contract - a share sheet is a
+ * bottom sheet and the search palette hangs under the header - and it costs
+ * nothing on a phone, where the height is `auto` again and CSS resolves an
+ * auto block margin on a positioned box to zero. So the anchor needs no gate
+ * of its own, which is what keeps this to one gate.
+ *
+ * THE NUMBERS
+ *
+ * 32rem is 512px, which leaves the 420px cards these sheets carry (the invite,
+ * the share cards - all `min(100%, 420px)`) about 26px of air each side after
+ * the body's own padding. Wider and the card is adrift again; much narrower
+ * and it starts to squeeze.
+ *
+ * 70dvh is the ceiling every other capped surface in the app already uses
+ * (.librarySongs, the sound console, the date deck). It is high enough that a
+ * long share sheet still shows most of itself and low enough that the page
+ * behind is plainly still there.
  *
  * THE GATE mirrors what the app itself uses to decide it is on a desktop
  * (`useDesktopLayout`): the same media query, plus the platform stamp
- * main.tsx writes for the packaged desktop build, which the query alone would
- * miss on a touchscreen laptop. Two selectors for one condition, because CSS
- * cannot OR a media query with an attribute - the value they set is the single
- * number, so they cannot drift.
+ * platform.ts writes, which the query alone would miss on a touchscreen
+ * laptop. Two selectors for one condition, because CSS cannot OR a media query
+ * with an attribute - the values they set are the single set, so they cannot
+ * drift.
+ *
+ * THE ATTRIBUTE BRANCH IS LOAD-BEARING AND IT IS SAFE, which is worth writing
+ * down because it does not look it. Extending this contract from a width cap
+ * to a whole geometry makes the branch matter far more than it did: a wrong
+ * `desktop` used to cost nothing (`min(100%, 32rem)` is 100% on a 390px screen
+ * either way) and would now cost every bottom sheet in the web app its shape.
+ * So it was checked rather than assumed. `data-platform` is written from
+ * platform.ts, whose `isMobile` sniffs the USER AGENT and catches the browser
+ * as well as the app - iPhone, iPod, Android by name, and iPadOS (which claims
+ * to be a Mac) by pairing a Mac agent with any sign of a touchscreen. A phone
+ * or tablet reading attack.fm/listen is therefore stamped `ios` or `android`,
+ * not `desktop`, and never reaches this branch. `desktop` means a
+ * desktop-class machine, in the app or in a browser - which is exactly the
+ * condition this wants, at any window width.
  */
 :root {
   --app-sheet-max: 100%;
+  --app-sheet-block: auto;
+  --app-sheet-block-max: 100%;
+  --app-sheet-round-end: 0;
 }
 
 @media (min-width: 60rem) and (pointer: fine) {
   :root {
     --app-sheet-max: 32rem;
+    --app-sheet-block: fit-content;
+    --app-sheet-block-max: 70dvh;
+    --app-sheet-round-end: var(--glacier-radius-xl, 1.25rem);
+  }
+
+  /* Search is the one sheet that is not a card in a frame - it is a page of
+     results, and 32rem truncates them. Its own number, chosen by measuring
+     where the rows stop clipping; see chapter 09. */
+  .searchSummon {
+    --app-sheet-max: 48rem;
   }
 }
 
 :root[data-platform='desktop'] {
   --app-sheet-max: 32rem;
+  --app-sheet-block: fit-content;
+  --app-sheet-block-max: 70dvh;
+  --app-sheet-round-end: var(--glacier-radius-xl, 1.25rem);
+}
+
+:root[data-platform='desktop'] .searchSummon {
+  --app-sheet-max: 48rem;
 }
 
 /* The app's own sheet: a fixed element with both inline edges pinned centres
-   itself on `margin-inline: auto` once it has a definite width. */
+   itself on `margin-inline: auto` once it has a definite width, and one auto
+   block margin drops it onto the bottom edge once it has a definite height.
+   On a phone every one of these resolves to what was already there - 100%
+   wide, `auto` tall between the header's line and the bottom, both margins
+   zero - so this is one rule for both, not a desktop copy of a phone sheet. */
 .glassSheet {
   inline-size: min(100%, var(--app-sheet-max));
   margin-inline: auto;
+  block-size: var(--app-sheet-block);
+  max-block-size: var(--app-sheet-block-max);
+  margin-block-start: auto;
 }
 
 /*
- * The two kit Drawers worn as bottom sheets - the same object to a reader, so
- * the same width.
+ * The kit Drawers worn as bottom sheets - the same object to a reader, so the
+ * same width. Only the width: these are already content-height (the kit sizes
+ * its own panel), so the block half of the contract has nothing to do here.
  *
  * THE DOUBLED CLASS IS NOT A TYPO. The kit sizes its panel with
  * `._panel._bottom { width: 100% }`: two classes, which outranks one however
@@ -149,9 +227,23 @@
  * Naming the kit's own classes would fix it and break on the next kit build:
  * they are content-hashed. Repeating ours costs nothing, says what it is for,
  * and cannot go stale.
+ *
+ * THIS LIST IS THE RULE. Every app class worn by a kit `Drawer side="bottom"`
+ * belongs in it, because a kit bottom panel is 100% of the window until an app
+ * class says otherwise. There is no blanket rule that could do it for them -
+ * the kit's own class is content-hashed and cannot be named - so the list is
+ * the only place it can live, and adding a name to it is the whole job.
+ *
+ * Five more drawers exist that are NOT here on purpose: .newPlaylistSheet,
+ * .joinGrooveSheet, .hearDrawer, .nearDrawer and .friendPickerSheet. Each is
+ * rendered as a kit `Modal` above 34rem (`useNarrowViewport`), so on a desktop
+ * window there is no bottom panel to cap and a rule for one would be CSS that
+ * has never drawn a pixel. The day one of those loses its gate, its class
+ * comes here.
  */
 .addPlaylistSheet.addPlaylistSheet,
-.djTraitSheet.djTraitSheet {
+.djTraitSheet.djTraitSheet,
+.sendToFriendSheet.sendToFriendSheet {
   inline-size: min(100%, var(--app-sheet-max));
   margin-inline: auto;
 }
