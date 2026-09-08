@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 // The version baked into THIS build. Without it a freshly installed app
@@ -18,6 +19,31 @@ const pkgVersion = JSON.parse(readFileSync('./package.json', 'utf8')).version as
 // dynamic import into app.js and every asset (fonts, art) as data: URIs -
 // bigger on the wire, but self-contained by construction. The embedded build
 // keeps its splits; only what ships over the air pays the inlining tax.
+/*
+ * The commit this bundle was built from.
+ *
+ * A version number is not enough to identify a build: two bundles can carry
+ * the same version and different code (a --keep reship, a local build off a
+ * branch), and anything that CLAIMS to describe this build - the test report
+ * behind the developer pane, most of all - has to be able to prove it is
+ * describing this one. A report that cannot be checked is a green tick over
+ * somebody else's tree.
+ *
+ * A build outside a git checkout (a tarball, an exported CI workspace) says
+ * `unknown` rather than guessing, and the pane treats that as "cannot vouch
+ * for this" rather than as a match.
+ */
+const commit = (() => {
+  try {
+    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return 'unknown';
+  }
+})();
+
 const ota = process.env.AFM_OTA === '1';
 // The web build (attack.fm/listen). Unlike the shipped app it is fetched over
 // HTTP by ordinary browsers, which is the one context where the stable
@@ -33,6 +59,7 @@ export default defineConfig({
   base: './',
   define: {
     __AFM_VERSION__: JSON.stringify(pkgVersion),
+    __AFM_COMMIT__: JSON.stringify(commit),
     __AFM_UPDATES_ENABLED__: JSON.stringify(updatesEnabled),
   },
   plugins: [react()],
