@@ -15,10 +15,10 @@
  * public/ would be copied into the phone build and shipped to listeners.
  */
 import { copyFileSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ALBUMS, seconds } from './demo-albums.mjs';
+import { ensureFfmpeg, silence } from '../e2e/fixtures/media.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WALL = join(ROOT, 'src/assets/wall');
@@ -237,20 +237,16 @@ write('playlists.json', {
  * 8 kHz mono is inaudible-by-construction anyway and encodes a four-minute
  * silence into about 19 kB; 145 lengths come to under 3 MB, fetched one small
  * file at a time.
+ *
+ * The generator itself lives in e2e/fixtures/media.ts, because the E2E harness
+ * needs the same silence and the two had already started to drift - the
+ * `-b:a 6k` pinned here was being rediscovered there from scratch. One copy,
+ * one place to fix it.
  */
 const lengths = [...new Set(tracks.map((t) => t.duration))].sort((a, b) => a - b);
-if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0) {
-  console.error('\n  ffmpeg is required to build the demo fixtures (it generates the');
-  console.error('  silent audio each track plays). Install it and re-run.\n');
-  process.exit(1);
-}
+ensureFfmpeg('the demo fixtures');
 for (const secs of lengths) {
-  const run = spawnSync('ffmpeg', [
-    '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'anullsrc=r=8000:cl=mono',
-    '-t', String(secs), '-c:a', 'aac', '-b:a', '6k', '-movflags', '+faststart',
-    '-y', join(MEDIA, `${secs}.m4a`),
-  ], { stdio: 'inherit' });
-  if (run.status !== 0) throw new Error(`ffmpeg failed for ${secs}s`);
+  silence({ out: join(MEDIA, `${secs}.m4a`), seconds: secs, codec: 'aac' });
 }
 
 /*

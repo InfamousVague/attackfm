@@ -1,0 +1,25 @@
+{
+  /*
+   * The E2E harness, type-checked on its own.
+   *
+   * `tsconfig.json` covers `src` and nothing else, and `npm run typecheck` is
+   * that file - so without this, twelve suites' worth of TypeScript would be
+   * written against no compiler at all and the first anyone heard of a wrong
+   * fixture shape would be a red run. Kept separate rather than folded into
+   * the root include for two reasons: the harness runs under Node, not a
+   * browser (`types` here is node, not vite/client), and a spec that fails to
+   * compile must not be able to fail `npm run build`, which is what ships.
+   *
+   * `npm run e2e:typecheck`.
+   */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    // The suites drive a browser through page.evaluate, so DOM globals are in
+    // scope inside those callbacks; everything else here is Node.
+    "moduleResolution": "bundler",
+    "noEmit": true
+  },
+  "include": ["e2e", "playwright.config.ts"]
+}

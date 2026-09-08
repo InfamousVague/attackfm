@@ -116,3 +116,13 @@ site/public/demo-hub/
 # suite live in vitest.config.ts, which is tracked; the lcov and the terminal
 # dump are per-run output.
 /coverage
+
+# The Playwright harness's per-run scratch: the isolated hub's database, the
+# generated silent library, the process logs, the signed-in storage states,
+# and world.json. Everything under it is rebuilt from nothing by
+# e2e/global-setup.ts - "green from a cold e2e/" is the bar, so a run that
+# needed something left over from the last one is a run that lied.
+/e2e/.run
+/test-results
+/playwright-report
+/blob-report
