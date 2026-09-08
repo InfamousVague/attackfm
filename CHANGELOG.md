@@ -15,6 +15,19 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.6.3
+
+- The Now Playing row scrolls back to its start again, so the queue button is
+  reachable, and arrows at either end say when there is more to reach.
+- Repeat-one wears a small "1" on the repeat arrows instead of swapping to a
+  different glyph, the way smart shuffle wears its sparkle.
+- The format pill says something: teal for lossless, bronze for lossy.
+- Thumbs up and down have moved into the DJ's popover, beside the voice that
+  chose the song.
+- The Booth is gone. What lived in it that you actually use is still here: the
+  DJ has its own seat on Now Playing, and the curator's controls - including
+  the switch that stops it downloading for you - are a pane in Settings.
+
 ## 0.6.2
 
 - Settings has a Test report under developer mode: every test this version was
