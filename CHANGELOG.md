@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.143
+
+- A device that is only watching another one play no longer says "Nothing
+  queued" above the songs you just queued. It shows one list of what is
+  coming, which is what it actually knows.
+
 ## 0.5.142
 
 - A song you queued no longer stays in the queue after it has played. If it
