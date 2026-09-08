@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.6.1
+
+- Undoing a pass on a music date really brings the song back, and "meet the
+  passed ones again" can find them.
+- A liked song that is still downloading shows up as arriving, instead of
+  leaving the page blank until it lands.
+
 ## 0.6.0
 
 - Skip a song while another device is listening and its progress bar starts
