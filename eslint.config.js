@@ -51,6 +51,10 @@ const IGNORED = [
   'server/crates/registry/assets/**',
   'store/**',
   'capture/**',
+  /* Vitest's coverage output. Belt-and-braces beside the reporter choice in
+     `vitest.config.ts`: a stray `coverage/` from an older run must not be
+     able to add findings to this gate. */
+  'coverage/**',
   'public/**',
   'music/**',
   'docs/**',
@@ -244,6 +248,48 @@ export default tseslint.config(
     files: ['build/**/*.mjs'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
+
+  /* The unit-test harness: `src/**\/*.test.{ts,tsx}` and `src/test/`.
+     Everything the `src/**` scope above says still applies - this block only
+     lifts the three rules that are asking a test file to behave like an
+     application file.
+
+     NOTE WHAT IS *NOT* HERE: no `describe`/`it`/`expect` globals. The suite
+     runs with `globals: false` (see the note in `vitest.config.ts`), so those
+     names are imported from 'vitest' in every test file, and declaring them
+     here would only make it possible to write a file that lints clean and
+     then dies at run time with "describe is not defined". */
+  {
+    files: ['src/**/*.test.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
+    rules: {
+      /* A stub is allowed to do nothing, and it is not always an arrow: an
+         event-listener pair on a fake `MediaQueryList`, a `class` method
+         standing in for an API the module only calls, a no-op passed where
+         production would pass work. In application code an empty function is
+         a question; in a fixture it is the answer. */
+      '@typescript-eslint/no-empty-function': 'off',
+
+      /* Fast refresh has no meaning in a file the dev server never loads. A
+         test that exports a wrapper component beside a `renderWith()` helper
+         is a well-organised test, not a refresh hazard. */
+      'react-refresh/only-export-components': 'off',
+
+      /* `renderHook(() => useNavStack())` is the standard way to test a hook,
+         and this rule cannot see that Testing Library renders that arrow
+         function AS a component - it reads it as a hook called from a plain
+         callback and errors. Off here rather than a disable comment on every
+         `renderHook` in the suite. */
+      'react-hooks/rules-of-hooks': 'off',
+    },
+  },
+
+  /* DELIBERATELY UNCHANGED for tests: `@typescript-eslint/no-explicit-any`
+     stays at `error`. A fixture is the one place `any` does real damage - it
+     silently stops the compiler checking the fixture against the shape it is
+     pretending to be, so the test goes on passing after the type it models
+     has moved on. A test that genuinely needs a malformed input writes
+     `as unknown as Track`, which says the same thing, is greppable, and is
+     already the house idiom. */
 );
 
 /*
