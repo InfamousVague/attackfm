@@ -10,6 +10,7 @@ import type { ThemePreference } from './themePresets.ts';
  * label and summary are always matched too.
  */
 export const PANE_KEYWORDS: Record<string, string> = {
+  curator: 'curator collector downloads budget ledger enrichment pulls taste machine listens automatic',
   appearance:
     'theme dark light accent color colour scale text size dawn boreal ember midnight alpine lyrics video clips canvas haptics vibration shake flick motion feel',
   general: 'library songs folder music directory source stats upload send add',

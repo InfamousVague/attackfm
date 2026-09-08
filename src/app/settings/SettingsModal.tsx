@@ -3,7 +3,7 @@
 // GeneralPane / PlaybackPane / PluginsPane (+ pluginRepos) / MobileSettings,
 // shared bits in settingsShared.ts, useMediaQuery deduped into ux/.
 import { SearchField, TabbedModal } from '@glacier/react';
-import { Bell, Blocks, BookOpen, Bot, CircleUserRound, Download, FlaskConical, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
+import { Bell, Blocks, BookOpen, Bot, CircleUserRound, Disc3, Download, FlaskConical, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
@@ -37,7 +37,8 @@ import { Appearance } from './AppearancePane.tsx';
 import { AccountPane } from './AccountPane.tsx';
 import { General } from './GeneralPane.tsx';
 import { Privacy } from './PrivacyPane.tsx';
-import { developerSummary, localAiSummary, privacySummary, testResultsSummary } from './paneSummaries.ts';
+import { CuratorSettings } from './CuratorSettings.tsx';
+import { curatorSummary, developerSummary, localAiSummary, privacySummary, testResultsSummary } from './paneSummaries.ts';
 import { useSharing } from '../profile/sharingPref.ts';
 import { sharePositionEnabled } from './behaviourPrefs.ts';
 import { onlineMetadataEnabled } from './netPrefs.ts';
@@ -200,10 +201,27 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       tint: 'slate',
       group: 1,
     },
-    // The machine that listens along: the collector's ledger and switch, the
-    // recent pulls, and how far the enrichment has read the library.
-    // The curator's preferences moved into the Booth - they are the taste
-    // engine's own, opened from its room, not a pane about an abstraction.
+    /*
+     * The machine that listens along: the collector's ledger and switch, the
+     * recent pulls, and how far the enrichment has read the library.
+     *
+     * A pane again, and this time it stays one. It lived here, moved into the
+     * Booth as "the taste engine's own, opened from its room", and was left
+     * with no room at all when the Booth came out - which would have taken
+     * the collector's ONLY off switch with it. A control that decides whether
+     * a machine downloads music on your behalf does not belong behind a
+     * feature that can be removed; it belongs in Settings, where a person
+     * looks for switches.
+     */
+    {
+      id: 'curator',
+      label: t('settings.paneCurator'),
+      icon: <Disc3 size={16} />,
+      content: <CuratorSettings />,
+      summary: curatorSummary(),
+      tint: 'green',
+      group: 2,
+    },
     {
       id: 'privacy',
       label: t('settings.panePrivacy'),

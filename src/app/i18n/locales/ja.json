@@ -3072,6 +3072,8 @@
     "paneAbout": "情報",
     "paneAccount": "アカウントとデバイス",
     "paneAppearance": "外観",
+    "paneCurator": "キュレーター",
+    "curatorSummary": "一緒に聴いている機械",
     "paneDeveloper": "開発者向け",
     "paneDiagnostics": "診断",
     "paneDownloads": "ダウンロード",

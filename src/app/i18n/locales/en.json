@@ -3275,6 +3275,8 @@
     "paneAbout": "About",
     "paneAccount": "Account & devices",
     "paneAppearance": "Appearance",
+    "paneCurator": "Curator",
+    "curatorSummary": "The machine that listens along",
     "paneDeveloper": "Developer",
     "paneDiagnostics": "Diagnostics",
     "paneDownloads": "Downloads",

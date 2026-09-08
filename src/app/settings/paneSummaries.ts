@@ -27,6 +27,13 @@ export function developerSummary(): string {
   return translate('settings.devSummary');
 }
 
+/** The curator. Its own pane since the Booth was taken out - the room that
+ *  used to open it is gone, and the collector's off switch cannot live behind
+ *  a door that no longer exists. */
+export function curatorSummary(): string {
+  return translate('settings.curatorSummary');
+}
+
 /** Local AI. */
 export function localAiSummary(t: Translate): string {
   return t('settings.summaryLocalAi');
