@@ -64,7 +64,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # PINNED, and the pin is the point: clippy gains lints between releases,
+      # so `stable` means "whatever the runner downloaded this morning" and a
+      # tree that was clean yesterday goes red on a commit that touched
+      # nothing. 1.94.1 is the toolchain this repo is developed against.
+      #
+      # Moving the pin is a real task, not a bump: today's stable adds
+      # unnecessary_sort_by, chunks_exact_to_as_chunks, question_mark and
+      # useless_conversion findings to the hub (about a dozen, all mechanical).
+      # Fix those in the same commit that raises this number.
+      - uses: dtolnay/rust-toolchain@1.94.1
         with:
           components: clippy
 
