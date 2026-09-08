@@ -18,6 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { bootCheck } from './boot-check.mjs';
+import { REPORT_PATH, reportCommit } from './testReport/commit.mjs';
 
 const ROOT = process.cwd();
 const DRY = process.argv.includes('--dry');
@@ -264,6 +265,68 @@ if (git('rev-parse', '--git-dir') === null) {
           `    REJECTED, stop and pull rather than building anyway.`,
       );
     }
+  }
+}
+
+/**
+ * Refuse to build a bundle whose test report describes different code.
+ *
+ * `src/app/diag/testReport.generated.json` is compiled INTO the bundle, and a
+ * developer-mode settings pane reads it back on the device: "these are this
+ * version's tests, and here is what happened when they ran". A report from an
+ * older commit still renders perfectly - it just answers that question about
+ * code the listener is not running, which is worse than answering nothing,
+ * because it looks authoritative. Nothing downstream can catch it: the file is
+ * present, the schema is right, the counts are plausible, and every number in
+ * it is true about a tree that is no longer here.
+ *
+ * The comparison is `commit` against the newest commit that changed anything
+ * OTHER than the report itself - see scripts/testReport/commit.mjs for why the
+ * literal HEAD cannot work (the report's own commit moves HEAD, so the naive
+ * field is wrong the instant it is stored). Both numbers print on every run,
+ * not only on refusal: a check that is silent when healthy teaches nobody what
+ * it compares.
+ *
+ * NO SUITE IS RUN FROM HERE, deliberately. The house has already ruled on
+ * putting a test runner on the publish path - see the note at the top of
+ * scripts/check-style-guard.mjs about not booting Chrome on every ship: it
+ * adds a new way for a good release to fail, and the first time it breaks for
+ * an unrelated reason somebody passes a flag and it never runs again. This
+ * guard reads two strings and asks git one question. It needs no runner, and
+ * it must never grow one.
+ *
+ * Like the guards above, it does NOT block when it cannot get an answer: no
+ * git, no checkout, nothing to compare.
+ */
+const report = (() => {
+  try {
+    return JSON.parse(readFileSync(join(ROOT, REPORT_PATH), 'utf8'));
+  } catch {
+    // Missing, or unreadable: either way there is nothing to compare, and the
+    // branch below says so rather than guessing.
+    return null;
+  }
+})();
+const reportHead = reportCommit(ROOT);
+
+if (reportHead === null) {
+  console.log('    report   not a git checkout — skipping the test-report freshness check');
+} else if (!report) {
+  die(
+    `there is no readable test report at ${REPORT_PATH}.\n` +
+      `    The bundle would ship a settings pane with nothing to show —\n` +
+      `    run ${'`'}npm run test:report${'`'} and commit it.`,
+  );
+} else {
+  console.log(
+    `    report   ${report.commit ?? '(none)'}   ·   code is at ${reportHead}` +
+      (report.ok === false ? '   ·   \x1b[33mthis report is not green\x1b[0m' : ''),
+  );
+  if (report.commit !== reportHead) {
+    die(
+      `the test report was produced for ${report.commit ?? '(nothing)'}, HEAD is ${reportHead} —\n` +
+        `    run ${'`'}npm run test:report${'`'} and commit it.`,
+    );
   }
 }
 
