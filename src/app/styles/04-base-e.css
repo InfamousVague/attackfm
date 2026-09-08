@@ -507,40 +507,33 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
 }
 
 /*
- * THE BAR'S TWO PARTS ARE PLACED, NOT STACKED.
+ * THE BAR'S TWO PARTS ARE ONE PAIR, CENTRED TOGETHER.
  *
- * They were a centred flex column: icon, a 2px gap, label. That centres the
- * PAIR, which is not the same as centring the glyph - measured, the icon's
- * middle sat 5.5px above the tab's own middle, because the label hanging below
- * it pushed the whole group up. Every seat therefore read as slightly high,
- * and the bigger the glyph got the worse that would be.
+ * They were briefly taken out of flow - the glyph absolutely centred on the
+ * tab, the label pinned to the foot - to put the glyph's middle exactly on the
+ * tab's middle. Measured, that is true, and it looked wrong: an icon centred
+ * ALONE reads as floating, because the eye centres the pair it can see, not
+ * the glyph's box. Owner's call, and the right one.
  *
- * So the glyph is centred on the tab and the label is pinned near the foot.
- * Both are taken out of the flow to do it, which is also what buys the room:
- * a 28px glyph plus a gap plus a label no longer has to ADD UP to something
- * that fits, so the tab keeps its 3.4rem square and the bar keeps its height
- * exactly. Nothing above this touches the tab's own size, the bar's padding or
- * the island's height - the dock contract is unchanged, which is the whole
- * requirement.
+ * So both are back in the column and the tab centres the group, as it did
+ * before the glyph grew. What the bigger glyph really wanted was air, not
+ * repositioning, so the gap is the thing that changed: 2px was drawn for a
+ * 24px icon and reads as crowding under a 28px one.
  *
- * Scoped inside `.appNavBar` so this is the phone bar's arrangement only. The
- * desktop rail draws the kit's own NavBarItem with the kit's own classes and
- * is untouched.
+ * The sums still fit the seat, which is what the out-of-flow version was
+ * buying: 28px glyph + 5px gap + a 0.5625rem label at line-height 1 (9px) is
+ * 42px inside a 3.4rem (54.4px) tab, leaving the padding its room. Nothing
+ * here touches the tab's size, the bar's padding or the island's height, so
+ * the dock contract is unchanged.
+ *
+ * Scoped inside `.appNavBar`: the desktop rail draws the kit's own NavBarItem
+ * and is untouched.
  */
-.appNavBar .appNavBarTab__icon {
-  position: absolute;
-  inset-block-start: 50%;
-  inset-inline-start: 50%;
-  translate: -50% -50%;
+.appNavBar .appNavBarTab {
+  gap: 5px;
 }
 
 .appNavBar .appNavBarTab__label {
-  position: absolute;
-  /* Off the foot rather than under the glyph: the label sits lower than the
-     stack ever put it, and its distance from the bottom edge is now a number
-     instead of whatever was left over. */
-  inset-block-end: 3px;
-  inset-inline: 2px;
   text-align: center;
 }
 

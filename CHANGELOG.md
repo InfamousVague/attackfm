@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.140
+
+- The bar at the bottom reads as it did before: each icon sits with its word
+  as one pair, with more air between them than the bigger glyphs had.
+
 ## 0.5.139
 
 - Hearting a song on a second server works. The heart used to go cold again
