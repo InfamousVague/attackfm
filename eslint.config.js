@@ -172,7 +172,35 @@ export default tseslint.config(
          is a testability win rather than lint appeasement - a pure helper
          that lives beside a 900-line component is a helper nobody can test.
          Context hooks and constants get named exemptions instead. */
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      'react-refresh/only-export-components': [
+        'warn',
+        {
+          allowConstantExport: true,
+          /* The named exemptions the note above promises: a context's own hook,
+             and the tables a component is built FROM. Both are the pattern this
+             codebase chose - a provider and the hook that reads it are one
+             contract and belong in one file, and splitting them would buy a
+             faster hot reload with a worse module. Everything NOT on this list
+             is a pure helper still to be moved into a `.ts` sibling, which is
+             the testability win, and the remaining warnings are that backlog. */
+          allowExportNames: [
+          'EQ_BANDS', 'EQ_BANDS_NARROW', 'EQ_NARROW_INDICES', 'EQ_PRESETS',
+          'EQ_PRESETS_NARROW', 'FACE_GEOMETRY', 'GENERATED_PLAYLIST_FOLDERS', 'GENRE_DOT',
+          'GENRE_TONES', 'HookScopeContext', 'LYRIC_WAYS', 'MOODS', 'PLATFORM_NAMES',
+          'SongSelectionContext', 'UI_SCALES', 'useAcquire', 'useAppLocale', 'useAppearance',
+          'useBuy', 'useConnect', 'useDevicesAvailable', 'useDiscoverFeed',
+          'useDiscoverFeedOptional', 'useDjChat', 'useDjPlay', 'useEqualizer',
+          'useHasDownloadQueue', 'useIncoming', 'useIncomingFor', 'useInstaller', 'useJam',
+          'useJamOptional', 'useJustLanded', 'useLibrary', 'useLibrarySync',
+          'useNowPlayingMotion', 'useOwnedTrack', 'usePendingPlay', 'usePlayNowOptional',
+          'usePlayback', 'usePlaylists', 'usePluginCommands', 'usePluginDownloadSources',
+          'usePluginPages', 'usePluginSettingsSections', 'usePlugins', 'usePrefetchStatus',
+          'useQueueControls', 'useRadioOptional', 'useRefreshNonce', 'useRegistry',
+          'useRegistryOptional', 'useRepoFeeds', 'useSayNo', 'useServerSession', 'useSharing',
+          'useSongCount', 'useStemsOut', 'useT',
+          ],
+        },
+      ],
     },
   },
 
