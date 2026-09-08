@@ -1,0 +1,94 @@
+{
+  "numTotalTestSuites": 2,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 2,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 5,
+  "numPassedTests": 2,
+  "numFailedTests": 1,
+  "numPendingTests": 1,
+  "numTodoTests": 1,
+  "startTime": 1788842073429,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "a group"
+          ],
+          "fullName": "a group passes",
+          "status": "passed",
+          "title": "passes",
+          "duration": 2.3852079999999205,
+          "failureMessages": [],
+          "location": {
+            "line": 4,
+            "column": 3
+          }
+        },
+        {
+          "ancestorTitles": [
+            "a group"
+          ],
+          "fullName": "a group fails with a message",
+          "status": "failed",
+          "title": "fails with a message",
+          "duration": 3.6044580000000224,
+          "failureMessages": [
+            "AssertionError: expected 2 to be 3 // Object.is equality\n    at /repo/src/__fixgen/mixed.test.ts:5:48\n    at file:///repo/node_modules/vitest/dist/chunks/run.CQOUYP-x.js:1628:35"
+          ],
+          "location": {
+            "line": 5,
+            "column": 3
+          }
+        },
+        {
+          "ancestorTitles": [
+            "a group"
+          ],
+          "fullName": "a group is skipped",
+          "status": "skipped",
+          "title": "is skipped",
+          "failureMessages": [],
+          "location": {
+            "line": 6,
+            "column": 6
+          }
+        },
+        {
+          "ancestorTitles": [
+            "a group"
+          ],
+          "fullName": "a group is a todo",
+          "status": "todo",
+          "title": "is a todo",
+          "failureMessages": [],
+          "location": {
+            "line": 7,
+            "column": 6
+          }
+        },
+        {
+          "ancestorTitles": [
+            "a group"
+          ],
+          "fullName": "a group re-exports from './neighbour' when asked",
+          "status": "passed",
+          "title": "re-exports from './neighbour' when asked",
+          "duration": 0.22775000000001455,
+          "failureMessages": [],
+          "location": {
+            "line": 9,
+            "column": 3
+          }
+        }
+      ],
+      "startTime": 1788842074342,
+      "endTime": 1788842074348.6045,
+      "status": "failed",
+      "message": "",
+      "name": "/repo/src/__fixgen/mixed.test.ts"
+    }
+  ]
+}

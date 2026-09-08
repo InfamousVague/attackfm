@@ -1,0 +1,24 @@
+
+running 5 tests
+test tests::fails_with_a_message ... FAILED
+test tests::is_ignored ... ignored
+test tests::is_ignored_with_a_reason ... ignored, needs a real hub
+test tests::passes ... ok
+test tests::re_exports_from_dot_slash_neighbour ... ok
+
+failures:
+
+---- tests::fails_with_a_message stdout ----
+
+thread 'tests::fails_with_a_message' (4540774) panicked at src/lib.rs:6:33:
+assertion `left == right` failed: two is not three
+  left: 2
+ right: 3
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::fails_with_a_message
+
+test result: FAILED. 2 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

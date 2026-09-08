@@ -1,0 +1,189 @@
+{
+  "config": {
+    "rootDir": "/repo/.tmp-fixgen/specs",
+    "version": "1.62.0",
+    "workers": 1
+  },
+  "suites": [
+    {
+      "title": "mixed.spec.ts",
+      "file": "mixed.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "a group",
+          "file": "mixed.spec.ts",
+          "line": 3,
+          "column": 6,
+          "specs": [
+            {
+              "title": "passes",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "fast",
+                  "projectName": "fast",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 6,
+                      "errors": [],
+                      "retry": 0,
+                      "startTime": "2026-09-08T04:35:33.008Z",
+                      "annotations": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "a337a681bf7ec142666e-9e6a91e5da1cc4fe8053",
+              "file": "mixed.spec.ts",
+              "line": 4,
+              "column": 3
+            },
+            {
+              "title": "fails with a message",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "fast",
+                  "projectName": "fast",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 2,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m3\u001b[39m\nReceived: \u001b[31m2\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m3\u001b[39m\nReceived: \u001b[31m2\u001b[39m\n\n  3 | test.describe('a group', () => {\n  4 |   test('passes', async () => { expect(1).toBe(1); });\n> 5 |   test('fails with a message', async () => { expect(2).toBe(3); });\n    |                                                        ^\n  6 |   test.skip('is skipped', async () => { expect(1).toBe(1); });\n  7 |   test(\"re-exports from './neighbour' when asked\", async () => { expect(1).toBe(1); });\n  8 | });\n    at /repo/.tmp-fixgen/specs/mixed.spec.ts:5:56"
+                        }
+                      ],
+                      "retry": 0,
+                      "startTime": "2026-09-08T04:35:33.036Z",
+                      "annotations": [],
+                      "errorLocation": {
+                        "file": "/Users/matt/Development/Apps/AttackFM/.claude/worktrees/agent-tr-gen/.tmp-fixgen/specs/mixed.spec.ts",
+                        "column": 56,
+                        "line": 5
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a337a681bf7ec142666e-5dd49e095597cd92cdd7",
+              "file": "mixed.spec.ts",
+              "line": 5,
+              "column": 3
+            },
+            {
+              "title": "is skipped",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "location": {
+                        "file": "/repo/.tmp-fixgen/specs/mixed.spec.ts",
+                        "line": 6,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "expectedStatus": "skipped",
+                  "projectId": "fast",
+                  "projectName": "fast",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "retry": 0,
+                      "startTime": "2026-09-08T04:35:33.450Z",
+                      "annotations": [
+                        {
+                          "type": "skip",
+                          "location": {
+                            "file": "/Users/matt/Development/Apps/AttackFM/.claude/worktrees/agent-tr-gen/.tmp-fixgen/specs/mixed.spec.ts",
+                            "line": 6,
+                            "column": 8
+                          }
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "a337a681bf7ec142666e-cd73f15206680124fb85",
+              "file": "mixed.spec.ts",
+              "line": 6,
+              "column": 8
+            },
+            {
+              "title": "re-exports from './neighbour' when asked",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "fast",
+                  "projectName": "fast",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 6,
+                      "errors": [],
+                      "retry": 0,
+                      "startTime": "2026-09-08T04:35:33.451Z",
+                      "annotations": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "a337a681bf7ec142666e-57247614289619fc7f2c",
+              "file": "mixed.spec.ts",
+              "line": 7,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-08T04:35:32.613Z",
+    "duration": 872.709,
+    "expected": 2,
+    "skipped": 1,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

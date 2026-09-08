@@ -1,0 +1,10 @@
+
+running 5 tests
+test tests::rejects_a_foreign_key ... ok
+test tests::rejects_expiry ... ok
+test tests::rejects_tampering ... ok
+test tests::round_trips ... ok
+test tests::secret_reload_issues_the_same_key ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+

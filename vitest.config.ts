@@ -51,7 +51,7 @@ export default mergeConfig(
          `owned.ts`. That is what keeps six agents writing tests in parallel on
          disjoint file sets, and it is the only arrangement where moving a
          module moves its tests with it. */
-      include: ['src/**/*.test.{ts,tsx}'],
+      include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.mjs'],
 
       /* A spy left installed by one test is a failure reported against the
          next one. Undo them between tests rather than trusting 400 test files
