@@ -97,6 +97,24 @@ export function useCatalogSearch({
   }, [catalog, owned, shownPaths, parsedPhrase]);
 
   /**
+   * Which rows are mid-acquire RIGHT NOW.
+   *
+   * The two guards below read `adding`, which is state - and on the
+   * importable path (a plain track from /api/search, which is the common row)
+   * nothing writes `adding` until the enqueue has come BACK. So a second tap
+   * while the first is still in the air read the same empty map the first one
+   * read, walked past both guards, and queued the download again: a double
+   * tap on Add was two downloads of one song. The unimportable path never had
+   * the problem, because it marks the row 'finding' before its own await.
+   *
+   * A ref rather than more state, because state is exactly what the second
+   * call cannot see yet - and because an in-flight marker is not something a
+   * row should render. It is released in a `finally`, so a heart on a row
+   * already added is still a real second journey through here.
+   */
+  const inFlight = useRef(new Set<string>());
+
+  /**
    * Pull a catalogue row.
    *
    * A track from `/api/search` already carries a Spotify link (the server drops
@@ -106,79 +124,85 @@ export function useCatalogSearch({
    * a tap on Add should start a download, not open a chooser.
    */
   const acquireResult = async (r: SearchResult, opts?: { like?: boolean }) => {
+    if (inFlight.current.has(r.id)) return;
     if (adding[r.id] && adding[r.id] !== 'added') return;
     // A like on a row already added upgrades it; anything else re-tapped is done.
     if (adding[r.id] === 'added' && !opts?.like) return;
-    const like = Boolean(opts?.like);
-    const done = like ? 'liked' : 'added';
-    const kind = r.kind === 'album' ? 'album' : 'track';
-    const hand = async (title: string, url: string) => {
-      const target: AcquireTarget = { kind, title, artist: r.subtitle, url };
-      const viaImporter = acquire.handlersFor(target).some((h) => h.pluginId === IMPORTER_PLUGIN_ID);
-      if (viaImporter && downloads) {
-        try {
-          // A single tapped track is now-playing (reserved slot); an album is a
-          // background set.
-          const job = await downloads.enqueue(url, kind === 'track');
-          // A single tapped track opens Now Playing on it, downloading, and
-          // plays when it lands; an album is a set, so it just queues. The
-          // placeholder wears the ROW's own art/name, even if the download URL
-          // came from a resolved twin. A LIKE is different: hearting a song is
-          // not asking to hear it this second, so now-playing stays where it is.
-          if (kind === 'track' && !like) {
-            playPending?.(
-              placeholderTrack({ jobId: job.id, title: r.title, artist: r.subtitle, artwork: r.cover }),
-              job.id,
-            );
-          }
-        } catch {
-          // Enqueue refused; the row's state is the only feedback.
-        }
-      } else acquire.acquire(target);
-      /*
-       * The promise half of the heart: written down on the server AFTER the
-       * download is queued, keyed by the RESOLVED name (closest to the tags
-       * the landed file will carry - the folded identity forgives the rest).
-       * The sweep on the hub turns it into a real favourite when the song
-       * arrives, so Liked fills in even if this device goes in a pocket.
-       */
-      if (like && server) {
-        try {
-          await addPendingLike(server, r.subtitle, title);
-        } catch {
-          // The download still runs; the heart just was not written down.
-        }
-      }
-    };
-
-    if (importable(r)) {
-      await hand(r.title, r.url);
-      setAdding((prev) => ({ ...prev, [r.id]: done }));
-      return;
-    }
-    if (!server) return;
-    setAdding((prev) => ({ ...prev, [r.id]: 'finding' }));
-    let found = null;
+    inFlight.current.add(r.id);
     try {
-      found = await resolveImportable(server, kind, r.subtitle, r.title);
-    } catch {
-      // Offline or refused; the row cannot tell the difference from absent.
+      const like = Boolean(opts?.like);
+      const done = like ? 'liked' : 'added';
+      const kind = r.kind === 'album' ? 'album' : 'track';
+      const hand = async (title: string, url: string) => {
+        const target: AcquireTarget = { kind, title, artist: r.subtitle, url };
+        const viaImporter = acquire.handlersFor(target).some((h) => h.pluginId === IMPORTER_PLUGIN_ID);
+        if (viaImporter && downloads) {
+          try {
+            // A single tapped track is now-playing (reserved slot); an album is a
+            // background set.
+            const job = await downloads.enqueue(url, kind === 'track');
+            // A single tapped track opens Now Playing on it, downloading, and
+            // plays when it lands; an album is a set, so it just queues. The
+            // placeholder wears the ROW's own art/name, even if the download URL
+            // came from a resolved twin. A LIKE is different: hearting a song is
+            // not asking to hear it this second, so now-playing stays where it is.
+            if (kind === 'track' && !like) {
+              playPending?.(
+                placeholderTrack({ jobId: job.id, title: r.title, artist: r.subtitle, artwork: r.cover }),
+                job.id,
+              );
+            }
+          } catch {
+            // Enqueue refused; the row's state is the only feedback.
+          }
+        } else acquire.acquire(target);
+        /*
+         * The promise half of the heart: written down on the server AFTER the
+         * download is queued, keyed by the RESOLVED name (closest to the tags
+         * the landed file will carry - the folded identity forgives the rest).
+         * The sweep on the hub turns it into a real favourite when the song
+         * arrives, so Liked fills in even if this device goes in a pocket.
+         */
+        if (like && server) {
+          try {
+            await addPendingLike(server, r.subtitle, title);
+          } catch {
+            // The download still runs; the heart just was not written down.
+          }
+        }
+      };
+
+      if (importable(r)) {
+        await hand(r.title, r.url);
+        setAdding((prev) => ({ ...prev, [r.id]: done }));
+        return;
+      }
+      if (!server) return;
+      setAdding((prev) => ({ ...prev, [r.id]: 'finding' }));
+      let found = null;
+      try {
+        found = await resolveImportable(server, kind, r.subtitle, r.title);
+      } catch {
+        // Offline or refused; the row cannot tell the difference from absent.
+      }
+      if (!found) {
+        setAdding((prev) => ({ ...prev, [r.id]: 'missing' }));
+        window.setTimeout(
+          () =>
+            setAdding((prev) => {
+              const next = { ...prev };
+              delete next[r.id];
+              return next;
+            }),
+          4000,
+        );
+        return;
+      }
+      await hand(found.title, found.url);
+      setAdding((prev) => ({ ...prev, [r.id]: done }));
+    } finally {
+      inFlight.current.delete(r.id);
     }
-    if (!found) {
-      setAdding((prev) => ({ ...prev, [r.id]: 'missing' }));
-      window.setTimeout(
-        () =>
-          setAdding((prev) => {
-            const next = { ...prev };
-            delete next[r.id];
-            return next;
-          }),
-        4000,
-      );
-      return;
-    }
-    await hand(found.title, found.url);
-    setAdding((prev) => ({ ...prev, [r.id]: done }));
   };
 
   return { catalog, outside, adding, acquireResult };

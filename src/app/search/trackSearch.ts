@@ -135,7 +135,13 @@ export function parseQuery(raw: string): Query {
     // first letter of the value lands.
     if (!term) return whole;
     scoped = true;
-    fields[name === 'lyric' ? 'lyrics' : (name as Field)].push(term);
+    // Lowercased because the operator regex is case-insensitive but the
+    // capture is not: "Artist:" matched and then indexed `fields` with
+    // "Artist", which is undefined, and .push on it threw. It is not an
+    // exotic input - a phone's keyboard capitalises the first letter of the
+    // field on its own, and the throw lands in SearchPage's render memo.
+    const field = name.toLowerCase();
+    fields[field === 'lyric' ? 'lyrics' : (field as Field)].push(term);
     return lead;
   });
   const phrase = flatten(rest);
