@@ -336,6 +336,7 @@ test.describe('the page and its chrome', () => {
     // The strip belongs to the WINDOW, not to the page: walking to another
     // destination must not take the music off screen with it.
     const transport = strip.getByRole('group', { name: 'Playback controls' });
+    await expect(transport).toBeVisible();
     for (const dest of ['Discover', 'Library']) {
       await page.getByRole('button', { name: dest }).click();
       await expect(strip.getByRole('group', { name: title! })).toBeVisible();
@@ -345,7 +346,15 @@ test.describe('the page and its chrome', () => {
     // the walk rather than before it, because the two destinations do not
     // have to lay their headers out identically - what is being asserted is
     // that SCROLLING moves the page and not the plate.
-    const parked = (await transport.boundingBox())!;
+    // THE PLATE, not the transport group inside it. The group's own position
+    // drifts a few pixels as the strip's content settles - the title line, the
+    // scrubber, the duration arriving - and measuring it read that as the plate
+    // scrolling away: 2.11, 3.15, 4.17, 5.64, 5.72, 5.95 px across full runs
+    // against a bound of 2, intermittently, which is the worst way to be wrong.
+    // What this scenario is about is whether the plate belongs to the window or
+    // to the page, and that is the plate's own box. Measured in the rig at
+    // 390x844: 0.00 px across scrolls of 200, 600 and 961.
+    const parked = (await strip.boundingBox())!;
     await page.mouse.move(195, 400);
     await page.mouse.wheel(0, 900);
     // `wheel` returns when the event is delivered, not when the page has
@@ -377,7 +386,7 @@ test.describe('the page and its chrome', () => {
           requestAnimationFrame(step);
         }),
     );
-    const after = (await transport.boundingBox())!;
+    const after = (await strip.boundingBox())!;
     expect(Math.abs(after.y - parked.y)).toBeLessThan(2);
 
     // Every bottom clearance in the app is spent from --app-player-height,
