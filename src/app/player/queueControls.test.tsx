@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import type { Track } from '../core/tauri.ts';
@@ -18,6 +18,39 @@ import type { Track } from '../core/tauri.ts';
  */
 const jamValue: { current: unknown } = { current: null };
 vi.mock('./jam.tsx', () => ({ useJamOptional: () => jamValue.current }));
+
+/**
+ * Connect, the OTHER claim on these two verbs.
+ *
+ * A device that is watching another one play has `current === null` by
+ * design, so the local verbs' "nothing is playing here, just play it"
+ * shortcut would seize the seat from the deck that IS playing. The bridge
+ * reads Connect to spot that and send the ask across instead - so the fake
+ * below is the third input to every case here, and it defaults to a device
+ * that is not connected to anything.
+ */
+type Connect = {
+  connected: boolean;
+  activeDeviceId: string | null;
+  thisDeviceId: string | null;
+  sendCommand: ReturnType<typeof vi.fn>;
+};
+const connectValue: { current: Connect } = { current: alone() };
+vi.mock('./playbackSync.tsx', () => ({ useConnect: () => connectValue.current }));
+
+/** This device, playing for itself: no seat anywhere else to defer to. */
+function alone(): Connect {
+  return { connected: false, activeDeviceId: null, thisDeviceId: 'this', sendCommand: vi.fn() };
+}
+
+/** This device, watching another one play - the seat is elsewhere. */
+function watching(): Connect {
+  return { connected: true, activeDeviceId: 'desktop', thisDeviceId: 'this', sendCommand: vi.fn() };
+}
+
+beforeEach(() => {
+  connectValue.current = alone();
+});
 
 import { QueueControlsBridge, useQueueControls } from './queueControls.tsx';
 
@@ -113,6 +146,61 @@ describe('following a groove', () => {
     controls.playNext(song);
     expect(localPlayNext).toHaveBeenCalledWith(song);
     expect(controls.following).toBe(false);
+  });
+});
+
+describe('watching another device play', () => {
+  it('asks the deck that is playing, rather than starting the song here', () => {
+    connectValue.current = watching();
+    const { controls, localPlayNext } = mount(null);
+    controls.playNext(song);
+    expect(connectValue.current.sendCommand).toHaveBeenCalledWith({
+      action: 'enqueueNext',
+      queue: [1],
+    });
+    // Editing this deck is what "it started playing right away" was: the
+    // phone claimed the seat and stopped the desktop mid-song.
+    expect(localPlayNext).not.toHaveBeenCalled();
+  });
+
+  it('sends a plain add to the end of that deck’s line', () => {
+    connectValue.current = watching();
+    const { controls, localAddToQueue } = mount(null);
+    controls.addToQueue(song);
+    expect(connectValue.current.sendCommand).toHaveBeenCalledWith({
+      action: 'enqueueEnd',
+      queue: [1],
+    });
+    expect(localAddToQueue).not.toHaveBeenCalled();
+  });
+
+  it('says nothing at all for a file only this device has', () => {
+    connectValue.current = watching();
+    const { controls } = mount(null);
+    // A local path carries no id the other device could resolve, so there is
+    // nothing to send - and sending its own path would name a file that
+    // machine does not have.
+    controls.playNext({ path: '/Users/me/Music/one.flac', title: 'One', artist: 'A' } as Track);
+    expect(connectValue.current.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it('holds the seat itself when it IS the active device', () => {
+    connectValue.current = { ...watching(), activeDeviceId: 'this' };
+    const { controls, localPlayNext } = mount(null);
+    controls.playNext(song);
+    expect(localPlayNext).toHaveBeenCalledWith(song);
+    expect(connectValue.current.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it('gives way to a groove: the room’s queue is the queue', () => {
+    connectValue.current = watching();
+    const addToRoom = vi.fn();
+    const { controls } = mount(room({ hosting: false, addToRoom }));
+    controls.playNext(song);
+    // Inside a groove the room wins whichever device holds the Connect seat -
+    // otherwise a follower's add would land on one listener's desktop.
+    expect(addToRoom).toHaveBeenCalledWith(song, { next: true });
+    expect(connectValue.current.sendCommand).not.toHaveBeenCalled();
   });
 });
 
