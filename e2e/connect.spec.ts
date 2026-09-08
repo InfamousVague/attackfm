@@ -27,6 +27,17 @@
  *    it - which is also how a listener's evening goes.
  */
 import { expect, test } from './fixtures/hub.ts';
+
+/*
+ * The one suite that wants the socket for real.
+ *
+ * Every other file gets the Connect socket answered and told nothing, because
+ * the seat is per account and outlives the context that took it - see the note
+ * on `connectLive` in fixtures/hub.ts. This suite IS the seat, so it opts back
+ * in, and it stands up its own hub rather than leaving a held seat on the
+ * shared one for whatever runs next.
+ */
+test.use({ connectLive: true });
 import {
   ConnectWatch,
   firstAccount,
