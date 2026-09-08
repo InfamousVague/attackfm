@@ -1,4 +1,6 @@
 import { translate } from '../i18n/translate.ts';
+import { buildCommit, buildMatch, tallyReport, testReport, type TestReport } from '../diag/testReport.ts';
+import { formatNumber } from '../ux/format.ts';
 import type { Translate } from './settingsShared.ts';
 
 /**
@@ -53,4 +55,47 @@ export function privacySummary(
   // Both numbers are holes: "2 of 4" is not a fixed phrase, and the count
   // still selects a plural form in the languages that have one.
   return t('privacy.summarySomeOff', { count: off, total: switches.length });
+}
+
+/**
+ * Test results: the shortest true sentence about the report on this device.
+ *
+ * The order of the checks is the whole design. A report belonging to ANOTHER
+ * COMMIT is reported first even when every test in it passed, because "1,789
+ * passed" under a row somebody glances at is exactly the false comfort this
+ * pane exists to prevent - and the rail row is the surface most likely to be
+ * read without opening anything. A suite that never ran comes next, for the
+ * same reason: no result is not a pass, and it is invisible in a count of
+ * passes.
+ *
+ * Takes the report rather than reaching for the module's own, so a test can
+ * hand it one; the caller passes nothing and gets the build's.
+ */
+export function testResultsSummary(
+  t: Translate,
+  report: TestReport = testReport,
+  mine: string | null = buildCommit(),
+): string {
+  if (buildMatch(report, mine) === 'mismatch') return t('settings.testsSummaryOtherBuild');
+  const tally = tallyReport(report);
+  if (tally.suitesMissing > 0) {
+    return t('settings.testsSuitesMissing', {
+      count: tally.suitesMissing,
+      n: formatNumber(tally.suitesMissing),
+    });
+  }
+  // The same three entries the pane's own verdict line uses. Sharing them is
+  // deliberate: the row and the headline are two places one sentence is read,
+  // and a copy edit that moved only one of them would leave the rail claiming
+  // something the pane no longer says.
+  if (tally.failed > 0) {
+    return t('settings.testsSomeFailed', {
+      count: tally.failed,
+      n: formatNumber(tally.failed),
+    });
+  }
+  return t('settings.testsAllPassed', {
+    count: tally.passed,
+    n: formatNumber(tally.passed),
+  });
 }

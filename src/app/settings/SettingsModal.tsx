@@ -3,7 +3,7 @@
 // GeneralPane / PlaybackPane / PluginsPane (+ pluginRepos) / MobileSettings,
 // shared bits in settingsShared.ts, useMediaQuery deduped into ux/.
 import { SearchField, TabbedModal } from '@glacier/react';
-import { Bell, Blocks, BookOpen, Bot, CircleUserRound, Download, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
+import { Bell, Blocks, BookOpen, Bot, CircleUserRound, Download, FlaskConical, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
@@ -15,6 +15,7 @@ import { usePlugins, usePluginSettingsSections } from '../../plugins/runtime.tsx
 import { AboutSettings } from './AboutSettings.tsx';
 import { DiagnosticsPane } from './DiagnosticsPane.tsx';
 import { DeveloperPane } from './DeveloperPane.tsx';
+import { TestResultsPane } from './TestResultsPane.tsx';
 import { LocalAiPane } from './LocalAiPane.tsx';
 import { useDeveloperMode } from './developerMode.ts';
 import { diagEntries } from '../diag/diagLog.ts';
@@ -36,7 +37,7 @@ import { Appearance } from './AppearancePane.tsx';
 import { AccountPane } from './AccountPane.tsx';
 import { General } from './GeneralPane.tsx';
 import { Privacy } from './PrivacyPane.tsx';
-import { developerSummary, localAiSummary, privacySummary } from './paneSummaries.ts';
+import { developerSummary, localAiSummary, privacySummary, testResultsSummary } from './paneSummaries.ts';
 import { useSharing } from '../profile/sharingPref.ts';
 import { sharePositionEnabled } from './behaviourPrefs.ts';
 import { onlineMetadataEnabled } from './netPrefs.ts';
@@ -353,6 +354,27 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
               diagCount > 0
                 ? t('settings.summaryProblems', { count: diagCount })
                 : t('settings.summaryNoProblems'),
+            tint: 'slate' as const,
+            group: 3,
+          },
+        ]
+      : []),
+    // What this build's tests actually did, on the device running it. Beside
+    // Diagnostics because it answers the neighbouring question - Diagnostics
+    // says what has gone wrong here, this says what was checked before the
+    // build left - and dev-gated for the same reason both of those are: it is
+    // a claim about the code, not a setting anybody tunes.
+    ...(devMode
+      ? [
+          {
+            id: 'test-results',
+            label: t('settings.paneTestResults'),
+            icon: <FlaskConical size={16} />,
+            content: <TestResultsPane />,
+            // Read at render like every other summary here, so a report that
+            // belongs to another build says so on the ROW - the surface most
+            // likely to be glanced at without the pane ever being opened.
+            summary: testResultsSummary(t),
             tint: 'slate' as const,
             group: 3,
           },

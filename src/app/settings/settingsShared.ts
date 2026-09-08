@@ -26,6 +26,12 @@ export const PANE_KEYWORDS: Record<string, string> = {
   plugins: 'plugin extension import spotify buy discover sources',
   privacy: 'privacy history scrobble tracking metadata lookups lyrics share position telemetry friends',
   diagnostics: 'diagnostics problems errors log report broken crash push notifications debug',
+  // Words this pane never prints. "green" and "red" because that is what
+  // somebody calls the state they are looking for; "stale" and "mismatch"
+  // because the pane's real subject is whether the report belongs to this
+  // build at all, and neither word appears on it.
+  'test-results':
+    'tests test results report suite suites vitest playwright cargo rust unit e2e browser failures failing failed passed passing skipped todo green red stale mismatch commit build ci run coverage regression assertions',
   about: 'version update check whats new shell licenses github',
   developer: 'developer dev tools debug build bundle ota cache storage keys performance fps memory test notice flags',
   'local-ai': 'local ai model ollama llm endpoint embeddings curator dj mixes stations health owner report',
@@ -295,6 +301,23 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     // most people go looking for this row.
     keywords:
       'wifi wi-fi cellular mobile data 4g 5g lte metered roaming allowance bill cap data saver background download',
+  },
+  {
+    // Both of these anchor on rows the pane really renders: `revealSetting`
+    // fails SILENTLY on a miss - the pane opens at the top, nothing flashes,
+    // and search reads as flaky rather than as a typo here.
+    id: 'test-commit',
+    pane: 'test-results',
+    labelKey: 'settings.testsCommit',
+    descriptionKey: 'settings.testsCommitGloss',
+    keywords: 'commit sha build stale another build mismatch which code was tested provenance dirty green tick',
+  },
+  {
+    id: 'test-only-failures',
+    pane: 'test-results',
+    labelKey: 'settings.testsOnlyFailures',
+    descriptionKey: 'settings.testsOnlyFailuresGloss',
+    keywords: 'only failures failed red broken filter narrow hide passing what broke',
   },
   {
     id: 'import-server',

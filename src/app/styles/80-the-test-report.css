@@ -1,0 +1,289 @@
+/*
+ * The test report pane.
+ *
+ * Most of it is settings-kit rows and needs nothing, exactly like the
+ * Developer page next door. What is here is the four things the kit has no
+ * vocabulary for: the verdict banner at the top, the disclosure chevrons that
+ * have to turn, the case list under an opened file, and the two places a wall
+ * of machine output has to be allowed to be a wall of machine output without
+ * pushing the pane sideways.
+ *
+ * THE RULE THIS PAGE IS BUILT AROUND: nothing green may be louder than
+ * something red. The verdict banner is the only tinted slab on the page, the
+ * pass tone is a hairline and a muted glyph, and the failure tone gets the
+ * fill. A page whose success state shouts is a page whose failure state has to
+ * shout louder, and there is no louder.
+ */
+
+/* --- the verdict ---------------------------------------------------------- */
+
+/*
+ * The banner recipe is the settings kit's own, spelled out here rather than
+ * invented: a FIXED oklch tone mixed IN OKLAB into `surface-raised`. Both
+ * halves matter. The fixed tone keeps the red the same red in every theme and
+ * under every brand accent, and oklab is what makes mixing a chromatic colour
+ * into a near-grey stay on its own hue - the first draft of this file mixed
+ * `in oklch` and the failure slab came out lilac in the light theme, taking
+ * the long way round the hue circle towards the grey.
+ */
+.testPane {
+  --test-red: oklch(0.62 0.21 25);
+  --test-green: oklch(0.62 0.15 150);
+}
+
+.testPane__verdict {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg);
+  /* One step louder than a callout: this is the page's headline, and the
+     banners under it are its footnotes. */
+  background: color-mix(in oklab, var(--test-red) 18%, var(--glacier-surface-raised));
+  border: var(--glacier-hairline) solid
+    color-mix(in oklab, var(--test-red) 38%, var(--glacier-border-subtle));
+  color: var(--glacier-text);
+}
+
+.testPane__verdict[data-ok] {
+  background: color-mix(in oklab, var(--test-green) 16%, var(--glacier-surface-raised));
+  border-color: color-mix(in oklab, var(--test-green) 34%, var(--glacier-border-subtle));
+}
+
+.testPane__verdictGlyph {
+  display: flex;
+  color: var(--test-red);
+}
+
+.testPane__verdict[data-ok] .testPane__verdictGlyph {
+  color: var(--test-green);
+}
+
+.testPane__verdictBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  min-width: 0;
+}
+
+.testPane__verdictLine {
+  font-size: var(--glacier-font-size-lg);
+  font-weight: var(--glacier-font-weight-semibold);
+  line-height: 1.2;
+}
+
+/* The counts behind the verdict. Wrapping rather than scrolling: four short
+ * readings that fold onto two lines stay readable on a phone, and a row that
+ * scrolls hides the one number somebody came to check. */
+.testPane__tallies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-3);
+}
+
+.testPane__tally {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--glacier-space-1);
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.testPane__tallyN {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--glacier-font-weight-semibold);
+  color: var(--glacier-text);
+}
+
+/* Only a number that means something wears the alarm colour - see the note at
+ * the markup. */
+.testPane__tally[data-alarm] .testPane__tallyN {
+  color: var(--test-red);
+}
+
+/* Two sentences in one banner - the count and why it matters - stacked rather
+ * than run together. As inline siblings they read as one sentence with a word
+ * missing, which is exactly what they looked like the first time this pane was
+ * put on a screen. */
+.testPane__banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+/* --- provenance ----------------------------------------------------------- */
+
+.testPane__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-1);
+}
+
+/* Machine facts: a version string, a host triple, a line number. Never
+ * hyphenated, never re-spaced, and lined up on the digits. */
+.testPane .setk-row__value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- the disclosure ------------------------------------------------------- */
+
+/*
+ * The kit's press row draws a right-pointing chevron because a press row
+ * usually GOES somewhere. Here it opens in place, so it turns - the same
+ * ninety degrees the downloads card's part list turns, so the two disclosures
+ * in the app behave alike.
+ */
+.testPane__group .setk-row__chevron {
+  transition: transform var(--glacier-duration-fast, 0.15s) ease;
+}
+
+.testPane__group[data-open] .setk-row__chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .testPane__group .setk-row__chevron {
+    transition: none;
+  }
+}
+
+/* A file path is not language: it may break anywhere rather than push the
+ * row's counts off a narrow screen. */
+.testPane__file {
+  overflow-wrap: anywhere;
+  font-size: var(--glacier-font-size-sm);
+}
+
+/* --- the cases ------------------------------------------------------------ */
+
+.testPane__cases {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--glacier-space-3) var(--glacier-space-2);
+  display: flex;
+  flex-direction: column;
+}
+
+.testPane__case {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-1) 0;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.testPane__case + .testPane__case {
+  border-top: 1px solid var(--glacier-border-subtle);
+}
+
+.testPane__caseGlyph {
+  display: flex;
+  align-self: center;
+  color: var(--glacier-text-subtle);
+}
+
+.testPane__case[data-status='passed'] .testPane__caseGlyph {
+  color: var(--glacier-success-text);
+}
+
+.testPane__case[data-status='failed'] .testPane__caseGlyph {
+  color: var(--glacier-danger-text);
+}
+
+/* The name is the row. It carries the reading colour; everything beside it is
+ * furniture and stays muted. */
+.testPane__caseName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--glacier-text);
+}
+
+.testPane__case[data-status='failed'] .testPane__caseName {
+  color: var(--glacier-danger-text);
+  font-weight: var(--glacier-font-weight-medium);
+}
+
+.testPane__case[data-status='skipped'] .testPane__caseName,
+.testPane__case[data-status='todo'] .testPane__caseName {
+  color: var(--glacier-text-muted);
+}
+
+.testPane__caseMeta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--glacier-space-2);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-xs);
+  white-space: nowrap;
+  color: var(--glacier-text-subtle);
+}
+
+/* --- machine output ------------------------------------------------------- */
+
+/*
+ * A failure message and a runner's death rattle are both up to 2KB of
+ * pre-formatted text with lines longer than any phone. They scroll INSIDE
+ * their own box: let one of these set the page's width and every row above it
+ * inherits a horizontal scrollbar, which is how a settings pane stops being
+ * usable with a thumb.
+ */
+.testPane__failure,
+.testPane__reason {
+  grid-column: 1 / -1;
+  margin: var(--glacier-space-1) 0 var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  max-height: 14rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--glacier-radius-md);
+  border: var(--glacier-hairline) solid
+    color-mix(in oklab, var(--test-red) 26%, var(--glacier-border-subtle));
+  background: color-mix(in oklab, var(--test-red) 9%, var(--glacier-surface-raised));
+  color: var(--glacier-text);
+  font-family: var(--glacier-font-mono, ui-monospace, monospace);
+  font-size: var(--glacier-font-size-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* The app blocks selection globally; the one text on this page somebody
+     will want to paste into a chat message is exempted here, the way the
+     diagnostics log's textarea is. */
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.testPane__reasonRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-3) 0 0;
+}
+
+.testPane__empty {
+  padding: var(--glacier-space-3);
+}
+
+/* --- the command ---------------------------------------------------------- */
+
+/*
+ * The exact line that ran the suite, under the suite's own card. Selectable
+ * for the same reason the failures are: the point of printing it is that it
+ * can be copied and run again.
+ */
+.testPane__cmdLabel {
+  display: block;
+  color: var(--glacier-text-subtle);
+}
+
+.testPane__cmd {
+  display: block;
+  margin-top: var(--glacier-space-1);
+  font-family: var(--glacier-font-mono, ui-monospace, monospace);
+  font-size: var(--glacier-font-size-xs);
+  overflow-wrap: anywhere;
+  color: var(--glacier-text-muted);
+  user-select: text;
+  -webkit-user-select: text;
+}
