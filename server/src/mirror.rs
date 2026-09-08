@@ -116,7 +116,15 @@ pub(crate) fn free_bytes(path: &std::path::Path) -> Option<u64> {
                 return None;
             }
             // f_bavail: blocks an unprivileged process may actually use.
-            Some(stat.f_bavail as u64 * stat.f_frsize)
+            //
+            // The cast is redundant on exactly one of the two platforms this
+            // builds for, which is why it carries an allow rather than being
+            // deleted: fsblkcnt_t is 32-bit on macOS and 64-bit on Linux, so
+            // dropping it fixes clippy on the Linux runner and stops the Mac
+            // compiling. Both casts, so the multiply is u64 either way.
+            #[allow(clippy::unnecessary_cast)]
+            let free = stat.f_bavail as u64 * stat.f_frsize as u64;
+            Some(free)
         }
     }
     #[cfg(not(unix))]

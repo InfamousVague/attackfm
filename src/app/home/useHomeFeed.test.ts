@@ -403,7 +403,12 @@ describe('skeletons and the cached first paint', () => {
     // "a feed that has not answered keeps its own skeleton, so a slow reply
     // swaps in place instead of popping the page."
     const { result } = await feed({ curator: null });
-    await waitFor(() => expect(result.current.skelFeed).toBe(false));
+    // Three seconds against a one-second hold, and the margin is the point:
+    // the first-launch beat is a real 1000ms timer, and waitFor's own default
+    // is also 1000ms, so the two finish together and which one wins is down
+    // to how loaded the machine is. Green on a laptop, red on a CI runner,
+    // and nothing to do with the behaviour under test.
+    await waitFor(() => expect(result.current.skelFeed).toBe(false), { timeout: 3000 });
     expect(result.current.curator).toBeNull();
   });
 
