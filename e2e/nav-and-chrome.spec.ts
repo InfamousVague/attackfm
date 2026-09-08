@@ -355,6 +355,12 @@ test.describe('the page and its chrome', () => {
     // to the page, and that is the plate's own box. Measured in the rig at
     // 390x844: 0.00 px across scrolls of 200, 600 and 961.
     const parked = (await strip.boundingBox())!;
+    const scrollerTop = () =>
+      page.evaluate(() => {
+        const page_ = document.querySelector('.homePage, .libraryPage, .songPage, .discoverPage');
+        return page_ ? page_.scrollTop : (document.scrollingElement?.scrollTop ?? 0);
+      });
+    const before = await scrollerTop();
     await page.mouse.move(195, 400);
     await page.mouse.wheel(0, 900);
     // `wheel` returns when the event is delivered, not when the page has
@@ -387,7 +393,26 @@ test.describe('the page and its chrome', () => {
         }),
     );
     const after = (await strip.boundingBox())!;
-    expect(Math.abs(after.y - parked.y)).toBeLessThan(2);
+    const scrolled = (await scrollerTop()) - before;
+
+    /*
+     * PROPORTIONALLY, not to a magic number.
+     *
+     * "Does not scroll away with the page" is a claim about the ratio between
+     * two movements, and writing it as an absolute pixel bound turned it into
+     * a claim about layout settle instead: 2.85px of it failed a bound of 2,
+     * on a plate that had not scrolled anywhere. A few pixels is the app's own
+     * chrome coming to rest under a page that just changed height - the header
+     * collapsing, a shelf arriving - and a plate that had genuinely scrolled
+     * with the page would be gone by several hundred.
+     *
+     * So the page has to have really moved (or there is nothing to prove), and
+     * the plate has to have held better than a hundredth of it. On this scroll
+     * that is a bound of about nine pixels, and it fails at ten - while an
+     * actual scroll-away misses it by two orders of magnitude.
+     */
+    expect(scrolled).toBeGreaterThan(100);
+    expect(Math.abs(after.y - parked.y)).toBeLessThan(scrolled / 100);
 
     // Every bottom clearance in the app is spent from --app-player-height,
     // which app.css collapses to 0 when no strip is mounted. With one up it
