@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.6.2
+
+- Settings has a Test report under developer mode: every test this version was
+  built with, what happened when they ran, and which code they ran against. It
+  says so plainly when the report is not about the build you are running,
+  rather than showing a tick it cannot stand behind.
+
 ## 0.6.1
 
 - Undoing a pass on a music date really brings the song back, and "meet the
