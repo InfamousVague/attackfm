@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.139
+
+- Hearting a song on a second server works. The heart used to go cold again
+  until something else on the page changed.
+- Adding a song from search no longer acts on a stale answer when you tap it
+  twice in quick succession.
+
 ## 0.5.138
 
 - AttackFM is translated. Español, Français, Deutsch, 日本語, Português,
