@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.146
+
+- Tapping a song in a long list plays the song you touched, even if the list
+  moves while your finger is down.
+
 ## 0.5.145
 
 - The icons in the bar at the bottom come down a size.

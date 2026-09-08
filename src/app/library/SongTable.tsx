@@ -7,7 +7,14 @@ import {
 import { ArrowDownToLine, CircleCheck, Clock, RotateCcw, X } from '@glacier/icons';
 import { useOnDevice } from '../downloads/useOnDevice.ts';
 import { identityKey, useJustLanded, type IncomingTrack } from '../downloads/incoming.tsx';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { useFollowNowPlaying, useNowPlayingPath } from '../player/nowPlayingStore.ts';
 import { NowPlayingBars } from '../player/NowPlayingBars.tsx';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
@@ -35,6 +42,11 @@ type Tr = ReturnType<typeof useT>;
  *  opening All songs builds eighty rows rather than six thousand. */
 const FLOW_INITIAL = 80;
 const FLOW_STEP = 80;
+
+/** How long a press stays the answer to the click that follows it. A tap is
+ *  over in well under a tenth of this; a hold has opened the row's menu and
+ *  swallowed its own click long before it. Anything older is not this tap. */
+const ANCHOR_MS = 2000;
 
 /** The nearest ancestor that actually scrolls - the IntersectionObserver root
  *  the "load more" sentinel is watched against. Null (the viewport) when there
@@ -999,6 +1011,40 @@ export function SongTable({
     () => (windowed ? gridData.slice(0, limit) : gridData),
     [windowed, gridData, limit],
   );
+  /*
+   * The row the finger went down on is the row that opens.
+   *
+   * A click is delivered against the list as it stands when the finger LIFTS,
+   * and this list is alive underneath it. A download landing takes its ghost
+   * row out of the band above the songs; a sync delta lands a song mid-list;
+   * a heart removed elsewhere drops a row. Any of those moves the rows under
+   * a resting thumb by exactly one row, and the tap then opens whatever slid
+   * into that spot - the song BELOW the one that was aimed at, which is what
+   * "I have to tap one above to get the one below" is describing.
+   *
+   * So the id is read at pointerdown, from the row under the point, and the
+   * activation that follows uses it in place of whatever ended up there. The
+   * grid's cells carry their own row index (`data-r`, 1-based into the data
+   * it was handed, which is `shown` verbatim under `manualSort`), so this
+   * resolves the id the same way the grid does - it reads the row that was
+   * looked at rather than guessing from geometry.
+   *
+   * Only the pointer is anchored. A keyboard Enter arrives with no press
+   * before it (the anchor is spent on use, and stale ones time out), and
+   * falls through to the id the grid reports, which is correct there.
+   */
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
+  const pressedRow = useRef<{ id: string; at: number } | null>(null);
+  const onPointerDownCapture = (e: ReactPointerEvent<HTMLElement>) => {
+    pressedRow.current = null;
+    if (!(e.target instanceof Element)) return;
+    const cell = e.target.closest('tr')?.querySelector('[data-r]');
+    const r = Number(cell?.getAttribute('data-r'));
+    const row = Number.isInteger(r) && r >= 1 ? shownRef.current[r - 1] : undefined;
+    if (row) pressedRow.current = { id: String(row.id), at: Date.now() };
+  };
+
   const moreRef = useRef<HTMLDivElement>(null);
   // Read inside the listeners without re-binding them per growth.
   const gridLenRef = useRef(gridData.length);
@@ -1095,7 +1141,13 @@ export function SongTable({
       // The row id is the track's path; hand the matching track up to play it,
       // with the displayed order alongside as the queue it plays through. In
       // selection mode the same tap toggles membership instead.
-      onRowActivate={(id) => {
+      onPointerDownCapture={onPointerDownCapture}
+      onRowActivate={(clicked) => {
+        // The row the finger went down on, if this click is that finger
+        // lifting - see the note on `pressedRow`.
+        const held = pressedRow.current;
+        pressedRow.current = null;
+        const id = held !== null && Date.now() - held.at < ANCHOR_MS ? held.id : clicked;
         // A ghost is not a track: tapping one does nothing but wait with you.
         if (typeof id === 'string' && id.startsWith('ghost:')) return;
         if (selecting) {
