@@ -1,0 +1,81 @@
+name: CI
+
+# The gate the repo already passes, run where nobody can forget it.
+#
+# Everything here is a command that exists in package.json or Cargo, and every
+# one of them is green on main today - this workflow adds no new rule, it only
+# stops the tree drifting away from the rules it already keeps. If a step here
+# fails, the fix is in the code, not in this file.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# It reads the repository and nothing else. No release, no deploy, no secrets:
+# publishing is `npm run ship` from a machine with the signing key, on purpose.
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The app: lint, types, unit tests, the translation gate, and a real build.
+  web:
+    name: App
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # 22 rather than latest: Vite 7 and Vitest 5 both want 20+, and an LTS
+      # line is the one that will not move under the repo mid-week.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `ci`, not `install`: the lockfile is the answer, and a resolution that
+      # drifts on a runner is a build nobody can reproduce. The Glacier kit is
+      # vendored in-tree (`file:./vendor/...`) and needs no registry.
+      - run: npm ci
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+      # Every user-facing string has to come from a catalogue, and all eight
+      # locales have to carry every key. Test files are exempt - see the note
+      # in scripts/i18n-scan.mjs.
+      - run: npm run i18n:gate
+
+      # The build is a check in its own right: `tsc --noEmit && vite build`,
+      # and the OTA bundle is what actually ships.
+      - run: npm run build
+
+  # The hub: the Rust half, held to zero warnings.
+  hub:
+    name: Hub
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # Compiling the workspace cold is most of this job's time.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+
+      - run: cargo clippy --workspace --all-targets --manifest-path server/Cargo.toml -- -D warnings
+
+      # --test-threads=1 is not tidiness: the database tests each open the same
+      # sqlite file, and in parallel they fail with "database is locked" - a
+      # false red that has nothing to do with the code under test.
+      - run: cargo test --workspace --manifest-path server/Cargo.toml -- --test-threads=1

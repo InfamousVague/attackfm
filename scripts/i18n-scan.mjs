@@ -137,12 +137,29 @@ function looksTranslatable(raw) {
   return true;
 }
 
+/**
+ * Tests are not display text.
+ *
+ * A `*.test.ts` file is full of English on purpose - a fixture title, an
+ * expected sentence, the name of the behaviour being described - and none of
+ * it is ever drawn on a screen. Scanning them made the gate red the day the
+ * unit suite landed, and the only ways out would have been to translate a
+ * fixture or to write `i18n-ignore` a thousand times. `src/test/` (the shared
+ * harness) goes with them, for the same reason.
+ */
+const isTestFile = (name) =>
+  name.endsWith('.test.ts') || name.endsWith('.test.tsx') || name.endsWith('.test.mjs');
+
 function walkFiles(dir, out = []) {
   for (const entry of readdirSync(dir)) {
     if (entry === 'node_modules' || entry.startsWith('.')) continue;
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) walkFiles(full, out);
-    else if (entry.endsWith('.tsx') || entry.endsWith('.ts')) out.push(full);
+    if (statSync(full).isDirectory()) {
+      if (full.endsWith('/src/test')) continue;
+      walkFiles(full, out);
+    } else if ((entry.endsWith('.tsx') || entry.endsWith('.ts')) && !isTestFile(entry)) {
+      out.push(full);
+    }
   }
   return out;
 }
