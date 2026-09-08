@@ -1152,6 +1152,8 @@
   },
   "player": {
     "aGroove": "Un groove",
+    "actionsBack": "Controles anteriores",
+    "actionsForward": "Más controles",
     "addAll": "Añadir todo",
     "addFavourite": "Añadir a favoritos",
     "addToFavourites": "Añadir a favoritos",

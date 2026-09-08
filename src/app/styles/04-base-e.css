@@ -554,6 +554,18 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
  * the other. Its width comes from `useEdgeFade`, which sets both custom
  * properties from the scroll position - so a row that fits has no fade at all,
  * and the fade grows in as you push off from an edge rather than snapping on.
+ *
+ * NEVER CENTRE ONE OF THESE WITH `justify-content`. A centred flex line is
+ * centred on the content box, so a row too wide for it spills equally out of
+ * BOTH ends - and only the far end is scrollable. `scrollLeft` bottoms out at
+ * 0, which is already past the start of the content, so whatever hangs off the
+ * near side is clipped and cannot be reached by a drag, by a wheel, by
+ * `scrollIntoView`, or by any arrow you bolt on afterwards. It is not a hidden
+ * button, it is a deleted one. Centre with auto margins on the first and last
+ * child instead: they take the free space when there is some (identical to
+ * `center`, to the pixel) and collapse to zero when there is none, which puts
+ * every overflowing pixel on the scrollable side. `.npScreen__actions` is
+ * written that way in chapter 81, having been the row this was learned on.
  */
 .edgeScroll {
   /* Both default to zero, which makes the mask fully opaque: a row that never

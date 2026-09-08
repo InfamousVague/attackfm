@@ -196,19 +196,31 @@
    corner rather than sitting beside it, so the control keeps one silhouette
    and one tap target at every state. It appears only in the third state -
    a badge that lit for ordinary shuffle would promise a feature that state
-   does not have. */
-.shuffleGlyph {
+   does not have.
+
+   REPEAT IS THE SAME CONTROL, so it is drawn by the same rules rather than
+   by a copy of them. It used to swap its whole silhouette for `Repeat1` at
+   the third state, which is a different shape saying the same thing a badge
+   says - and put the two flanking seats of one transport row on two different
+   ideas, one of which changed glyph under a thumb and one of which did not.
+   The repeat arrows stay the repeat arrows now and a numeral rides the corner,
+   at the sparkle's size, offset and weight. */
+.shuffleGlyph,
+.repeatGlyph {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-/* The sheet's shuffle seat is a thumb's target whatever the kit's ghost
-   button measures at the current density: three states cycle through one
+/* The sheet's shuffle and repeat seats are a thumb's target whatever the kit's
+   ghost button measures at the current density: three states cycle through one
    control, and a miss costs a whole lap of the cycle. 2.75rem is the 44px
-   floor, the same literal the strip's own transport is held to (chapter 19). */
-.npShuffle {
+   floor, the same literal the strip's own transport is held to (chapter 19).
+   It is also what keeps the two badge cut-outs below honest, since those are
+   measured from the centre of a button of a known size. */
+.npShuffle,
+.npRepeat {
   min-inline-size: 2.75rem;
   min-block-size: 2.75rem;
 }
@@ -221,7 +233,8 @@
    the control shows through the gap. The shuffle glyph itself keeps plain
    shuffle-on's colour: smart is the same control one step further, and the
    badge is the whole of the difference. */
-.shuffleGlyph__spark {
+.shuffleGlyph__spark,
+.repeatGlyph__one {
   position: absolute;
   inset-block-start: -7px;
   inset-inline-end: -9px;
@@ -233,6 +246,25 @@
   color: #17171a;
 }
 
+/* Repeat-one's badge carries a numeral where smart shuffle's carries a
+   sparkle, which is the one place the two part company: an 11px icon is
+   centred by the box it is given, a glyph of text is not. Grid rather than
+   the padding above, so the digit sits on the disc's middle instead of on its
+   own baseline; tabular figures because the ramp's proportional "1" is a
+   narrow character that drifts left of centre in most faces. Its weight is
+   picked to match the sparkle's stroke at this size - the two badges have to
+   read as the same amount of ink from arm's length or they read as two
+   different mechanisms. */
+.repeatGlyph__one {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The gap, cut through the WHOLE control. Masking only the arrows left the
    ghost button's own tinted background showing through the hole, which read
    as a dark half-transparent ring. So the mask sits on the button: an
@@ -240,8 +272,11 @@
    of air around it, keep everything beyond - and the sheet itself shows
    through the gap. The badge's centre is 1px past the 20px glyph's right
    edge and 1px below its top, and the glyph is centred in the button, hence
-   half the button plus 11 across and minus 9 down. */
-.npShuffle[data-smart] {
+   half the button plus 11 across and minus 9 down. Both badges sit at the
+   same corner of the same 44px button around the same 20px glyph, so both
+   take the same annulus. */
+.npShuffle[data-smart],
+.npRepeat[data-one] {
   -webkit-mask: radial-gradient(
     circle at calc(50% + 11px) calc(50% - 9px),
     #000 8px,

@@ -954,6 +954,8 @@
   },
   "player": {
     "aGroove": "一场 Groove",
+    "actionsBack": "上一组控件",
+    "actionsForward": "更多控件",
     "addAll": "全部添加",
     "addFavourite": "添加到收藏",
     "addToFavourites": "添加到收藏",

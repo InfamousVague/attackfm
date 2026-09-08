@@ -1053,6 +1053,8 @@
   },
   "player": {
     "aGroove": "A groove",
+    "actionsBack": "Previous controls",
+    "actionsForward": "More controls",
     "addAll": "Add all",
     "addFavourite": "Add to favourites",
     "addToFavourites": "Add to favourites",

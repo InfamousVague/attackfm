@@ -1449,6 +1449,8 @@
   },
   "player": {
     "aGroove": "جلسة Groove",
+    "actionsBack": "عناصر التحكم السابقة",
+    "actionsForward": "المزيد من عناصر التحكم",
     "addAll": "إضافة الكل",
     "addFavourite": "إضافة إلى المفضلة",
     "addToFavourites": "إضافة إلى المفضلة",

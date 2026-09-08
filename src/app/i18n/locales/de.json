@@ -1053,6 +1053,8 @@
   },
   "player": {
     "aGroove": "Ein Groove",
+    "actionsBack": "Vorherige Bedienelemente",
+    "actionsForward": "Weitere Bedienelemente",
     "addAll": "Alle hinzufügen",
     "addFavourite": "Zu Favoriten hinzufügen",
     "addToFavourites": "Zu Favoriten hinzufügen",

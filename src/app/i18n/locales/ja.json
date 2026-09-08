@@ -954,6 +954,8 @@
   },
   "player": {
     "aGroove": "あるグルーヴ",
+    "actionsBack": "前のコントロール",
+    "actionsForward": "その他のコントロール",
     "addAll": "すべて追加",
     "addFavourite": "お気に入りに追加",
     "addToFavourites": "お気に入りに追加",

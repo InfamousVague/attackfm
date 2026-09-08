@@ -1,0 +1,201 @@
+/*
+ * THREE THINGS OFF THE NOW PLAYING SCREEN: the action row reaching its own
+ * start, a pair of arrows saying there is more of it, and the format pill
+ * carrying the one fact it exists to carry.
+ *
+ * They are together because they are one screen's chapter, and they are HERE,
+ * last in the cascade, because the rules they correct live in chapters 06 and
+ * 07 - which belong to the dock contract and were not this note's to rewrite.
+ * Each block below names the rule it is answering.
+ */
+
+/*
+ * THE ROW CAN REACH ITS OWN BEGINNING.
+ *
+ * The queue button is the first thing in `.npScreen__actions` and it could not
+ * be scrolled to. Not "was hard to reach" - could not, by any means the
+ * platform has.
+ *
+ * The cause is one declaration in chapter 07: `justify-content: center`. A
+ * centred flex line is centred on the content box, so once the row is wider
+ * than the box it hangs off BOTH ends by half the overflow each - and only one
+ * of those halves is scrollable. `scrollLeft` bottoms out at 0, which is
+ * already past the start of the content, so the near half is clipped and
+ * unreachable: a drag stops there, a wheel stops there, and
+ * `scrollIntoView` gives up on the row and drags an ANCESTOR sideways instead,
+ * which moves the whole sheet and still does not show the button.
+ *
+ * Measured on a 375px phone with the strip's usual six seats: the scroller was
+ * 322 wide over 359 of buttons, of which 19px sat off the start and 18px off
+ * the end, and `scrollWidth - clientWidth` reported only the 18. Nineteen
+ * pixels of the queue button were not hidden, they were gone.
+ *
+ * Auto margins centre the row without that cost. A flex item's auto margin
+ * takes the free space when there is some - identical to `center`, to the
+ * pixel, verified at 600px where both put 120px either side - and resolves to
+ * zero when there is none, which hands every overflowing pixel to the end the
+ * scroller can actually reach. Same 375px row afterwards: nothing off the
+ * start, 38px off the end, all 38 of them scrollable.
+ *
+ * `safe center` says the same thing in one word and was the first fix tried.
+ * It is not shippable here: the keyword wants Safari 16.4 and this app's iOS
+ * deployment target is 15.0, so on the phones most likely to be narrow enough
+ * to overflow it would have been dropped as invalid and left the bug exactly
+ * as it was found. Auto margins have worked since flexbox shipped.
+ */
+.npScreen__actions {
+  justify-content: flex-start;
+}
+
+.npScreen__actions > :first-child {
+  margin-inline-start: auto;
+}
+
+.npScreen__actions > :last-child {
+  margin-inline-end: auto;
+}
+
+/*
+ * AND AN ARROW AT WHICHEVER END STILL HAS SOMETHING ON IT.
+ *
+ * The row already fades at its ends (`.edgeScroll`, chapter 04) and blurs
+ * behind the fade (`.npScreen__actionsEdge`, chapter 07). Both say "there is
+ * more" and neither can be pressed, which is fine on a shelf you are already
+ * dragging and thin on a row of controls that a thumb has to discover is
+ * draggable at all.
+ *
+ * So: a control, not an ornament. It is a real button with a real handler,
+ * and it exists only while there is somewhere for it to go - `useEdgeFade`
+ * publishes `data-edge-start` / `data-edge-end` on this wrapper from the same
+ * measurement that sets the fade's width, so the arrow and the fade cannot
+ * ever disagree about which ends have more on them.
+ *
+ * The flag rather than the 0..1 length that rides beside it, because opacity
+ * is not a state a button can be in: an arrow faded to nothing is still a
+ * 34-pixel target sitting over the last glyph in the row, and pressing the
+ * end of a row that has no end is the exact thing the note was complaining
+ * about. Hidden here means `visibility: hidden` and `pointer-events: none` -
+ * gone from the hit test - with the opacity only doing the fading.
+ *
+ * It overlays the outermost glyph, deliberately. That glyph is the one the
+ * mask is already erasing and the blur pane is already softening; the arrow
+ * covers the part of the row that is unreadable anyway, and covering a
+ * readable one to avoid it would mean permanently narrowing a row whose whole
+ * problem is that it is too narrow.
+ */
+.npScreen__actionsArrow {
+  position: absolute;
+  /* Against the row, not the wrapper's box: chapter 07 gives the wrapper a
+     `padding-block-start`, and an absolute child is placed against the padding
+     box, so `inset-block: 0` would centre the glyph half that padding high. */
+  inset-block: var(--glacier-space-2) 0;
+  inline-size: 2.125rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--glacier-text);
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  /* The visibility waits out the fade on the way down and switches instantly
+     on the way up (the rule below zeroes the delay), so the arrow is never
+     pressable while it is invisible, and never invisible while it is
+     pressable. */
+  transition:
+    opacity 140ms ease,
+    visibility 0s linear 140ms;
+}
+
+.npScreen__actionsArrow[data-side='start'] {
+  inset-inline-start: 0;
+}
+
+.npScreen__actionsArrow[data-side='end'] {
+  inset-inline-end: 0;
+}
+
+.npScreen__actionsWrap[data-edge-start] .npScreen__actionsArrow[data-side='start'],
+.npScreen__actionsWrap[data-edge-end] .npScreen__actionsArrow[data-side='end'] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+/*
+ * The chip is the glyph itself - an svg takes a background and a radius like
+ * anything else - rather than a wrapper element around it. It has to be a
+ * chip and not a bare chevron: this row sits over album artwork, where a
+ * hairline glyph is a smudge on half the covers in a library, and a shape
+ * with an edge is the only thing that reads as pressable on all of them.
+ */
+.npScreen__actionsArrow svg {
+  inline-size: 1.625rem;
+  block-size: 1.625rem;
+  padding: 0.3rem;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--glacier-bg) 62%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 20%, transparent);
+}
+
+.npScreen__actionsArrow:active svg {
+  background: color-mix(in oklab, var(--glacier-bg) 78%, transparent);
+}
+
+.npScreen__actionsArrow:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: -2px;
+  border-radius: 999px;
+}
+
+/* A chevron is a picture of a direction, and this row's directions are
+   logical: in Arabic the start of the row is its right-hand side. Flipped
+   here rather than by picking a different icon in the markup, for the same
+   reason the mask in chapter 04 is turned round rather than duplicated. */
+[dir='rtl'] .npScreen__actionsArrow svg {
+  scale: -1 1;
+}
+
+/*
+ * THE FORMAT PILL SAYS WHICH KIND OF COPY THIS IS.
+ *
+ * The pill (chapter 06) is one neutral chip whatever it holds, so FLAC and MP3
+ * are the same shade of quiet grey and the only difference between them is
+ * four letters you have to stop and read. But the reason anybody looks at this
+ * pill on a self-hosted library is a single question - is this the real copy
+ * or a compressed one - and that question has a colour answer.
+ *
+ * Cool for lossless, warm for lossy. Not a good/bad pairing and not the kit's
+ * success/warning tones, which would say a 320k MP3 is a fault: cold reads as
+ * the whole spectrum kept, warm as the smaller thing, which is the fact rather
+ * than a verdict on it. And only this pill - the origin, the chapter, the
+ * "playing on" line beside it stay grey, because a screen where every caption
+ * is coloured has no colour left to mean anything with.
+ *
+ * A third state carries no colour at all, and it is not an oversight: an M4B,
+ * or a codec name the scanner reported that this app has never seen, is a copy
+ * whose kind is genuinely unknown, and dressing it as either would be the pill
+ * telling a listener something nobody told it.
+ *
+ * Fixed oklch tones mixed into the pill IN OKLAB, which is the settings kit's
+ * recipe (`.setk-callout`, chapter 63) and not decoration. Mixing a chromatic
+ * colour into a near-grey in oklch interpolates the HUE, and a near-grey's hue
+ * is whatever rounding left behind - so the same teal takes the long way round
+ * the circle and arrives lilac. oklab has no hue to travel along.
+ */
+.npScreen__codec[data-fidelity] {
+  color: var(--np-fidelity);
+  border-color: color-mix(in oklab, var(--np-fidelity) 42%, transparent);
+  background: color-mix(in oklab, var(--np-fidelity) 15%, transparent);
+}
+
+.npScreen__codec[data-fidelity='lossless'] {
+  --np-fidelity: oklch(0.82 0.11 188);
+}
+
+.npScreen__codec[data-fidelity='lossy'] {
+  --np-fidelity: oklch(0.83 0.09 78);
+}

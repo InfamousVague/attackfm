@@ -1,5 +1,6 @@
 import { chapterNumbers, chapterTitleWords, frontMatterTitle, spokenChapterNumber } from './chapterNumber.ts';
 import { useEdgeFade } from '../ux/edgeFade.ts';
+import { scrollLeftFor, scrolledFromStart } from '../ux/inlineScroll.ts';
 import { SpectrumArt } from './SpectrumArt.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { chapterPreview } from './chapterOpening.ts';
@@ -21,7 +22,7 @@ import type { ArtTint } from './artTint.ts';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Gauge, Heart, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Users, Volume2 } from '@glacier/icons';
+import { AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, ChevronLeft, ChevronRight, Gauge, Heart, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Users, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { SMART_SHUFFLE_LABEL_KEY } from './smartShuffle.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
@@ -92,6 +93,34 @@ function codecLabel(track: Track): string | null {
     case 'wavpack': return 'WV';
     default: return c.toUpperCase();
   }
+}
+
+/**
+ * WHICH KIND OF COPY THIS IS - the thing the pill above is actually being read
+ * for, said as a colour rather than as four letters to decode.
+ *
+ * Decided from the WORD ALREADY ON THE PILL wherever the format settles it,
+ * because then the pill's letters and the pill's colour have one source and
+ * cannot come apart: FLAC is lossless whatever any flag says, and `codecLabel`
+ * has already spent the container's ambiguity - an MP4 arrives here as ALAC or
+ * as AAC, never as "mp4".
+ *
+ * `track.lossless` is the fallback rather than the authority, for the cases the
+ * label genuinely cannot settle: an audiobook, whose M4B says nothing about its
+ * codec, and any name the scanner reported that this file has never seen and
+ * upper-cased on its way through. Where nobody knows, this returns null and the
+ * pill stays the grey it has always been - which is a third answer, not a
+ * missing one.
+ */
+const LOSSLESS_FORMATS = new Set(['FLAC', 'ALAC', 'WV', 'WAV', 'AIFF', 'APE']);
+const LOSSY_FORMATS = new Set(['MP3', 'AAC', 'OGG', 'OPUS', 'WMA']);
+
+function codecFidelity(label: string, lossless: boolean | undefined): 'lossless' | 'lossy' | null {
+  if (LOSSLESS_FORMATS.has(label)) return 'lossless';
+  if (LOSSY_FORMATS.has(label)) return 'lossy';
+  if (lossless === true) return 'lossless';
+  if (lossless === false) return 'lossy';
+  return null;
 }
 
 /** The repeat mode's own word. A key per mode rather than the mode itself
@@ -769,6 +798,52 @@ export function NowPlayingSheet({
   // The action strip runs off the side of a narrow phone; it scrolls, and
   // fades at whichever end still has a button on it.
   const actionsRef = useEdgeFade<HTMLDivElement>();
+  /*
+   * And the arrows over those two ends move it, because a fade only says there
+   * is more - it cannot be pressed, and on a row of six near-identical glyphs
+   * there is nothing to suggest the row is a thing you drag at all.
+   *
+   * A little under a screenful a press, so a second press always overlaps what
+   * the first one landed on and nothing is ever stepped clean over. The floor
+   * is there for the docked pane, which can be narrow enough that 70% of it is
+   * less than one seat and the arrow would appear to do nothing.
+   *
+   * Through `scrollLeftFor` rather than a raw `+=`: in Arabic this element's
+   * `scrollLeft` runs from -room to 0, so an arrow pointing at the start of the
+   * row has to ADD to a negative number to get there. The helper does the
+   * arithmetic in distance-from-the-start, where "forward" means the same thing
+   * in both directions, and hands back whatever this element accepts.
+   *
+   * It GLIDES because the row is six glyphs that look alike: swapped instantly
+   * for five others, a press reads as the icons having changed rather than as
+   * the row having moved, and the point of an arrow is to show you it is one
+   * row you are sliding along.
+   *
+   * And it lands whether or not the glide happens. WebKit has been measured
+   * refusing a smooth scroll on a nested overflow container in this very app
+   * (see the note in nowPlayingStore), and this row is exactly that - a button
+   * that silently does nothing on the platform it was drawn for is worse than
+   * the fade it replaced. So the position is checked back afterwards: if the
+   * scroller has not moved AT ALL by then no animation ever started and it is
+   * put where it was asked to go, while a scroller that has moved is left
+   * alone, because the thing that moved it may well have been a thumb.
+   */
+  const nudgeActions = useCallback((forward: boolean) => {
+    const el = actionsRef.current;
+    if (!el) return;
+    const step = Math.max(88, el.clientWidth * 0.7);
+    const from = el.scrollLeft;
+    const left = scrollLeftFor(el, scrolledFromStart(el) + (forward ? step : -step));
+    // An OS-level "reduce motion" means no glide; the landing below is then the
+    // whole of the movement, which is what that setting is asking for.
+    const gentle = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    el.scrollTo({ left, behavior: gentle ? 'smooth' : 'auto' });
+    // Comfortably past the end of a scroll this short, and short enough that a
+    // dead arrow would never be noticed as one.
+    window.setTimeout(() => {
+      if (el.scrollLeft === from && from !== left) el.scrollLeft = left;
+    }, 400);
+  }, [actionsRef]);
   // The room, if any: the queue panel labels itself for it.
   const jamRoom = useJamOptional()?.current ?? null;
   // Whether the song playing is the MACHINE's pick - a live DJ set, or the
@@ -1290,6 +1365,17 @@ export function NowPlayingSheet({
    */
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the codec VALUES, not the track object: see the note above.
   const codecText = useMemo(() => (track ? codecLabel(track) : null), [track?.codec, track?.kind, track?.lossless]);
+  // The pill's colour, off the word the memo above just produced plus the one
+  // flag that word cannot always settle - so the letters and the tone are
+  // recomputed together, and this can never hand out a new word beside a stale
+  // colour. Takes the primitives rather than the track for the same reason the
+  // memo above does, and needs no exemption for it: nothing in here touches the
+  // object, so the dependency list is already the whole truth.
+  const lossless = track?.lossless;
+  const codecTone = useMemo(
+    () => (codecText ? codecFidelity(codecText, lossless) : null),
+    [codecText, lossless],
+  );
   const originText = useMemo(
     () => (track ? originLabel(originFromPath(track.path)) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the path, not the track object, for the same reason.
@@ -1718,8 +1804,16 @@ export function NowPlayingSheet({
                   tier. Beside the title rather than under the artist: it is a
                   property of the song being named, and a line of its own put a
                   stamp where the eye was looking for the next sentence.
-                  Absent when the tags never said (old scans). */}
-              {codecText && !following && <span className="npScreen__codec">{codecText}</span>}
+                  Absent when the tags never said (old scans).
+                  Coloured by which KIND of copy it is - see codecFidelity, and
+                  chapter 81 for the two tones. `data-fidelity` is left off
+                  entirely where nobody knows, which is what keeps the grey pill
+                  meaning "unknown" rather than meaning nothing. */}
+              {codecText && !following && (
+                <span className="npScreen__codec" data-fidelity={codecTone ?? undefined}>
+                  {codecText}
+                </span>
+              )}
             </div>
           )}
           {/* A BOOK'S AUTHOR IS NOT A LINK.
@@ -2044,13 +2138,32 @@ export function NowPlayingSheet({
             </div>
           </Popover>
         ) : (
+        /* Three states in one control, badged the way its opposite number
+            across the transport is: the repeat arrows throughout, with a "1"
+            riding the corner for the third state. It used to swap in `Repeat1`
+            - a second silhouette for a difference the badge already carries,
+            and the one glyph on this row that changed shape under a thumb
+            while the identical control four seats away did not. The cycle and
+            its three accessible names are untouched; only the drawing is. */
         <IconButton
           variant="ghost"
+          className="npRepeat"
           aria-label={t('player.repeatMode', { mode: t(REPEAT_WORD[repeat]) })}
           data-on={repeat !== 'off' || undefined}
+          data-one={repeat === 'one' || undefined}
           onClick={cycleRepeat}
         >
-          {repeat === 'one' ? <Repeat1 size={20} /> : <Repeat size={20} />}
+          <span className="repeatGlyph">
+            <Repeat size={20} />
+            {/* A numeral, not a word: the accessible name above already says
+                "one" in the listener's own language, and this is the badge's
+                mark rather than its text. */}
+            {repeat === 'one' && (
+              <span className="repeatGlyph__one" aria-hidden="true">
+                1
+              </span>
+            )}
+          </span>
         </IconButton>
         )}
       </div>
@@ -2223,6 +2336,29 @@ export function NowPlayingSheet({
            then goes. Inert, and asleep entirely when the row fits. */}
         <span className="npScreen__actionsEdge" data-side="start" aria-hidden="true" />
         <span className="npScreen__actionsEdge" data-side="end" aria-hidden="true" />
+        {/* And a way to USE those ends. Present only while there is something
+           that way - `useEdgeFade` flags this wrapper from the same measurement
+           the fade and the blur are drawn from, so all three agree - and gone
+           from the hit test entirely the rest of the time, which is the whole
+           difference between an arrow and an ornament that looks like one. */}
+        <button
+          type="button"
+          className="npScreen__actionsArrow"
+          data-side="start"
+          aria-label={t('player.actionsBack')}
+          onClick={() => nudgeActions(false)}
+        >
+          <ChevronLeft size={20} aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="npScreen__actionsArrow"
+          data-side="end"
+          aria-label={t('player.actionsForward')}
+          onClick={() => nudgeActions(true)}
+        >
+          <ChevronRight size={20} aria-hidden />
+        </button>
       </div>
       )}
 
