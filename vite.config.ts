@@ -38,7 +38,41 @@ export default defineConfig({
   plugins: [react()],
   build: {
     ...(ota ? { assetsInlineLimit: 1 << 30, cssCodeSplit: false } : {}),
+    // The app is deliberately one big file (see the OTA note above), so the
+    // 500 kB advisory has been printed on every build since the first one and
+    // means nothing. Raised to a number that is still an alarm: app.js is
+    // ~8.8 MB today, so this fires if the bundle ever half again as big
+    // arrives without anybody noticing.
+    chunkSizeWarningLimit: 13_000,
     rollupOptions: {
+      /*
+       * A build warning is a build failure, with two named exceptions.
+       *
+       * Rollup prints and carries on, and a warning that is always there is a
+       * warning nobody reads - which is how an unresolved import or a new
+       * cycle would arrive unremarked in a bundle that has to boot on a phone
+       * with no console attached. So anything not listed below throws.
+       *
+       * The list is a ratchet, not a blessing. Two cycles exist in the app
+       * today; both are recorded here so they cannot multiply, and both are
+       * worth breaking (a cycle compiles fine and fails at runtime, in
+       * whichever order the bundler happened to emit the modules). Cycles
+       * inside node_modules are somebody else's package and stay quiet.
+       */
+      onwarn(warning, warn) {
+        const text = warning.message ?? '';
+        const ours = warning.code === 'CIRCULAR_DEPENDENCY' && !text.includes('node_modules');
+        if (warning.code === 'CIRCULAR_DEPENDENCY' && !ours) return;
+        if (
+          ours &&
+          (text.includes('src/plugins/runtime.tsx') ||
+            text.includes('src/app/servers/mirrors.ts'))
+        ) {
+          warn(warning);
+          return;
+        }
+        throw new Error(`rollup: ${warning.code ?? 'warning'}: ${text}`);
+      },
       output: {
         ...(ota ? { inlineDynamicImports: true } : {}),
         // STABLE names, not hashed ones. A downloaded bundle has to be
