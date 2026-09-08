@@ -198,6 +198,52 @@ export async function audioState(
   );
 }
 
+/**
+ * Open the sound console, by the same door a listener uses.
+ *
+ * By ROLE, and matching BOTH doors, for the same reason the transport is
+ * matched two ways: which one a device is wearing depends on whether its own
+ * deck is engaged, and only one of them is ever in the accessibility tree. The
+ * docked panel opens the console outright and its button is named for what is
+ * already on ("Sound", or "Sound — 2 effects"); the strip folds the console
+ * into an overflow behind "Player options", one row further in.
+ *
+ * Lives here rather than in one suite because two suites now need it: the
+ * console is the door to the chain from the device that is playing (the deck
+ * suite) and from the device that is only holding the remote (Connect).
+ */
+export async function openSoundConsole(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /^(Player options|Sound)\b/ }).first().click();
+  await expect(page.locator('.soundConsole, .moreMenu').first()).toBeVisible();
+  if ((await page.locator('.moreMenu').count()) > 0) {
+    await page.getByRole('button', { name: /^Equalizer/ }).click();
+  }
+  await expect(page.locator('.soundConsole')).toBeVisible();
+}
+
+export async function closeSoundConsole(page: Page): Promise<void> {
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.soundConsole')).toHaveCount(0);
+}
+
+/**
+ * Turn a filter on by NAME, through the console's own search box.
+ *
+ * The shelf is thirty-five rows behind a family rail, and "the first enabled
+ * item" is whatever the rail happens to be showing - fine for a scenario that
+ * only needs A filter, useless for one that needs a particular sound (a speed
+ * recipe to move the clock, a colour one to leave it alone). Searching is also
+ * how a person finds one.
+ */
+export async function tapFilter(page: Page, name: string): Promise<Locator> {
+  await page.locator('.soundConsole__tabs').getByText('Filters', { exact: true }).click();
+  await page.getByRole('textbox', { name: 'Search filters' }).fill(name);
+  const row = page.locator('.fxShelf__item').filter({ hasText: name }).first();
+  await expect(row).toBeEnabled();
+  await row.click();
+  return row;
+}
+
 /** Where the deck is, in seconds, off the control a screen reader is given. */
 export async function seekAt(seek: Locator): Promise<number> {
   return Number(await seek.getAttribute('aria-valuenow'));

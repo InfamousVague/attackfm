@@ -32,11 +32,13 @@ import {
   fromTrackMenu,
   nowPlaying,
   openLibrary,
+  openSoundConsole,
   seekAt,
   seekMax,
   seekNearTheEnd,
   sheetTitle,
   systemNowPlaying,
+  tapFilter,
 } from './fixtures/deck.ts';
 
 /*
@@ -381,5 +383,166 @@ test.describe('shuffle, repeat, and the end of a list', () => {
       .poll(async () => (await audioState(page)).every((el) => el.paused), { timeout: 10_000 })
       .toBe(true);
     expect(await sheetTitle(page)).toBe(last);
+  });
+});
+
+/**
+ * THE CONSOLE, ON THE DECK THAT IS PLAYING.
+ *
+ * Every filter in this app is rendered by the ENCODER, so changing one is not
+ * a knob turn - it is a new URL, a new connection, and the song picked up
+ * again where it was. Three separate things have to stay true across that, and
+ * all three were wrong at once:
+ *
+ *   - a change made in the last seconds of a song has to reach the song that
+ *     FOLLOWS, which is warmed twelve seconds out and would otherwise be
+ *     playing a URL spelled before the tap;
+ *   - a change made while the deck is PAUSED must not start the music;
+ *   - a change of SPEED must not move the playhead, which means converting the
+ *     bar's seconds with the rate the stream being replaced was encoded at
+ *     rather than the one just chosen.
+ *
+ * Read off the audio elements and the request log rather than off the console's
+ * own buttons: an `aria-pressed` that flips proves the store was written, which
+ * is the half that was never broken.
+ */
+test.describe('the sound console', () => {
+  /** Where the encoder was asked to START, in seconds of FILE. A live encode
+   *  has no ranges, so this is the whole of how a re-colour keeps its place. */
+  const seekOf = (url: string): number => Number(new URL(url).searchParams.get('seek') ?? 0);
+
+  test('a filter tapped in the last seconds colours the song that follows', async ({ page }) => {
+    await openLibrary(page, DEVICE.kim);
+    await page.getByRole('button', { name: playAll, exact: true }).click();
+    await expect(nowPlaying(page)).toBeVisible();
+    await expect.poll(async () => (await systemNowPlaying(page)).title, { timeout: 15_000 }).not.toBe('');
+    const first = (await systemNowPlaying(page)).title;
+
+    // The console is opened FIRST, and the song is left alone to reach its own
+    // last seconds. Stepping the seek control there instead put the whole of
+    // opening the console inside the window it was trying to be inside, and the
+    // tap landed after the track had already changed - which passes, and proves
+    // nothing at all.
+    await openSoundConsole(page);
+
+    // THE PRECONDITION, and the whole scenario: inside the last twelve seconds
+    // (`PREFETCH_LEAD_S`) the deck warms the NEXT song onto the idle element,
+    // with a URL spelled for the sound as it is right now.
+    await expect
+      .poll(async () => (await audioState(page)).filter((el) => el.paused && el.src !== '').length, {
+        timeout: 30_000,
+      })
+      .toBeGreaterThan(0);
+
+    await tapFilter(page, 'Telephone');
+    // ...and it is still THIS song being listened to. If the fixture's timing
+    // ever puts the boundary before the tap, this says so rather than passing
+    // on a scenario that never happened.
+    expect((await systemNowPlaying(page)).title).toBe(first);
+
+    // The song runs out on its own and the list moves on...
+    await expect
+      .poll(async () => (await systemNowPlaying(page)).title, { timeout: 40_000, intervals: [250] })
+      .not.toBe(first);
+    const second = (await systemNowPlaying(page)).title;
+
+    /*
+     * ...and the song that followed is playing the filter, from its first
+     * seconds. Both halves are read in ONE poll and asserted together, on a
+     * window shorter than the shortest song in the fixture: "something coloured
+     * is playing" goes true on its own at the NEXT boundary, twenty seconds
+     * later, which is a test that passes while the bug it is named after is
+     * still in the build.
+     *
+     * The warm deck holds what the queue buffer already pulled down - a whole
+     * file, as a blob, with no encoder in the loop at all - so adopting it
+     * plays this song dry from end to end, and the filter is not heard until
+     * the track after that.
+     */
+    const deckNow = async () => ({
+      song: (await systemNowPlaying(page)).title,
+      coloured: (await audioState(page)).some((el) => !el.paused && el.src.includes('fx2=')),
+    });
+    await expect.poll(deckNow, { timeout: 6_000, intervals: [250] }).toEqual({ song: second, coloured: true });
+  });
+
+  test('a filter tapped while the deck is paused does not start the music', async ({ page }) => {
+    await openLibrary(page, DEVICE.kim);
+    await page.getByRole('button', { name: playAll, exact: true }).click();
+    await expect(nowPlaying(page)).toBeVisible();
+    const seek = nowPlaying(page).getByRole('slider', { name: 'Seek' });
+    await expect.poll(async () => seekAt(seek), { timeout: 15_000 }).toBeGreaterThan(1);
+
+    await nowPlaying(page).getByRole('button', { name: 'Pause' }).click();
+    await expect
+      .poll(async () => (await audioState(page)).every((el) => el.paused), { timeout: 10_000 })
+      .toBe(true);
+    const stopped = await seekAt(seek);
+
+    await openSoundConsole(page);
+    await tapFilter(page, 'Telephone');
+
+    // The re-colour DID run - the deck is holding a coloured stream, so the
+    // sound is ready for whenever play is pressed...
+    await expect
+      .poll(async () => (await audioState(page)).some((el) => el.src.includes('fx2=')), { timeout: 20_000 })
+      .toBe(true);
+
+    // ...and the music did not come back on with it. A reload is not consent to
+    // play: the listener put this down.
+    expect((await audioState(page)).every((el) => el.paused)).toBe(true);
+    expect((await systemNowPlaying(page)).state).not.toBe('playing');
+    // Still where it was put down. (The bar is redrawn from the deck's clock,
+    // which a reload that started playing would have moved.)
+    expect(Math.abs((await seekAt(seek)) - stopped)).toBeLessThan(3);
+  });
+
+  test('a speed filter keeps the place it was at, both on and off', async ({ page }) => {
+    const encoded: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().includes('/api/transcode/')) encoded.push(r.url());
+    });
+
+    await openLibrary(page, DEVICE.kim);
+    await page.getByRole('button', { name: playAll, exact: true }).click();
+    await expect(nowPlaying(page)).toBeVisible();
+    const seek = nowPlaying(page).getByRole('slider', { name: 'Seek' });
+    await expect.poll(async () => seekAt(seek), { timeout: 20_000 }).toBeGreaterThan(5);
+
+    await openSoundConsole(page);
+
+    /*
+     * ON. The bar has been running at 1x, so the listener's place on the bar
+     * IS a place in the file - and that is the number the encoder must be
+     * given. Converting it with the rate just CHOSEN (0.5) would ask for half
+     * as far in and jump the music backwards by half the song so far.
+     */
+    const barAtOn = await seekAt(seek);
+    await tapFilter(page, 'Half speed');
+    await expect.poll(() => encoded.length, { timeout: 25_000 }).toBeGreaterThan(0);
+    const askedFor = seekOf(encoded[encoded.length - 1]!);
+    expect(askedFor).toBeGreaterThan(barAtOn - 1);
+    expect(askedFor).toBeLessThan(barAtOn + 4);
+
+    /*
+     * OFF, which is the same sum with the rates the other way round. At half
+     * speed the bar runs twice as long as the file, so a listener at 0:18 on
+     * the bar is at 0:09 in the file - and the plain stream that replaces the
+     * encode is seeked in FILE seconds. Reading the rate off the chain just
+     * committed (1) would land them at 0:18 of a 22 s file: most of a song,
+     * skipped, for taking a filter off.
+     */
+    await expect.poll(async () => seekAt(seek), { timeout: 25_000 }).toBeGreaterThan(barAtOn + 6);
+    const barAtOff = await seekAt(seek);
+    await page.locator('.fxFilters__clear').click();
+
+    await expect
+      .poll(async () => (await audioState(page)).some((el) => !el.paused && !el.src.includes('fx2=')), {
+        timeout: 25_000,
+      })
+      .toBe(true);
+    const landed = Math.max(...(await audioState(page)).filter((el) => !el.paused).map((el) => el.at));
+    expect(landed).toBeGreaterThan(barAtOff * 0.5 - 2);
+    expect(landed).toBeLessThan(barAtOff * 0.75);
   });
 });

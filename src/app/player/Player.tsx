@@ -918,8 +918,29 @@ export function Player({
   const srcOffset = useRef(0);
   /** Whether the loaded source is one the element can seek; see AudioSource. */
   const srcSeekable = useRef(true);
+  /**
+   * THE RATE THE LOADED SOURCE IS COMING OUT AT - not the rate the chain now
+   * asks for, which is a different number the moment somebody changes it.
+   *
+   * The bar counts the seconds coming OUT and ffmpeg's `-ss` counts seconds of
+   * the file going IN, so crossing between them is a multiplication by the
+   * rate - and the only correct rate is the one THIS stream was encoded with.
+   * Reading it off the chain instead was a bug you could hear: the re-colour
+   * that carries a speed pedal in happens while the OLD stream is still
+   * playing, so a listener two minutes into a record who reached for "half
+   * speed" was handed the encoder a request for 1:00, and the music jumped a
+   * minute backwards. The same sum with the rates the other way round threw
+   * them a minute forwards when they took it off again.
+   *
+   * 1 for every source the element seeks itself (a held file, the original
+   * served with byte ranges): no encoder is in the loop, so the element's
+   * clock IS the file's clock whatever the chain happens to say.
+   */
+  const srcRate = useRef(1);
   /** Element clock -> song clock. */
   const deckTime = (el: HTMLAudioElement) => el.currentTime + srcOffset.current;
+  /** Song clock -> the FILE clock the encoder is asked to start on. */
+  const fileTime = (songSeconds: number) => songSeconds * srcRate.current;
   /** Song clock -> element clock, for a seek the element can actually do. */
   const seekDeck = (el: HTMLAudioElement, songSeconds: number) => {
     el.currentTime = Math.max(0, songSeconds - srcOffset.current);
@@ -1136,8 +1157,14 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * the starting, with its ramp token, its seat level and its volume, exactly
    * as it always does. No second start path, no new fade, nothing for the
    * careful machinery below to fight with.
+   *
+   * `why` is the caller's INTENT, and it decides one thing: whether landing
+   * this reload is allowed to start the music. A recovery always was mid-play
+   * by construction (`noteStall` stands down unless `wantPlaying`), so it
+   * resumes; a change of SOUND can arrive at a deck the listener has put down,
+   * and re-colouring what is paused must leave it paused.
    */
-  const resumeInPlace = async (toSeconds?: number) => {
+  const resumeInPlace = async (toSeconds?: number, why: 'recovery' | 'sound' = 'recovery') => {
     const audio = activeAudio();
     const current = liveRef.current.track;
     if (!audio || !current || remoteOnlyRef.current) return;
@@ -1186,13 +1213,22 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // begins where the listener is. A source that seeks itself answers
     // offset 0 and takes the loadedmetadata path below, exactly as before.
     //
-    // Scaled by the chain's rate on the way out, because the two clocks are
-    // not the same one: `at` is a position on the BAR, which counts the
-    // seconds coming out, while ffmpeg's -ss counts seconds of the FILE going
-    // in. With a speed pedal on, a bar reading 2:00 at 1.25x is 2:30 into the
-    // file, and asking for 120 would land the listener half a minute early.
+    // Scaled by a rate on the way out, because the two clocks are not the same
+    // one: `at` is a position on the BAR, which counts the seconds coming out,
+    // while ffmpeg's -ss counts seconds of the FILE going in. With a speed
+    // pedal on, a bar reading 2:00 at 1.25x is 2:30 into the file, and asking
+    // for 120 would land the listener half a minute early.
+    //
+    // THE RATE OF THE STREAM BEING REPLACED (`srcRate`), never the one the
+    // chain now asks for. This function's busiest caller is the re-colour
+    // below, which runs BECAUSE the chain just changed - so the two numbers
+    // are different exactly when a speed pedal is involved, which is the only
+    // time either of them is not 1. `at` was measured on the old stream's bar
+    // and can only be converted with the old stream's rate; the NEW rate is
+    // for the answer, where a file offset has to come back into bar seconds.
     const rate = Number.isFinite(rateRef.current) && rateRef.current > 0 ? rateRef.current : 1;
-    const source = await loadAudioSource(current.path, at * rate);
+    const fileAt = fileTime(at);
+    const source = await loadAudioSource(current.path, fileAt);
     if (!source) return;
     const { url, offset } = source;
     // A crossfade may have swapped decks while that resolved; landing this on
@@ -1205,6 +1241,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // is what the encoder was asked for.
     srcOffset.current = offset > 0 ? offset / rate : 0;
     srcSeekable.current = source.seekable;
+    // What the source that is now loading will be coming out at, for the next
+    // crossing. A source the element seeks itself has no encoder and so no
+    // rate of its own, whatever the chain says.
+    srcRate.current = source.seekable ? 1 : rate;
     // A source the server already wound forward needs no seek - asking for one
     // would land it `at` seconds past the spot it opened on.
     if (source.seekable) {
@@ -1214,7 +1254,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         'loadedmetadata',
         () => {
           try {
-            audio.currentTime = at;
+            // In FILE seconds, like everything else handed to a source that
+            // seeks itself: this element is about to play the untouched file,
+            // so the bar it was measured against is not its timeline.
+            audio.currentTime = fileAt;
           } catch {
             // A source that refuses the seek still plays; it just starts over.
           }
@@ -1223,9 +1266,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       );
     }
     // A recovery was always mid-playback, so it resumes. A seek is only a
-    // seek: asked for while paused, it must land on the new spot and stay
-    // there rather than start the music.
-    pendingPlay.current = asked ? wantPlaying.current : true;
+    // seek, and a change of SOUND is not a transport instruction at all: asked
+    // for while paused, either must land on the new source and stay there
+    // rather than start the music.
+    pendingPlay.current = asked || why === 'sound' ? wantPlaying.current : true;
     setActiveSrc(fresh);
   };
 
@@ -1293,6 +1337,20 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const chainWas = useRef(chain);
   const dropWas = useRef(drop);
   const trackWas = useRef<string | null>(null);
+  /**
+   * How many times the sound has moved this session.
+   *
+   * Not a value, a COUNTER - the question it answers is only ever "is what you
+   * resolved still current?", and it is asked by code that ran before the
+   * change and lands after it. Anything that resolves a URL for a song that is
+   * not playing yet (the warm deck, a blend's incoming file) stamps the number
+   * it saw and compares on arrival, because a URL is a photograph of the
+   * console and the console moves.
+   */
+  const soundRev = useRef(0);
+  /** A song a handover carried in on a file resolved before the sound moved:
+   *  the track guard below must NOT stand down for it. */
+  const staleAdoption = useRef<string | null>(null);
   const recolourTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
     const beforeRack = rackWas.current;
@@ -1304,6 +1362,39 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     chainWas.current = chain;
     dropWas.current = drop;
     trackWas.current = nowTrack;
+    const soundMoved = beforeRack !== rack || beforeChain !== chain || beforeDrop !== drop;
+
+    /*
+     * THE SOUND MOVED, so every URL already resolved for the NEXT song is
+     * spelled with the sound before it.
+     *
+     * Twelve seconds from the end the idle deck is warmed with the coming
+     * track (`prefetchTick`), and a crossfade resolves its incoming file
+     * earlier still - both through `loadAudioUrl`, which asks the store what
+     * the URL should say AT THAT MOMENT. A filter turned on inside that window
+     * re-coloured only the deck that was playing; the boundary then adopted
+     * the warm deck whole, the load effect stood down because the track had
+     * already been handed up, and the next song played completely dry. Turning
+     * one OFF in the same window kept it on for a song. There was no error and
+     * nothing to see: the console said one thing and the speaker said another
+     * until the track after that.
+     *
+     * So the warm deck is dropped here, in the same breath as the re-colour is
+     * scheduled - a cold boundary costs a moment of buffering and is right,
+     * where a warm one is instant and wrong. `soundRev` covers the same race
+     * for a warm that is still resolving: it lands after this ran, and the
+     * check at the far end of the await refuses it. A blend that has not
+     * STARTED is aborted for the same reason; one already audible cannot be
+     * (the next song is halfway in by then), so it is marked instead and
+     * re-coloured the moment it is adopted.
+     */
+    if (soundMoved) {
+      soundRev.current += 1;
+      prefetched.current = null;
+      const flight = xfadeRef.current;
+      if (flight && !flight.started) abortCrossfadeRef.current();
+    }
+
     /*
      * A new song is not a change of sound.
      *
@@ -1313,9 +1404,18 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
      * that had only just started. Recording the new state and standing down is
      * the whole fix, and it covers the same case for a rack changed in the
      * moment a song ends.
+     *
+     * THE ONE EXCEPTION is a song a crossfade carried in on a file resolved
+     * before the console moved: nothing is loading it (the handover already
+     * handed it up), so standing down here would leave it playing the old
+     * sound for its whole length. See `carriedStale` below.
      */
-    if (beforeTrack !== nowTrack) return;
-    if (beforeRack === rack && beforeChain === chain && beforeDrop === drop) return;
+    const carried = nowTrack !== null && staleAdoption.current === nowTrack;
+    if (carried) staleAdoption.current = null;
+    if (!carried) {
+      if (beforeTrack !== nowTrack) return;
+      if (!soundMoved) return;
+    }
     if (!liveRef.current.track || !isRemotePath(liveRef.current.track.path)) return;
 
     // Coalesce a burst of changes into ONE reload.
@@ -1333,7 +1433,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       recolourTimer.current = undefined;
       if (!liveRef.current.track || !isRemotePath(liveRef.current.track.path)) return;
       resumeCount.current = 0;
-      void resumeInPlace();
+      void resumeInPlace(undefined, 'sound');
     }, RECOLOUR_COALESCE_MS);
 
     return () => window.clearTimeout(recolourTimer.current);
@@ -1377,7 +1477,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     if (before === dropState.revision) return;
     if (!liveRef.current.track || !isRemotePath(liveRef.current.track.path)) return;
     resumeCount.current = 0;
-    void resumeInPlace();
+    void resumeInPlace(undefined, 'sound');
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resumeInPlace is redefined every render
   }, [dropState.revision]);
 
@@ -2326,6 +2426,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       // this is the one path every track change goes through.
       srcOffset.current = 0;
       srcSeekable.current = source.seekable;
+      // This URL was spelled with the chain as it is now, so a live encode is
+      // coming out at the chain's rate; a file the element seeks itself has no
+      // encoder in the loop and so runs at 1 whatever the chain says.
+      srcRate.current = source.seekable ? 1 : rateRef.current;
       setPosition(0);
       // Seed the timeline from the indexed metadata immediately. Android may
       // later describe a streamed response as infinitely long; onMeta keeps
@@ -2835,7 +2939,13 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * already playing, mid-song, at full mix. Everything that would make the
    * blend a lie - a pause, a skip, a seek, a new track picked - aborts it.
    */
-  const xfadeRef = useRef<{ next: Track; token: number; started: boolean } | null>(null);
+  const xfadeRef = useRef<{
+    next: Track;
+    token: number;
+    started: boolean;
+    /** `soundRev` when this blend's file was chosen - see the adoption below. */
+    rev: number;
+  } | null>(null);
   const xfadeToken = useRef(0);
   // The track a handover just delivered: the load effect must adopt it where
   // it stands rather than load it over from the top.
@@ -2982,7 +3092,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * play another. Remote tracks only - a local file loads in a frame, and
    * prefetching it would leak the object URL the load effect knows to revoke.
    */
-  const prefetched = useRef<{ forPath: string; next: Track; url: string } | null>(null);
+  const prefetched = useRef<{ forPath: string; next: Track; url: string; rev: number } | null>(null);
   const prefetchBusy = useRef(false);
   /** How many seconds before the end the idle deck starts warming. */
   const PREFETCH_LEAD_S = 12;
@@ -3004,6 +3114,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     if (next === null || next === 'rewind' || next.path === current.path) return;
     if (!isRemotePath(next.path)) return;
     prefetchBusy.current = true;
+    const rev = soundRev.current;
     void (async () => {
       try {
         const url = await loadAudioUrl(next.path);
@@ -3013,7 +3124,12 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         // this deck is not ours to point anywhere.
         if (liveRef.current.track?.path !== current.path) return;
         if (xfadeRef.current || pendingPlay.current) return;
-        prefetched.current = { forPath: current.path, next, url };
+        // ...and so may the SOUND, which is not visible in any of those. This
+        // URL is what the console said when the resolve began; a filter tapped
+        // since has already dropped whatever was warm and would not know to
+        // drop this, so it declines to become warm.
+        if (rev !== soundRev.current) return;
+        prefetched.current = { forPath: current.path, next, url, rev };
         setIdleSrc(url);
       } catch {
         /*
@@ -3170,7 +3286,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // wedge the handover on a spent deck; the plain advance suits it better.
     if (next.duration !== null && next.duration < settings.crossfade + 2) return;
     const token = (xfadeToken.current += 1);
-    xfadeRef.current = { next, token, started: false };
+    xfadeRef.current = { next, token, started: false, rev: soundRev.current };
     beginCrossfade(next, token);
   };
   const tickRef = useRef(crossfadeTick);
@@ -3203,9 +3319,19 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       xfadeRef.current = null;
       activeIsB.current = !activeIsB.current;
       // The incoming deck was prefetched from the start of its own track, so
-      // whatever offset the outgoing one carried does not belong to it.
+      // whatever offset the outgoing one carried does not belong to it. Its
+      // rate is the chain's, which is what its URL was spelled with.
       srcOffset.current = 0;
       srcSeekable.current = true;
+      srcRate.current = rateRef.current;
+      /*
+       * A blend that was already audible when the console moved cannot be
+       * called back - this song is halfway in. So it is adopted, and marked:
+       * the re-colouring effect's track guard lets this one song through
+       * rather than standing down, and it goes back to the encoder for the
+       * sound that is on now.
+       */
+      if (flight.rev !== soundRev.current) staleAdoption.current = flight.next.path;
       const nowActive = activeAudio();
       // Only a live deck is worth adopting: one that already ended (a pick
       // shorter than the blend) or errored would wedge the strip on silence.
@@ -3250,7 +3376,13 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // doubt (deck holds something else, errored, not buffered enough to start
     // this instant) falls through to the plain advance, which still works.
     const warm = prefetched.current;
-    if (warm && warm.forPath === track?.path) {
+    // ...and only while it still describes the sound that is on. A warm deck
+    // is dropped outright when the console moves, so this is the belt to that
+    // brace: whatever reaches here is compared before it is adopted, because
+    // adopting one plays it whole - the load effect stands down for a track
+    // that arrives already playing, and the re-colour effect stands down for a
+    // track that just changed, so a stale deck is heard until the song ends.
+    if (warm && warm.forPath === track?.path && warm.rev === soundRev.current) {
       prefetched.current = null;
       const idle = idleAudio();
       if (idle && idle.src === warm.url && !idle.error && idle.readyState >= 3) {
@@ -3270,6 +3402,12 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         analyserRef.current?.scrub.eject();
         clearStall();
         lastGoodPos.current = 0;
+        // This deck holds its own track from the top, spelled with the sound
+        // that is on (the compare above is what makes that true), so the
+        // crossing between the clocks starts over with it.
+        srcOffset.current = 0;
+        srcSeekable.current = true;
+        srcRate.current = rateRef.current;
         try {
           nowActive.currentTime = 0;
         } catch {

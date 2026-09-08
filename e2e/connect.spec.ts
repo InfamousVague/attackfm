@@ -46,6 +46,9 @@ import {
   type HubAccount,
   type SecondHub,
 } from './fixtures/registry-and-hubs.ts';
+// The console's own doors, shared with the deck suite: one device opens it to
+// colour its own stream, the other to colour somebody else's.
+import { closeSoundConsole, openSoundConsole } from './fixtures/deck.ts';
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 
 /** Stable ids so the hub, the picker and these assertions all mean the same
@@ -375,30 +378,6 @@ const chainIn = (url: string): { t: string }[] | null => {
 /** Where the encoder was asked to START, in seconds. A live encode has no
  *  ranges, so this is the whole of how a re-colour keeps its place. */
 const seekIn = (url: string): number => (url ? Number(new URL(url).searchParams.get('seek') ?? 0) : 0);
-
-/** Open the sound console on the strip's overflow: the same door a listener
- *  uses, on the device that is only mirroring. */
-async function openSoundConsole(page: Page): Promise<void> {
-  /*
-   * By ROLE, and matching BOTH doors, for the same reason `deck` above matches
-   * two surfaces: which one a device is wearing depends on whether its own
-   * deck is engaged, and only one of them is ever in the accessibility tree.
-   * The docked panel opens the console outright and its button is named for
-   * what is already on ("Sound", or "Sound — 2 effects"); the strip folds the
-   * console into an overflow behind "Player options", one row further in.
-   */
-  await page.getByRole('button', { name: /^(Player options|Sound)\b/ }).first().click();
-  await expect(page.locator('.soundConsole, .moreMenu').first()).toBeVisible();
-  if ((await page.locator('.moreMenu').count()) > 0) {
-    await page.getByRole('button', { name: /^Equalizer/ }).click();
-  }
-  await expect(page.locator('.soundConsole')).toBeVisible();
-}
-
-async function closeSoundConsole(page: Page): Promise<void> {
-  await page.keyboard.press('Escape');
-  await expect(page.locator('.soundConsole')).toHaveCount(0);
-}
 
 /**
  * Wait until the desk is far enough into a song to act inside it: past the
