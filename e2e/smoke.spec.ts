@@ -71,7 +71,14 @@ test('signed in, on a real library, playing a real file', async ({ page, world }
   await sections.getByText('Music', { exact: true }).click();
 
   // 3. PLAY.
-  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  //
+  // `.first()`, and it is the hero's button rather than an arbitrary one: the
+  // player strip carries a Play of its own the moment anything is playing, and
+  // the hero is above it in the DOM. Nothing is playing yet here - the Connect
+  // socket is stubbed for every file that has not asked for it, so no other
+  // suite's seat can leave a song parked in this one - but a locator that only
+  // works while that stays true is a locator waiting to go strict-mode red.
+  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
 
   // The strip and the sheet both carry these, so neither is pinned to whether
   // Now Playing opened itself.

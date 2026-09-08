@@ -143,6 +143,28 @@ export const settle = (beats = 3): number => Math.round(BEAT.HOST * beats + 2_00
 interface AfmOptions {
   /** Which fixture account this file's tests are signed in as. */
   afmUser: string;
+  /**
+   * Whether this file's pages talk to the hub's Connect socket.
+   *
+   * OFF by default, and that default is the expensive lesson of Phase 4b.
+   * The seat is per ACCOUNT and lives in the hub's memory for the whole run:
+   * a context that plays something and then closes stays the active device
+   * for the heartbeat window, because closing a browser tells the hub
+   * nothing. The next context boots as a REMOTE - it mirrors a song nobody is
+   * playing, `deckOwned` is false so the docked pane never appears, and a
+   * press on Play is sent to a browser that no longer exists. Nothing on
+   * screen says so, and the control-optimism window does not fall back.
+   *
+   * Two agents writing suites in parallel each lost hours to it, and each
+   * arrived at the same answer: answer the socket and say nothing. So it is
+   * the default here, once, rather than a beforeEach in twelve files. A suite
+   * that IS about Connect opts back in:
+   *
+   *     test.use({ connectLive: true });
+   *
+   * and takes on the job of leaving the seat clean for whoever runs next.
+   */
+  connectLive: boolean;
 }
 
 interface AfmFixtures {
@@ -164,6 +186,19 @@ export const test = base.extend<AfmOptions & AfmFixtures, AfmWorkerFixtures>({
   ],
 
   afmUser: ['matt', { option: true }],
+
+  connectLive: [false, { option: true }],
+
+  /*
+   * The socket, stubbed for every file that has not asked for it. It is an
+   * auto fixture so a spec gets the isolation without importing anything -
+   * the failure it prevents is silent, and a protection you have to remember
+   * is one somebody forgets on the day it matters.
+   */
+  page: async ({ page, connectLive }, use) => {
+    if (!connectLive) await page.routeWebSocket(/\/api\/connect/, () => {});
+    await use(page);
+  },
 
   // The app's port is not known until global-setup has picked one, and a
   // config is read before that - so this is a fixture, not a config value.
