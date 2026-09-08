@@ -4,7 +4,7 @@
  * with no audio coupling.
  */
 import type { Track } from '../core/tauri.ts';
-import { VOLUME_UNITY } from './VolumeControl.tsx';
+import { VOLUME_UNITY } from './volume.ts';
 
 /** No artwork for the blank idle stand-in, and the neutral fallback anywhere a
  *  cover is missing. */

@@ -13,7 +13,7 @@
  */
 
 import { isTauri } from '../core/tauri.ts';
-import { sampleWave, WAVE_MID_Y, WAVE_SHADOW_DROP } from './BeatWave.tsx';
+import { sampleWave, WAVE_MID_Y, WAVE_SHADOW_DROP } from './beatWave.ts';
 
 /** Rendered icon edge, in px. The Dock displays ~64-128; retina-friendly. */
 const ICON_SIZE = 256;

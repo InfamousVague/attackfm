@@ -1,7 +1,8 @@
 import { SegmentedControl, Switch, Text } from '@glacier/react';
 import { StemProgress, usePrefetchStatus } from '../servers/BackgroundWork.tsx';
 import { useEffect, useState } from 'react';
-import { sleepsAtAnEnd, usePlayback, type SleepTimer } from '../player/playback.tsx';
+import { usePlayback, type SleepTimer } from '../player/playback.tsx';
+import { sleepsAtAnEnd } from '../player/sleepTimer.ts';
 import type { DriveBoost } from '../player/driveBoost.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import {

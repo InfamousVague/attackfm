@@ -1,10 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { AudioEqualizerBand, AudioEqualizerPreset } from '@glacier/react';
-import { translate } from '../i18n/LocaleShell.tsx';
+import type { AudioEqualizerBand } from '@glacier/react';
 
 const STORAGE_KEY = 'attackfm-eq';
 // Matches the kit AudioEqualizer's default bands and the meter's EQ filters.
-const BAND_COUNT = 8;
+export const BAND_COUNT = 8;
 const FLAT: number[] = Array(BAND_COUNT).fill(0);
 
 /**
@@ -101,17 +100,6 @@ export const EQ_PRESETS: readonly EqPreset[] = [
 export type EqTranslate = (key: string) => string;
 
 /**
- * The presets in the kit's own shape, named in the language showing now.
- *
- * Takes the translator rather than reaching for one so a component can hand it
- * `useT()` and re-render on a language change; the `translate` default is for
- * the plugin seam, where a bundle has no hook of the host's to call.
- */
-export function eqPresets(t: EqTranslate = translate): AudioEqualizerPreset[] {
-  return EQ_PRESETS.map((p) => ({ id: p.id, label: t(p.labelKey), gains: p.gains }));
-}
-
-/**
  * Portrait keeps the ends and thins the middle: eight sliders do not fit a
  * phone held upright, and the omitted bands (64, 250, 1k) are the ones a
  * neighbouring slider stands in for most gracefully. Landscape gets all
@@ -125,52 +113,6 @@ export const EQ_PRESETS_NARROW: readonly EqPreset[] = EQ_PRESETS.map((p) => ({
   ...p,
   gains: EQ_NARROW_INDICES.map((i) => p.gains[i] ?? 0),
 }));
-
-/** The five-band projection, in the kit's shape. Same deal as `eqPresets`. */
-export function eqPresetsNarrow(t: EqTranslate = translate): AudioEqualizerPreset[] {
-  return EQ_PRESETS_NARROW.map((p) => ({ id: p.id, label: t(p.labelKey), gains: p.gains }));
-}
-
-/** The five shown gains, read out of the full eight. */
-export function narrowEqGains(full: readonly number[]): number[] {
-  return EQ_NARROW_INDICES.map((i) => full[i] ?? 0);
-}
-
-/**
- * Five shown gains back into eight real ones, for a MANUAL move: only the
- * hidden bands beside sliders that actually moved are re-interpolated between
- * their shown neighbours - the rest keep whatever a previous preset put
- * there, so nudging the treble does not quietly redraw the bass.
- *
- * This used to snap-match the five values against every preset's projection
- * first, and hand back that preset's full curve on a hit. The idea was
- * "picking a preset while narrow should land the whole shape" - but preset
- * picks never come through here (EqPanel's choose() sets all eight bands
- * directly, and the kit's own preset row is hidden), so the only thing the
- * match ever caught was a hand-drawn curve that COINCIDED with one: dragging
- * 500Hz from 0 to -1 while on "headphones" happens to spell "late-night" in
- * five bands, and the three hidden bands moved to a preset the user never
- * chose. A drag is a drag; it edits what it touched.
- */
-export function expandNarrowGains(shown: readonly number[], previous: readonly number[]): number[] {
-  const full = Array.from({ length: BAND_COUNT }, (_, i) => previous[i] ?? 0);
-  const moved = new Set<number>();
-  EQ_NARROW_INDICES.forEach((bandIdx, j) => {
-    const next = shown[j] ?? 0;
-    if (full[bandIdx] !== next) moved.add(bandIdx);
-    full[bandIdx] = next;
-  });
-  // Each hidden band sits between two shown ones: 1 between 0 and 2, 3
-  // between 2 and 4, 5 between 4 and 6.
-  for (const [hidden, lo, hi] of [
-    [1, 0, 2],
-    [3, 2, 4],
-    [5, 4, 6],
-  ] as const) {
-    if (moved.has(lo) || moved.has(hi)) full[hidden] = (full[lo]! + full[hi]!) / 2;
-  }
-  return full;
-}
 
 interface EqualizerContextValue {
   /** Per-band gains in dB, low to high, aligned with the meter's EQ filters. */

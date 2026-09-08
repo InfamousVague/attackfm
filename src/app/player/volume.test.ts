@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { snapToUnity, VOLUME_MAX, VOLUME_UNITY } from './VolumeControl.tsx';
+import { snapToUnity, VOLUME_MAX, VOLUME_UNITY } from './volume.ts';
 
 /**
  * The fader's detent.

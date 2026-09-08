@@ -1,22 +1,11 @@
 import { useRef } from 'react';
 import { fireFelt } from '../core/haptics.ts';
+import { VOLUME_MAX, VOLUME_UNITY, snapToUnity } from './volume.ts';
 import { IconButton, Popover, Slider, volumeGain } from '@glacier/react';
 import { Volume2, VolumeX } from '@glacier/icons';
 import { usePlayback } from './playback.tsx';
 import { useT } from '../i18n/LocaleShell.tsx';
 import { formatNumber } from '../ux/format.ts';
-
-/** Unity (0 dB) sits at 100; the fader runs on to 150 for a boost region. */
-export const VOLUME_UNITY = 100;
-export const VOLUME_MAX = 150;
-// How far past unity the thumb must be dragged before it leaves the detent.
-const DETENT_RADIUS = 6;
-
-/** Snaps the fader to unity within a small band, so 100% takes a deliberate
- * extra drag to pass rather than being easy to skim over. */
-export function snapToUnity(value: number): number {
-  return Math.abs(value - VOLUME_UNITY) <= DETENT_RADIUS ? VOLUME_UNITY : value;
-}
 
 /**
  * The detent, in the hand.

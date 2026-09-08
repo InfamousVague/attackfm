@@ -1,13 +1,7 @@
 import { useMemo } from 'react';
 import { AudioEqualizer, Select } from '@glacier/react';
-import {
-  EQ_BANDS_NARROW,
-  EQ_PRESETS,
-  eqPresetsNarrow,
-  expandNarrowGains,
-  narrowEqGains,
-  useEqualizer,
-} from './equalizer.tsx';
+import { EQ_BANDS_NARROW, EQ_PRESETS, useEqualizer } from './equalizer.tsx';
+import { eqPresetsNarrow, expandNarrowGains, narrowEqGains } from './eqPresets.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 
 /**

@@ -24,11 +24,8 @@ import { DatePage } from './date/DatePage.tsx';
 import { DjPage } from './booth/DjPage.tsx';
 import { ListeningShareBridge } from './profile/listeningShare.tsx';
 import { DjSetBridge } from './booth/DjSetBridge.tsx';
-import {
-  PendingPlayProvider,
-  PendingPlayWatcher,
-  isPendingPath,
-} from './player/pendingPlay.tsx';
+import { PendingPlayProvider, PendingPlayWatcher } from './player/pendingPlay.tsx';
+import { isPendingPath } from './player/pendingTrack.ts';
 import { useSwipeBack } from './nav/useSwipeBack.ts';
 import { useSystemBack } from './nav/systemBack.ts';
 import { installTapHaptics, useHapticsPref } from './core/haptics.ts';

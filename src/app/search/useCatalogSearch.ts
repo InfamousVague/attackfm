@@ -3,7 +3,8 @@ import { addPendingLike, searchCatalog, type SearchResult, type ServerSession } 
 import type { OwnedIndex } from '../library/owned.ts';
 import { IMPORTER_PLUGIN_ID, type AcquireValue } from '../../plugins/runtime.tsx';
 import type { DownloadsContextValue } from '../../plugins/importsBridge.ts';
-import { placeholderTrack, type PlayPending } from '../player/pendingPlay.tsx';
+import type { PlayPending } from '../player/pendingPlay.tsx';
+import { placeholderTrack } from '../player/pendingTrack.ts';
 import { importable, resolveImportable } from './resolveImport.ts';
 import type { AcquireTarget } from '../../plugins/types.ts';
 import { isAbout } from './searchModel.tsx';

@@ -22,7 +22,8 @@ import {
   Wifi,
   X,
 } from '@glacier/icons';
-import { hostWaiting, useJamOptional, type PendingAdd } from './jam.tsx';
+import { useJamOptional, type PendingAdd } from './jam.tsx';
+import { hostWaiting } from './hostQuiet.ts';
 import type { HearMode } from './deckShared.ts';
 import { onGrooveArm, takeGrooveArm } from '../nav/grooveDoor.ts';
 import { openFriendPicker } from '../nav/friendPickerDoor.ts';
@@ -31,7 +32,8 @@ import { nowPlayingDoorOpen } from '../nav/nowPlayingDoor.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { publishJamShare } from '../servers/registry.ts';
-import { ShareJamSheet, hostOf, jamQrDataUrl } from './ShareJam.tsx';
+import { ShareJamSheet } from './ShareJam.tsx';
+import { hostOf, jamQrDataUrl } from './jamShare.ts';
 import { FriendAvatar } from '../profile/RegistryFriends.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useRoomTrack, useRoomTracks } from './roomTrack.ts';

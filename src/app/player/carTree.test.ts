@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Track } from '../core/tauri.ts';
-import { buildCarTree, resolveSpokenRequest } from './CarPlayBridge.tsx';
+import { buildCarTree, resolveSpokenRequest } from './carTree.ts';
 
 /**
  * The car's browse tree, and what a spoken request means.
@@ -95,6 +95,55 @@ describe('buildCarTree - which branches exist at all', () => {
     const tree = buildCarTree([song({ title: 'Untagged', artist: '', album: '' })], [], []);
     expect(idsUnder(tree, 'attackfm.root')).not.toContain('branch:artists');
     expect(idsUnder(tree, 'attackfm.root')).not.toContain('branch:albums');
+  });
+});
+
+describe('buildCarTree - the tree is a tree', () => {
+  const library = [
+    song({ title: 'One', artist: 'A', album: 'Rec' }),
+    song({ title: 'Ch 1', artist: 'Reader', album: 'A Novel', kind: 'book' } as Partial<Track> & {
+      title: string;
+    }),
+  ];
+  const lists = [{ id: 'p1', name: 'Drive', paths: ['/Music/One.mp3'] }];
+
+  it('marks every branch browsable, which is what makes it open', () => {
+    // The bug this feature was built on top of: every node the old list
+    // published was a leaf, so the dashboard drew four rows and nothing
+    // opened. `browsable` is one optional field and losing it puts that back
+    // exactly - the tree still publishes, the counts are still right, and
+    // the car goes nowhere.
+    const tree = buildCarTree(library, [], lists);
+    const branches = (tree['attackfm.root'] ?? []).filter((n) => n.id.startsWith('branch:'));
+    expect(branches).toHaveLength(4);
+    expect(branches.every((n) => n.browsable === true)).toBe(true);
+  });
+
+  it('leaves the three collections un-browsable, because they play', () => {
+    // Liked, All songs and Shuffle are verbs, not folders. A browsable one
+    // opens onto a level that was never published.
+    const tree = buildCarTree(library, [], lists);
+    const collections = (tree['attackfm.root'] ?? []).filter((n) => n.id.startsWith('collection:'));
+    expect(collections).toHaveLength(3);
+    expect(collections.some((n) => n.browsable)).toBe(false);
+  });
+
+  it('publishes a level behind every branch it offered', () => {
+    // A branch row whose id has no key in the tree is the dead end wearing a
+    // chevron: the car opens it and finds nothing.
+    const tree = buildCarTree(library, [], lists);
+    for (const branch of (tree['attackfm.root'] ?? []).filter((n) => n.browsable)) {
+      expect(tree[branch.id] ?? []).not.toHaveLength(0);
+    }
+  });
+
+  it('leaves the rows behind a branch playable, not browsable again', () => {
+    // One level of folders and then songs. A leaf marked browsable opens
+    // onto nothing instead of playing.
+    const tree = buildCarTree(library, [], lists);
+    for (const key of ['branch:artists', 'branch:albums', 'branch:books', 'branch:playlists']) {
+      expect((tree[key] ?? []).some((n) => n.browsable)).toBe(false);
+    }
   });
 });
 
@@ -258,6 +307,34 @@ describe('resolveSpokenRequest - the order of preference', () => {
     // A car that stops after three minutes has not really answered.
     const queue = resolveSpokenRequest(library, 'Fleetwood');
     expect(queue.length).toBeGreaterThan(1);
+  });
+
+  it('does the same through the SONG branch, where nothing else matched', () => {
+    // The case above still lands on the artist branch, which builds its own
+    // queue. This one falls all the way through - no artist and no album is
+    // anything like "Blue" - and the rule has to hold there too, because
+    // that branch is the one that hands back the search engine's own list.
+    const blues = [
+      song({ title: 'Blue Monday', artist: 'New Order', album: 'Power' }),
+      song({ title: 'Blue Skies', artist: 'Ella Fitzgerald', album: 'Standards' }),
+      song({ title: 'Red Rain', artist: 'Peter Gabriel', album: 'So' }),
+    ];
+    expect(resolveSpokenRequest(blues, 'Blue').map((t) => t.title)).toEqual([
+      'Blue Monday',
+      'Blue Skies',
+    ]);
+  });
+
+  it('rescues a typo, because it is the search screen’s own engine', () => {
+    // The stated reason for reusing searchLibrary rather than writing a
+    // matcher here: a second one would be a worse one that disagrees with
+    // the first about the same library. Speech recognition mishears, and a
+    // car with no keyboard has no second try.
+    const blues = [
+      song({ title: 'Blue Monday', artist: 'New Order', album: 'Power' }),
+      song({ title: 'Red Rain', artist: 'Peter Gabriel', album: 'So' }),
+    ];
+    expect(resolveSpokenRequest(blues, 'blue mondey')[0]?.title).toBe('Blue Monday');
   });
 
   it('answers nothing for a library that holds nothing like it', () => {

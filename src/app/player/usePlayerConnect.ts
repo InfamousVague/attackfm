@@ -1,7 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import type { PlayerRepeat } from '@glacier/react';
 import { trackIdFromPath } from '../server.ts';
-import { VOLUME_MAX, VOLUME_UNITY } from './VolumeControl.tsx';
+import { VOLUME_MAX, VOLUME_UNITY } from './volume.ts';
 import { useConnect } from './playbackSync.tsx';
 import { useJamOptional } from './jam.tsx';
 import { usePlayback } from './playback.tsx';

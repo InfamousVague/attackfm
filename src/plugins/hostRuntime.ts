@@ -30,7 +30,8 @@ import { useLibrary } from '../app/library/library.tsx';
 import { useLibrarySync } from '../app/library/librarySync.tsx';
 import { useServerSession } from '../app/servers/serverSession.tsx';
 import { usePlaylists } from '../app/playlists/playlists.tsx';
-import { EQ_BANDS, EQ_PRESETS, eqPresets, useEqualizer } from '../app/player/equalizer.tsx';
+import { EQ_BANDS, EQ_PRESETS, useEqualizer } from '../app/player/equalizer.tsx';
+import { eqPresets } from '../app/player/eqPresets.ts';
 import * as fxChain from '../app/player/fxChain.ts';
 import {
   importServerUrl,

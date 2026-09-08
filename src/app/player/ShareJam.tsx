@@ -1,8 +1,8 @@
 import { Button, Text, useToast } from '@glacier/react';
 import { Check, Copy, Download, Users } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
-import QRCode from 'qrcode';
 import { GlassSheet } from '../ux/GlassSheet.tsx';
+import { hostOf, jamQrDataUrl } from './jamShare.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { publishJamShare } from '../servers/registry.ts';
@@ -98,25 +98,6 @@ function JamCard({
       <p className="shareCard__foot">{t('player.jamCardFoot')}</p>
     </div>
   );
-}
-
-/** The address as people say it - the host, no scheme. */
-export function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url.replace(/^https?:\/\//, '');
-  }
-}
-
-/**
- * The room's link as a QR, drawn the same wherever it goes - the share card
- * and the groove deck's invite card: dark modules on a white tile, because a
- * scanner wants that contrast whatever the theme, and one quiet module of
- * margin. `width` is the tile's pixel size.
- */
-export function jamQrDataUrl(link: string, width: number): Promise<string> {
-  return QRCode.toDataURL(link, { margin: 1, width, color: { dark: '#101014', light: '#ffffff' } });
 }
 
 export function ShareJamSheet({

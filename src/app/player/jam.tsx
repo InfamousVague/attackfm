@@ -69,10 +69,6 @@ const POLL_IN_JAM_MS = 3000;
  *  that stops polling stops following. */
 const POLL_IN_JAM_HIDDEN_MS = 8000;
 const POLL_IDLE_MS = 30_000;
-/** How long a host's player may go unheard before the room says so. The
- *  host beats every 2.5 s; forty-five seconds is a backgrounded phone or a
- *  closed laptop, not a slow network. */
-const HOST_QUIET_MS = 45_000;
 /** How long a local pending row outlives its send when the hub never
  *  reports it back (an older hub without `pending`). The host folds an add
  *  in on its next beat, so by then it has shown up in the queue instead. */
@@ -1120,18 +1116,6 @@ export function JamProvider({ children }: { children: ReactNode }) {
 /** The host is named on the room; the session knows who this listener is. */
 function isHost(jam: Jam, username: string): boolean {
   return jam.hostName.toLowerCase() === username.toLowerCase();
-}
-
-/**
- * Whether the host's player has gone quiet: their last beat is older than
- * the room tolerates, measured on the HUB's clock (`now` and `hostSeenAt`
- * are both its), so two phones with different ideas of the time agree. An
- * older hub reports neither, and is never said to be waiting.
- */
-export function hostWaiting(room: Jam): boolean {
-  if (room.hostSeenAt === undefined) return false;
-  const now = room.now ?? room.receivedAt ?? Date.now();
-  return now - room.hostSeenAt > HOST_QUIET_MS;
 }
 
 export function useJam(): JamValue {
