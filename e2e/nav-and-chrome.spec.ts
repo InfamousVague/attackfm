@@ -342,19 +342,54 @@ test.describe('the page and its chrome', () => {
       await expect(strip.getByRole('group', { name: title! })).toBeVisible();
     }
 
-    // ...and it does not scroll away with the page under it. Measured after
-    // the walk rather than before it, because the two destinations do not
-    // have to lay their headers out identically - what is being asserted is
-    // that SCROLLING moves the page and not the plate.
-    // THE PLATE, not the transport group inside it. The group's own position
-    // drifts a few pixels as the strip's content settles - the title line, the
-    // scrubber, the duration arriving - and measuring it read that as the plate
-    // scrolling away: 2.11, 3.15, 4.17, 5.64, 5.72, 5.95 px across full runs
-    // against a bound of 2, intermittently, which is the worst way to be wrong.
-    // What this scenario is about is whether the plate belongs to the window or
-    // to the page, and that is the plate's own box. Measured in the rig at
-    // 390x844: 0.00 px across scrolls of 200, 600 and 961.
-    const parked = (await strip.boundingBox())!;
+    /*
+     * ...and it does not scroll away with the page under it.
+     *
+     * MEASURED FROM THE BOTTOM OF THE WINDOW, which is the only thing here
+     * that is actually invariant. Three earlier attempts each measured
+     * something that moves for reasons that have nothing to do with scrolling:
+     * the transport group inside the strip (it shifts as the title, scrubber
+     * and duration settle), then the strip's own top against a fixed bound of
+     * 2px, then against a fraction of the scroll distance. All three went red
+     * intermittently in the full run at 2.11, 2.85, 3.15, 4.25, 5.64, 5.95 -
+     * and in the rig, where the song never changes, the same plate moves 0.00
+     * across scrolls of 200, 600 and 961.
+     *
+     * The difference is the fixture: its tracks are 12-22 seconds, so the song
+     * CHANGES mid-scenario, and a different title lays the strip out at a
+     * different height. Anchored at the bottom of a flex column, a strip that
+     * grows taller moves its own top - which is not the plate scrolling away,
+     * it is the plate doing its job with a longer title in it.
+     *
+     * So: the gap between the plate and the bottom of the window. It is fixed
+     * by the nav bar below it, it does not care how tall the strip is or which
+     * song is in it, and it is exactly the claim - the plate belongs to the
+     * window, not to the page. A plate that scrolled with the page would put
+     * hundreds of pixels into this number.
+     */
+    const gapFromBottom = async () =>
+      page.evaluate(() => {
+        const plate = document.querySelector('.playerBarShell');
+        if (!plate) return Number.NaN;
+        return window.innerHeight - plate.getBoundingClientRect().bottom;
+      });
+    /*
+     * PAUSED BEFORE MEASURING, and that is the fix rather than a tolerance.
+     *
+     * The fixture's tracks are 12-21 seconds, so a song ENDS in the middle of
+     * this scenario. The next one re-lays the strip out - a different title,
+     * a different width - and `--app-player-height` is re-measured from it, so
+     * everything below the plate moves for a frame or two. Caught in the act:
+     * the gap read 83.32 before the scroll and 86.30 after, with the nav at
+     * 68.45 high and the strip showing a song this test never started.
+     *
+     * The scenario is about the plate holding its place while the PAGE moves.
+     * Whether audio is running is incidental to that, and letting it run means
+     * measuring a moving target - which is what three previous attempts at
+     * this assertion were really failing on.
+     */
+    await pauseHere(page);
+    const parked = await gapFromBottom();
     const scrollerTop = () =>
       page.evaluate(() => {
         const page_ = document.querySelector('.homePage, .libraryPage, .songPage, .discoverPage');
@@ -392,27 +427,13 @@ test.describe('the page and its chrome', () => {
           requestAnimationFrame(step);
         }),
     );
-    const after = (await strip.boundingBox())!;
+    const after = await gapFromBottom();
     const scrolled = (await scrollerTop()) - before;
 
-    /*
-     * PROPORTIONALLY, not to a magic number.
-     *
-     * "Does not scroll away with the page" is a claim about the ratio between
-     * two movements, and writing it as an absolute pixel bound turned it into
-     * a claim about layout settle instead: 2.85px of it failed a bound of 2,
-     * on a plate that had not scrolled anywhere. A few pixels is the app's own
-     * chrome coming to rest under a page that just changed height - the header
-     * collapsing, a shelf arriving - and a plate that had genuinely scrolled
-     * with the page would be gone by several hundred.
-     *
-     * So the page has to have really moved (or there is nothing to prove), and
-     * the plate has to have held better than a hundredth of it. On this scroll
-     * that is a bound of about nine pixels, and it fails at ten - while an
-     * actual scroll-away misses it by two orders of magnitude.
-     */
+    // The page really moved, or there is nothing to prove; and the plate held
+    // its place above the nav to the pixel while it did.
     expect(scrolled).toBeGreaterThan(100);
-    expect(Math.abs(after.y - parked.y)).toBeLessThan(scrolled / 100);
+    expect(Math.abs(after - parked)).toBeLessThan(1);
 
     // Every bottom clearance in the app is spent from --app-player-height,
     // which app.css collapses to 0 when no strip is mounted. With one up it
