@@ -44,6 +44,7 @@ import {
   useSpeakers,
 } from './speakers.ts';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
+import { SendToFriendDialog } from '../profile/SendToFriend.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useJamOptional } from './jam.tsx';
 import { useSystemBack } from '../nav/systemBack.ts';
@@ -810,6 +811,11 @@ export function Player({
   // The overflow popover state now lives in PlayerStrip.
   // The song being filed into a playlist, or null when that sheet is shut.
   const [filing, setFiling] = useState<Track | null>(null);
+  // And the song being handed to a friend, held the same way and for the same
+  // reason: the drawer must outlive the surface that opened it. Held as the
+  // TRACK rather than as a flag so what is sent is what was playing when the
+  // button was pressed - the deck can advance while the drawer is open.
+  const [sending, setSending] = useState<Track | null>(null);
   // The full-screen Now Playing surface, opened by tapping the strip on touch.
   const [npOpen, setNpOpen] = useState(false);
   // The lyrics, opened over the Now Playing sheet as a full-screen view rather
@@ -4517,12 +4523,22 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           onUpNextChange={onUpNextChange}
           onTrackChange={onTrackChange}
           setFiling={setFiling}
+          setSending={setSending}
         />
       )}
 
       {/* One sheet for both phone entry points - the strip's overflow and the
           Now Playing header - so the same panel answers either. */}
       <AddToPlaylistDialog track={filing} open={filing !== null} onClose={() => setFiling(null)} />
+      {/* The same drawer the song's own menu opens, so "send this to somebody"
+          is one panel in the app however you got to it. Mounted out here for
+          the reason above it: the Now Playing sheet unmounts itself when the
+          screen it lives on goes away, and a drawer mounted inside it would go
+          with it mid-send. Rendered only with a song in hand, so its friends
+          request does not fire for a listener who never pressed anything. */}
+      {sending && (
+        <SendToFriendDialog track={sending} open onClose={() => setSending(null)} />
+      )}
     </>
   );
 }

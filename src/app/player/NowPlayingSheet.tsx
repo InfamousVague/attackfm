@@ -13,7 +13,9 @@ import {
   type Bookmark as BookMark,
 } from './bookmarks.ts';
 import { setPendingSeek } from './pendingSeek.ts';
+import { shareSeat } from './npShare.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
@@ -22,7 +24,7 @@ import type { ArtTint } from './artTint.ts';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, ChevronLeft, ChevronRight, Gauge, Heart, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Users, Volume2 } from '@glacier/icons';
+import { AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, ChevronLeft, ChevronRight, Gauge, Heart, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Send, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Users, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { SMART_SHUFFLE_LABEL_KEY } from './smartShuffle.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
@@ -691,6 +693,7 @@ export function NowPlayingSheet({
   onUpNextChange,
   onTrackChange,
   setFiling,
+  setSending,
   following,
 }: {
   npOpen: boolean;
@@ -775,6 +778,10 @@ export function NowPlayingSheet({
   onUpNextChange?: (upNext: Track[]) => void;
   onTrackChange?: (track: Track) => void;
   setFiling: (track: Track | null) => void;
+  /** Hand this song to the send-to-a-friend drawer, which the Player owns for
+   *  the same reason it owns the filing one: it must outlive the surface that
+   *  opened it. */
+  setSending: (track: Track | null) => void;
   /** Standing in a groove the deck is not carrying (hearing it on the host's
    *  speaker; the song not in this library; hosting with nothing on): the
    *  sheet reads the ROOM - its sleeve or the Users mark, the song by name,
@@ -1483,6 +1490,18 @@ export function NowPlayingSheet({
     coverTargetClass += ' npScreen__coverTarget--chapters';
   }
 
+  /*
+   * Whether this song can be sent to a friend - the rules live in npShare.ts,
+   * away from here, because they are about the song and the account and not
+   * about this screen. The central identity is the registry one rather than
+   * the server one: a send is between ACCOUNTS, and the two hubs never speak.
+   */
+  const registry = useRegistryOptional();
+  const shareable = shareSeat(track, {
+    account: !!registry?.session,
+    following: !!following,
+  });
+
   // Where the room is heard from this seat, as one phrase the line below can
   // put inside a longer one.
   const hearFrom = following
@@ -1934,6 +1953,46 @@ export function NowPlayingSheet({
               ))}
             </div>
           </Popover>
+        )}
+        {/* SENDING THIS SONG TO A FRIEND, in the row that names the song.
+            Not in the header: the header's middle is the ALBUM and its one
+            verb is about a DESTINATION (which playlist, which bookmark), so a
+            share up there is nearest to the wrong noun - and on a desktop the
+            docked pane's header sits inches from the app chrome's own share
+            glyph, which offers your SERVER. Two share affordances on one
+            screen is a question the reader has to answer (70df8b0). Not on
+            the actions row either: measured at 1440x900 that row is already
+            over its width (454px of seats in 434px) and wearing its scroll
+            arrow, so an eighth seat would be a share you have to go looking
+            for. Here it is one reach from the title it acts on, beside the
+            other thing you DO to a song.
+
+            A paper plane, not the chrome's share glyph, because it is not the
+            same verb: that one hands out your server, this one hands over a
+            song - and it is already the glyph the song's own menu uses for
+            this exact drawer.
+
+            LEFT of the heart, so the heart stays the row's end-stop: it is
+            the control a thumb reaches for without looking, and it must not
+            move because a seat appeared beside it. */}
+        {/* `&& track` is for the compiler, not for the reader: shareSeat has
+            already refused a null one, but the narrowing does not cross the
+            call. */}
+        {shareable !== 'none' && track && (
+          <IconButton
+            variant="ghost"
+            className="npScreen__send"
+            /* Greyed rather than gone when there is no name to send, and the
+               reason IS the accessible name - this app carries no tooltip
+               layer, so that is where a "why" lives. */
+            disabled={shareable === 'unnamed'}
+            aria-label={
+              shareable === 'unnamed' ? t('player.sendNeedsAName') : t('player.sendToFriend')
+            }
+            onClick={() => setSending(track)}
+          >
+            <Send size={20} />
+          </IconButton>
         )}
         {!following && (
         <IconButton
