@@ -708,6 +708,39 @@
   gap: 0.15rem;
 }
 
+/*
+ * The title and the format stamp, on one line.
+ *
+ * The stamp used to sit under the artist, in the column with the rest of the
+ * captions - and a pill on its own line reads as a new sentence rather than as
+ * a property of the song just named. Beside the title it is what it is: a note
+ * about THAT file.
+ *
+ * `min-inline-size: 0` on the row and on the title is what lets the title
+ * ellipsise (and its marquee run) instead of shoving the pill off the edge -
+ * a flex item will not shrink below its content otherwise.
+ */
+.npScreen__titleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-inline-size: 0;
+}
+
+.npScreen__titleRow .npScreen__title {
+  min-inline-size: 0;
+  flex: 0 1 auto;
+}
+
+/* In the row the stamp keeps its own size and sits on the title's line - the
+   column version's top margin and start-alignment are what put it under the
+   artist, and both are wrong beside a heading. */
+.npScreen__titleRow .npScreen__codec {
+  flex: none;
+  align-self: center;
+  margin-block-start: 0;
+}
+
 .npScreen__title {
   font-size: 1.4rem;
   font-weight: 650;

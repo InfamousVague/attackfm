@@ -22,6 +22,7 @@ vi.mock('../api/stems.ts', () => ({ stemStatus: vi.fn() }));
 
 import { stemStatus } from '../api/stems.ts';
 import {
+  applyStemGains,
   clearStemDrop,
   isStemDropped,
   noteStemsFor,
@@ -31,6 +32,7 @@ import {
   stemDropOnTrack,
   stemDropParam,
   stemGain,
+  setStemRelay,
   stemsKnownFor,
   subscribeStemDrop,
 } from './stemDrop.ts';
@@ -47,6 +49,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setStemRelay(null);
   clearStemDrop();
 });
 
@@ -314,5 +317,95 @@ describe('stemDropOnTrack - when a request is spent', () => {
     stemDropOnTrack(session, null);
     await Promise.resolve();
     expect(asked).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE MIX HAS TO REACH THE DEVICE THAT IS PLAYING.
+ *
+ * Parts come out on the server, on the stream the playing device asked for.
+ * A drop set on a device that is only holding the remote changed nothing
+ * anybody could hear - toggle karaoke on the desktop while the phone was
+ * streaming and the vocal stayed in, for the whole song and every song after.
+ */
+describe('the mix, when another device is the one playing', () => {
+  it('sends a fader over the wire', () => {
+    const sent: Record<string, number>[] = [];
+    setStemRelay((g) => sent.push(g));
+    setStemLevel('vocals', 0.2);
+    expect(sent).toEqual([{ vocals: 0.2 }]);
+  });
+
+  it('sends the WHOLE mix, not the one fader that moved', () => {
+    const sent: Record<string, number>[] = [];
+    setStemLevel('drums', 0.5);
+    setStemRelay((g) => sent.push(g));
+    setStemLevel('vocals', 0);
+    expect(sent.at(-1)).toEqual({ drums: 0.5, vocals: 0 });
+  });
+
+  it('sends the reset too - an empty mix is an instruction', () => {
+    const sent: Record<string, number>[] = [];
+    setStemLevel('vocals', 0);
+    setStemRelay((g) => sent.push(g));
+    clearStemDrop();
+    expect(sent).toEqual([{}]);
+  });
+
+  it('keeps the mix here as well, so this device’s own mixer reads right', () => {
+    setStemRelay(() => {});
+    setStemDropped('vocals', true);
+    expect(isStemDropped('vocals')).toBe(true);
+  });
+
+  it('stops sending the moment the seat comes back', () => {
+    const sent: Record<string, number>[] = [];
+    setStemRelay((g) => sent.push(g));
+    setStemRelay(null);
+    setStemLevel('vocals', 0);
+    expect(sent).toEqual([]);
+  });
+});
+
+describe('a mix that arrived from the remote', () => {
+  it('takes effect here', () => {
+    applyStemGains({ vocals: 0 });
+    expect(isStemDropped('vocals')).toBe(true);
+  });
+
+  it('is not sent back where it came from', () => {
+    const sent: Record<string, number>[] = [];
+    setStemRelay((g) => sent.push(g));
+    applyStemGains({ vocals: 0 });
+    expect(sent).toEqual([]);
+  });
+
+  it('replaces the mix rather than merging into it', () => {
+    setStemLevel('drums', 0.5);
+    applyStemGains({ vocals: 0 });
+    expect(stemGain('drums')).toBe(1);
+    expect(stemGain('vocals')).toBe(0);
+  });
+
+  it('an empty map puts everything back to full', () => {
+    setStemLevel('vocals', 0);
+    applyStemGains({});
+    expect(stemGain('vocals')).toBe(1);
+  });
+
+  it('refuses a gain the wire had no business carrying', () => {
+    applyStemGains({ vocals: -4, drums: 9, bass: Number.NaN, other: 0.25 });
+    expect(stemGain('vocals')).toBe(0);
+    expect(stemGain('drums')).toBe(1);
+    expect(stemGain('bass')).toBe(1);
+    expect(stemGain('other')).toBe(0.25);
+  });
+
+  it('wakes the surfaces that draw the mixer', () => {
+    let woke = 0;
+    const stop = subscribeStemDrop(() => (woke += 1));
+    applyStemGains({ vocals: 0 });
+    stop();
+    expect(woke).toBe(1);
   });
 });

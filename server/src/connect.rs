@@ -174,11 +174,11 @@ enum ClientMsg {
 
 /// Transport a remote asks the active device to perform. Fields beyond `action`
 /// are optional and interpreted per action (positionMs for seek, volume for
-/// volume, queue+index for setQueue).
+/// volume, queue+index for setQueue, gains for stems).
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Command {
-    /// play | pause | toggle | next | prev | seek | volume | setQueue
+    /// play | pause | toggle | next | prev | seek | volume | setQueue | stems
     action: String,
     #[serde(rename = "positionMs", skip_serializing_if = "Option::is_none")]
     position_ms: Option<i64>,
@@ -188,6 +188,13 @@ struct Command {
     queue: Option<Vec<i64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     index: Option<i64>,
+    /// For `stems`: the mix, as part name to gain (0 out, 1 full). The whole
+    /// map travels rather than the one fader that moved, so a dropped frame
+    /// cannot leave the remote and the playing device holding different mixes.
+    /// Named here because this struct is a fixed shape - serde drops fields it
+    /// was not told about, and without this the mix arrived empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gains: Option<std::collections::HashMap<String, f64>>,
 }
 
 // --- the endpoint ------------------------------------------------------------

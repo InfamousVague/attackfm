@@ -648,3 +648,135 @@ describe('following: correcting a drift', () => {
     expect(f.live.current.setPlayingState).toHaveBeenCalledWith(false);
   });
 });
+
+/**
+ * WHAT THIS DEVICE TELLS THE HUB WHERE THE SONG IS.
+ *
+ * Every other device draws its bar from this one number, carried forward on
+ * its own clock, so a wrong number is not a wrong instant - it is a bar that
+ * is wrong for the whole song. And the number was wrong in exactly one place:
+ * a skip. The report effect runs in the same commit as the new track, while
+ * the position ref still holds React state from the old one, and the load
+ * effect that zeroes it has not run yet (it awaits its source first). Skip
+ * four minutes into a track and every watcher drew the next song four minutes
+ * in. Nothing corrected it: position is not a dep and no further
+ * discontinuity was coming.
+ */
+function reporter(opts: { track: number; positionSec: number; resume?: unknown }) {
+  const position = { current: opts.positionSec };
+  const live: MutableRefObject<PlayerLiveState> = {
+    current: {
+      playing: true,
+      position: opts.positionSec,
+      duration: 200,
+      track: song(opts.track),
+      shuffle: false,
+      repeat: 'off',
+      volume: 100,
+      queue: [],
+      setPlayingState: vi.fn(),
+      commitSeek: vi.fn(),
+      allTracks: [song(1), song(2)],
+      onTrackChange: vi.fn(),
+      onQueueChange: vi.fn(),
+      deckOwned: true,
+    } as unknown as PlayerLiveState,
+  };
+  const resume: MutableRefObject<unknown> = { current: opts.resume ?? null };
+  const connect = {
+    connected: true,
+    thisDeviceId: 'this-device',
+    activeDeviceId: 'this-device',
+    session: null,
+    registerController: vi.fn(),
+    reportState: vi.fn(),
+    transfer: vi.fn(),
+  };
+  const props = (trackId: number, duration: number) => ({
+    connect: connect as unknown as Parameters<typeof usePlayerConnect>[0]['connect'],
+    jam: null as unknown as Parameters<typeof usePlayerConnect>[0]['jam'],
+    liveRef: live,
+    positionRef: position,
+    playbackRef: { current: { volumeBoost: false } } as unknown as Parameters<
+      typeof usePlayerConnect
+    >[0]['playbackRef'],
+    resumeRef: resume as MutableRefObject<null>,
+    track: song(trackId),
+    playing: true,
+    shuffle: false,
+    repeat: 'off' as const,
+    volume: 100,
+    queue: [],
+    upNext: [],
+    seekTick: 0,
+    duration,
+    commitSeek: vi.fn(),
+    setPlayingState: vi.fn(),
+    silent: false,
+  });
+  const view = renderHook(
+    (p: { trackId: number; duration: number }) => usePlayerConnect(props(p.trackId, p.duration)),
+    { initialProps: { trackId: opts.track, duration: 200 } },
+  );
+  return {
+    connect,
+    position,
+    live,
+    /* Skip to another song, the way the app does: the track changes first and
+       the deck follows. Duration goes to 0 because that is what a deck with
+       nothing loaded reports, and it is what makes this the moment the old
+       position ref is still standing. */
+    skipTo: (id: number) => {
+      live.current = { ...live.current, track: song(id) } as PlayerLiveState;
+      view.rerender({ trackId: id, duration: 0 });
+    },
+    /** The deck becoming real: metadata landed, the position ref is honest. */
+    loaded: (id: number, sec: number) => {
+      position.current = sec;
+      view.rerender({ trackId: id, duration: 201 });
+    },
+    /** Every position this device has published, in order. */
+    said: () => connect.reportState.mock.calls.map((c) => (c[0] as { positionMs: number }).positionMs),
+  };
+}
+
+describe('reporting where the song is', () => {
+  it('says the new song is at its BEGINNING when skipped to', () => {
+    const r = reporter({ track: 1, positionSec: 240 });
+    r.skipTo(2);
+    expect(r.said().at(-1)).toBe(0);
+  });
+
+  it('does not carry the old song’s position onto the new one', () => {
+    const r = reporter({ track: 1, positionSec: 240 });
+    r.skipTo(2);
+    expect(r.said()).not.toContain(240_000);
+  });
+
+  it('speaks again once the deck is real, with the position it actually has', () => {
+    const r = reporter({ track: 1, positionSec: 240 });
+    r.skipTo(2);
+    r.loaded(2, 3);
+    expect(r.said().at(-1)).toBe(3_000);
+  });
+
+  it('honours a resume asked for at a position - a bookmark, a hand-off', () => {
+    const r = reporter({
+      track: 1,
+      positionSec: 240,
+      resume: { trackId: 2, positionMs: 90_000, play: true },
+    });
+    r.skipTo(2);
+    expect(r.said().at(-1)).toBe(90_000);
+  });
+
+  it('ignores a resume meant for a DIFFERENT song', () => {
+    const r = reporter({
+      track: 1,
+      positionSec: 240,
+      resume: { trackId: 7, positionMs: 90_000, play: true },
+    });
+    r.skipTo(2);
+    expect(r.said().at(-1)).toBe(0);
+  });
+});

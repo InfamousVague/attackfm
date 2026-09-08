@@ -65,11 +65,23 @@ export interface ConnectCommand {
     | 'volume'
     | 'setQueue'
     | 'enqueueNext'
-    | 'enqueueEnd';
+    | 'enqueueEnd'
+    /*
+     * `stems` is the one command that is not transport at all: it is how the
+     * sound is BUILT. Parts are taken out on the server, on the stream the
+     * playing device asked for, so a drop set anywhere but that device
+     * changed nothing anybody could hear - toggle karaoke on the desktop
+     * while the phone is the one streaming and the vocal stayed in. Sent as
+     * the whole gain map rather than one part at a time so a lost frame
+     * cannot leave the two devices holding different mixes.
+     */
+    | 'stems';
   positionMs?: number;
   volume?: number;
   queue?: number[];
   index?: number;
+  /** For `stems`: every part turned below full, by name, 0 (out) to 1. */
+  gains?: Record<string, number>;
 }
 
 /** What this device tells the hub about its playback (the active device only). */

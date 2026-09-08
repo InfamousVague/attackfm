@@ -2195,6 +2195,7 @@
     "sendToFriend": "Send to a friend",
     "sent": "Sent",
     "sentToYou": "Sent to you",
+    "shareButton": "Share",
     "shareCardTitle": "@{{handle}} on AttackFM",
     "shareCopied": "Copied",
     "shareCopyFailed": "Could not copy - long-press the link on the card to select it.",

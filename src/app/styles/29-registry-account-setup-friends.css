@@ -698,3 +698,35 @@
   justify-content: flex-end;
   gap: var(--glacier-space-2);
 }
+
+/*
+ * The hero card's own row: who this is, and the one thing you do with it.
+ *
+ * The share used to hang off the header chrome, which put "hand my profile to
+ * someone" among the app's furniture rather than on the card that IS the
+ * thing being handed over. Here it sits at the card's right edge, level with
+ * the handle, wearing a word - "share" has no glyph people read reliably, and
+ * this is a button worth finding.
+ */
+.profileHero__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+
+/* The names keep the column they had; the row is only the split. `min-inline-size: 0`
+   so a long handle ellipsises instead of shouldering the button off the card. */
+.profileHero__who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+/* Never shrinks: a button whose label is squeezed to an ellipsis is a button
+   nobody can read, and the handle beside it is the thing with room to give. */
+.profileHero__share {
+  flex: none;
+}

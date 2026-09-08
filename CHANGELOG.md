@@ -15,6 +15,20 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.6.0
+
+- Skip a song while another device is listening and its progress bar starts
+  where the song does. It used to inherit the last song's place and stay wrong
+  for the whole track.
+- Turn the vocal off — or move any of the faders in the mixer — from a phone
+  or computer that is only holding the remote, and the device actually playing
+  hears it. Before, the mix only ever changed on the device you touched.
+- Your week now holds its place while it loads, so the profile no longer
+  shifts under your thumb a moment after it opens.
+- The song's format sits beside its title on Now Playing rather than below it.
+- A Share button on your profile card, with the word on it.
+- Smaller labels and even icons down the side of the window on a computer.
+
 ## 0.5.148
 
 - A computer that is watching another device play shows the player again — the

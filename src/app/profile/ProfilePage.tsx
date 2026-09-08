@@ -2,7 +2,7 @@ import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { HomeStatsCards } from '../library/HomeStatsCards.tsx';
 import { ShareProfileSheet } from './ShareProfile.tsx';
 import { Button, ContextMenu, Heading, IconButton, MenuItem, Text } from '@glacier/react';
-import { Camera, Crop, ImagePlus, LogOut, Trash2, Users, Wifi } from '@glacier/icons';
+import { Camera, Crop, ImagePlus, LogOut, Share2, Trash2, Users, Wifi } from '@glacier/icons';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { MenuStop } from '../ux/MenuStop.tsx';
 import { useCallback, useRef, useState, type ReactNode } from 'react';
@@ -355,18 +355,13 @@ export function ProfilePage({
   // Mounted on first use: the sheet draws a card and re-encodes both pictures.
   const [sharingProfile, setSharingProfile] = useState(false);
   /*
-   * Your profile IS what this page shares, so it takes over the header's share
-   * button rather than adding a second one under your handle. Two share
-   * affordances on one screen is a question the reader has to answer - which
-   * one shares me? - and the header button is the one every other page has
-   * already taught them. Left to the invite card until there is a registry
-   * account to point at: with no handle there is no profile to hand over.
+   * The share lives ON the card now, wearing a word, so the header chrome
+   * offers nothing here. Two share affordances on one screen is a question
+   * the reader has to answer - which one shares me? - and between a glyph in
+   * the app's furniture and a labelled button on the card that IS the thing
+   * being handed over, the card wins.
    */
-  useOfferShare(
-    registry && account
-      ? { label: t('profile.shareTitle'), open: () => setSharingProfile(true) }
-      : null,
-  );
+  useOfferShare(null);
 
   const pick = (kind: ImageKind) => {
     wanted.current = kind;
@@ -640,6 +635,12 @@ export function ProfilePage({
           </HoldMenu>
 
           <span className="profileHero__body">
+            {/* The card's own row: who this is on the left, the one thing you
+                do WITH that on the right. A share button with a word on it
+                rather than a glyph in the corner - "share" is not a shape
+                people recognise, and this is the card a person hands over. */}
+            <span className="profileHero__row">
+            <span className="profileHero__who">
             <h1 className="profileHero__handle">@{account.handle}</h1>
             {/* Beside the buttons that caused it. A picture refused for its
                 format or its size is the one failure on this page a person is
@@ -661,6 +662,17 @@ export function ProfilePage({
                     })
                   : t('profile.listeningFrom', { host: hostOf(session.url) })
                 : t('profile.accountEverywhere')}
+            </span>
+            </span>
+            <Button
+              variant="soft"
+              size="sm"
+              className="profileHero__share"
+              onClick={() => setSharingProfile(true)}
+            >
+              <Share2 size={15} />
+              {t('profile.shareButton')}
+            </Button>
             </span>
           </span>
         </header>

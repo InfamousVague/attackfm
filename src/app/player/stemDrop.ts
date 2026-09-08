@@ -63,9 +63,57 @@ const asking = new Set<number>();
 
 const listeners = new Set<() => void>();
 
+/*
+ * WHERE THE SOUND ACTUALLY IS.
+ *
+ * The parts are taken out by the server, on the stream the PLAYING device
+ * asked for. So a drop set on a device that is only holding the remote does
+ * nothing anybody can hear: toggle karaoke on the desktop while the phone is
+ * the one streaming and the vocal stays in, on the phone, for good.
+ *
+ * This is the wire out to that device, hung here rather than at the two
+ * buttons because there are two of them today (the karaoke toggle and the
+ * mixer's faders) and a third would forget. Null whenever this device is the
+ * one playing, which is the ordinary case and the one that needs no wire.
+ */
+let relay: ((gains: Record<string, number>) => void) | null = null;
+
+/** Registered by the Player while ANOTHER device holds the seat. */
+export function setStemRelay(send: ((gains: Record<string, number>) => void) | null): void {
+  relay = send;
+}
+
 function commit(next: StemDrop): void {
   state = next;
   for (const l of listeners) l();
+}
+
+/**
+ * Commit a mix and tell the device that is playing about it.
+ *
+ * Local as well as remote, deliberately: the remote's own mixer should read
+ * the way the listener just set it, and this device inherits the mix if it
+ * later takes the seat back. The whole map goes over the wire, not the one
+ * part that moved, so a dropped frame cannot leave the two ends holding
+ * different mixes.
+ */
+function commitMix(gains: Record<string, number>): void {
+  commit({ ...state, gains });
+  relay?.(gains);
+}
+
+/**
+ * A mix that arrived FROM the remote. Committed without relaying it back -
+ * the playing device never has a relay anyway, but a rule stated once is
+ * cheaper than a rule inferred from who holds the seat.
+ */
+export function applyStemGains(gains: Record<string, number>): void {
+  const clean: Record<string, number> = {};
+  for (const [part, g] of Object.entries(gains)) {
+    const v = Math.max(0, Math.min(1, Number(g)));
+    if (Number.isFinite(v) && v < 1) clean[part] = v;
+  }
+  commit({ ...state, gains: clean });
 }
 
 export function stemDrop(): StemDrop {
@@ -116,7 +164,7 @@ export function setStemLevel(part: string, gain: number): void {
   const gains = { ...state.gains };
   if (g >= 1) delete gains[part];
   else gains[part] = g;
-  commit({ ...state, gains });
+  commitMix(gains);
 }
 
 /** Take a part fully out, or put it back to full. */
@@ -127,7 +175,7 @@ export function setStemDropped(part: string, dropped: boolean): void {
 /** Put everything back to full. */
 export function clearStemDrop(): void {
   if (Object.keys(state.gains).length === 0) return;
-  commit({ ...state, gains: {} });
+  commitMix({});
 }
 
 /** Record what we know, for the resolver and for the next visit to this song. */

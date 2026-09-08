@@ -371,7 +371,13 @@
   background: none;
   color: var(--glacier-text-muted);
   font: inherit;
-  font-size: var(--glacier-text-sm);
+  /* `--glacier-text-sm` was asked for here and there is no such token - the
+     kit spells it `--glacier-font-size-sm`. An unknown custom property is not
+     an error, it is simply nothing, so `font-size` fell back to what it
+     inherits and every rail label rendered at the document's 16px. Measured:
+     16px where the rule meant 14. That is the whole of "the sidebar items are
+     too large" - a one-word typo, used exactly once in the app. */
+  font-size: var(--glacier-font-size-sm);
   font-weight: 500;
   text-align: start;
   cursor: pointer;
@@ -406,6 +412,17 @@
   block-size: 1.5rem;
   align-items: center;
   justify-content: center;
+}
+
+/* One size for every glyph in the rail. The destinations arrive at the size
+   they were REGISTERED at (18, the menu's) and the foot draws its own at 22,
+   so Downloads and Settings sat visibly bigger than everything above them.
+   Sized here for the reason the bar's are: one number, in the place that owns
+   the row, and it covers a plugin's icon too - which arrives at whatever size
+   the plugin built it at. */
+.appNavRail__icon svg {
+  inline-size: 18px;
+  block-size: 18px;
 }
 
 .appNavRail__label {

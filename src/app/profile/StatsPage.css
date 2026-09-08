@@ -502,6 +502,23 @@ button.statsRow__name:hover {
   filter: brightness(1.07);
 }
 
+/*
+ * A card holding its seat while the week is still on the wire.
+ *
+ * Same box, same padding, same icon chip - only the colour comes off. The
+ * hue is the card's own signal ("this one is the streak"), and shimmering it
+ * in full colour reads as three loaded cards whose numbers have gone missing
+ * rather than as three cards on their way.
+ */
+.statsMini[data-ghost] {
+  background: var(--glacier-surface-sunken);
+  cursor: default;
+}
+
+.statsMini[data-ghost] .statsMini__icon {
+  background: var(--glacier-surface-raised);
+}
+
 .statsMini__icon {
   flex: none;
   display: inline-flex;

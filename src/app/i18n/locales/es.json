@@ -2342,6 +2342,7 @@
     "sendToFriend": "Enviar a un amigo",
     "sent": "Enviada",
     "sentToYou": "Te la han enviado",
+    "shareButton": "Compartir",
     "shareCardTitle": "@{{handle}} en AttackFM",
     "shareCopied": "Copiado",
     "shareCopyFailed": "No se ha podido copiar: mantén pulsado el enlace de la tarjeta para seleccionarlo.",

@@ -1706,12 +1706,21 @@ export function NowPlayingSheet({
           {/* A single-file book's title IS its album, and the head already
               wears the album - saying it twice on one screen is noise. */}
           {!(track?.kind === 'book' && track.title === track.album) && (
-            <MarqueeText
-              className="npScreen__title"
-              text={
-                following ? (following.trackTitle ?? t('player.nothingPlayingYet')) : (track?.title ?? '')
-              }
-            />
+            <div className="npScreen__titleRow">
+              <MarqueeText
+                className="npScreen__title"
+                text={
+                  following ? (following.trackTitle ?? t('player.nothingPlayingYet')) : (track?.title ?? '')
+                }
+              />
+              {/* What the file IS - FLAC, MP3, ALAC - because on a self-hosted
+                  library the format is a fact about YOUR copy, not a service's
+                  tier. Beside the title rather than under the artist: it is a
+                  property of the song being named, and a line of its own put a
+                  stamp where the eye was looking for the next sentence.
+                  Absent when the tags never said (old scans). */}
+              {codecText && !following && <span className="npScreen__codec">{codecText}</span>}
+            </div>
           )}
           {/* A BOOK'S AUTHOR IS NOT A LINK.
               The artist line is a door to an artist page - a record's other
@@ -1772,10 +1781,6 @@ export function NowPlayingSheet({
               {t('player.playingOn', { device: activeDeviceName ?? t('player.anotherDevice') })}
             </span>
           )}
-          {/* What the file IS - FLAC, MP3, ALAC - because on a self-hosted
-              library the format is a fact about YOUR copy, not the service's
-              tier. Absent when the tags never said (old scans). */}
-          {codecText && !following && <span className="npScreen__codec">{codecText}</span>}
           {/* A caption now, not a door: chapter select moved into the
               transport, where the thumb already is. */}
           {!following && (doorLabel || chapterLabel) && (

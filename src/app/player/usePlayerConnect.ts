@@ -1,5 +1,6 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import type { PlayerRepeat } from '@glacier/react';
+import { applyStemGains, setStemRelay } from './stemDrop.ts';
 import { trackIdFromPath } from '../server.ts';
 import { VOLUME_MAX, VOLUME_UNITY } from './volume.ts';
 import { useConnect } from './playbackSync.tsx';
@@ -251,10 +252,39 @@ export function usePlayerConnect({
         liveRef.current.onTrackChange?.({ ...t });
       },
 
+      /*
+       * A remote moved the mix. The parts are taken out on the SERVER, on the
+       * stream this device asked for, so this is the only device where the
+       * change can be made to happen - which is why toggling karaoke on the
+       * desktop while the phone was streaming did nothing at all.
+       *
+       * Committed to this device's own store, so the reload that carries the
+       * new `drop` is the same one a local toggle causes, and the mixer here
+       * reads the way the listener set it over there.
+       */
+      setStems: (gains) => applyStemGains(gains),
+
       release: () => liveRef.current.setPlayingState(false),
     });
     return () => connect.registerController(null);
   }, [connect, liveRef, playbackRef, resumeRef]);
+
+  /*
+   * THE OTHER END OF THE MIX.
+   *
+   * While another device holds the seat this one is a remote, and a fader
+   * moved here has to travel to reach the stream it applies to. Registered on
+   * the store rather than on the two buttons that call it (the karaoke toggle
+   * and the mixer) so a third surface cannot forget, and torn down the moment
+   * the seat comes back - a device driving its own deck must never send its
+   * own mix to itself.
+   */
+  const remoting = connect.connected && connect.activeElsewhere;
+  useEffect(() => {
+    if (!remoting) return;
+    setStemRelay((gains) => connect.sendCommand({ action: 'stems', gains }));
+    return () => setStemRelay(null);
+  }, [remoting, connect]);
 
   // What this device hears, for friends who may know (profile/presence.ts).
   // Song and play state only - the bridge decides whether it travels.
@@ -619,6 +649,18 @@ export function usePlayerConnect({
   // for the one position jump extrapolation cannot follow.
   const ownsPlayback = connect.activeDeviceId === connect.thisDeviceId;
   const shouldReport = connect.connected && !!track && (playing || ownsPlayback);
+  /*
+   * The last song this device told the hub about.
+   *
+   * `positionRef` carries React state, and on a skip this effect runs in the
+   * same commit as the new track - BEFORE the load effect has awaited its
+   * source and called setPosition(0). So the report that goes out on a skip
+   * said "new song, old song's position": skip four minutes into a track and
+   * every watching device drew its bar four minutes in and ticked on from
+   * there. Nothing corrected it either, because position is not a dep and no
+   * further discontinuity was coming. That is the seek bar not lining up.
+   */
+  const reportedTrack = useRef<number | null>(null);
   useEffect(() => {
     if (!shouldReport || !track) return;
     // Starting playback here while ANOTHER device holds the seat (a song picked
@@ -633,13 +675,29 @@ export function usePlayerConnect({
       connect.transfer(connect.thisDeviceId);
     }
     const id = trackIdFromPath(track.path);
+    /*
+     * A song this device has not reported before is at its beginning, not
+     * wherever the last one had got to - unless something asked for it at a
+     * position (a resume, a hand-off, a bookmark), which is exactly what
+     * `resumeRef` holds until the deck has loaded far enough to take it. Once
+     * this song IS the reported one, the ref is honest again and speaks for
+     * itself; `duration` below sends that second, settled word.
+     */
+    const fresh = reportedTrack.current !== id;
+    const pending = resumeRef.current;
+    const positionMs = fresh
+      ? pending && pending.trackId === id
+        ? Math.max(0, Math.round(pending.positionMs))
+        : 0
+      : Math.max(0, Math.round(positionRef.current * 1000));
+    reportedTrack.current = id;
     // Where the playing song sits in the context, so the tail after it can be
     // appended behind the hand-queued lane. -1 when the song came from that
     // lane itself and was never in the context.
     const at = queue.findIndex((t) => t.path === track.path);
     connect.reportState({
       trackId: id,
-      positionMs: Math.round(positionRef.current * 1000),
+      positionMs,
       // The deck's length, so the hub's between-reports clock has a ceiling.
       // `duration` is this device's loaded deck; the library's number is the
       // fallback for the report that goes out before metadata lands.
@@ -691,7 +749,14 @@ export function usePlayerConnect({
      * changes only when somebody actually edits the queue - not per render and
      * never per position tick.
      */
+    /*
+     * `duration` is the deck becoming real: metadata has landed, the source is
+     * loaded, and setPosition(0) (or the resume's seek) has already run. It is
+     * the one moment after a track change when this device can speak for where
+     * the song actually is, so the guess above gets a settled second word a
+     * beat later rather than standing for the whole track.
+     */
     // eslint-disable-next-line react-hooks/exhaustive-deps -- discontinuities only; position rides refs
-  }, [shouldReport, track, playing, shuffle, repeat, volume, seekTick, queue, upNext]);
+  }, [shouldReport, track, duration, playing, shuffle, repeat, volume, seekTick, queue, upNext]);
 
 }

@@ -52,6 +52,10 @@ export interface PlaybackController {
    *  of the hand-queued lane (`next`) or its end. Never takes playback over,
    *  which is the whole difference from setQueue above. */
   enqueue(trackIds: number[], next: boolean): void;
+  /** A remote changed the mix - karaoke, or a fader in the stems room. The
+   *  parts come out on the server, on THIS device's stream, so this is the
+   *  only place the change can be made to happen at all. */
+  setStems(gains: Record<string, number>): void;
   /** Become the active device: load the session's track at its position. */
   becomeActive(state: ConnectSession): void;
   /** Stop playing here - another device took over. */
@@ -179,6 +183,12 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
             break;
           case 'enqueueEnd':
             if (msg.command.queue) c.enqueue(msg.command.queue, false);
+            break;
+          case 'stems':
+            // An empty map is a real instruction - "everything back to full" -
+            // so this is gated on the field being PRESENT, not on it having
+            // anything in it.
+            if (msg.command.gains) c.setStems(msg.command.gains);
             break;
         }
         break;
