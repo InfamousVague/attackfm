@@ -3274,6 +3274,7 @@
     "testsNoStamp": "このビルドにはコミットの刻印がないため、{{report}} のレポートがこのビルドのものかどうかを確認できません。",
     "testsNoSuites": "このレポートにはスイートが一つもありません。始まる前に死んだ実行は、こう見えます。",
     "testsNoVerdict": "この実行では何も確認できていません",
+    "testsOtherBuild": "これは別のビルドの結果です",
     "testsOnlyFailures": "失敗のみ",
     "testsOnlyFailuresGloss": "失敗したテストだけに絞り込みます。",
     "testsOnlyFailuresHint": "成功したものをすべて隠します。",

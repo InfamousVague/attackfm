@@ -217,6 +217,20 @@ export function TestResultsPane({
 
   const tally = useMemo(() => tallyReport(report), [report]);
   const match = buildMatch(report, mine);
+  /*
+   * The green tick is about THIS build, not about the run.
+   *
+   * A report from another commit can hold seventeen hundred passes and say
+   * nothing whatever about the code on this device, so a green slab over it is
+   * precisely the lie this pane exists to refuse: the banner underneath would
+   * be arguing with the headline above it, and the headline wins the glance.
+   *
+   * A build carrying no stamp at all is left green on purpose. Every
+   * `npm run dev` is unstamped, and a warning that fires every single time is
+   * one nobody reads on the day it means something - the amber banner says it
+   * cannot be checked, which is the true statement, without spending the red.
+   */
+  const vouched = tally.ok && match !== 'mismatch';
   const missing = report.suites.filter(suiteDidNotRun);
   const filtering = query.trim().length > 0 || onlyFailures;
   const views = useMemo(
@@ -248,13 +262,15 @@ export function TestResultsPane({
         ever drawn when the sum of the suites says so: `report.ok` is a fact
         further down, not the thing this line is made of.
       */}
-      <div className="testPane__verdict" data-ok={tally.ok || undefined}>
+      <div className="testPane__verdict" data-ok={vouched || undefined}>
         <span className="testPane__verdictGlyph" aria-hidden>
-          {tally.ok ? <CircleCheck size={26} /> : <CircleX size={26} />}
+          {vouched ? <CircleCheck size={26} /> : <CircleX size={26} />}
         </span>
         <div className="testPane__verdictBody">
           <div className="testPane__verdictLine">
-            {tally.ok
+            {match === 'mismatch'
+              ? t('settings.testsOtherBuild')
+              : tally.ok
               ? t('settings.testsAllPassed', {
                   count: tally.passed,
                   n: formatNumber(tally.passed),

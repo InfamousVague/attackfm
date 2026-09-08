@@ -115,6 +115,18 @@ describe('the report belonging to another build', () => {
     expect(screen.getByText(/settings\.testsAllPassed/)).toBeInTheDocument();
   });
 
+  it('does not put a green tick over another build\u2019s results', () => {
+    // The banner and the headline must not argue with each other. A report
+    // full of passes for code that is not on this device is exactly the lie
+    // this pane exists to refuse, and the headline is what a glance reads -
+    // so the tick goes with the banner, not with the count.
+    render(<TestResultsPane report={aReport({ commit: 'aaaaaaa' })} buildCommit="bbbbbbb" />);
+    const verdict = document.querySelector('.testPane__verdict');
+    expect(verdict?.getAttribute('data-ok')).toBeNull();
+    expect(screen.getByText(/settings\.testsOtherBuild/)).toBeInTheDocument();
+    expect(screen.queryByText(/settings\.testsAllPassed/)).not.toBeInTheDocument();
+  });
+
   it('matches a short commit against a long one rather than calling it a mismatch', () => {
     // The generator writes a short HEAD; a build could be stamped with the
     // full forty. Comparing those as strings makes every build look wrong.

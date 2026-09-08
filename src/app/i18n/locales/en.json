@@ -3492,6 +3492,7 @@
     "testsNoStamp": "This build carries no commit stamp, so there is no way to check that the report from {{report}} belongs to it.",
     "testsNoSuites": "This report holds no suites at all, which is what a run that died before it started looks like.",
     "testsNoVerdict": "This run proved nothing",
+    "testsOtherBuild": "These are another build's results",
     "testsOnlyFailures": "Only failures",
     "testsOnlyFailuresGloss": "Narrows the list to the tests that failed.",
     "testsOnlyFailuresHint": "Hide everything that passed.",

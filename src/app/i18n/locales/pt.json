@@ -3710,6 +3710,7 @@
     "testsNoStamp": "Esta build não carrega carimbo de commit, então não há como conferir se o relatório de {{report}} pertence a ela.",
     "testsNoSuites": "Este relatório não tem suíte nenhuma — é assim que se parece uma execução que morreu antes de começar.",
     "testsNoVerdict": "Esta execução não provou nada",
+    "testsOtherBuild": "Estes são os resultados de outra compilação",
     "testsOnlyFailures": "Só as falhas",
     "testsOnlyFailuresGloss": "Reduz a lista aos testes que falharam.",
     "testsOnlyFailuresHint": "Esconde tudo que passou.",

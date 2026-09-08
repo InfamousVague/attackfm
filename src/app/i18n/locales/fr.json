@@ -3710,6 +3710,7 @@
     "testsNoStamp": "Cette version ne porte aucune empreinte de commit : impossible de vérifier que le rapport de {{report}} lui correspond.",
     "testsNoSuites": "Ce rapport ne contient aucune suite : c'est à quoi ressemble une exécution morte avant d'avoir commencé.",
     "testsNoVerdict": "Cette exécution n'a rien prouvé",
+    "testsOtherBuild": "Ce sont les résultats d'une autre version",
     "testsOnlyFailures": "Uniquement les échecs",
     "testsOnlyFailuresGloss": "Réduit la liste aux tests qui ont échoué.",
     "testsOnlyFailuresHint": "Masquer tout ce qui est passé.",

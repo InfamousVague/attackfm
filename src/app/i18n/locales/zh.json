@@ -3274,6 +3274,7 @@
     "testsNoStamp": "这个构建没有提交标记，因此无法核对 {{report}} 的报告是否属于它。",
     "testsNoSuites": "这份报告里一个套件也没有——一次还没开始就死掉的运行，就是这个样子。",
     "testsNoVerdict": "这次运行什么也没能证明",
+    "testsOtherBuild": "这些是另一个版本的结果",
     "testsOnlyFailures": "只看失败",
     "testsOnlyFailuresGloss": "把列表收窄到失败的测试。",
     "testsOnlyFailuresHint": "把通过的全部隐藏。",

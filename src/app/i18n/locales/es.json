@@ -3710,6 +3710,7 @@
     "testsNoStamp": "Esta compilación no lleva sello de commit, así que no hay forma de comprobar que el informe de {{report}} le corresponda.",
     "testsNoSuites": "Este informe no contiene ninguna suite: así se ve una ejecución que murió antes de empezar.",
     "testsNoVerdict": "Esta ejecución no demostró nada",
+    "testsOtherBuild": "Estos son los resultados de otra compilación",
     "testsOnlyFailures": "Solo los fallos",
     "testsOnlyFailuresGloss": "Reduce la lista a las pruebas que fallaron.",
     "testsOnlyFailuresHint": "Oculta todo lo que pasó.",

@@ -3492,6 +3492,7 @@
     "testsNoStamp": "Dieser Build trägt keinen Commit-Stempel; es lässt sich also nicht prüfen, ob der Bericht aus {{report}} zu ihm gehört.",
     "testsNoSuites": "Dieser Bericht enthält überhaupt keine Suites – so sieht ein Lauf aus, der starb, bevor er begann.",
     "testsNoVerdict": "Dieser Lauf hat nichts belegt",
+    "testsOtherBuild": "Das sind die Ergebnisse eines anderen Builds",
     "testsOnlyFailures": "Nur Fehlschläge",
     "testsOnlyFailuresGloss": "Grenzt die Liste auf die fehlgeschlagenen Tests ein.",
     "testsOnlyFailuresHint": "Alles Bestandene ausblenden.",

@@ -348,6 +348,35 @@ test.describe('the page and its chrome', () => {
     const parked = (await transport.boundingBox())!;
     await page.mouse.move(195, 400);
     await page.mouse.wheel(0, 900);
+    // `wheel` returns when the event is delivered, not when the page has
+    // finished moving, and the plate is read from the same frames the scroll
+    // is still settling in. Measured across full runs: 2.11, 3.15, 5.64,
+    // 5.72, 5.95 px of apparent drift on a strip that never moved - a red
+    // that says "the plate scrolled away" when nothing of the sort happened,
+    // and only inside the full run, which is the worst way to be wrong.
+    //
+    // So: wait for it to come to rest. Three identical frames is at rest;
+    // the frame cap is there so a page that never settles fails on the
+    // assertion below rather than hanging until the test times out.
+    await page.evaluate(
+      () =>
+        new Promise<void>((done) => {
+          const plate = document.querySelector('.playerBarShell');
+          if (!plate) return done();
+          let last = Number.NaN;
+          let still = 0;
+          let frames = 0;
+          const step = () => {
+            const y = plate.getBoundingClientRect().top;
+            still = y === last ? still + 1 : 0;
+            last = y;
+            frames += 1;
+            if (still >= 3 || frames > 120) done();
+            else requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+        }),
+    );
     const after = (await transport.boundingBox())!;
     expect(Math.abs(after.y - parked.y)).toBeLessThan(2);
 

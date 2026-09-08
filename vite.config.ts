@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { reportCommit } from './scripts/testReport/commit.mjs';
 
 // The version baked into THIS build. Without it a freshly installed app
 // cannot tell that the bundle its hub publishes is the very one it is already
@@ -22,27 +22,26 @@ const pkgVersion = JSON.parse(readFileSync('./package.json', 'utf8')).version as
 /*
  * The commit this bundle was built from.
  *
- * A version number is not enough to identify a build: two bundles can carry
- * the same version and different code (a --keep reship, a local build off a
- * branch), and anything that CLAIMS to describe this build - the test report
- * behind the developer pane, most of all - has to be able to prove it is
- * describing this one. A report that cannot be checked is a green tick over
- * somebody else's tree.
+ * A version number does not identify a build. Two bundles can carry the same
+ * one and different code - a --keep reship, a local build off a branch - so
+ * anything that CLAIMS to describe this build has to be able to prove it is
+ * describing THIS one. The developer-mode test report is the case that
+ * matters: a green tick over somebody else's tree is worse than no tick.
  *
- * A build outside a git checkout (a tarball, an exported CI workspace) says
- * `unknown` rather than guessing, and the pane treats that as "cannot vouch
- * for this" rather than as a match.
+ * `reportCommit` rather than `git rev-parse --short HEAD`, and the shared
+ * helper rather than a second copy of the rule, because the report and the
+ * build have to agree on what "this code" means. The report is a committed
+ * file recording the commit it belongs to, and its own commit moves HEAD - so
+ * a literal HEAD here would disagree with every report the moment it was
+ * committed, and the pane would fly its "not this build" banner permanently.
+ * A banner that is always up is a banner nobody reads, which costs exactly
+ * the protection it was added for. See scripts/testReport/commit.mjs.
+ *
+ * A build outside a git checkout - a tarball, an exported CI workspace - says
+ * `unknown`, and the pane treats that as "cannot vouch for this" rather than
+ * as a match.
  */
-const commit = (() => {
-  try {
-    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  } catch {
-    return 'unknown';
-  }
-})();
+const commit = reportCommit() ?? 'unknown';
 
 const ota = process.env.AFM_OTA === '1';
 // The web build (attack.fm/listen). Unlike the shipped app it is fetched over
