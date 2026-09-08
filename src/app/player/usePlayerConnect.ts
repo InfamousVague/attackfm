@@ -1,5 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import type { PlayerRepeat } from '@glacier/react';
+import { soundFrame, type SoundAction } from './soundCommands.ts';
+import type { ConnectCommand } from './connect.ts';
 import { applyStemGains, setStemRelay } from './stemDrop.ts';
 import { applyEffects, setEffectsRelay } from './effects.ts';
 import { applyFxChain, setFxChainRelay } from './fxChain.ts';
@@ -308,18 +310,75 @@ export function usePlayerConnect({
    * authoritative field, with an epoch of its own, and one answer across the
    * whole console beats two.
    */
-  const remoting = connect.connected && connect.activeElsewhere;
+  /*
+   * NOT `connected`, which was the wire's opinion and not this device's.
+   *
+   * A socket blip took the relays down with it, so a filter tapped during one
+   * was committed here, never sent, and never sent afterwards either - the two
+   * ends then held different sounds permanently, with nothing on either screen
+   * to say so. A remote is a remote whether or not its socket is up at this
+   * instant; the store is the authority on what this device believes, and the
+   * wire is a delivery problem. So the relays stay registered for as long as
+   * another device holds the seat, and what could not go out is held below.
+   */
+  const remoting = connect.activeElsewhere;
+  const carries = connect.carries;
+  /**
+   * What was moved on the console while the wire was down, per store.
+   *
+   * One slot each and the latest wins, which is the whole state a store has:
+   * every frame carries the WHOLE of its own store, so the last one is not a
+   * step in a sequence, it is the answer. Flushed on the next open, and
+   * dropped the moment this device stops being a remote - by then it owns the
+   * sound and has nowhere to send it.
+   */
+  const undelivered = useRef(new Map<SoundAction, ConnectCommand>());
   useEffect(() => {
-    if (!remoting) return;
-    setStemRelay((gains) => connect.sendCommand({ action: 'stems', gains }));
-    setEffectsRelay((ids) => connect.sendCommand({ action: 'effects', effects: [...ids] }));
-    setFxChainRelay((chain) => connect.sendCommand({ action: 'chain', chain }));
+    if (!remoting) {
+      undelivered.current.clear();
+      return;
+    }
+    /*
+     * ONE relay per store, and only for the stores this hub says it carries
+     * whole (see the `hello` frame in connect.ts). A hub that has not been
+     * redeployed drops the payload and hands the playing device a bare action
+     * it can only ignore - and, worse, spends on it the single slot it holds
+     * for a seat-holder that is mid-blip, so a filter tapped there loses a
+     * pause that was waiting to be delivered. There is nothing the client can
+     * do to make such a hub carry the sound; what it can do is not put a frame
+     * on a wire that will corrupt it. The change still applies here, and this
+     * device inherits it if it takes the seat back.
+     */
+    const send = (command: ConnectCommand) => {
+      if (connect.sendCommand(command)) undelivered.current.delete(command.action as SoundAction);
+      else undelivered.current.set(command.action as SoundAction, command);
+    };
+    if (carries.has('stems')) setStemRelay((gains) => send(soundFrame('stems', gains)));
+    if (carries.has('effects')) setEffectsRelay((ids) => send(soundFrame('effects', [...ids])));
+    if (carries.has('chain')) setFxChainRelay((chain) => send(soundFrame('chain', chain)));
     return () => {
       setStemRelay(null);
       setEffectsRelay(null);
       setFxChainRelay(null);
     };
-  }, [remoting, connect]);
+  }, [remoting, carries, connect]);
+
+  /*
+   * ...and the wire comes back.
+   *
+   * Only what was actually moved here while it was down is sent - never the
+   * whole console on every reconnect, which would push this device's idea of
+   * the sound at the seat holder every time a phone woke up, and is the same
+   * mistake as pulling their state the other way.
+   */
+  useEffect(() => {
+    if (!connect.connected || !remoting) return;
+    const held = [...undelivered.current.values()];
+    undelivered.current.clear();
+    for (const command of held) {
+      if (!connect.sendCommand(command)) undelivered.current.set(command.action as SoundAction, command);
+    }
+  }, [connect.connected, remoting, connect]);
 
   // What this device hears, for friends who may know (profile/presence.ts).
   // Song and play state only - the bridge decides whether it travels.

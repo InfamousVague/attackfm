@@ -1,0 +1,17 @@
+{
+  "why": "The commands that carry the SOUND between one person's devices, spelled ONCE. The client and the hub are two codebases in two languages and this file is the only place they agree on these words: soundCommands.ts builds every frame from it (and takes its `action` type from these keys, so a store that is not named here cannot put anything on the wire), and connect.rs's tests assert that the hub classifies exactly these actions as sound and that a frame carrying each `field` survives serde's round trip through `Command`. That last one is not hypothetical. `Command` is a fixed shape and serde drops what it was not told about, so the mix arrived at the playing device with an EMPTY gain map - no error at either end, nothing in any log, and the listener's whole evidence was a fader that did nothing. Two hand-written copies of a word cannot fail together; a fixture both sides read can. `field` is what the payload is called on the wire and `sample` is a frame's worth of it, real enough to be nested.",
+  "commands": {
+    "stems": {
+      "field": "gains",
+      "sample": { "vocals": 0, "drums": 0.5 }
+    },
+    "effects": {
+      "field": "effects",
+      "sample": ["lofi", "hall"]
+    },
+    "chain": {
+      "field": "chain",
+      "sample": [{ "t": "tape", "on": true, "params": { "wow": 0.4 } }]
+    }
+  }
+}

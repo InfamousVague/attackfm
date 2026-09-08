@@ -145,6 +145,43 @@ impl UserHub {
         out.extend(self.pending.take());
         out
     }
+
+    /// Nothing held is worth keeping once the seat is not the same seat.
+    ///
+    /// Every held command was aimed at ONE device, at a moment when that
+    /// device was the one making the sound. Handing them to whoever holds the
+    /// seat next is handing them to somebody who never asked: a pause meant
+    /// for the phone stops the desk, and a chain held for it re-colours a
+    /// stream it was never about - and neither arrives when it was sent but
+    /// the next time that device's own socket blips, which can be an hour
+    /// later. Emptied when the seat empties (the grace lapse below) and
+    /// emptied when it changes hands, which are the same fact.
+    fn empty_the_pen(&mut self) {
+        self.pending = None;
+        self.pending_sound.clear();
+    }
+
+    /// Move the seat to `target`, answering with whoever held it before.
+    ///
+    /// The whole of what a transfer does to the hub's own state, so that the
+    /// rules of one live in one place a test can drive: the epoch bump that
+    /// makes a deposed device's late frame ignorable, the position advanced to
+    /// NOW before the timestamp is refrozen (without it the hand-off carries a
+    /// stale position, often still 0 from the track's start, and the new
+    /// device restarts the song), and the holding pen emptied.
+    fn hand_seat_to(&mut self, target: &str) -> Option<String> {
+        let previous = self.session.active_device_id.clone();
+        self.session.active_device_id = Some(target.to_string());
+        self.session.epoch += 1;
+        let now = now_ms();
+        if self.session.playing {
+            let advanced = (self.session.position_ms + (now - self.session.updated_at).max(0)).max(0);
+            self.session.position_ms = clamp_to_track(advanced, self.session.duration_ms);
+        }
+        self.session.updated_at = now;
+        self.empty_the_pen();
+        previous
+    }
 }
 
 #[derive(Default)]
@@ -251,16 +288,39 @@ struct Command {
     chain: Option<Vec<serde_json::Value>>,
 }
 
-/// Whether an action SHAPES THE SOUND rather than driving the transport.
+/// The commands that SHAPE THE SOUND rather than drive the transport, and the
+/// list this hub tells every device it carries WHOLE.
 ///
-/// The difference matters in exactly one place - the grace-blip holding pen
-/// below - and it is the difference between "supersedes" and "does not". A
-/// pause supersedes a play. A chain does not supersede a mix, and neither
-/// supersedes a pause: each is the whole of a different store on the device,
-/// and holding all three in one slot means whichever arrived last is the only
-/// one that survives the blip.
+/// The same three words are in `shared/sound-commands.json`, which the client
+/// builds its frames from and which the test at the bottom of this file checks
+/// this array against - because two hand-written copies of a word cannot fail
+/// together, and that is exactly how `gains` came to be dropped in transit
+/// with both suites green.
+///
+/// Announced at hello because a hub that does NOT know one of these is worse
+/// than useless for it: `Command` is a fixed shape, so serde drops the payload
+/// of a field it was not told about, and the playing device gets a bare action
+/// it can only ignore. During a seat holder's socket blip that bare frame also
+/// takes the one transport slot below, so a filter tapped then loses a pause
+/// that was waiting for delivery. A remote that hears nothing here keeps its
+/// console at home instead.
+const SOUND_ACTIONS: [&str; 3] = ["stems", "effects", "chain"];
+
+/// Whether an action shapes the sound.
+///
+/// The difference matters in exactly two places - the hello above and the
+/// grace-blip holding pen below - and in the pen it is the difference between
+/// "supersedes" and "does not". A pause supersedes a play. A chain does not
+/// supersede a mix, and neither supersedes a pause: each is the whole of a
+/// different store on the device, and holding all three in one slot means
+/// whichever arrived last is the only one that survives the blip.
 fn shapes_sound(action: &str) -> bool {
-    matches!(action, "stems" | "effects" | "chain")
+    SOUND_ACTIONS.contains(&action)
+}
+
+/// The hub's own introduction, answering every hello. See `SOUND_ACTIONS`.
+fn hello_message() -> String {
+    json!({ "type": "hello", "carries": SOUND_ACTIONS }).to_string()
 }
 
 // --- the endpoint ------------------------------------------------------------
@@ -472,7 +532,10 @@ async fn on_hello(
         },
     );
     // This connection gets the full current picture; everyone else just needs
-    // the refreshed device list.
+    // the refreshed device list. What this hub CARRIES goes first: it decides
+    // what the device may put on the wire, and a device that acted on the rest
+    // of the picture before hearing it would be guessing.
+    let _ = tx.send(hello_message());
     let _ = tx.send(devices_message(hub));
     let _ = tx.send(state_message(hub));
     // The seat-holder returning from a blip collects what was aimed at it
@@ -619,24 +682,10 @@ async fn on_transfer(state: &Arc<AppState>, user_id: i64, target: &str) {
         broadcast(hub, &devices);
         return;
     }
-    let previous = hub.session.active_device_id.clone();
-    if previous.as_deref() == Some(target) {
+    if hub.session.active_device_id.as_deref() == Some(target) {
         return;
     }
-    hub.session.active_device_id = Some(target.to_string());
-    hub.session.epoch += 1;
-    // Advance the stored position to now before freezing the timestamp. The
-    // active device reports only on discontinuities (play/pause/seek/track), so
-    // between them the true position is position_ms + the time elapsed since
-    // updated_at. Without this the hand-off carries a stale position - often
-    // still 0 from the track's start - and the new device restarts the song
-    // instead of picking it up where it was.
-    let now = now_ms();
-    if hub.session.playing {
-        let advanced = (hub.session.position_ms + (now - hub.session.updated_at).max(0)).max(0);
-        hub.session.position_ms = clamp_to_track(advanced, hub.session.duration_ms);
-    }
-    hub.session.updated_at = now;
+    let previous = hub.hand_seat_to(target);
 
     // The old active device stops; the new one resumes from the session.
     if let Some(prev) = previous {
@@ -703,12 +752,10 @@ async fn on_disconnect(state: &Arc<AppState>, user_id: i64, device: &str, conn_i
             hub.session.playing = false;
             hub.session.epoch += 1;
             hub.session.updated_at = now_ms();
-            hub.pending = None;
-            // The seat is empty: there is nobody left for a held sound to be
-            // applied to, and keeping it would colour whatever device takes
-            // the seat next with a filter aimed at a device that never came
-            // back.
-            hub.pending_sound.clear();
+            // The seat is empty: there is nobody left for a held command to be
+            // delivered to, and keeping one would aim it at whatever device
+            // takes the seat next.
+            hub.empty_the_pen();
             hub.devices
                 .retain(|id, d| d.online || Some(id) == hub.session.active_device_id.as_ref());
             let devices = devices_message(hub);
@@ -759,14 +806,106 @@ mod tests {
         serde_json::from_str(&serde_json::to_string(&parsed).expect("and send on")).unwrap()
     }
 
-    /// THE TRAP THE MIX FELL INTO FIRST.
+    /// The client's own spelling of these commands, read rather than retyped.
+    ///
+    /// See `shared/sound-commands.json`: it is the ONE place the two languages
+    /// agree on these words. Everything below reads it, so renaming a field on
+    /// either side, or adding a fourth sound store to one of them, cannot leave
+    /// both suites green - which is precisely what happened when the mix's
+    /// `gains` was named in TypeScript and nowhere else.
+    const FIXTURE: &str = include_str!("../../shared/sound-commands.json");
+
+    /// Every JSON number as an f64, so `0` and `0.0` compare equal.
+    ///
+    /// A gain of zero - which is what karaoke sends, and so what the fixture
+    /// samples - is written `0` by a browser and comes back out of the hub's
+    /// `f64` map as `0.0`. That is one number in two spellings, and the thing
+    /// under test here is whether the FIELD survived.
+    fn as_floats(value: &Value) -> Value {
+        match value {
+            Value::Number(n) => serde_json::Number::from_f64(n.as_f64().unwrap_or(0.0))
+                .map(Value::Number)
+                .unwrap_or(Value::Null),
+            Value::Array(items) => Value::Array(items.iter().map(as_floats).collect()),
+            Value::Object(fields) => Value::Object(
+                fields.iter().map(|(k, v)| (k.clone(), as_floats(v))).collect(),
+            ),
+            other => other.clone(),
+        }
+    }
+
+    fn fixture_commands() -> serde_json::Map<String, Value> {
+        let parsed: Value = serde_json::from_str(FIXTURE).expect("the shared fixture is JSON");
+        parsed
+            .get("commands")
+            .and_then(|c| c.as_object())
+            .cloned()
+            .expect("the shared fixture has a `commands` object")
+    }
+
+    /// THE TRAP THE MIX FELL INTO FIRST, checked against what the client sends
+    /// rather than against a copy of it.
     ///
     /// `Command` is a fixed shape and serde drops what it was not told about,
     /// so a field the struct does not name arrives at the playing device
     /// absent - with no error at either end and nothing in any log. The
-    /// listener's whole evidence is a filter that does nothing. This asserts
-    /// that what a remote actually sends survives the round trip through the
-    /// hub, nested parameters and all.
+    /// listener's whole evidence is a filter that does nothing. Every command
+    /// in the fixture is sent through the hub here with a payload real enough
+    /// to be nested, and has to come out the other side unchanged.
+    #[test]
+    fn every_sound_command_the_client_sends_survives_the_hub() {
+        let commands = fixture_commands();
+
+        // The two vocabularies are the same vocabulary. A rename on either
+        // side, or a store added to one of them, lands here first.
+        let mut named: Vec<&str> = commands.keys().map(|k| k.as_str()).collect();
+        named.sort_unstable();
+        let mut ours: Vec<&str> = SOUND_ACTIONS.to_vec();
+        ours.sort_unstable();
+        assert_eq!(
+            named, ours,
+            "shared/sound-commands.json and SOUND_ACTIONS disagree about what shapes the sound",
+        );
+
+        for (action, spec) in &commands {
+            let field = spec["field"].as_str().expect("every command names its payload field");
+            let frame = json!({ "action": action, field: spec["sample"] });
+            assert_eq!(
+                as_floats(&round_trip(&frame.to_string())),
+                as_floats(&frame),
+                "the hub dropped `{field}` from a `{action}` frame",
+            );
+            // And it is classified as sound, which is what keeps it out of the
+            // single transport slot the holding pen has.
+            assert!(shapes_sound(action), "the hub does not treat `{action}` as sound");
+        }
+    }
+
+    /// What the hub tells a device it can send, and why a device asks.
+    ///
+    /// An older hub answers a hello with nothing of the sort, and a client
+    /// reads that silence as "this hub will strip what you send" - which is
+    /// true, and is the difference between a filter that does nothing and a
+    /// filter that eats the pause somebody left waiting for a seat holder
+    /// mid-blip.
+    #[test]
+    fn the_hub_says_what_it_carries() {
+        let said: Value = serde_json::from_str(&hello_message()).unwrap();
+        assert_eq!(said["type"], "hello");
+        let carries: Vec<&str> = said["carries"]
+            .as_array()
+            .expect("a hello names what it carries")
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        let mut said_sorted = carries.clone();
+        said_sorted.sort_unstable();
+        let commands = fixture_commands();
+        let mut named: Vec<&str> = commands.keys().map(|k| k.as_str()).collect();
+        named.sort_unstable();
+        assert_eq!(said_sorted, named);
+    }
+
     #[test]
     fn the_console_survives_the_hub() {
         let sent = r#"{"action":"chain","chain":[{"t":"tape","on":true,"params":{"wow":0.4}}]}"#;
@@ -825,5 +964,38 @@ mod tests {
         // The second chain, not the first: a store's latest state is its whole
         // state, so an older one is genuinely superseded.
         assert_eq!(held[0].chain, Some(vec![]));
+    }
+
+    /// THE PEN DOES NOT FOLLOW THE SEAT.
+    ///
+    /// Held commands were emptied when the seat EMPTIED and nowhere else, so a
+    /// transfer - which is the other way a seat stops being that device's -
+    /// left them in the pen. They were then handed to the device that took the
+    /// seat, the next time its own socket blipped and it re-helloed: a pause
+    /// aimed at the phone half an hour ago stopping the desk, and a chain held
+    /// for the phone overwriting whatever the console holds by then.
+    ///
+    /// Driven through `hand_seat_to`, which is the whole of what a transfer
+    /// does to the hub's own state - the two tests above drive the pen
+    /// directly and would both stay green with this bug in place.
+    #[test]
+    fn the_holding_pen_does_not_follow_the_seat() {
+        let mut hub = UserHub::default();
+        hub.session.active_device_id = Some("desk".into());
+        hub.hold(command("pause"));
+        hub.hold(command("chain"));
+        hub.hold(command("stems"));
+
+        let previous = hub.hand_seat_to("phone");
+
+        assert_eq!(previous.as_deref(), Some("desk"));
+        assert_eq!(hub.session.active_device_id.as_deref(), Some("phone"));
+        // The epoch moved, so a late frame from the deposed device is ignorable.
+        assert_eq!(hub.session.epoch, 1);
+        let held: Vec<String> = hub.take_held().into_iter().map(|c| c.action).collect();
+        assert!(
+            held.is_empty(),
+            "the new seat holder was handed {held:?}, aimed at the device before it",
+        );
     }
 }

@@ -797,10 +797,13 @@ describe('reporting where the song is', () => {
  */
 import { fxChain, setFxChain } from './fxChain.ts';
 import { activeEffects } from './effects.ts';
+import { SOUND_ACTIONS, soundField } from './soundCommands.ts';
 
 interface Console {
   /** Every command this device put on the wire. */
   sent: () => { action: string; chain?: unknown; effects?: unknown }[];
+  /** The socket comes back after a blip. */
+  wireBack: () => void;
   /** The controller the Player registered, as the hub reaches it. */
   controller: () => {
     setChain: (nodes: unknown) => void;
@@ -812,7 +815,10 @@ interface Console {
 
 /** A deck with `where` holding the seat: 'elsewhere' is a remote, 'here' is the
  *  device actually making the sound. */
-function console_(where: 'elsewhere' | 'here'): Console {
+function console_(
+  where: 'elsewhere' | 'here',
+  wire: { connected?: boolean; carries?: string[] } = {},
+): Console {
   const live: MutableRefObject<PlayerLiveState> = {
     current: {
       playing: false,
@@ -831,10 +837,15 @@ function console_(where: 'elsewhere' | 'here'): Console {
       deckOwned: true,
     } as unknown as PlayerLiveState,
   };
-  const sendCommand = vi.fn();
+  // A send goes out only while the socket is up, and says so - which is what
+  // the hook holds the undelivered against.
+  const sendCommand = vi.fn((_command: { action: string }) => connect.connected);
   const registerController = vi.fn();
   const connect = {
-    connected: true,
+    connected: wire.connected ?? true,
+    // What the HUB says it can carry whole. Everything, unless a scenario is
+    // about the hub that cannot - see `hello` in connect.ts.
+    carries: new Set<string>(wire.carries ?? SOUND_ACTIONS),
     thisDeviceId: 'this-device',
     activeDeviceId: where === 'here' ? 'this-device' : 'other-device',
     activeElsewhere: where === 'elsewhere',
@@ -876,6 +887,10 @@ function console_(where: 'elsewhere' | 'here'): Console {
     seatReturns: () => {
       connect.activeDeviceId = 'this-device';
       connect.activeElsewhere = false;
+      view.rerender();
+    },
+    wireBack: () => {
+      connect.connected = true;
       view.rerender();
     },
   };
@@ -949,5 +964,136 @@ describe('the console arriving at the device that IS playing', () => {
     const c = console_('here');
     c.controller().setChain([{ t: 'lp', on: true, params: { f: 4000 } }]);
     expect(c.sent()).toEqual([]);
+  });
+});
+
+/**
+ * WHAT THE HUB SAYS IT CAN CARRY, AND WHAT THE WIRE BEING DOWN MEANS.
+ *
+ * Two failures that look identical from the sofa - a filter that changes
+ * nothing - and are opposite in cause. One is a hub that will strip the frame;
+ * the honest answer is not to send it. The other is a socket that is down for
+ * a second; the honest answer is to send it late, because the store is the
+ * authority on what this device believes and the wire is only a delivery
+ * problem.
+ */
+describe('the console against a hub that cannot carry it', () => {
+  beforeEach(() => {
+    setFxChain([]);
+  });
+
+  it('says nothing to a hub that did not say it carries the chain', () => {
+    // An older hub answers a hello without naming these commands, which is
+    // exactly the right signal: `Command` there has no `chain` field, so serde
+    // drops the payload and the playing device is handed a bare action it can
+    // only ignore. Worse, during a seat holder's socket blip that useless
+    // frame takes the ONE slot the hub holds for it - so a filter tapped then
+    // loses a pause that was waiting to be delivered, and the music the
+    // listener stopped is still playing when they get back to it.
+    const c = console_('elsewhere', { carries: [] });
+    setFxChain([{ t: 'lp', on: true, params: { f: 4000 }, key: 'a' }]);
+    expect(c.sent()).toEqual([]);
+    // The change still applies HERE - this device's own console reads the way
+    // the listener set it, and it inherits the sound if it takes the seat.
+    expect(fxChain().nodes.map((n) => n.t)).toEqual(['lp']);
+  });
+
+  it('sends what the hub does name, and only that', () => {
+    const c = console_('elsewhere', { carries: ['stems'] });
+    setFxChain([{ t: 'lp', on: true, params: { f: 4000 }, key: 'a' }]);
+    expect(c.sent()).toEqual([]);
+  });
+});
+
+describe('the console while the socket is down', () => {
+  beforeEach(() => {
+    setFxChain([]);
+  });
+
+  it('delivers a filter tapped during a blip when the wire comes back', () => {
+    /*
+     * THE RELAY USED TO BE UNREGISTERED EXACTLY WHEN THE WIRE WAS DOWN: it was
+     * hung on `connected && activeElsewhere`, so a change made during a blip
+     * was committed here, never sent, and never sent afterwards either. The
+     * two ends then held different sounds permanently, with nothing on either
+     * screen to say so - the seat holder playing the record dry while the
+     * remote's own console said the filter was on.
+     */
+    const c = console_('elsewhere', { connected: false });
+    setFxChain([{ t: 'lp', on: true, params: { f: 4000 }, key: 'a' }]);
+    // It tried, and the send said no.
+    expect(c.sent().map((s) => s.action)).toEqual(['chain']);
+
+    c.wireBack();
+    // ...and it went, whole, without the listener touching anything.
+    expect(c.sent().map((s) => s.action)).toEqual(['chain', 'chain']);
+    expect(c.sent().at(-1)).toEqual({
+      action: 'chain',
+      chain: [{ t: 'lp', on: true, params: { f: 4000 } }],
+    });
+  });
+
+  it('sends the LATEST word only - a store has a state, not a history', () => {
+    const c = console_('elsewhere', { connected: false });
+    setFxChain([{ t: 'lp', on: true, params: { f: 4000 }, key: 'a' }]);
+    setFxChain([]);
+    c.wireBack();
+    // Three frames: the two that could not go, and the one that did. Not four
+    // - the first is superseded rather than queued, because each carries the
+    // whole of the store and the last one IS the answer.
+    expect(c.sent().map((s) => s.action)).toEqual(['chain', 'chain', 'chain']);
+    expect(c.sent().at(-1)).toEqual({ action: 'chain', chain: [] });
+  });
+
+  it('says nothing on a reconnect nobody changed anything during', () => {
+    // The whole console pushed at the seat holder every time a phone woke up
+    // would be the same mistake as pulling their state the other way: this
+    // device's idea of the sound is not authoritative, it is just this
+    // device's.
+    const c = console_('elsewhere', { connected: false });
+    c.wireBack();
+    expect(c.sent()).toEqual([]);
+  });
+
+  it('drops what it was holding once it stops being the remote', () => {
+    const c = console_('elsewhere', { connected: false });
+    setFxChain([{ t: 'lp', on: true, params: { f: 4000 }, key: 'a' }]);
+    c.seatReturns();
+    c.wireBack();
+    // One frame, the one that failed. Taking the seat back means this device
+    // now owns the sound and has nowhere to send it.
+    expect(c.sent().map((s) => s.action)).toEqual(['chain']);
+  });
+});
+
+/**
+ * THE TWO SPELLINGS OF THE WIRE, TIED TOGETHER.
+ *
+ * `shared/sound-commands.json` is the only place the hub and the client agree
+ * on these words, and `connect.rs`'s suite reads the same file - so a rename
+ * on either side, or a store added to one of them, cannot leave both suites
+ * green. That is not a hypothetical failure: the mix's `gains` was named in
+ * TypeScript and nowhere else, and arrived at the playing device empty with
+ * both suites passing.
+ */
+describe('the frames the fixture describes', () => {
+  beforeEach(() => {
+    setFxChain([]);
+  });
+
+  it('puts the chain under the name the fixture gives it', () => {
+    const c = console_('elsewhere');
+    setFxChain([{ t: 'lp', on: true, params: { f: 4000 }, key: 'a' }]);
+    const frame = c.sent().at(-1) as Record<string, unknown>;
+    expect(frame.action).toBe('chain');
+    expect(frame[soundField('chain')]).toEqual([{ t: 'lp', on: true, params: { f: 4000 } }]);
+  });
+
+  it('names every command the hub is told to expect', () => {
+    // The list itself, so a fourth store added to the fixture without a relay
+    // - or a relay without a fixture entry - is visible here rather than in a
+    // bug report about a filter that does nothing.
+    expect(SOUND_ACTIONS).toEqual(['stems', 'effects', 'chain']);
+    expect(SOUND_ACTIONS.map(soundField)).toEqual(['gains', 'effects', 'chain']);
   });
 });

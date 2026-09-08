@@ -72,6 +72,17 @@ export interface PlaybackController {
 interface PlaybackSyncValue {
   /** Null until the socket has said hello and heard back. */
   connected: boolean;
+  /**
+   * The sound commands THIS hub carries whole, as it introduced itself.
+   *
+   * Empty until a hub says otherwise, and empty forever on one too old to say
+   * anything - which is the case this exists for. See the `hello` frame in
+   * connect.ts: a hub that does not name a command drops its payload in
+   * transit and, during a seat holder's socket blip, spends the one slot it
+   * holds for that device on a frame nobody can act on. So a remote asks
+   * before it sends, and keeps its console at home where the answer is no.
+   */
+  carries: ReadonlySet<string>;
   thisDeviceId: string;
   devices: ConnectDevice[];
   activeDeviceId: string | null;
@@ -95,8 +106,10 @@ interface PlaybackSyncValue {
   session: ConnectSession | null;
   /** Hand playback to a device (its id). */
   transfer: (deviceId: string) => void;
-  /** Route a transport command to the active device. */
-  sendCommand: (command: ConnectCommand) => void;
+  /** Route a transport command to the active device. Answers whether it went
+   *  out: what shapes the sound is held by its sender against the store and
+   *  flushed when the wire comes back, rather than expiring in the socket. */
+  sendCommand: (command: ConnectCommand) => boolean;
   /** The active device publishes its state on every discontinuity. */
   reportState: (state: ReportedState) => void;
   /** The Player registers its executor once, on mount. */
@@ -131,6 +144,7 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the session's url and token: the context hands over a fresh `session` object on every refresh, and re-running would re-warm the speaker list each time.
   }, [session?.url, session?.token]);
   const [connected, setConnected] = useState(false);
+  const [carries, setCarries] = useState<ReadonlySet<string>>(() => new Set());
   const [devices, setDevices] = useState<ConnectDevice[]>([]);
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
   const [shared, setShared] = useState<ConnectSession | null>(null);
@@ -141,6 +155,12 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
 
   const handleMessage = useCallback((msg: ServerMessage) => {
     switch (msg.type) {
+      case 'hello':
+        // Every hello is answered with one of these, so a reconnect refreshes
+        // it and a hub that was upgraded under a running app is believed the
+        // moment its socket comes back.
+        setCarries(new Set(msg.carries ?? []));
+        break;
       case 'devices':
         setDevices(msg.devices);
         setActiveDeviceId(msg.activeDeviceId);
@@ -227,6 +247,7 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session) {
       setConnected(false);
+      setCarries(new Set());
       setDevices([]);
       setActiveDeviceId(null);
       setShared(null);
@@ -237,12 +258,18 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
     return () => {
       socket.close();
       socketRef.current = null;
+      // A different hub is a different vocabulary. Not cleared on a mere
+      // DISCONNECT, which is the same hub with its socket down - forgetting
+      // there is the blip case, and it would stand the console's wire down at
+      // exactly the moment it is needed.
+      setCarries(new Set());
     };
   }, [session, handleMessage]);
 
   const value = useMemo<PlaybackSyncValue>(
     () => ({
       connected,
+      carries,
       thisDeviceId: me,
       devices,
       activeDeviceId,
@@ -253,7 +280,7 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
       activeElsewhere: activeDeviceId !== null && activeDeviceId !== me,
       session: shared,
       transfer: (id: string) => socketRef.current?.transfer(id),
-      sendCommand: (command: ConnectCommand) => socketRef.current?.command(command),
+      sendCommand: (command: ConnectCommand) => socketRef.current?.command(command) ?? false,
       reportState: (state: ReportedState) => socketRef.current?.reportState(state),
       registerController: (controller) => {
         controllerRef.current = controller;
@@ -263,7 +290,7 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
         socketRef.current?.announce();
       },
     }),
-    [connected, me, devices, activeDeviceId, shared],
+    [connected, carries, me, devices, activeDeviceId, shared],
   );
 
   return <PlaybackSyncContext.Provider value={value}>{children}</PlaybackSyncContext.Provider>;
@@ -286,6 +313,7 @@ export function StaticConnectProvider({ children }: { children: ReactNode }) {
   const value = useMemo<PlaybackSyncValue>(
     () => ({
       connected: false,
+      carries: new Set<string>(),
       thisDeviceId: 'here',
       devices: [],
       activeDeviceId: null,
@@ -293,7 +321,7 @@ export function StaticConnectProvider({ children }: { children: ReactNode }) {
       activeElsewhere: false,
       session: null,
       transfer: () => {},
-      sendCommand: () => {},
+      sendCommand: () => false,
       reportState: () => {},
       registerController: () => {},
       renameDevice: () => {},

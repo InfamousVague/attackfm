@@ -9,6 +9,7 @@
 
 import { isDesktopApp, isIOS, isMobile } from '../core/platform.ts';
 import { isTauri } from '../core/tauri.ts';
+import { isSoundAction, type SoundAction } from './soundCommands.ts';
 import type { ServerSession } from '../server.ts';
 
 const DEVICE_ID_KEY = 'attackfm-device-id';
@@ -83,21 +84,12 @@ export interface ConnectCommand {
     | 'enqueueNext'
     | 'enqueueEnd'
     /*
-     * `stems` is the one command that is not transport at all: it is how the
-     * sound is BUILT. Parts are taken out on the server, on the stream the
-     * playing device asked for, so a drop set anywhere but that device
-     * changed nothing anybody could hear - toggle karaoke on the desktop
-     * while the phone is the one streaming and the vocal stayed in. Sent as
-     * the whole gain map rather than one part at a time so a lost frame
-     * cannot leave the two devices holding different mixes.
-     */
-    | 'stems'
-    /*
-     * `effects` and `chain` are `stems`' two siblings, and they are here for
-     * the identical reason: the rack and the hi-fi chain are applied by the
-     * ENCODER, on the stream the playing device asked for (`fx` and `fx2` in
-     * that URL), so a filter tapped on a device that is only holding the
-     * remote changed nothing anybody could hear.
+     * ...and the commands that are not transport at all: the ones that BUILD
+     * THE SOUND. The mix, the rack and the hi-fi chain are applied by the
+     * ENCODER, on the stream the playing device asked for (`gains`, `fx` and
+     * `fx2` in that URL), so any of the three set anywhere but on that device
+     * changed nothing anybody could hear - toggle karaoke on the desktop while
+     * the phone is streaming and the vocal stayed in.
      *
      * THREE commands rather than one "sound" command carrying everything,
      * because they are three separate stores and two devices reaching for the
@@ -106,9 +98,14 @@ export interface ConnectCommand {
      * push its own stale idea of the mix. Each command carries the WHOLE of
      * its own store - never the one control that moved - so a dropped frame
      * cannot leave the two ends holding different sounds.
+     *
+     * Their names come from `shared/sound-commands.json`, which is also what
+     * the hub's own suite reads. Spelling them here as literals is what let
+     * the two sides drift apart with both suites green (soundCommands.ts says
+     * the whole story), so a store that is not in that file cannot be named in
+     * a command at all.
      */
-    | 'effects'
-    | 'chain';
+    | SoundAction;
   positionMs?: number;
   volume?: number;
   queue?: number[];
@@ -139,6 +136,26 @@ export interface ReportedState {
 
 /** Everything the server pushes down, as a discriminated union. */
 export type ServerMessage =
+  /**
+   * THE HUB'S OWN INTRODUCTION, answering every hello.
+   *
+   * `carries` is the sound commands this hub understands WHOLE - the ones it
+   * will hand on with their payload intact. It exists because of what an older
+   * hub does with a command it half-knows: `Command` is a fixed shape, so the
+   * payload of anything it was not told about is dropped, and the frame
+   * arrives at the playing device as a bare action it can only ignore. That is
+   * merely useless in the ordinary case and destructive during a socket blip,
+   * where the hub is holding ONE command for the seat holder's return: a
+   * filter tapped then displaced a pause that was already waiting, so the
+   * music was still playing when the listener came back to it.
+   *
+   * An old hub says nothing here, which is exactly the right signal - the
+   * absence of the field means "this hub will strip what you send", and the
+   * client keeps its sound at home rather than spending a held command on a
+   * frame that cannot arrive. The list rather than a flag so a hub that learns
+   * a fourth store later can say so without a version number to interpret.
+   */
+  | { type: 'hello'; carries?: string[] }
   | { type: 'devices'; devices: ConnectDevice[]; activeDeviceId: string | null }
   | { type: 'state'; state: ConnectSession; now?: number }
   | { type: 'command'; command: ConnectCommand }
@@ -412,14 +429,28 @@ export class ConnectSocket {
     this.raw({ type: 'state', ...state });
   }
 
-  command(command: ConnectCommand): void {
+  /**
+   * Send a command, and say whether it actually went.
+   *
+   * The answer is the whole of how the sound survives a blip: transport is
+   * held here for a moment (a skip is only worth delivering while it is still
+   * what somebody wants), but a filter is not a moment's intent - it is what
+   * this device believes the sound IS - so it is handed back to the caller,
+   * which holds it against the store and flushes it when the wire returns.
+   * Keeping it in the slot below would also mean a filter displacing a held
+   * pause on the way out, which is the same bug the hub had on the way in.
+   */
+  command(command: ConnectCommand): boolean {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.raw({ type: 'command', command });
-      return;
+      return true;
     }
     // Held for the wake-up reconnect, latest wins, three seconds and gone.
-    this.pendingCommand = { command, expires: Date.now() + 3000 };
+    if (!isSoundAction(command.action)) {
+      this.pendingCommand = { command, expires: Date.now() + 3000 };
+    }
     this.reviveNow();
+    return false;
   }
 
   transfer(target: string): void {
