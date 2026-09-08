@@ -82,7 +82,13 @@ export function DiscoverHero({
   const face: 'wall' | 'canvas' | 'mosaic' = wall ? 'wall' : canvas ? 'canvas' : 'mosaic';
 
   return (
-    <header className="playlistHead songPageHead discoverHead" data-face={face}>
+    // `data-testid`, and the only one on this page: the hero's kicker, title
+    // and blurb are three plain spans with no role between them - the words
+    // over a picture - and the end-to-end suite has to be able to say WHICH
+    // of the three leads (`heroLead.ts`) is on screen. The alternative was
+    // pinning the suite to `.discoverHead` or to `data-face`, both of which
+    // the stylesheet owns; this is a handle that belongs to nobody else.
+    <header className="playlistHead songPageHead discoverHead" data-face={face} data-testid="discover-hero">
       <div className="discoverHead__face">
         {face === 'wall' ? (
           <CoverWall artworks={wallArt} clips={clips} loading="eager" />
