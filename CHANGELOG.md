@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.141
+
+- Adding a song to the queue from a device that is watching another one play
+  no longer starts it playing there. The song goes to whatever is playing.
+
 ## 0.5.140
 
 - The bar at the bottom reads as it did before: each icon sits with its word
