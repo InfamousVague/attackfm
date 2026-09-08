@@ -1840,6 +1840,7 @@
     "queueCleared_one": "{{count}} música retirada da fila",
     "queueCleared_other": "{{count}} músicas retiradas da fila",
     "queueEmpty": "Nada na fila. Junta músicas de qualquer sítio com “Adicionar à fila” e aparecem aqui.",
+    "queueMirroredEmpty": "Nada a seguir.",
     "queueRemoved": "“{{title}}” saiu da fila",
     "radio": "Rádio",
     "radioFilling": "A procurar as próximas…",

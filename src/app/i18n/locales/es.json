@@ -1840,6 +1840,7 @@
     "queueCleared_one": "Quitada {{count}} canción de la cola",
     "queueCleared_other": "Quitadas {{count}} canciones de la cola",
     "queueEmpty": "No hay nada en la cola. Añade canciones desde donde sea con «Añadir a la cola» y se colocan aquí.",
+    "queueMirroredEmpty": "Nada a continuación.",
     "queueRemoved": "Se quitó «{{title}}» de la cola",
     "radio": "Radio",
     "radioFilling": "Buscando las siguientes…",

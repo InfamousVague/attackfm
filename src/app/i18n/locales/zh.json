@@ -1602,6 +1602,7 @@
     "queue": "播放队列",
     "queueCleared_other": "已清掉队列里的 {{count}} 首歌",
     "queueEmpty": "队列里还没有歌。在任何地方用「加入队列」添加，它们就会排在这里。",
+    "queueMirroredEmpty": "接下来没有内容。",
     "queueRemoved": "已把「{{title}}」移出队列",
     "radio": "电台",
     "radioFilling": "正在找接下来几首…",

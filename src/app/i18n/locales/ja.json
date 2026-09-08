@@ -1602,6 +1602,7 @@
     "queue": "キュー",
     "queueCleared_other": "キューの{{count}}曲を削除しました",
     "queueEmpty": "キューは空です。どこからでも「キューに追加」で足した曲が、ここに並びます。",
+    "queueMirroredEmpty": "次に流れるものはありません。",
     "queueRemoved": "「{{title}}」をキューから削除しました",
     "radio": "ラジオ",
     "radioFilling": "次の曲を探しています…",

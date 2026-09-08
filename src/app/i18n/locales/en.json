@@ -1721,6 +1721,7 @@
     "queueCleared_one": "Cleared {{count}} queued song",
     "queueCleared_other": "Cleared {{count}} queued songs",
     "queueEmpty": "Nothing queued. Add songs from anywhere with “Add to queue,” and they line up here.",
+    "queueMirroredEmpty": "Nothing coming up.",
     "queueRemoved": "Removed “{{title}}” from the queue",
     "radio": "Radio",
     "radioFilling": "Finding the next few…",
@@ -1730,6 +1731,9 @@
     "removeFromQueue": "Remove {{title}} from the queue",
     "repeatAll": "all",
     "repeatMode": "Repeat: {{mode}}",
+    "repeatModeAll": "all",
+    "repeatModeOff": "off",
+    "repeatModeOne": "one",
     "repeatOff": "off",
     "repeatOne": "one",
     "roomEq": "EQ",
@@ -1792,10 +1796,7 @@
     "you": "you",
     "yourAdd": "your add",
     "yourGroove": "Your groove",
-    "yourPlayerSetsPace": "Your player sets the pace",
-    "repeatModeOff": "off",
-    "repeatModeAll": "all",
-    "repeatModeOne": "one"
+    "yourPlayerSetsPace": "Your player sets the pace"
   },
   "playlists": {
     "aFriend": "a friend",
@@ -2756,6 +2757,8 @@
     "syncCopied_other": "{{n}} copied",
     "syncExplain": "{{host}} downloads your imports and then copies each finished song to {{where}}, so both servers end up holding it.",
     "syncFailed": "Sync hit a problem; it will retry.",
+    "syncFailedCount_one": "{{n}} failed",
+    "syncFailedCount_other": "{{n}} failed",
     "syncFailedItem": "{{path}} — {{reason}}",
     "syncIdle": "The music folder syncs to the server automatically.",
     "syncInSync": "Folder is in sync (checked {{time}}).",
@@ -2809,9 +2812,7 @@
     "whereDownloadsRun": "Where downloads run",
     "whereDownloadsRunHint": "Imports are fetched by one server and land in its library. Pick the box with the downloader installed — it copies finished songs across to your library afterwards, so both end up with the file.",
     "youHostThis": "you host this",
-    "yourLibrary": "your library",
-    "syncFailedCount_one": "{{n}} failed",
-    "syncFailedCount_other": "{{n}} failed"
+    "yourLibrary": "your library"
   },
   "settings": {
     "aboutConnection": "Connection",

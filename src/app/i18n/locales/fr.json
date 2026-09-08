@@ -1840,6 +1840,7 @@
     "queueCleared_one": "{{count}} titre retiré de la file",
     "queueCleared_other": "{{count}} titres retirés de la file",
     "queueEmpty": "Rien dans la file. Ajoutez des titres depuis n'importe où avec « Ajouter à la file », et ils s'alignent ici.",
+    "queueMirroredEmpty": "Rien à suivre.",
     "queueRemoved": "« {{title}} » retiré de la file",
     "radio": "Radio",
     "radioFilling": "Recherche des suivants…",

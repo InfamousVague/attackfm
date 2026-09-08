@@ -55,6 +55,7 @@ const SEND_ARIA = {
 export function QueuePanel({
   queue,
   upNext,
+  mirroring = false,
   onUpNextChange,
   current,
   onPlayTrack,
@@ -69,6 +70,17 @@ export function QueuePanel({
   current: Track | null;
   /** The new play order, current track and all. Skips read whatever it holds. */
   onQueueChange: (next: Track[]) => void;
+  /**
+   * Another device holds playback and this one is watching it.
+   *
+   * It changes what this panel can HONESTLY say. Everything it knows arrives
+   * as one flat list of ids from the seat holder, with no marker for where
+   * the hand-queued part of it ends - so the two sections below cannot be
+   * told apart here, and the local lane is not what is going to play either
+   * (an add from this device is sent to the other one). Split it anyway and
+   * the panel reads "Nothing queued" directly above the songs you queued.
+   */
+  mirroring?: boolean;
   /** Jump straight to a queued track. */
   onPlayTrack: (track: Track) => void;
   onClose: () => void;
@@ -100,7 +112,9 @@ export function QueuePanel({
    * empty-state copy - "Add songs from anywhere with Add to queue, and they
    * line up here" - is finally true.
    */
-  const shown = upNext.slice(0, UP_NEXT_SHOWN);
+  // While mirroring, this device's own lane is not what is going to play -
+  // an add from here is sent to the seat holder - so it is not drawn.
+  const shown = mirroring ? [] : upNext.slice(0, UP_NEXT_SHOWN);
   const hiddenCount = upNext.length - shown.length;
   const rows: QueueRow[] = shown.map((s) => ({ id: s.path, track: s }));
   /** The next few from the list being played through, for the tail below. */
@@ -551,6 +565,15 @@ export function QueuePanel({
                 })}
               </div>
             )
+          ) : mirroring ? (
+            /* The seat holder's order is drawn whole, below. Saying "nothing
+               queued" here would be false: the songs are there, they are just
+               not separable from the list they arrived in. */
+            contextNext.length === 0 ? (
+              <Text tone="muted" size="sm" className="queueUp__empty">
+                {t('player.queueMirroredEmpty')}
+              </Text>
+            ) : null
           ) : rows.length === 0 ? (
             pendingRows.length > 0 ? null : (
               <Text tone="muted" size="sm" className="queueUp__empty">
@@ -660,11 +683,16 @@ export function QueuePanel({
             */}
           {!following && contextNext.length > 0 && (
             <div className="queueUp__context">
-              <Text tone="muted" size="xs" className="queueUp__contextHead">
-                {/* Two labels for two states, not a count: this says whether the
-                    list picks up after your own picks or straight away. */}
-                {upNext.length > 0 ? t('player.thenFromList') : t('player.nextFromList')}
-              </Text>
+              {/* Two labels for two states, not a count: this says whether the
+                  list picks up after your own picks or straight away. Neither
+                  is true while mirroring, where this IS the whole queue rather
+                  than what is left of the list after it - so it goes unheaded
+                  and the panel's own title names it. */}
+              {!mirroring && (
+                <Text tone="muted" size="xs" className="queueUp__contextHead">
+                  {upNext.length > 0 ? t('player.thenFromList') : t('player.nextFromList')}
+                </Text>
+              )}
               <div className="queueRows" role="list" aria-label={t('player.comingUpFromList')}>
                 {contextNext.map((song) => (
                   <TrackMenu key={song.path} track={song} className="queueRowMenu">

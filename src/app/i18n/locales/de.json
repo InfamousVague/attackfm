@@ -1721,6 +1721,7 @@
     "queueCleared_one": "{{count}} Song aus der Warteschlange entfernt",
     "queueCleared_other": "{{count}} Songs aus der Warteschlange entfernt",
     "queueEmpty": "Nichts in der Warteschlange. Füge von überall Songs mit „Zur Warteschlange hinzufügen“ ein – sie reihen sich hier auf.",
+    "queueMirroredEmpty": "Nichts als Nächstes.",
     "queueRemoved": "„{{title}}“ aus der Warteschlange entfernt",
     "radio": "Radio",
     "radioFilling": "Die nächsten Titel werden gesucht…",

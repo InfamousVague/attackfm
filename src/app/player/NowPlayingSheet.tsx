@@ -2337,6 +2337,7 @@ export function NowPlayingSheet({
           <QueuePanel
             queue={queue}
             upNext={upNext}
+            mirroring={activeElsewhere}
             onUpNextChange={(next) => onUpNextChange?.(next)}
             current={track}
             inJam={!!jamRoom}
