@@ -5,7 +5,7 @@ import { createContext, useContext, type ReactNode } from 'react';
  *
  * The pull gesture re-read the LIBRARY and nothing else: on a server that is
  * a real refresh (ask the box to re-walk its folder, pull the delta), but it
- * left every page that fetches its own data - the Booth's set, a playlist,
+ * left every page that fetches its own data - Discover's shelves, a playlist,
  * this week's stats, the downloads queue - showing whatever it had loaded on
  * mount. Pulling on those pages appeared to do nothing, because for them it
  * did nothing.

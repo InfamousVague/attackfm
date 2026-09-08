@@ -62,7 +62,7 @@ export function NavMoreMenu({
 
   // The ⋮ lights when what is on screen lives in this menu.
   // Stats and Date are Profile's rooms now, so the drawer no longer claims
-  // them; the DJ moved into the Booth's nav seat.
+  // them; the DJ is a fullscreen layer reached from the now-playing row.
   // The ⋮ lights when what is on screen lives in here - which now depends on
   // the width, since the same destination may be a bar tab on a wider phone.
   const onMenuDest = overflow.some((d) => d.active);
@@ -170,11 +170,11 @@ export function NavMoreMenu({
 
         {overflow.length > 0 && <span className="appNavBarPlugins__divider" aria-hidden />}
 
-        {/* Booth and Friends are ordinary destinations now: they take a bar
-            seat when there is width for one and fall back here when there is
-            not, so they are rendered by the overflow above rather than nailed
-            into this menu. What is left below is what never moves: your
-            listening, the queue, and Settings. */}
+        {/* Every destination is an ordinary one now: it takes a bar seat when
+            there is width for one and falls back here when there is not, so
+            they are rendered by the overflow above rather than nailed into
+            this menu. What is left below is what never moves: your listening,
+            the queue, and Settings. */}
 
         {/* Stats is a room of Profile's rather than a tab, and a room has no
             seat in the bar - so without a door here the only way back to your

@@ -216,18 +216,6 @@ export const HANDBOOK_PAGES: readonly HandbookPage[] = [
     ),
   },
   {
-    id: 'booth',
-    chapterKey: CH_APP,
-    icon: <Sparkles size={GLYPH} />,
-    titleKey: 'settings.handbookBoothTitle',
-    body: (t) => (
-      <>
-        <P>{t('settings.handbookBoothIntro')}</P>
-        <P>{t('settings.handbookBoothKnobs')}</P>
-      </>
-    ),
-  },
-  {
     id: 'suggestions',
     chapterKey: CH_APP,
     icon: <Telescope size={GLYPH} />,

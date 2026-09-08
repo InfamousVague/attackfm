@@ -156,16 +156,17 @@ export function App() {
   const [profileRoom, setProfileRoom] = useState<'stats' | null>(null);
   // A system back swipe inside a room steps back to Profile, not out of it.
   useSystemBack(profileRoom !== null, () => setProfileRoom(null));
-  // Music Date, fullscreen: opened from the Booth's top card as a layer over
+  // Music Date, fullscreen: opened through musicDateDoor as a layer over
   // whatever you stand on. The nav bar and the player both leave with it -
   // the date runs its own audio pool and wants the whole screen, no chrome.
   const [dateOpen, setDateOpen] = useState(false);
   useSystemBack(dateOpen, () => setDateOpen(false));
-  // The DJ conversation's fullscreen layer lives HERE, not in BoothPage: the
-  // page host wears a transform for the edge-swipe, which traps any fixed
-  // child in its stacking context - a "fullscreen" layer that the header,
-  // strip and nav all paint over. At the root it actually covers the app,
-  // and the chrome steps aside the same way it does for Music Date.
+  // The DJ conversation's fullscreen layer lives HERE, at the root, and not
+  // inside whatever opens it: the page host wears a transform for the
+  // edge-swipe, which traps any fixed child in its stacking context - a
+  // "fullscreen" layer that the header, strip and nav all paint over. At the
+  // root it actually covers the app, and the chrome steps aside the same way
+  // it does for Music Date.
   const [djOpen, setDjOpen] = useState(false);
   useSystemBack(djOpen, () => setDjOpen(false));
   // The edge-swipe back gesture's drag target: AppMain's content host. Owned
@@ -489,9 +490,9 @@ export function App() {
   });
 
   // The one nav stack, lent to the surfaces that cannot be handed it: mix
-  // cards live on Discover and in the booth, both rendered beside this stack
-  // rather than inside anything holding it. Same channel headerActions uses,
-  // for the same reason.
+  // cards live on Discover, rendered beside this stack rather than inside
+  // anything holding it. Same channel headerActions uses, for the same
+  // reason.
   useEffect(() => {
     setMixOpener(goMix);
     return () => setMixOpener(null);
@@ -866,7 +867,6 @@ export function App() {
                   onOpenFriends={() => goTab('profile')}
                   profileRoom={tab === 'profile' ? profileRoom : null}
                   onProfileRoom={setProfileRoom}
-                  onOpenDj={() => setDjOpen(true)}
                 />
             {/* The DJ conversation, fullscreen: same layer, same rules. One
                 back control only - this layer covers the header, so its

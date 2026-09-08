@@ -1,5 +1,4 @@
 import type { Track } from '../core/tauri.ts';
-import { useDeveloperMode } from '../settings/developerMode.ts';
 import {
   IMPORTER_PLUGIN_ID,
   useAcquire,
@@ -20,7 +19,6 @@ import { DiscoverPage } from '../discover/DiscoverPage.tsx';
 import { CatalogListPage } from '../discover/CatalogListPage.tsx';
 import { suggestionTarget } from '../discover/suggestionTarget.ts';
 import type { Suggestion } from '../api/curator.ts';
-import { BoothPage } from '../booth/BoothPage.tsx';
 import { ProfilePage } from '../profile/ProfilePage.tsx';
 import { StatsPage } from '../profile/StatsPage.tsx';
 import { useT } from '../i18n/LocaleShell.tsx';
@@ -80,7 +78,6 @@ export function AppMain({
   onOpenFriends,
   profileRoom,
   onProfileRoom,
-  onOpenDj,
   swipeRef,
 }: {
   /** The edge-swipe back gesture drags this element; App owns the hook. */
@@ -107,16 +104,7 @@ export function AppMain({
   /** Which of Profile's rooms is open, if any - a takeover within the tab. */
   profileRoom: 'stats' | null;
   onProfileRoom: (room: 'stats' | null) => void;
-  /** Opens Music Date's fullscreen layer, from the Booth's top card. */
-  /** Opens the DJ conversation's fullscreen layer; App hosts it too. */
-  onOpenDj: () => void;
 }) {
-  // The Booth is behind developer mode. Gated HERE as well as in the nav, not
-  // only there: the tab is remembered across launches, so anybody standing in
-  // the Booth when the switch went off would still be standing in it. Falling
-  // through lands on Library, which is where the lit nav item already says you
-  // are - the deny-list that lights it treats an unmatched tab as Library.
-  const showBooth = useDeveloperMode();
   const pages = usePluginPages();
   // Books is no longer a standalone page - it is a toggle inside the Library -
   // so a tab that still names it (a session that predates the move) falls
@@ -287,20 +275,12 @@ export function AppMain({
           onOpenStats={onOpenStats}
           onOpenFriends={onOpenFriends}
         />
-      ) : tab === 'booth' && showBooth ? (
-        // The Booth: the taste engine's one body - the DJ conversation, the
-        // mixes it built, what it is doing right now, and its own preferences.
-        <BoothPage
-          onPlay={onPlay}
-          onOpenArtist={onOpenArtist}
-          onOpenDj={onOpenDj}
-        />
       ) : tab === 'profile' ? (
         // Profile: the "about you" home, and the people under it - Friends
         // folded back in from what used to be its own tab. Its room - This
         // week (the stats) - is a takeover WITHIN the tab, a back bar
         // returning to the profile. Music Date used to be a second room here;
-        // it lives at the top of the Booth now, as a fullscreen layer.
+        // it is a fullscreen layer now, opened through musicDateDoor.
         profileRoom === 'stats' ? (
           <div className="profileRoomHost">
             <RoomBar label={t('profile.thisWeek')} onBack={() => onProfileRoom(null)} />

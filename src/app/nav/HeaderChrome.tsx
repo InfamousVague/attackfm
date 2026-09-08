@@ -51,10 +51,6 @@ export function HeaderIdent({ tab }: { tab: string }) {
           <span className="mobileHeader__title">{t('nav.friends')}</span>
         ) : tab === 'profile' ? (
           <span className="mobileHeader__title">{t('nav.profile')}</span>
-        ) : tab === 'booth' ? (
-          // The header says the room's full name ("The Booth"), not the tab
-          // bar's clipped one, so this is booth.title rather than nav.booth.
-          <span className="mobileHeader__title">{t('booth.title')}</span>
         ) : (
           <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
         )}

@@ -1,5 +1,5 @@
 import { useNavPill } from './useNavPill.ts';
-import { ArrowDownToLine, Disc3, LibraryBig, Search, Settings, Telescope } from '@glacier/icons';
+import { ArrowDownToLine, LibraryBig, Search, Settings, Telescope } from '@glacier/icons';
 import { useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { atSize, useNavSeats, type NavDest } from './navSeats.ts';
@@ -7,7 +7,6 @@ import { useAcquire, usePluginPages } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { NavMoreMenu } from './NavMoreMenu.tsx';
 import { openSearchPage } from '../search/SearchEntry.tsx';
-import { useDeveloperMode } from '../settings/developerMode.ts';
 import { NavProfileIcon } from './NavProfileIcon.tsx';
 import { useT } from '../i18n/LocaleShell.tsx';
 
@@ -68,9 +67,6 @@ export function PrimaryNav({
   // note above about hook order. Neither gates anything now.
   void acquire;
   void hasDownloads;
-  // The Booth is a workshop, not a destination: it is behind developer mode now
-  // rather than holding a seat (or a menu row) for everybody.
-  const showBooth = useDeveloperMode();
   // A tab pointing at a plugin page whose plugin was just switched off reads as
   // Home - the same fallback the content host makes - so the lit item never
   // disagrees with what is actually on screen.
@@ -86,11 +82,11 @@ export function PrimaryNav({
       tab !== 'friends' &&
       tab !== 'profile' &&
       tab !== 'search' &&
-      // Built-in pages that own their own route. Without these the deny-list
-      // lights Library while you are standing in the Booth - the trap of
-      // listing what is NOT library instead of what is. (Stats and Date are
-      // Profile's rooms now, not tabs.)
-      tab !== 'booth' &&
+      // (Stats and Date are Profile's rooms now, not tabs, so neither needs
+      // a line here.) Any built-in page that owns its own route has to be
+      // named above, or the deny-list lights Library while you are standing
+      // somewhere else - the trap of listing what is NOT library instead of
+      // what is.
       !onPluginPage);
 
   /*
@@ -166,21 +162,11 @@ export function PrimaryNav({
         go: () => onTab(pg.key),
       });
     }
-    // Last, and only for anybody who has turned developer mode on.
-    if (showBooth) {
-      list.push({
-        key: 'booth',
-        label: t('nav.booth'),
-        icon: <Disc3 size={24} />,
-        active: tab === 'booth',
-        go: () => onTab('booth'),
-      });
-    }
     return list;
     // `t` is in here on purpose: react-i18next hands back a NEW t when the
     // language changes, and without it the memo would hold the old labels -
     // a nav bar still in English under an app that is not.
-  }, [pages, libraryActive, tab, onTab, showBooth, t]);
+  }, [pages, libraryActive, tab, onTab, t]);
 
   const seats = useNavSeats(barRef, dests.length);
   /*

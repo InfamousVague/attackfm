@@ -5,11 +5,11 @@ import type { Track } from '../core/tauri.ts';
  *
  * A mix - a curator's list, a plugin's tile - now opens as a page rather than
  * in a sheet, which means somebody has to push a detail onto the nav stack.
- * The trouble is where mix cards actually live: the Discover page and the DJ
- * booth, both of which are rendered as pages BESIDE the stack rather than
- * inside anything holding it, and one of which is reached through the plugin
- * page contract, whose render props are a published surface rather than ours
- * to grow for one caller.
+ * The trouble is where mix cards actually live: Discover and the plugin
+ * pages, rendered BESIDE the stack rather than inside anything holding it,
+ * and the latter reached through the plugin page contract, whose render props
+ * are a published surface rather than ours to grow for one caller. (The DJ
+ * booth was the second of these until its page was taken out.)
  *
  * So this is the same channel `headerActions` opened, for the same reason and
  * with the same shape: a module singleton, because there is exactly one nav

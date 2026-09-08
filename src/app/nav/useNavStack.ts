@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { onSystemBack } from './systemBack.ts';
+import { openDj } from './djDoor.ts';
 import type { Detail, SongCollection } from './AppMain.tsx';
 import type { Suggestion } from '../api/curator.ts';
 import type { Track } from '../core/tauri.ts';
@@ -135,16 +136,19 @@ export function useNavStack({
         push({ tab: 'profile', detail: null });
         return;
       }
-      // Music Date moved twice - overflow menu, Profile room, and now the
-      // Booth's top card. The old route opens its fullscreen layer wherever
-      // you already are.
+      // Music Date moved twice - overflow menu, then Profile room - and is a
+      // fullscreen layer now rather than a place. The old route opens it
+      // wherever you already are.
       if (next === 'date') {
         live.current.openDate();
         return;
       }
-      // The DJ page became the Booth; the old name still walks in the door.
+      // The DJ page became the Booth, and the Booth is gone; what is left of
+      // it is the conversation, a fullscreen layer with a door of its own. The
+      // old name walks through that instead of pushing a tab nothing renders -
+      // which would have fallen silently through to the Library.
       if (next === 'dj') {
-        push({ tab: 'booth', detail: null });
+        openDj();
         return;
       }
       // Search stopped being a place: the old route now summons the overlay
