@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.144
+
+- The row of buttons under Now Playing has evenly sized icons now, and when it
+  has more than fits, the ends blur and fade away instead of stopping dead.
+
 ## 0.5.143
 
 - A device that is only watching another one play no longer says "Nothing
