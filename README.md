@@ -15,6 +15,30 @@ window title bar, the settings, the modal, and the toast system are all worked
 examples composed from Glacier components. The kit is vendored under
 `vendor/@glacier/*`, so the app installs and runs with no extra setup.
 
+## Checks
+
+Three commands, and CI runs all of them on every push (`.github/workflows/ci.yml`).
+
+```sh
+npm run check      # lint, then types, then the unit suite
+npm run i18n:gate  # every visible string comes from a catalogue, in all eight languages
+npm run build      # tsc --noEmit && vite build - the bundle that actually ships
+```
+
+`npm run check` is the one to run before a commit. It is `npm run lint`
+(ESLint, zero errors; the warnings that remain are a named backlog in
+`eslint.config.js`), `npm run typecheck`, and `npm test` — Vitest, co-located
+`*.test.ts` beside the module it tests. `npm run coverage` writes an lcov
+report; `npm run test:watch` is the loop to work inside.
+
+The hub is held to the same line:
+
+```sh
+cd server
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace -- --test-threads=1   # the db tests share one sqlite file
+```
+
 ## Your music, on your phone
 
 The library can come from two places: a folder on this machine, or a server you
