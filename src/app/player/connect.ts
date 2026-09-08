@@ -46,6 +46,22 @@ export interface ConnectSession {
   clockSkewMs?: number;
 }
 
+/**
+ * One box of the hi-fi chain, as it travels.
+ *
+ * The wire's own copy of the shape, not the store's: `FxNode` also carries a
+ * `key`, which is client-side list identity and never leaves the device that
+ * minted it. Declared here because this module IS the contract with the hub;
+ * fxChain.ts imports the type back the other way, which costs nothing at
+ * runtime and keeps one spelling of what goes over the socket.
+ */
+export interface FxWireNode {
+  /** The node tag - the same word the encoder's fx.rs compiles. */
+  t: string;
+  on: boolean;
+  params: Record<string, number>;
+}
+
 /** A transport command a remote asks the active device to perform. */
 export interface ConnectCommand {
   /*
@@ -75,13 +91,35 @@ export interface ConnectCommand {
      * the whole gain map rather than one part at a time so a lost frame
      * cannot leave the two devices holding different mixes.
      */
-    | 'stems';
+    | 'stems'
+    /*
+     * `effects` and `chain` are `stems`' two siblings, and they are here for
+     * the identical reason: the rack and the hi-fi chain are applied by the
+     * ENCODER, on the stream the playing device asked for (`fx` and `fx2` in
+     * that URL), so a filter tapped on a device that is only holding the
+     * remote changed nothing anybody could hear.
+     *
+     * THREE commands rather than one "sound" command carrying everything,
+     * because they are three separate stores and two devices reaching for the
+     * console at the same moment must not overwrite each other's rooms: a
+     * remote that sends the whole console to change one filter would also
+     * push its own stale idea of the mix. Each command carries the WHOLE of
+     * its own store - never the one control that moved - so a dropped frame
+     * cannot leave the two ends holding different sounds.
+     */
+    | 'effects'
+    | 'chain';
   positionMs?: number;
   volume?: number;
   queue?: number[];
   index?: number;
   /** For `stems`: every part turned below full, by name, 0 (out) to 1. */
   gains?: Record<string, number>;
+  /** For `effects`: the whole rack, as stream.rs's effect ids. */
+  effects?: string[];
+  /** For `chain`: the whole chain, in order, switched-off boxes included -
+   *  the receiving device is being handed the room, not a diff of it. */
+  chain?: FxWireNode[];
 }
 
 /** What this device tells the hub about its playback (the active device only). */

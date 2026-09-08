@@ -60,6 +60,9 @@ interface Row {
   title: string;
   album: string;
   artist: string;
+  /** Seconds. The fixture's songs are 12-22 s, so a scenario that has to act
+   *  INSIDE one has to know how much of it is left. */
+  duration: number | null;
 }
 
 let hub: SecondHub;
@@ -335,6 +338,164 @@ test('adding to the queue from a watching device asks, instead of taking over', 
   expect(watch.state!.trackId).toBe(before.track);
   expect(await audible(phone)).toBe(false);
   expect(await saysPlayingOn(phone, DESK.name)).toBe(true);
+});
+
+/**
+ * THE SOUND CONSOLE, FROM THE DEVICE THAT IS NOT PLAYING.
+ *
+ * The mix already travelled; the rack and the hi-fi chain did not, and this is
+ * the scenario that says so out loud. Both are compiled by the ENCODER, on the
+ * stream the playing device asked for - `fx`/`fx2` in that device's URL - so a
+ * filter tapped on the phone while the desk is streaming could only ever reach
+ * the desk by being SENT there. It was not, and the listener's whole evidence
+ * was a sound that did not change.
+ *
+ * Asserted on the URL the playing element actually holds, because that is the
+ * mechanism and not a proxy for it: "a change of rack is a change of URL, which
+ * is what makes the source reload" (transcodeUrl says so itself). Two devices,
+ * one of them the one making the sound - a fix for a cross-device bug that has
+ * only been seen on one device is not a fix.
+ */
+
+/** What the deck on this page is actually fetching. Empty between sources. */
+const streamOf = (page: Page): Promise<string> =>
+  page.evaluate(
+    () =>
+      [...document.querySelectorAll('audio')].find((a) => !a.paused && !!a.currentSrc)?.currentSrc ??
+      '',
+  );
+
+/** The `fx2` the encoder was asked for, decoded, or null for a dry stream. */
+const chainIn = (url: string): { t: string }[] | null => {
+  if (!url) return null;
+  const fx2 = new URL(url).searchParams.get('fx2');
+  return fx2 ? (JSON.parse(fx2) as { t: string }[]) : null;
+};
+
+/** Where the encoder was asked to START, in seconds. A live encode has no
+ *  ranges, so this is the whole of how a re-colour keeps its place. */
+const seekIn = (url: string): number => (url ? Number(new URL(url).searchParams.get('seek') ?? 0) : 0);
+
+/** Open the sound console on the strip's overflow: the same door a listener
+ *  uses, on the device that is only mirroring. */
+async function openSoundConsole(page: Page): Promise<void> {
+  /*
+   * By ROLE, and matching BOTH doors, for the same reason `deck` above matches
+   * two surfaces: which one a device is wearing depends on whether its own
+   * deck is engaged, and only one of them is ever in the accessibility tree.
+   * The docked panel opens the console outright and its button is named for
+   * what is already on ("Sound", or "Sound — 2 effects"); the strip folds the
+   * console into an overflow behind "Player options", one row further in.
+   */
+  await page.getByRole('button', { name: /^(Player options|Sound)\b/ }).first().click();
+  await expect(page.locator('.soundConsole, .moreMenu').first()).toBeVisible();
+  if ((await page.locator('.moreMenu').count()) > 0) {
+    await page.getByRole('button', { name: /^Equalizer/ }).click();
+  }
+  await expect(page.locator('.soundConsole')).toBeVisible();
+}
+
+async function closeSoundConsole(page: Page): Promise<void> {
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.soundConsole')).toHaveCount(0);
+}
+
+/**
+ * Wait until the desk is far enough into a song to act inside it: past the
+ * first couple of seconds, so a `seek` of zero afterwards would be a visible
+ * restart, and with `spare` seconds still to go.
+ *
+ * The fixture's songs are 12-22 s. Without this the scenario races the end of
+ * whichever one happened to be on and fails as "the track changed", which is a
+ * test about the fixture's timing rather than about the sound.
+ */
+async function insideASong(spare: number): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        // The DECK's own clock, not the bar's: this is the number
+        // `resumeInPlace` will hand the encoder as `seek`, and reading the same
+        // one the code reads is what makes the assertion below about seconds of
+        // song rather than about whatever units a slider chose.
+        const at = await desk.evaluate(
+          () =>
+            [...document.querySelectorAll('audio')].find((a) => !a.paused && !!a.currentSrc)
+              ?.currentTime ?? 0,
+        );
+        const len = library.find((t) => t.id === watch.state?.trackId)?.duration ?? 0;
+        return at > 3 && len - at > spare;
+      },
+      { timeout: 40_000, intervals: [250] },
+    )
+    .toBe(true);
+}
+
+test('a filter set on the watching device colours the stream the OTHER one is playing', async () => {
+  await deskPlaying();
+
+  // The phone is a remote. Nothing here decodes audio, so the tap below has
+  // nowhere local to land: it either travels or it does nothing at all. Opened
+  // BEFORE the clock matters, so only the tap itself is inside the song.
+  expect(await audible(phone)).toBe(false);
+  await openSoundConsole(phone);
+  await phone.locator('.soundConsole__tabs').getByText('Filters', { exact: true }).click();
+  const filter = phone.locator('.fxShelf__item:not([disabled])').first();
+  await expect(filter).toBeVisible();
+
+  await insideASong(8);
+  const song = watch.state!.trackId;
+  const dry = await streamOf(desk);
+  // The record as mastered. Not necessarily an `/api/stream` URL: with nothing
+  // asked of the encoder the deck is free to play the queue buffer's own copy,
+  // and here it is - a blob. Which is the point: there is no encoder in the
+  // loop at all until something asks for one.
+  expect(chainIn(dry), 'the desk should be playing the record as mastered').toBeNull();
+  expect(dry).not.toContain('/api/transcode/');
+  await filter.click();
+
+  // THE ASSERTION. The desk's own element is now fetching a coloured stream.
+  await expect
+    .poll(async () => chainIn(await streamOf(desk))?.length ?? 0, { timeout: 20_000 })
+    .toBeGreaterThan(0);
+  const wet = await streamOf(desk);
+
+  /*
+   * The same song, from where it had got to - a re-colour, not a restart.
+   *
+   * The song is read from the HUB, the way every other assertion in this file
+   * reads it. NOT from the row id in the URL: which BOX serves the bytes is a
+   * separate question from which library this is, and a mirror holding the same
+   * song answers under its own row id (serverSession's `pickSource`), so the
+   * number in the path is not this hub's number and never was.
+   *
+   * `seek` is the position half. A live encode has no range to seek into, so
+   * the only way back to the middle of a song is to have the encoder BEGIN
+   * there; a URL with no `seek` on it is the song starting over.
+   */
+  expect(watch.state!.trackId).toBe(song);
+  expect(wet).toContain('/api/transcode/');
+  expect(seekIn(wet)).toBeGreaterThan(2);
+  await expect.poll(() => audible(desk), { timeout: 20_000 }).toBe(true);
+
+  // And none of it moved the seat or woke the phone's deck: a device holding
+  // the console is still a remote.
+  expect(seat()).toBe(DESK.id);
+  expect(await audible(phone)).toBe(false);
+
+  // The phone's own console reads the way the listener just set it - the same
+  // answer the mix gave one release earlier, so one console does not have two
+  // ideas of who owns the sound.
+  await expect(filter).toHaveAttribute('aria-pressed', 'true');
+
+  // ...and taking it off travels too. An empty chain is an instruction, not an
+  // absence of one, and this is exactly the half a "send only what changed"
+  // wire drops. No runway needed: the chain outlives the song, so the next
+  // track's URL carries the filter until this lands.
+  await phone.locator('.fxFilters__clear').click();
+  await expect.poll(async () => chainIn(await streamOf(desk)), { timeout: 20_000 }).toBeNull();
+  await expect.poll(() => audible(desk), { timeout: 20_000 }).toBe(true);
+  expect(seat()).toBe(DESK.id);
+  await closeSoundConsole(phone);
 });
 
 test('@slow the watching device follows the seat holder across track changes', async () => {

@@ -1337,8 +1337,27 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     }, RECOLOUR_COALESCE_MS);
 
     return () => window.clearTimeout(recolourTimer.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the rack and chain are the triggers; resumeInPlace is redefined every render
-  }, [rack, chain, drop]);
+    /*
+     * THE SONG IS A DEP, and leaving it out cost the whole feature.
+     *
+     * `trackWas` is written only in here, and this effect used to run only when
+     * the SOUND changed - so after a track change the ref still held the song
+     * before it, and the very next filter, pedal or fader was swallowed by the
+     * guard above as "a new song is not a change of sound". One song per app
+     * launch could be re-coloured in place; after that a change did nothing
+     * audible until the track happened to end, which reads exactly like the
+     * console being broken. (Stems escaped it only because a carried drop has
+     * a second door - the `revision` effect below.)
+     *
+     * With the song in the deps the ref is honest: a track change runs this,
+     * records the new song, and stands down (which is right - the load effect
+     * is already fetching it, with the current sound), and the next change of
+     * sound compares like with like. It also means a re-colour scheduled for
+     * the outgoing song is cancelled by the cleanup rather than firing at the
+     * incoming one.
+     */
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resumeInPlace is redefined every render
+  }, [rack, chain, drop, track?.path]);
 
   /*
    * The drop just started applying to the song already playing.

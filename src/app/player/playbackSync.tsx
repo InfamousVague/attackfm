@@ -17,6 +17,7 @@ import {
   type ConnectCommand,
   type ConnectDevice,
   type ConnectSession,
+  type FxWireNode,
   type ReportedState,
   type ServerMessage,
 } from './connect.ts';
@@ -56,6 +57,12 @@ export interface PlaybackController {
    *  parts come out on the server, on THIS device's stream, so this is the
    *  only place the change can be made to happen at all. */
   setStems(gains: Record<string, number>): void;
+  /** A remote changed the effects rack. Same physics as `setStems`: the rack
+   *  is `fx` in THIS device's stream URL and nowhere else. */
+  setEffects(ids: string[]): void;
+  /** A remote changed the hi-fi chain - a filter tapped, a pedal dialled, the
+   *  console's kill switch. `fx2` in THIS device's stream URL. */
+  setChain(nodes: FxWireNode[]): void;
   /** Become the active device: load the session's track at its position. */
   becomeActive(state: ConnectSession): void;
   /** Stop playing here - another device took over. */
@@ -189,6 +196,15 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
             // so this is gated on the field being PRESENT, not on it having
             // anything in it.
             if (msg.command.gains) c.setStems(msg.command.gains);
+            break;
+          // ...and the same rule for the rack and the chain, where the empty
+          // case is the one people reach for most: "clear", and the console's
+          // all-off. Gated on presence, never on length.
+          case 'effects':
+            if (msg.command.effects) c.setEffects(msg.command.effects);
+            break;
+          case 'chain':
+            if (msg.command.chain) c.setChain(msg.command.chain);
             break;
         }
         break;

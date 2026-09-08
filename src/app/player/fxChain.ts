@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { nodeSpec, type FxChainState, type FxNode } from './fxNodes.ts';
+import type { FxWireNode } from './connect.ts';
 
 // The spec table lives next door now; everything it exported still leaves
 // through this module, so the four consumers did not have to move.
@@ -84,14 +85,78 @@ function read(): FxChainState {
 let state: FxChainState = read();
 const listeners = new Set<() => void>();
 
-function commit(next: FxChainState): void {
+/*
+ * WHERE THE SOUND ACTUALLY IS.
+ *
+ * The chain is compiled by the ENCODER, on the stream the playing device asked
+ * for - `fx2` in that device's URL. So a filter tapped on a device that is only
+ * holding the remote does nothing anybody can hear: put "slowed" on the desktop
+ * while the phone is the one streaming and the phone plays the record dry, for
+ * that song and every song after.
+ *
+ * This is the wire out to the device that is playing. Hung on the store rather
+ * than on the surfaces that write it, because there are already five of them -
+ * the HiFi room, the Filters shelf, the console's kill switch, the pedal
+ * editor, and any plugin holding `@attackfm/app/fxChain` - and the sixth would
+ * forget. Null whenever this device is the one playing, which is the ordinary
+ * case and the one that needs no wire.
+ */
+let relay: ((nodes: FxWireNode[]) => void) | null = null;
+
+/** Registered by the Player while ANOTHER device holds the seat. */
+export function setFxChainRelay(send: ((nodes: FxWireNode[]) => void) | null): void {
+  relay = send;
+}
+
+/**
+ * The chain as it travels: no `key`.
+ *
+ * `key` is client-side list identity and says so on its declaration - the
+ * receiving device has its own list to draw and mints its own. Leaving it off
+ * also makes two chains with the same sound compare equal below, which is what
+ * lets a redundant frame be dropped instead of paying for a re-encode.
+ */
+function wire(nodes: FxNode[]): FxWireNode[] {
+  return nodes.map((n) => ({ t: n.t, on: n.on, params: { ...n.params } }));
+}
+
+/**
+ * @param travel false for a chain that ARRIVED from a remote - committing it
+ *   is the whole point, sending it back where it came from is not. The playing
+ *   device never holds a relay anyway, but a rule stated once is cheaper than
+ *   a rule inferred from who holds the seat.
+ */
+function commit(next: FxChainState, travel = true): void {
   state = next;
   try {
     localStorage.setItem(KEY, JSON.stringify(next));
   } catch {
     // The chain still applies for this run.
   }
+  if (travel) relay?.(wire(next.nodes));
   for (const l of listeners) l();
+}
+
+/**
+ * A chain that arrived FROM the remote.
+ *
+ * Sanitised through the same `sane()` that guards localStorage, because the
+ * wire is exactly as untrusted as storage is: an unknown node tag, a parameter
+ * out of range, sixteen boxes plus one. There is no second validator to keep
+ * in step.
+ *
+ * A frame that says what this device already holds is DROPPED rather than
+ * committed. The chain's change signal downstream is object identity
+ * (Player.tsx's re-colouring effect compares `chain` by reference), so an
+ * identical chain committed again would throw away an open connection and make
+ * the server re-encode the rest of the song to arrive at the audio already
+ * playing. That is not hypothetical: the hub replays the last command it was
+ * holding when a seat holder returns from a socket blip.
+ */
+export function applyFxChain(nodes: unknown): void {
+  const next = sane({ nodes });
+  if (JSON.stringify(wire(next.nodes)) === JSON.stringify(wire(state.nodes))) return;
+  commit(next, false);
 }
 
 export function fxChain(): FxChainState {

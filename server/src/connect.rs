@@ -110,6 +110,41 @@ struct UserHub {
     /// queue: transport commands supersede each other, and replaying a burst
     /// of stale ones at a device that just woke up is how playback teleports.
     pending: Option<Command>,
+    /// The same holding pen for the commands that shape the SOUND, keyed by
+    /// action so each store keeps its own latest.
+    ///
+    /// These do not supersede each other or the transport: the mix, the rack
+    /// and the chain are three separate stores on the device, so a filter
+    /// tapped during a blip used to be thrown away by the pause that followed
+    /// it - and the listener's only evidence was a sound that did not change.
+    /// A BTreeMap rather than a HashMap so the order they are handed back in
+    /// is the same every time, which is one less thing for a test (or a
+    /// bug report) to be at the mercy of.
+    pending_sound: std::collections::BTreeMap<String, Command>,
+}
+
+impl UserHub {
+    /// Hold a command for a seat-holder that is mid-blip.
+    fn hold(&mut self, command: Command) {
+        if shapes_sound(&command.action) {
+            self.pending_sound.insert(command.action.clone(), command);
+        } else {
+            self.pending = Some(command);
+        }
+    }
+
+    /// Everything held, taken, in the order it should be delivered.
+    ///
+    /// The sound goes FIRST: what the stream is coloured with is settled
+    /// before a transport command asks it to play, so the device re-opens its
+    /// connection once rather than twice.
+    fn take_held(&mut self) -> Vec<Command> {
+        let mut out: Vec<Command> = std::mem::take(&mut self.pending_sound)
+            .into_values()
+            .collect();
+        out.extend(self.pending.take());
+        out
+    }
 }
 
 #[derive(Default)]
@@ -174,11 +209,13 @@ enum ClientMsg {
 
 /// Transport a remote asks the active device to perform. Fields beyond `action`
 /// are optional and interpreted per action (positionMs for seek, volume for
-/// volume, queue+index for setQueue, gains for stems).
+/// volume, queue+index for setQueue, gains for stems, effects/chain for the
+/// two halves of the effects console).
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Command {
     /// play | pause | toggle | next | prev | seek | volume | setQueue | stems
+    /// | effects | chain
     action: String,
     #[serde(rename = "positionMs", skip_serializing_if = "Option::is_none")]
     position_ms: Option<i64>,
@@ -195,6 +232,35 @@ struct Command {
     /// was not told about, and without this the mix arrived empty.
     #[serde(skip_serializing_if = "Option::is_none")]
     gains: Option<std::collections::HashMap<String, f64>>,
+    /// For `effects`: the whole rack, as stream.rs's effect ids. Named here
+    /// for the same reason `gains` is - this struct is a fixed shape, and
+    /// serde drops what it was not told about.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effects: Option<Vec<String>>,
+    /// For `chain`: the whole hi-fi chain, in order.
+    ///
+    /// Opaque JSON on purpose. A node is `{t, on, params}` today, and naming
+    /// those three fields here would put a second copy of the client's schema
+    /// in the hub - where the NEXT field a node grows would be dropped in
+    /// transit, silently, exactly the way `gains` was before it was named.
+    /// The hub is a pipe between two of one person's own devices; the
+    /// receiving client sanitises what arrives through the same door its
+    /// localStorage goes through (fxChain.ts's `sane`), which is where a
+    /// validator belongs and where there is one already.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chain: Option<Vec<serde_json::Value>>,
+}
+
+/// Whether an action SHAPES THE SOUND rather than driving the transport.
+///
+/// The difference matters in exactly one place - the grace-blip holding pen
+/// below - and it is the difference between "supersedes" and "does not". A
+/// pause supersedes a play. A chain does not supersede a mix, and neither
+/// supersedes a pause: each is the whole of a different store on the device,
+/// and holding all three in one slot means whichever arrived last is the only
+/// one that survives the blip.
+fn shapes_sound(action: &str) -> bool {
+    matches!(action, "stems" | "effects" | "chain")
 }
 
 // --- the endpoint ------------------------------------------------------------
@@ -412,7 +478,7 @@ async fn on_hello(
     // The seat-holder returning from a blip collects what was aimed at it
     // while it was gone.
     if hub.session.active_device_id.as_deref() == Some(id.as_str()) {
-        if let Some(cmd) = hub.pending.take() {
+        for cmd in hub.take_held() {
             let _ = tx.send(json!({ "type": "command", "command": cmd }).to_string());
         }
     }
@@ -530,8 +596,9 @@ async fn on_command(state: &Arc<AppState>, user_id: i64, command: Command) {
                 .send(json!({ "type": "command", "command": command }).to_string());
         }
         // The seat-holder is in its grace blip: hold the command for its
-        // return rather than dropping it on the floor. Latest wins.
-        None => hub.pending = Some(command),
+        // return rather than dropping it on the floor. Latest wins - per
+        // store for the sound, and once for everything else.
+        None => hub.hold(command),
     }
 }
 
@@ -637,6 +704,11 @@ async fn on_disconnect(state: &Arc<AppState>, user_id: i64, device: &str, conn_i
             hub.session.epoch += 1;
             hub.session.updated_at = now_ms();
             hub.pending = None;
+            // The seat is empty: there is nobody left for a held sound to be
+            // applied to, and keeping it would colour whatever device takes
+            // the seat next with a filter aimed at a device that never came
+            // back.
+            hub.pending_sound.clear();
             hub.devices
                 .retain(|id, d| d.online || Some(id) == hub.session.active_device_id.as_ref());
             let devices = devices_message(hub);
@@ -660,6 +732,7 @@ async fn on_disconnect(state: &Arc<AppState>, user_id: i64, device: &str, conn_i
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     /// The hand-back bug in one assertion: a seat holder that goes quiet lets
     /// the hub's between-reports clock run past the end of the song, and the
@@ -675,5 +748,82 @@ mod tests {
         // An older client reports no duration: no ceiling to apply, and
         // guessing one would be worse than the old behaviour.
         assert_eq!(clamp_to_track(79_996, 0), 79_996);
+    }
+
+    /// What the hub makes of one frame from a remote. Compared as JSON rather
+    /// than as text: a `Value`'s object keys come back out sorted, which is a
+    /// difference in spelling and not in meaning - and the client rebuilds
+    /// every node through its own sanitiser before comparing anything.
+    fn round_trip(sent: &str) -> serde_json::Value {
+        let parsed: Command = serde_json::from_str(sent).expect("a frame the client can send");
+        serde_json::from_str(&serde_json::to_string(&parsed).expect("and send on")).unwrap()
+    }
+
+    /// THE TRAP THE MIX FELL INTO FIRST.
+    ///
+    /// `Command` is a fixed shape and serde drops what it was not told about,
+    /// so a field the struct does not name arrives at the playing device
+    /// absent - with no error at either end and nothing in any log. The
+    /// listener's whole evidence is a filter that does nothing. This asserts
+    /// that what a remote actually sends survives the round trip through the
+    /// hub, nested parameters and all.
+    #[test]
+    fn the_console_survives_the_hub() {
+        let sent = r#"{"action":"chain","chain":[{"t":"tape","on":true,"params":{"wow":0.4}}]}"#;
+        assert_eq!(round_trip(sent), serde_json::from_str::<Value>(sent).unwrap());
+
+        let rack = r#"{"action":"effects","effects":["lofi","hall"]}"#;
+        assert_eq!(round_trip(rack), serde_json::from_str::<Value>(rack).unwrap());
+
+        // The empty cases, which are what "clear" and the console's all-off
+        // send: present and empty, never absent. A `chain` command with the
+        // field missing is not "take everything off", it is a command the
+        // client is right to ignore - so the two must stay distinguishable
+        // right through the hub.
+        let cleared = r#"{"action":"chain","chain":[]}"#;
+        assert_eq!(round_trip(cleared), serde_json::from_str::<Value>(cleared).unwrap());
+        assert_eq!(
+            round_trip(r#"{"action":"chain"}"#),
+            serde_json::json!({ "action": "chain" }),
+        );
+    }
+
+    fn command(action: &str) -> Command {
+        serde_json::from_str(&format!(r#"{{"action":"{action}"}}"#)).unwrap()
+    }
+
+    /// The holding pen a seat-holder collects on its way back from a socket
+    /// blip. One slot for transport, one per sound store - because a pause is
+    /// an instruction that replaces the last one and a filter is not.
+    #[test]
+    fn a_blip_does_not_eat_the_sound_that_arrived_during_it() {
+        let mut hub = UserHub::default();
+        hub.hold(command("chain"));
+        hub.hold(command("stems"));
+        hub.hold(command("pause"));
+        let held: Vec<String> = hub.take_held().into_iter().map(|c| c.action).collect();
+        // All three, and the sound before the transport.
+        assert_eq!(held, vec!["chain", "stems", "pause"]);
+        // Taken means taken: a second hello must not replay them.
+        assert!(hub.take_held().is_empty());
+    }
+
+    #[test]
+    fn the_latest_word_from_each_store_is_the_one_held() {
+        let mut hub = UserHub::default();
+        hub.hold(command("play"));
+        hub.hold(command("pause"));
+        hub.hold(command("chain"));
+        let mut chain_again = command("chain");
+        chain_again.chain = Some(vec![]);
+        hub.hold(chain_again);
+        let held = hub.take_held();
+        assert_eq!(
+            held.iter().map(|c| c.action.as_str()).collect::<Vec<_>>(),
+            vec!["chain", "pause"],
+        );
+        // The second chain, not the first: a store's latest state is its whole
+        // state, so an older one is genuinely superseded.
+        assert_eq!(held[0].chain, Some(vec![]));
     }
 }

@@ -780,3 +780,174 @@ describe('reporting where the song is', () => {
     expect(r.said().at(-1)).toBe(0);
   });
 });
+
+/**
+ * THE CONSOLE, WHEN ANOTHER DEVICE IS THE ONE PLAYING.
+ *
+ * The rack and the hi-fi chain are compiled by the ENCODER, on the stream the
+ * playing device asked for - `fx` and `fx2` in that device's URL. So a filter
+ * tapped on a device that is only holding the remote reached nothing at all:
+ * that device's own URL is never fetched, and the phone kept playing the record
+ * dry for that song and every song after. The mix (`stems`) was given this wire
+ * one release earlier; these two were not.
+ *
+ * Both ends are asserted here because both have to be right for anything to be
+ * heard: the remote must SEND, and the seat holder must COMMIT to its own store
+ * - which is what re-spells its URL and reloads the element in place.
+ */
+import { fxChain, setFxChain } from './fxChain.ts';
+import { activeEffects } from './effects.ts';
+
+interface Console {
+  /** Every command this device put on the wire. */
+  sent: () => { action: string; chain?: unknown; effects?: unknown }[];
+  /** The controller the Player registered, as the hub reaches it. */
+  controller: () => {
+    setChain: (nodes: unknown) => void;
+    setEffects: (ids: string[]) => void;
+  };
+  /** Take the seat back, the way a hand-off does. */
+  seatReturns: () => void;
+}
+
+/** A deck with `where` holding the seat: 'elsewhere' is a remote, 'here' is the
+ *  device actually making the sound. */
+function console_(where: 'elsewhere' | 'here'): Console {
+  const live: MutableRefObject<PlayerLiveState> = {
+    current: {
+      playing: false,
+      position: 0,
+      duration: 100,
+      track: song(1),
+      shuffle: false,
+      repeat: 'off',
+      volume: 100,
+      queue: [],
+      setPlayingState: vi.fn(),
+      commitSeek: vi.fn(),
+      allTracks: [song(1)],
+      onTrackChange: vi.fn(),
+      onQueueChange: vi.fn(),
+      deckOwned: true,
+    } as unknown as PlayerLiveState,
+  };
+  const sendCommand = vi.fn();
+  const registerController = vi.fn();
+  const connect = {
+    connected: true,
+    thisDeviceId: 'this-device',
+    activeDeviceId: where === 'here' ? 'this-device' : 'other-device',
+    activeElsewhere: where === 'elsewhere',
+    session: null,
+    registerController,
+    reportState: vi.fn(),
+    transfer: vi.fn(),
+    sendCommand,
+  };
+  const props = () => ({
+    connect: connect as unknown as Parameters<typeof usePlayerConnect>[0]['connect'],
+    jam: null as unknown as Parameters<typeof usePlayerConnect>[0]['jam'],
+    liveRef: live,
+    positionRef: { current: 0 },
+    playbackRef: { current: { volumeBoost: false } } as unknown as Parameters<
+      typeof usePlayerConnect
+    >[0]['playbackRef'],
+    resumeRef: createRef() as MutableRefObject<null>,
+    track: song(1),
+    playing: false,
+    shuffle: false,
+    repeat: 'off' as const,
+    volume: 100,
+    queue: [],
+    upNext: [],
+    seekTick: 0,
+    duration: 100,
+    commitSeek: vi.fn(),
+    setPlayingState: vi.fn(),
+    silent: false,
+  });
+  const view = renderHook(() => usePlayerConnect(props()));
+  return {
+    sent: () => sendCommand.mock.calls.map((c) => c[0] as { action: string }),
+    controller: () => {
+      const last = registerController.mock.calls.map((c) => c[0]).filter(Boolean).at(-1);
+      return last as ReturnType<Console['controller']>;
+    },
+    seatReturns: () => {
+      connect.activeDeviceId = 'this-device';
+      connect.activeElsewhere = false;
+      view.rerender();
+    },
+  };
+}
+
+describe('the console on a device that is only the remote', () => {
+  beforeEach(() => {
+    setFxChain([]);
+  });
+
+  it('puts a filter on the wire, whole', () => {
+    const c = console_('elsewhere');
+    setFxChain([{ t: 'lp', on: true, params: { f: 4000 }, key: 'a' }]);
+    expect(c.sent().at(-1)).toEqual({
+      action: 'chain',
+      chain: [{ t: 'lp', on: true, params: { f: 4000 } }],
+    });
+  });
+
+  it('sends the clear as well - taking a filter off is a change too', () => {
+    const c = console_('elsewhere');
+    setFxChain([{ t: 'lp', on: true, params: { f: 4000 }, key: 'a' }]);
+    setFxChain([]);
+    expect(c.sent().at(-1)).toEqual({ action: 'chain', chain: [] });
+  });
+
+  it('keeps the chain here too, so the remote’s own console reads right', () => {
+    console_('elsewhere');
+    setFxChain([{ t: 'lp', on: true, params: { f: 4000 }, key: 'a' }]);
+    expect(fxChain().nodes.map((n) => n.t)).toEqual(['lp']);
+  });
+
+  it('stops sending the moment the seat comes back', () => {
+    // A device driving its own deck must never send its own sound to itself:
+    // the command would be routed straight back and reload the stream twice.
+    const c = console_('elsewhere');
+    c.seatReturns();
+    setFxChain([{ t: 'lp', on: true, params: { f: 4000 }, key: 'a' }]);
+    expect(c.sent()).toEqual([]);
+  });
+
+  it('says nothing at all while this device is the one playing', () => {
+    const c = console_('here');
+    setFxChain([{ t: 'lp', on: true, params: { f: 4000 }, key: 'a' }]);
+    expect(c.sent()).toEqual([]);
+  });
+});
+
+describe('the console arriving at the device that IS playing', () => {
+  beforeEach(() => {
+    setFxChain([]);
+  });
+
+  it('commits the chain, which is what re-spells its stream URL', () => {
+    const c = console_('here');
+    c.controller().setChain([{ t: 'lp', on: true, params: { f: 4000 } }]);
+    expect(fxChain().nodes.map((n) => n.t)).toEqual(['lp']);
+  });
+
+  it('commits the rack the same way', () => {
+    const c = console_('here');
+    c.controller().setEffects(['lofi']);
+    expect(activeEffects()).toEqual(['lofi']);
+    c.controller().setEffects([]);
+    expect(activeEffects()).toEqual([]);
+  });
+
+  it('does not bounce what arrived back onto the wire', () => {
+    // Belt and braces: the playing device holds no relay anyway, but a chain
+    // echoed back would be a loop between the two devices.
+    const c = console_('here');
+    c.controller().setChain([{ t: 'lp', on: true, params: { f: 4000 } }]);
+    expect(c.sent()).toEqual([]);
+  });
+});

@@ -1,6 +1,8 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import type { PlayerRepeat } from '@glacier/react';
 import { applyStemGains, setStemRelay } from './stemDrop.ts';
+import { applyEffects, setEffectsRelay } from './effects.ts';
+import { applyFxChain, setFxChainRelay } from './fxChain.ts';
 import { trackIdFromPath } from '../server.ts';
 import { VOLUME_MAX, VOLUME_UNITY } from './volume.ts';
 import { useConnect } from './playbackSync.tsx';
@@ -264,26 +266,59 @@ export function usePlayerConnect({
        */
       setStems: (gains) => applyStemGains(gains),
 
+      /*
+       * ...and the rack and the chain, which are the same sentence about a
+       * different query parameter. `fx` and `fx2` are compiled by the encoder
+       * on the stream THIS device asked for, so a filter tapped on the desktop
+       * while the phone was streaming reached nothing at all - the phone's URL
+       * was never re-spelled and the phone's connection was never re-opened.
+       *
+       * Committed to this device's own stores, so the reload that carries the
+       * new sound is the one a local tap already causes: Player.tsx watches
+       * both stores and re-colours in place, at the position the song is at.
+       * There is no second code path here, which is why a remote's change
+       * cannot restart the track when a local one does not.
+       */
+      setEffects: (ids) => applyEffects(ids),
+      setChain: (nodes) => applyFxChain(nodes),
+
       release: () => liveRef.current.setPlayingState(false),
     });
     return () => connect.registerController(null);
   }, [connect, liveRef, playbackRef, resumeRef]);
 
   /*
-   * THE OTHER END OF THE MIX.
+   * THE OTHER END OF THE SOUND.
    *
-   * While another device holds the seat this one is a remote, and a fader
-   * moved here has to travel to reach the stream it applies to. Registered on
-   * the store rather than on the two buttons that call it (the karaoke toggle
-   * and the mixer) so a third surface cannot forget, and torn down the moment
-   * the seat comes back - a device driving its own deck must never send its
-   * own mix to itself.
+   * While another device holds the seat this one is a remote, and anything
+   * moved on the console here has to travel to reach the stream it applies
+   * to. All three stores are wired in ONE effect because they are one fact:
+   * this device is not the one making the sound. Registered on the stores
+   * rather than on the surfaces that write them - there are seven of those
+   * between the four rooms, the kill switches and the plugin host - so a new
+   * surface travels by existing, and torn down the moment the seat comes back,
+   * because a device driving its own deck must never send its own sound to
+   * itself.
+   *
+   * The stores commit LOCALLY as well as sending, which is deliberate and is
+   * the answer the mix already gave: the remote's own console should read the
+   * way the listener just set it, and this device inherits the sound if it
+   * later takes the seat back. It does NOT pull the seat holder's state the
+   * other way - that would need the hub's session to carry the console as an
+   * authoritative field, with an epoch of its own, and one answer across the
+   * whole console beats two.
    */
   const remoting = connect.connected && connect.activeElsewhere;
   useEffect(() => {
     if (!remoting) return;
     setStemRelay((gains) => connect.sendCommand({ action: 'stems', gains }));
-    return () => setStemRelay(null);
+    setEffectsRelay((ids) => connect.sendCommand({ action: 'effects', effects: [...ids] }));
+    setFxChainRelay((chain) => connect.sendCommand({ action: 'chain', chain }));
+    return () => {
+      setStemRelay(null);
+      setEffectsRelay(null);
+      setFxChainRelay(null);
+    };
   }, [remoting, connect]);
 
   // What this device hears, for friends who may know (profile/presence.ts).
