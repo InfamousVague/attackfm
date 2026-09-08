@@ -14,7 +14,7 @@ import type { BundleState } from './appUpdate.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { isAndroid, isIOS, isMobile } from '../core/platform.ts';
 import { isTauri } from '../core/tauri.ts';
-import { translate, useT } from '../i18n/LocaleShell.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 import { formatBytes, formatNumber } from '../ux/format.ts';
 
 /**
@@ -388,11 +388,4 @@ export function DeveloperPane() {
       </PaneSection>
     </div>
   );
-}
-
-/** The rail row's second line, for SettingsModal. Read at render by the rail
- *  rather than inside a component of ours, so it uses the non-reactive
- *  translate(); the rail re-renders on a language change and calls it again. */
-export function developerSummary(): string {
-  return translate('settings.devSummary');
 }

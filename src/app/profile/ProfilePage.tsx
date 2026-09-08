@@ -12,7 +12,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { AccountSetup, FriendAvatar, FriendsSection } from './RegistryFriends.tsx';
 import { FriendProfilePage } from './FriendProfilePage.tsx';
-import { useSharing, setSharing } from './listeningShare.tsx';
+import { useSharing, setSharing } from './sharingPref.ts';
 import { useOfferShare } from '../nav/shareDoor.ts';
 import {
   removeProfileImage,

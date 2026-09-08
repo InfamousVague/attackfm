@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { announce, postPresence, publishProfile } from '../servers/registry.ts';
@@ -9,16 +9,14 @@ import { fold } from '../core/fold.ts';
 import { setProfileSharing } from '../api/profile.ts';
 import { fetchStatsSummary, type StatsSummary } from './stats.ts';
 import { onNowPlayingBeat, readNowPlayingBeat } from './presence.ts';
+import { useSharing } from './sharingPref.ts';
 
 /**
  * Sharing your listening with friends - the weekly glance behind the friends
  * page.
  *
- * ON by default, and only for people who have never said otherwise: an
- * explicit `off` is honoured forever, so nobody who once turned this off is
- * quietly turned back on by a later release. Without a default the friends
- * page is a grid of empty cards - the numbers are what make it about music
- * rather than a contact list - and a friend is someone you already accepted.
+ * The switch itself (its key, its default, the store every surface shares)
+ * lives in ./sharingPref.ts; this is what being switched on DOES.
  *
  * Turning the switch off needs no un-share round trip: the announcements just
  * stop, the registry's copy goes stale, and friends stop seeing it within the
@@ -30,7 +28,6 @@ import { onNowPlayingBeat, readNowPlayingBeat } from './presence.ts';
  * friends, and visible only to accounts you have accepted.
  */
 
-const SHARE_KEY = 'attackfm-share-listening';
 /** How often a standing session re-announces the week's glance. Twenty
  *  minutes: the numbers a friend reads should be this evening's, not this
  *  morning's, and the announce is a few hundred bytes. */
@@ -38,41 +35,6 @@ const REANNOUNCE_MS = 20 * 60 * 1000;
 /** The presence heartbeat: online is a beat within the last minute and a
  *  half, so every half minute keeps it lit with slack for a slow link. */
 const PRESENCE_MS = 30 * 1000;
-
-const listeners = new Set<() => void>();
-
-export function sharingEnabled(): boolean {
-  try {
-    // Only an explicit refusal turns it off. Anything else - never asked, or
-    // a value from some older build - reads as on.
-    return localStorage.getItem(SHARE_KEY) !== 'off';
-  } catch {
-    return true;
-  }
-}
-
-export function setSharing(on: boolean): void {
-  try {
-    localStorage.setItem(SHARE_KEY, on ? 'on' : 'off');
-  } catch {
-    // A store that will not write costs the preference, not the page.
-  }
-  for (const l of listeners) l();
-}
-
-/** The switch's state, live across every component that shows it. */
-export function useSharing(): boolean {
-  return useSyncExternalStore(
-    (cb) => {
-      listeners.add(cb);
-      return () => listeners.delete(cb);
-    },
-    sharingEnabled,
-    // The server-render fallback matches the default, or the switch would
-    // flash off on first paint for everyone who never touched it.
-    () => true,
-  );
-}
 
 /**
  * Headless: pushes the glance while sharing is on. Mounted once at app level,

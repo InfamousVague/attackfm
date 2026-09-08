@@ -39,10 +39,8 @@ vi.mock('../ux/useNarrowViewport.ts', () => ({ useNarrowViewport: () => false })
    invalidate every assertion about what was fetched. */
 const translate = (key: string) => key;
 vi.mock('../i18n/LocaleShell.tsx', () => ({ useT: () => translate }));
-vi.mock('./RegistryFriends.tsx', () => ({
-  FriendAvatar: () => null,
-  isOnline: (f: { online?: boolean }) => f.online === true,
-}));
+vi.mock('./RegistryFriends.tsx', () => ({ FriendAvatar: () => null }));
+vi.mock('./friendPresence.ts', () => ({ isOnline: (f: { online?: boolean }) => f.online === true }));
 
 const session = { url: 'https://home.example.com', username: 'matt' };
 let registrySession: { account: { handle: string }; token: string } | null = null;

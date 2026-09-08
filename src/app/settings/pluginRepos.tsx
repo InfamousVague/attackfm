@@ -8,9 +8,9 @@ import {
   installPlugin,
   readSources,
   removeSource,
-  type RemoteManifest,
   type RemotePluginListing,
 } from '../../plugins/remote.ts';
+import { isNewer, listingsOf, type Feed } from './pluginFeeds.ts';
 import { Trans, translate, useT } from '../i18n/LocaleShell.tsx';
 
 /**
@@ -22,31 +22,6 @@ import { Trans, translate, useT } from '../i18n/LocaleShell.tsx';
  * channel, not a dependency. Adding one is trusting its owner with code that
  * runs inside the app, and the confirm on Add says exactly that.
  */
-/** A repository's fetched manifest, the reason it could not be read, or a wait. */
-export type Feed = RemoteManifest | string | 'loading';
-
-export function listingsOf(feed: Feed | undefined): RemotePluginListing[] {
-  return typeof feed === 'object' && feed !== null && 'plugins' in feed ? feed.plugins : [];
-}
-
-/**
- * Dotted versions, newest wins. Only a STRICTLY higher version counts as an
- * update: comparing by inequality would nag forever about a repository that
- * happens to be pinned behind what is installed, and offer a "update" that
- * silently downgrades.
- */
-export function isNewer(candidate: string, installed: string): boolean {
-  const parts = (v: string) => v.split(/[.\-+]/).map((n) => Number.parseInt(n, 10) || 0);
-  const a = parts(candidate);
-  const b = parts(installed);
-  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
-    const left = a[i] ?? 0;
-    const right = b[i] ?? 0;
-    if (left !== right) return left > right;
-  }
-  return false;
-}
-
 /**
  * The repositories and what they are offering, fetched once for the whole
  * pane. Lifted out of the sources list because three surfaces need it now -

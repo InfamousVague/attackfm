@@ -5,12 +5,12 @@ import { Switch } from '@glacier/react';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { fetchFriends, type RegistryFriend } from '../servers/registry.ts';
-import { setSharing, useSharing } from './listeningShare.tsx';
+import { setSharing, useSharing } from './sharingPref.ts';
 import { fetchStatsSummary } from './stats.ts';
 import { Heading } from './StatsBits.tsx';
 // Shared with the friends grid rather than reached for from ./stats.ts:
 // `fmtMinutes` there spells "min" and "hr" in English (see listenedTime).
-import { listenedTime } from './RegistryFriends.tsx';
+import { listenedTime } from './friendPresence.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 
 /**

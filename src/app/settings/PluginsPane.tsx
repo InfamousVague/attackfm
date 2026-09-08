@@ -6,14 +6,13 @@ import { uninstallPlugin, type RemotePluginListing } from '../../plugins/remote.
 import { usePlugins } from '../../plugins/runtime.tsx';
 import { useT } from '../i18n/LocaleShell.tsx';
 import {
-  isNewer,
-  listingsOf,
   PluginBrowse,
   PluginSources,
   PluginUpdates,
   useInstaller,
   useRepoFeeds,
 } from './pluginRepos.tsx';
+import { isNewer, listingsOf } from './pluginFeeds.ts';
 
 /**
  * What a plugin adds to the app, read off the plugin object itself rather

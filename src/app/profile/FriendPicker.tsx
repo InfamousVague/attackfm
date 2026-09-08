@@ -14,7 +14,8 @@ import {
   type FriendPickerAsk,
   type FriendPickerMode,
 } from '../nav/friendPickerDoor.ts';
-import { FriendAvatar, isOnline } from './RegistryFriends.tsx';
+import { FriendAvatar } from './RegistryFriends.tsx';
+import { isOnline } from './friendPresence.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 
 /** What `t` is, for the two plain helpers below that are handed one. */

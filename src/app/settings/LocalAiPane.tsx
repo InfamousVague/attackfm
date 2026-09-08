@@ -1207,8 +1207,3 @@ function TastePage({ report }: { report: AiReport }) {
     </PaneSection>
   );
 }
-
-/** The rail row's second line, for SettingsModal. */
-export function localAiSummary(t: Translate): string {
-  return t('settings.summaryLocalAi');
-}

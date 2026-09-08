@@ -3,12 +3,13 @@
 import { NOTICE_COPY as COPY, NOTICE_ORDER as ORDER } from '../notify/kinds.ts';
 import { Button, Switch, Text } from '@glacier/react';
 import { useCallback, useEffect, useState } from 'react';
-import { fetchPushPrefs, setPushPref, type ServerSession } from '../server.ts';
+import { fetchPushPrefs, setPushPref } from '../server.ts';
+import { writeSummary } from './notificationsSummary.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { PaneSection, SettingRow, SettingsEmpty } from './kit/settingsKit.tsx';
 import { discoveryNoticesEnabled, osNoticesEnabled, setDiscoveryNotices, setOsNotices, setVerboseNotices, verboseNoticesEnabled } from './behaviourPrefs.ts';
 import { ensureOsNotifyPermission, sendTestNotification } from '../notify/osNotify.ts';
-import { translate, useT } from '../i18n/LocaleShell.tsx';
+import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
  * What the app is allowed to interrupt you for.
@@ -22,61 +23,6 @@ import { translate, useT } from '../i18n/LocaleShell.tsx';
  * here without an app release; the copy below is a lookup, and an unknown kind
  * falls back to its own id rather than vanishing.
  */
-
-/*
- * The section list's one-line reading of this pane ("4 of 6 on") - cached at
- * module level because the list renders before this pane has ever mounted,
- * and the truth lives a fetch away on the server. The pane's own fetch and
- * the list's priming fetch both write it; whoever runs first wins, and they
- * cannot disagree because they read the same endpoint.
- */
-let summaryCache: { key: string; on: number; total: number; at: number } | null = null;
-
-/** The cache holds the two NUMBERS, not the sentence they make. A sentence
- *  cached here would be cached in whichever language it was first written in
- *  and would survive the picker; the numbers do not care. */
-function summaryText(on: number, total: number): string {
-  return translate('settings.notifyOnCount', { on, total });
-}
-
-/** Which account on which box wrote the cache - a multi-server app must not
- *  show one server's counts on another's row. */
-function summaryKey(session: ServerSession): string {
-  return `${session.url}\n${session.username}`;
-}
-
-function writeSummary(session: ServerSession, prefs: Record<string, boolean>): string {
-  const kinds = Object.keys(prefs);
-  const on = kinds.filter((k) => prefs[k] !== false).length;
-  summaryCache = { key: summaryKey(session), on, total: kinds.length, at: Date.now() };
-  return summaryText(on, kinds.length);
-}
-
-/** What the list shows now, or null before anything has been fetched FOR THIS
- *  session - another account's counts are worse than the worded fallback. */
-export function notificationsSummaryCached(session: ServerSession): string | null {
-  return summaryCache && summaryCache.key === summaryKey(session)
-    ? summaryText(summaryCache.on, summaryCache.total)
-    : null;
-}
-
-/** The list's light fetch on open. A minute of trust between fetches: opening
- *  settings twice in a row should not hit the server twice. */
-export async function primeNotificationsSummary(session: ServerSession): Promise<string | null> {
-  if (
-    summaryCache &&
-    summaryCache.key === summaryKey(session) &&
-    Date.now() - summaryCache.at < 60_000
-  ) {
-    return summaryText(summaryCache.on, summaryCache.total);
-  }
-  try {
-    const r = await fetchPushPrefs(session);
-    return writeSummary(session, r.prefs);
-  } catch {
-    return null;
-  }
-}
 
 /**
  * The switches that belong to the PHONE rather than to the account.

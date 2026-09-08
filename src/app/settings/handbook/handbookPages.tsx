@@ -34,8 +34,8 @@ import {
   Telescope,
   Upload,
 } from '@glacier/icons';
-import { Trans } from '../../i18n/LocaleShell.tsx';
 import type { Translate } from '../settingsShared.ts';
+import { Code, Facts, P, Spans } from './handbookBits.tsx';
 
 /**
  * The handbook's pages: everything the pane shows, as data, so the pager is
@@ -71,48 +71,6 @@ export interface HandbookPage {
   titleKey: string;
   /** Built at render, because a screenful of prose has to follow the picker. */
   body: (t: Translate) => ReactNode;
-}
-
-/** A paragraph of handbook prose. */
-function P({ children }: { children: ReactNode }) {
-  return <p className="handbook__p">{children}</p>;
-}
-
-/** Icon-led fact rows - the handbook's bullet points. */
-function Facts({ items }: { items: readonly { icon: ReactNode; text: ReactNode }[] }) {
-  return (
-    <ul className="handbook__facts">
-      {items.map((f, i) => (
-        <li key={i}>
-          <span className="handbook__factIcon" aria-hidden="true">
-            {f.icon}
-          </span>
-          <span>{f.text}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** A short code block - a manifest, a signature - kept small on purpose. */
-function Code({ children }: { children: string }) {
-  return (
-    <pre className="handbook__code">
-      <code>{children}</code>
-    </pre>
-  );
-}
-
-/**
- * A sentence with code spans in it.
- *
- * The names go in as `values`, never as part of the catalogue entry: the
- * entry says WHERE a name sits in the sentence and the name itself is handed
- * over intact, so no translation can rename an API. The `<c>` tag in the
- * entry is the code span the name lands in.
- */
-function Spans({ k, names }: { k: string; names: Record<string, string> }) {
-  return <Trans i18nKey={k} values={names} components={{ c: <code /> }} />;
 }
 
 const GLYPH = 26;

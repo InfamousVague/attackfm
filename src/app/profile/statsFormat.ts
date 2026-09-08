@@ -103,3 +103,21 @@ export function fmtAxisMinutes(v: number): string {
     maximumFractionDigits: 0,
   });
 }
+
+/**
+ * A span of minutes at tile size: whole hours once it is worth an hour.
+ *
+ * The "h" and the "m" were hard-coded letters, which is an English twelve-hour
+ * reading of a unit; Intl knows the narrow unit in every locale, and knows the
+ * locales that write it before the number.
+ */
+export function hoursLabel(minutes: number): string {
+  const big = minutes >= 60;
+  const value = big ? (minutes / 60 >= 10 ? Math.round(minutes / 60) : Math.round(minutes / 6) / 10) : minutes;
+  return formatNumber(value, {
+    style: 'unit',
+    unit: big ? 'hour' : 'minute',
+    unitDisplay: 'narrow',
+    maximumFractionDigits: 1,
+  });
+}

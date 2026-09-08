@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { Switch } from '@glacier/react';
 import { usePlayback } from '../player/playback.tsx';
-import { setSharing, useSharing } from '../profile/listeningShare.tsx';
+import { setSharing, useSharing } from '../profile/sharingPref.ts';
 import { onlineMetadataEnabled, setOnlineMetadata } from './netPrefs.ts';
 import { sharePositionEnabled, setSharePosition } from './behaviourPrefs.ts';
 import { PaneSection, SettingRow } from './kit/settingsKit.tsx';
 import { useT } from '../i18n/LocaleShell.tsx';
-import type { Translate } from './settingsShared.ts';
 
 /**
  * What leaves this device, and who gets it.
@@ -101,23 +100,4 @@ export function Privacy() {
       </PaneSection>
     </div>
   );
-}
-
-/** The row's second line on the touch list: how much is switched off.
- *  Takes the translator rather than reaching for `translate()`: it is read
- *  during the settings hub's render, so it has to follow a language change. */
-export function privacySummary(
-  online: boolean,
-  history: boolean,
-  position: boolean,
-  week: boolean,
-  t: Translate,
-): string {
-  const switches = [online, history, position, week];
-  const off = switches.filter((x) => !x).length;
-  if (off === 0) return t('privacy.summaryAllShared');
-  if (off === switches.length) return t('privacy.summaryNothingLeaves');
-  // Both numbers are holes: "2 of 4" is not a fixed phrase, and the count
-  // still selects a plural form in the languages that have one.
-  return t('privacy.summarySomeOff', { count: off, total: switches.length });
 }

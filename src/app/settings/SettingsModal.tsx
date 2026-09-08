@@ -14,17 +14,14 @@ import { usePlayback } from '../player/playback.tsx';
 import { usePlugins, usePluginSettingsSections } from '../../plugins/runtime.tsx';
 import { AboutSettings } from './AboutSettings.tsx';
 import { DiagnosticsPane } from './DiagnosticsPane.tsx';
-import { DeveloperPane, developerSummary } from './DeveloperPane.tsx';
-import { LocalAiPane, localAiSummary } from './LocalAiPane.tsx';
+import { DeveloperPane } from './DeveloperPane.tsx';
+import { LocalAiPane } from './LocalAiPane.tsx';
 import { useDeveloperMode } from './developerMode.ts';
 import { diagEntries } from '../diag/diagLog.ts';
 import { HandbookPane } from './handbook/HandbookPane.tsx';
 import { HANDBOOK_PAGES } from './handbook/handbookPages.tsx';
-import {
-  NotificationSettings,
-  notificationsSummaryCached,
-  primeNotificationsSummary,
-} from './NotificationSettings.tsx';
+import { NotificationSettings } from './NotificationSettings.tsx';
+import { notificationsSummaryCached, primeNotificationsSummary } from './notificationsSummary.ts';
 import { useConnect } from '../player/playbackSync.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { DeviceStorageSettings } from '../downloads/DeviceStorageSettings.tsx';
@@ -38,8 +35,9 @@ import { formatBytes, formatNumber } from '../ux/format.ts';
 import { Appearance } from './AppearancePane.tsx';
 import { AccountPane } from './AccountPane.tsx';
 import { General } from './GeneralPane.tsx';
-import { Privacy, privacySummary } from './PrivacyPane.tsx';
-import { useSharing } from '../profile/listeningShare.tsx';
+import { Privacy } from './PrivacyPane.tsx';
+import { developerSummary, localAiSummary, privacySummary } from './paneSummaries.ts';
+import { useSharing } from '../profile/sharingPref.ts';
 import { sharePositionEnabled } from './behaviourPrefs.ts';
 import { onlineMetadataEnabled } from './netPrefs.ts';
 import { PlaybackSettings } from './PlaybackPane.tsx';

@@ -2,7 +2,8 @@ import { DensitySelector, SegmentedControl, Select, Switch } from '@glacier/reac
 import { accentOptions, accentSteps } from '@glacier/tokens';
 import { useState } from 'react';
 import { BRAND_ACCENTS } from './brandAccents.ts';
-import { clampScale, UI_SCALES, useAppearance } from './appearance.tsx';
+import { useAppearance } from './appearance.tsx';
+import { clampScale, UI_SCALES } from './uiScale.ts';
 import { ThemeSelector } from './ThemeSelector.tsx';
 import { getThemePreset, THEME_PRESETS } from './themePresets.ts';
 import { THEME_COPY } from './settingsShared.ts';

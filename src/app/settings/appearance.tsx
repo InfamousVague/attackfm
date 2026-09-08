@@ -3,6 +3,7 @@ import type { DensityMode } from '@glacier/react';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BRAND_ACCENTS } from './brandAccents.ts';
 import { getThemePreset, isThemePreference, type ThemePreference } from './themePresets.ts';
+import { clampScale } from './uiScale.ts';
 
 /* The two inks a brand accent can ask for. Near-white and near-black rather
    than the primaries: pure #fff on a saturated accent glares, and pure #000
@@ -31,21 +32,6 @@ export interface Appearance {
    * things are packed at a fixed size. This changes the size.
    */
   scale: number;
-}
-
-/** What the setting offers, smallest first. Steps rather than a slider: a
- *  number that only ever lands on a known value is one that can be reasoned
- *  about, and every one of these has been looked at. */
-export const UI_SCALES = [0.85, 0.925, 1, 1.1, 1.25] as const;
-
-const MIN_SCALE = UI_SCALES[0]!;
-const MAX_SCALE = UI_SCALES[UI_SCALES.length - 1]!;
-
-/** A stored or chosen scale, made safe: a number in range, or normal. */
-export function clampScale(value: unknown): number {
-  const n = typeof value === 'number' ? value : Number.NaN;
-  if (!Number.isFinite(n)) return 1;
-  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, n));
 }
 
 // The blue that ships as the kit's own default, applied by removing data-accent.

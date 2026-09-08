@@ -48,7 +48,8 @@ import {
 } from '../servers/registry.ts';
 import { openFriendPicker } from '../nav/friendPickerDoor.ts';
 import { Trans, useSongCount, useT } from '../i18n/LocaleShell.tsx';
-import { formatAgo, formatNumber, formatTotal } from '../ux/format.ts';
+import { formatNumber, formatTotal } from '../ux/format.ts';
+import { isOnline, listenedTime, seenAgo } from './friendPresence.ts';
 
 /** The app's translator, as a value the plain helpers below can be handed. */
 type T = ReturnType<typeof useT>;
@@ -97,36 +98,6 @@ export function FriendAvatar({
   );
 }
 
-/** The registry stamps in seconds; anything suspiciously small is treated as
- *  such rather than reading as fifty-six years ago. */
-function stampMs(stamp: number): number {
-  return stamp < 1e12 ? stamp * 1000 : stamp;
-}
-
-/**
- * Seen inside the heartbeat window.
- *
- * This used to be `seenAgo(f) === 'online now'` - a FACT about a friend
- * decided by comparing a display string, which is exactly the sort of thing
- * that quietly stops being true the day the string is translated. The window
- * is the fact; the words are a separate question.
- */
-function seenJustNow(stamp: number): boolean {
-  if (!stamp) return false;
-  const gone = Date.now() - stampMs(stamp);
-  return gone >= 0 && gone < 90_000;
-}
-
-/** "4 hours ago" - the coarse read a friend row wants, never a timestamp.
- *  Intl does the counting and names the unit (ux/format.ts); the hand-rolled
- *  ladder this replaced said "4h ago" in English in every branch. */
-export function seenAgo(stamp: number): string | null {
-  if (!stamp) return null;
-  const ms = stampMs(stamp);
-  if (Date.now() - ms < 0) return null;
-  return formatAgo(ms);
-}
-
 /** The listening glance a friend chose to share: "6 hr 20 min this week · Jon Hopkins". */
 function weekGlance(t: T, f: RegistryFriend): string | null {
   if (typeof f.weekMinutes !== 'number' || f.weekMinutes <= 0) return null;
@@ -134,27 +105,6 @@ function weekGlance(t: T, f: RegistryFriend): string | null {
   // suffix baked into the string. Hours AND minutes: rounding to the hour
   // read 89 and 91 minutes as the same "1h".
   return t('profile.timeThisWeek', { time: listenedTime(f.weekMinutes) });
-}
-
-/**
- * Minutes as a readout, in whatever language the app is in.
- *
- * NOT `fmtMinutes` from ./stats.ts, which builds `${n.toLocaleString()} min`:
- * that spells the unit in English on every screen and asks the BROWSER's
- * locale for the digits, so a Japanese app got Japanese grouping under an
- * English "min". `formatTotal` asks Intl for both, and gives the hour and the
- * minute rather than a decimal hour - which is the distinction the glance
- * above was already reaching for when it refused to round 89 and 91 minutes
- * to the same "1h".
- */
-export function listenedTime(minutes: number): string {
-  return formatTotal(Math.max(0, Math.round(minutes)) * 60);
-}
-
-/** Online: the registry's word when it has one (a heartbeat within the last
- *  minute or two), else the old read off seenAt. */
-export function isOnline(f: RegistryFriend): boolean {
-  return f.online ?? seenJustNow(f.seenAt);
 }
 
 /** "for 12 min" - how long the song they are on has been on. Intl counts and
