@@ -1,6 +1,6 @@
 import { ScrollArea } from '@glacier/react';
 import { mosaicArts, useCardArt, useTileArt } from '../ux/artLoad.ts';
-import { artworkHue, artworkUrl, cardTexture, mixArtwork } from '../ux/artwork.ts';
+import { artworkHue, cardTexture } from '../ux/artwork.ts';
 import type { Track } from '../core/tauri.ts';
 import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
 import { ArtistLink } from '../ux/ArtistLink.tsx';
@@ -10,13 +10,6 @@ import { TrackMenu } from '../library/TrackMenu.tsx';
  * The home page's card atoms and shelf frame - shared by every rendering of
  * the shelves (Home, Discover's curator half, Library's history half).
  */
-
-export function greetingFor(hour: number): string {
-  if (hour < 5) return 'Up late';
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
 
 /** Blank line the skeleton holds so the card keeps its exact height. */
 export const NBSP = ' ';
@@ -152,16 +145,6 @@ export interface ResolvedMix {
   blurb: string;
   flavor: 'ai' | 'heuristic';
   tracks: Track[];
-}
-
-/** The object a mix's name earns - its URL and the hue of the ground it sits
- *  on - or null when the mix keeps its track mosaic. */
-export function mixArt(
-  title: string,
-  opts: { id: string; curated?: boolean; flavor?: 'ai' | 'heuristic' },
-): { src: string; hue: number } | null {
-  const slug = mixArtwork(title, opts);
-  return slug ? { src: artworkUrl(slug), hue: artworkHue(slug) } : null;
 }
 
 /** A shelf: a heading and a horizontal run of cards. Renders nothing when

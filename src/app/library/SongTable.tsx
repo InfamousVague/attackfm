@@ -6,7 +6,8 @@ import {
 } from '@glacier/react';
 import { ArrowDownToLine, CircleCheck, Clock, RotateCcw, X } from '@glacier/icons';
 import { useOnDevice } from '../downloads/useOnDevice.ts';
-import { identityKey, useJustLanded, type IncomingTrack } from '../downloads/incoming.tsx';
+import { useJustLanded, type IncomingTrack } from '../downloads/incoming.tsx';
+import { identityKey } from '../downloads/identity.ts';
 import {
   useEffect,
   useMemo,
@@ -26,16 +27,12 @@ import { TrackMenu } from './TrackMenu.tsx';
 import { isTauri, type Track } from '../core/tauri.ts';
 import { artSized, originFromPath, trackIdFromPath } from '../server.ts';
 import { useOriginLabeler } from '../servers/serverNames.ts';
-import { useArtLoad } from '../ux/artLoad.ts';
-import placeholderArt from '../../assets/attack-wave.png';
+import { SongArt } from './SongArt.tsx';
+import { incomingStatus, type Tr } from './incomingStatus.ts';
+import { wrapGhostCell } from './wrapGhostCell.tsx';
 import { usePrefetchArt } from '../ux/artPrefetch.ts';
 import { formatClock, formatDate, formatNumber } from '../ux/format.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
-
-/** The translator, as this file passes it around. Named `tr` rather than the
- *  usual `t` because `t` is already the name every helper here gives the TRACK
- *  it is handed, and shadowing that would be a rename waiting to go wrong. */
-type Tr = ReturnType<typeof useT>;
 
 /** How many rows a flow-mode table draws before it has been scrolled, and how
  *  many more each time the foot comes near. A screenful with room to spare, so
@@ -134,45 +131,10 @@ function gridCompare(a: string | number, b: string | number): number {
   return String(a).localeCompare(String(b));
 }
 
-// The title cell's thumb, pulled into its own component because a DataGrid
-// cell is a render callback where hooks cannot live. It owns the row's sizing
-// too: a ~40px thumb wants the 160 variant, never the full embedded picture.
-function SongArt({ artwork }: { artwork: string | null }) {
-  const src = artSized(artwork, 160) || placeholderArt;
-  const art = useArtLoad(src, 'songArt');
-  return <img {...art} src={src} alt="" loading="lazy" />;
-}
-
-
 // The columns that come off on a narrow screen, in the order they would be
 // missed least: an album name the title cell half-implies, and a date that is
 // already the sort.
 const NARROW_HIDDEN = new Set(['album', 'addedAt']);
-
-/**
- * The failed job's reason, trimmed to the half a person acts on - the server
- * appends its own transcript under the first line, and the first line is the
- * part that says whether trying again is worth anything.
- */
-export function shortFailure(error: string | null | undefined, tr: Tr): string {
-  const first = (error ?? '').split('\n')[0]?.trim() ?? '';
-  if (!first) return tr('downloads.failed');
-  const cut = first.replace(/\s*Retry to resume\.?$/i, '').trim();
-  return cut.length > 48 ? `${cut.slice(0, 45)}\u2026` : cut || tr('downloads.failed');
-}
-
-/** The one line under an arriving song's name: what it is waiting on. */
-export function incomingStatus(t: IncomingTrack, tr: Tr): string {
-  const why = !t.stalled
-    ? tr('downloads.downloading')
-    : t.onRetry
-      ? shortFailure(t.failure, tr)
-      : tr('downloads.waitingTurn');
-  // The credit and the status are joined through a catalogue entry rather than
-  // an em dash written here, because which side of the dash each half sits on
-  // - and whether a dash is the right mark at all - is the translator's call.
-  return t.artist ? tr('downloads.statusWithArtist', { artist: t.artist, status: why }) : why;
-}
 
 /**
  * A row in the grid that is not a song in this library.
@@ -316,63 +278,6 @@ function ghostOfIncoming(t: IncomingTrack, tr: Tr): GhostRow {
     ),
   };
 }
-
-/**
- * Give a resolved column a second life for rows that are not songs here.
- *
- * A real row falls straight through to the column's own renderer; a ghost (id
- * `ghost:<key>`) gets the cell that fits its column. Everything a ghost cannot
- * answer - album, date, on-device - draws nothing, exactly as a blank should.
- *
- * Wrapped here, once, so no column definition above has to know ghosts exist.
- */
-export function wrapGhostCell(
-  col: DataGridColumn,
-  ghostById: Map<string, GhostRow>,
-): DataGridColumn {
-  const base = col.render;
-  return {
-    ...col,
-    render: (row, rowIndex) => {
-      const g = ghostById.get(row.id as string);
-      if (!g) return base ? base(row, rowIndex) : (row[col.key] as ReactNode);
-      // A heading owns the row. It draws in the TITLE cell rather than a
-      // spanning one because the grid has no concept of a spanning cell -
-      // and the title is the widest column, so the label lands where the eye
-      // already is. Every other cell stays empty.
-      if (g.kind === 'heading') {
-        return col.key === 'title' ? (
-          <span className="songSection">{g.title}</span>
-        ) : null;
-      }
-      switch (col.key) {
-        case 'index':
-          return g.lead ?? null;
-        case 'title':
-          return (
-            <div className="songTitleCell" data-incoming data-ghost>
-              <SongArt artwork={g.artwork ?? null} />
-              <div className="songTitleText">
-                <span className="songTitle">
-                  <span className="songTitle__name">{g.title}</span>
-                </span>
-                {(g.note || g.artist) && (
-                  <span className="songArtist songArtist--status">{g.note ?? g.artist}</span>
-                )}
-              </div>
-            </div>
-          );
-        case 'duration':
-          return g.action ? <span className="incomingCell__actions">{g.action}</span> : null;
-        default:
-          return null;
-      }
-    },
-  };
-}
-
-/** The name this was born with, kept so nothing outside has to change. */
-export const wrapIncomingCell = wrapGhostCell;
 
 /** The columns this table has, so `hide` is checked rather than guessed. */
 export type SongColumnKey = 'index' | 'title' | 'album' | 'addedAt' | 'onDevice' | 'duration';

@@ -32,7 +32,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { useMyAuditions } from '../library/myAuditions.ts';
-import { identityKey, leadKey, useIncoming } from '../downloads/incoming.tsx';
+import { useIncoming } from '../downloads/incoming.tsx';
+import { identityKey, leadKey } from '../downloads/identity.ts';
 import { ServerError, fetchCollectorStatus, requestAudition, type AuditionReason } from '../server.ts';
 import type { CatalogTrack, ServerSession } from '../server.ts';
 import type { Track } from '../core/tauri.ts';

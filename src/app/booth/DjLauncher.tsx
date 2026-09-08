@@ -18,6 +18,7 @@ import { Button, Spinner } from '@glacier/react';
 import { Flame, Lightbulb, Mic, MoonStar, Play, Sparkles, Square, TrendingUp, Waves } from '@glacier/icons';
 import { useState, type CSSProperties } from 'react';
 import { useTalkToDj } from './useTalkToDj.ts';
+import { moodLabel } from './moodLabel.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from '../library/library.tsx';
@@ -66,13 +67,6 @@ export const MOODS: Mood[] = [
   // heard, dates leading. Same contract discipline - the seed IS the key.
   { label: 'New music', seed: 'the new music waiting for me', Icon: Sparkles, hintKey: 'booth.moodNewHint', hue: 150 },
 ];
-
-/** Both doors onto the moods - the Booth's chip row and the Now Playing deck -
- *  need the same fallback, and a chip that says one thing in the Booth and
- *  another on the deck is a bug you would only ever see in German. */
-export function moodLabel(mood: Mood, t: (key: string) => string): string {
-  return mood.labelKey === undefined ? mood.label : t(mood.labelKey);
-}
 
 export function DjLauncher({
   onPlay,

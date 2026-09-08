@@ -16,7 +16,7 @@
  * React can mount a div.
  */
 import { describe, expect, it } from 'vitest';
-import { heroLead } from './DiscoverHero.tsx';
+import { heroLead } from './heroLead.ts';
 import type { DiscoverFeedValue } from '../home/DiscoverFeed.tsx';
 import type { NewMusicList, NewMusicTrack } from '../api/newMusic.ts';
 import type { Track } from '../core/tauri.ts';

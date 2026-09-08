@@ -15,14 +15,8 @@ import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { isMusicImportLink } from '../../plugins/importsBridge.ts';
 import type { Track } from '../core/tauri.ts';
 import { ImportFromSearch } from '../search/ImportFromSearch.tsx';
-import {
-  AlbumCard,
-  ArtistCard,
-  MixCover,
-  Shelf,
-  TrackCard,
-  mixArt,
-} from '../home/homeCards.tsx';
+import { AlbumCard, ArtistCard, MixCover, Shelf, TrackCard } from '../home/homeCards.tsx';
+import { mixArt } from '../home/mixArt.ts';
 import { useHomeFeed, type HomeFeedValue } from '../home/useHomeFeed.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 import { formatNumber } from '../ux/format.ts';

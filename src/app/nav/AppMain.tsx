@@ -18,7 +18,7 @@ import { SongPage, type SongCollection } from '../library/SongPage.tsx';
 import { LibraryView } from '../library/LibraryView.tsx';
 import { DiscoverPage } from '../discover/DiscoverPage.tsx';
 import { CatalogListPage } from '../discover/CatalogListPage.tsx';
-import { suggestionTarget } from '../discover/DiscoverPage.tsx';
+import { suggestionTarget } from '../discover/suggestionTarget.ts';
 import type { Suggestion } from '../api/curator.ts';
 import { BoothPage } from '../booth/BoothPage.tsx';
 import { ProfilePage } from '../profile/ProfilePage.tsx';

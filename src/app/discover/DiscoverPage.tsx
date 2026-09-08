@@ -13,11 +13,12 @@ import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { fetchDiscover, type Suggestion } from '../server.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional, type MusicImportJob } from '../../plugins/importsBridge.ts';
-import type { AcquireTarget } from '../../plugins/types.ts';
+import { suggestionTarget } from './suggestionTarget.ts';
 import type { Track } from '../core/tauri.ts';
 import type { SongCollection } from '../library/SongPage.tsx';
 import { DiscoverFeedProvider, useDiscoverFeed } from '../home/DiscoverFeed.tsx';
-import { DiscoverHero, heroLead } from './DiscoverHero.tsx';
+import { DiscoverHero } from './DiscoverHero.tsx';
+import { heroLead } from './heroLead.ts';
 import { MusicDateChip } from '../library/MusicDateChip.tsx';
 import { TrendingShelves } from './TrendingShelves.tsx';
 import { PeopleShelf } from './PeopleShelf.tsx';
@@ -186,14 +187,6 @@ function DiscoverBody({
       <SuggestedLists onOpen={onOpenList} />
     </>
   );
-}
-
-/** A suggestion as the importer wants it named. Every suggestion is a link
- *  to a list; `kind` says which shape when the server knows. */
-export function suggestionTarget(item: Suggestion): AcquireTarget {
-  const kind: AcquireTarget['kind'] =
-    item.kind === 'album' ? 'album' : item.kind === 'track' ? 'track' : 'playlist';
-  return { kind, title: item.title, url: item.url };
 }
 
 /** How many catalogue sections the page shows at once, and how deep each

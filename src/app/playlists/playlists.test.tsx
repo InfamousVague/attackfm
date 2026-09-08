@@ -11,8 +11,7 @@ import type { ReactNode } from 'react';
  */
 vi.mock('../servers/serverSession.tsx', () => ({ useServerSession: () => ({ session: null }) }));
 
-const { PlaylistsProvider, usePlaylists, isGeneratedPlaylist, GENERATED_PLAYLIST_FOLDERS } =
-  await import('./playlists.tsx');
+const { PlaylistsProvider, usePlaylists } = await import('./playlists.tsx');
 const { metaKey, setMeta, metaFor } = await import('./playlistMeta.ts');
 
 const STORAGE_KEY = 'attackfm-playlists';
@@ -211,22 +210,5 @@ describe('the store on disk', () => {
     expect(result.current.playlists[0]?.folder).toBe('Trips');
     // ...and it is gone from where it used to live.
     expect(metaFor(key)).toEqual({});
-  });
-});
-
-describe('isGeneratedPlaylist', () => {
-  it('names the folders the SERVER fills, not the ones a person made', () => {
-    // These belong on Discover, and never in the "Add to playlist" picker -
-    // which listed them fifteen deep above the lists a person keeps.
-    expect(isGeneratedPlaylist({ folder: 'Charts' })).toBe(true);
-    expect(isGeneratedPlaylist({ folder: 'New music' })).toBe(true);
-    expect(isGeneratedPlaylist({ folder: 'Road trips' })).toBe(false);
-    expect(isGeneratedPlaylist({})).toBe(false);
-  });
-
-  it('is exact - a folder merely named LIKE one of them is a person’s', () => {
-    expect(isGeneratedPlaylist({ folder: 'charts' })).toBe(false);
-    expect(isGeneratedPlaylist({ folder: 'New music 2026' })).toBe(false);
-    expect([...GENERATED_PLAYLIST_FOLDERS].sort()).toEqual(['Charts', 'New music']);
   });
 });

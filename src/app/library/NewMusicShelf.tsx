@@ -4,6 +4,7 @@ import { Shelf, TrackCard } from '../home/homeCards.tsx';
 import { ShelfSkeleton } from '../ux/ShelfSkeleton.tsx';
 import { useDiscoverFeed } from '../home/DiscoverFeed.tsx';
 import type { NewMusicList } from '../api/newMusic.ts';
+import { newForYouLists, newMusicCovers } from './newMusicLists.ts';
 import type { Track } from '../core/tauri.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 import { formatBytes } from '../ux/format.ts';
@@ -36,14 +37,6 @@ import { formatBytes } from '../ux/format.ts';
 const LISTS = 4;
 /** How many audition cards follow. */
 const AUDITIONS = 6;
-
-/** The chart lane's list: global, not new - it has its own shelf. */
-const GLOBAL_LIST = 'nm-popping';
-
-/** The lists as this shelf shows them: the chart lane removed, fresh first. */
-export function newForYouLists(lists: NewMusicList[] | null): NewMusicList[] {
-  return (lists ?? []).filter((l) => l.id !== GLOBAL_LIST);
-}
 
 export function NewMusicShelf({ onPlay }: { onPlay: (track: Track, queue: Track[]) => void }) {
   const { session, newMusic, auditions, openList } = useDiscoverFeed();
@@ -137,17 +130,4 @@ export function NewMusicCover({ list }: { list: NewMusicList }) {
       ))}
     </span>
   );
-}
-
-/** The first `take` distinct covers a list holds. */
-export function newMusicCovers(list: NewMusicList, take: number): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const t of list.items) {
-    if (!t.cover || seen.has(t.cover)) continue;
-    seen.add(t.cover);
-    out.push(t.cover);
-    if (out.length >= take) break;
-  }
-  return out;
 }
