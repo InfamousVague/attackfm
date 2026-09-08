@@ -50,6 +50,22 @@ export function noteNo(key: string): void {
   for (const fn of listeners) fn();
 }
 
+/**
+ * Take a no back.
+ *
+ * Only a surface that can UNDO the refusal has any business calling this -
+ * Music Date's undo, and its "meet the passed ones again". A no that reached
+ * the hub as a thumb-down is the hub's memory for ninety days and cannot be
+ * lifted from here; what this lifts is this sitting's gap-filler, which is the
+ * half that would otherwise keep a card hidden after the verdict that hid it
+ * has been walked back.
+ */
+export function forgetNo(key: string): void {
+  if (!keys.delete(key)) return;
+  version += 1;
+  for (const fn of listeners) fn();
+}
+
 export function saidNo(key: string): boolean {
   return keys.has(key);
 }

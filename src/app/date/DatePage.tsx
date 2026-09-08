@@ -23,7 +23,7 @@ import {
   reactDj,
   trackIdFromPath,
 } from '../server.ts';
-import { artistKey, extKey, noteNo, trackKey, useSaidNo } from '../booth/saidNo.ts';
+import { artistKey, extKey, forgetNo, noteNo, trackKey, useSaidNo } from '../booth/saidNo.ts';
 import { SayNoMenu } from '../booth/sayNo.tsx';
 import { DATE_CACHE_TARGET, setDateDeck, sweepIfIdle } from '../downloads/autoCache.ts';
 import { warmArt, warmDateCanvas } from './dateCanvas.ts';
@@ -868,10 +868,19 @@ export function DatePage() {
    * Take back the last verdict.
    *
    * Every filter the deck applies has to be reversed or the card stays hidden,
-   * which is the whole difficulty: `gone` is only one of three. A kept song is
-   * excluded by `isFavorite`, a passed one by the PERSISTED pass list, and both
-   * outlive this component - the pass list is written to storage and survives a
-   * relaunch. Removing it from `gone` alone would look like undo doing nothing.
+   * which is the whole difficulty: `gone` is only one of FOUR. A kept song is
+   * excluded by `isFavorite`, a passed one by the PERSISTED pass list and by
+   * this sitting's refusal ledger, and the first two outlive this component -
+   * the pass list is written to storage and survives a relaunch. Removing it
+   * from `gone` alone would look like undo doing nothing.
+   *
+   * The fourth is the one this was written without, because it did not exist
+   * yet: `saidNo` arrived with the thumbs-down work and a plain pass writes the
+   * song into it (`trackKey`), so an undo that lifted the other three put the
+   * card back in the deck and the deck filtered it straight out again. The
+   * ARTIST is deliberately not lifted: only a "less like this" writes one, and
+   * that reached the hub as a thumb-down it will honour for thirty days, so
+   * clearing it here would only disagree with the server.
    *
    * The session logs are trimmed too. They are what dateDone reports at the end,
    * and a verdict that was taken back should not reach the server as one that
@@ -896,6 +905,7 @@ export function DatePage() {
     } else if (id !== null) {
       passedRef.current.delete(id);
       writePassed(passedRef.current);
+      forgetNo(trackKey(id));
       const at = sessionPassed.current.lastIndexOf(id);
       if (at !== -1) sessionPassed.current.splice(at, 1);
       setTally((t) => ({ ...t, passed: Math.max(0, t.passed - 1) }));
@@ -1308,6 +1318,11 @@ export function DatePage() {
               variant="ghost"
               size="sm"
               onClick={() => {
+                // Both ledgers, for the reason the undo above carries: a pass
+                // writes the song into this sitting's refusals as well as into
+                // the persisted list, and clearing only the durable half
+                // brings back nothing that was passed since this page opened.
+                for (const id of passedRef.current) forgetNo(trackKey(id));
                 passedRef.current = new Set();
                 writePassed(passedRef.current);
                 setGone(new Set());
