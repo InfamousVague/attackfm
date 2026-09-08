@@ -2611,14 +2611,24 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * step instead. Off the end of the queue, the DJ takes over if asked.
    */
   const pickNext = (dir: 1 | -1, wrap: boolean): Track | 'rewind' | null => {
+    /*
+     * Remember where the CONTEXT is whenever the playing song is part of it.
+     *
+     * ABOVE the lane's early return, and that is the point: it used to sit
+     * below, so the moment anything was queued by hand every call took the
+     * exit first and the anchor stopped being kept. It then held whatever it
+     * held when the lane was last empty - or nothing, if a song was queued
+     * before the first walk. The anchor is what a step BACK returns to, and
+     * what the Connect report measures the rest of the list from, so both read
+     * a stale answer exactly when somebody had been using the queue.
+     */
+    if (track && queue.some((t) => t.path === track.path)) contextAnchor.current = track.path;
     // What you asked for beats what the list was going to do - and this sits
     // ABOVE the empty-context guard on purpose, so a song queued by hand still
     // plays when nothing else is loaded behind it.
     if (dir === 1 && upNext.length > 0) return upNext[0]!;
     if (!onTrackChange || queue.length === 0 || !track) return null;
-    // Remember where the CONTEXT is whenever the playing song is part of it.
     const inContext = queue.some((t) => t.path === track.path);
-    if (inContext) contextAnchor.current = track.path;
     /*
      * Back, from a song you queued by hand, returns to the list.
      *
@@ -3226,6 +3236,21 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         });
         adoptedPath.current = warm.next.path;
         recentRef.current = [...recentRef.current.slice(-19), warm.next.path];
+        /*
+         * Take it out of the lane, the same as `advance` does.
+         *
+         * This path plays a song WITHOUT going through advance, and advance is
+         * where the hand-queued lane drains - so a song queued by hand and
+         * reached by the CROSSFADE (rather than by pressing skip) played and
+         * then stayed in the queue. It sat in Up Next while it was the thing
+         * coming out of the speakers, and the Connect report carried it twice,
+         * once as what is playing and once as what is next: measured on the
+         * wire as [5,5].
+         *
+         * The warm track came from pickNext, which returns the lane's head, so
+         * the check is the one advance makes.
+         */
+        if (upNext[0]?.path === warm.next.path) onUpNextChange?.(upNext.slice(1));
         onTrackChange?.(warm.next);
         return;
       }
