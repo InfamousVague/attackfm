@@ -1,4 +1,4 @@
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 /**
  * The FX vocabulary: every node the server's fx.rs can compile, its

@@ -3,7 +3,7 @@ import { fetchFriends as fetchRegistryFriends } from '../servers/registry.ts';
 import { clearFriendsGlance, publishFriendsGlance } from '../profile/friendsGlance.ts';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { dismissNotice, noteNotice } from './notices.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 /**
  * Somebody asked to be friends, in the bell.

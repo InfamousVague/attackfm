@@ -3,7 +3,7 @@ import { fetchNewMusic } from '../api/newMusic.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { discoveryNoticesEnabled } from '../settings/behaviourPrefs.ts';
 import { dismissNotice, noteNotice } from './notices.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 /**
  * "There's new music picked for you," in the bell.

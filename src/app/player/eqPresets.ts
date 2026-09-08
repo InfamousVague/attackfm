@@ -1,5 +1,5 @@
 import type { AudioEqualizerPreset } from '@glacier/react';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 import {
   BAND_COUNT,
   EQ_NARROW_INDICES,

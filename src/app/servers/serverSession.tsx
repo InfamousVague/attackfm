@@ -43,7 +43,7 @@ import { fxChainParam } from '../player/fxChain.ts';
 import { setRemoteAudioResolver } from '../core/tauri.ts';
 import { setCastStreamResolver } from '../player/cast.ts';
 import { syncPushRegistration } from '../core/notifications.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 const SESSION_KEY = 'attackfm-server-session';
 const QUALITY_KEY = 'attackfm-server-quality';

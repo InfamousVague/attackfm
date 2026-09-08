@@ -17,7 +17,7 @@ import type { Track } from '../core/tauri.ts';
 // in the language of the moment it was raised, and never re-renders. Using the
 // hook would also put `t` in half a dozen dependency arrays and re-arm a poll
 // every time somebody changed language.
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 import {
   acceptJamInvite as acceptJamInviteApi,
   addToJamQueue,

@@ -1,5 +1,5 @@
 import { formatNumber } from '../ux/format.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 /** "2d", "4h", "45m" - one number and its unit, in the locale's own shorthand.
  *  Intl's narrow unit display is exactly this abbreviation, and it knows the

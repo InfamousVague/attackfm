@@ -10,7 +10,7 @@ import {
 import { buildCarTree, resolveSpokenRequest } from './carTree.ts';
 import { remotePath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 /**
  * Turns a tap on the car screen into playback here, where the audio lives.

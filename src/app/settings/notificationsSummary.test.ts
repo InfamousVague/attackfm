@@ -21,7 +21,7 @@ import type { ServerSession } from '../api/http.ts';
 const { fetchPushPrefs } = vi.hoisted(() => ({ fetchPushPrefs: vi.fn() }));
 
 vi.mock('../server.ts', () => ({ fetchPushPrefs }));
-vi.mock('../i18n/LocaleShell.tsx', () => ({
+vi.mock('../i18n/translate.ts', () => ({
   translate: (key: string, options?: Record<string, unknown>) =>
     options ? `${key}(${JSON.stringify(options)})` : key,
 }));
@@ -104,7 +104,7 @@ describe('the counts', () => {
      */
     const mod = await fresh();
     mod.writeSummary(home, { a: true, b: false });
-    const locale = await import('../i18n/LocaleShell.tsx');
+    const locale = await import('../i18n/translate.ts');
     const spy = vi.spyOn(locale, 'translate').mockReturnValue('IN ANOTHER LANGUAGE');
     expect(mod.notificationsSummaryCached(home)).toBe('IN ANOTHER LANGUAGE');
     spy.mockRestore();

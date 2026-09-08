@@ -8,7 +8,7 @@ import { fetchPlaylistActivity, type PlaylistActivityItem } from '../api/playlis
 import { artUrl } from '../api/library.ts';
 import type { ServerSession } from '../api/http.ts';
 import { dismissNotice, noteNotice, notices } from './notices.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 /**
  * Shared playlists, in the bell.

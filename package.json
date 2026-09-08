@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
-    "check": "npm run lint && npm run typecheck && npm run test",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run prefs:check && npm run i18n:gate",
     "i18n:scan": "node scripts/i18n-scan.mjs",
     "i18n:check": "node scripts/i18n-scan.mjs --catalogues",
     "i18n:verify": "node scripts/i18n-verify.mjs",
@@ -44,7 +44,7 @@
     "demo:fixtures": "node scripts/make-demo-fixtures.mjs",
     "demo:build": "vite build --config vite.demo.config.ts",
     "build:landing": "node scripts/landing-borrow.mjs && vite build --config vite.landing.config.ts",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {

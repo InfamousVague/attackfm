@@ -106,11 +106,23 @@ export default mergeConfig(
          * is a number nobody else can meet yet.
          */
         thresholds: {
-          // 8/24469 lines, 1/7352 functions, on the run that installed them.
-          lines: 0.03,
-          statements: 0.03,
-          functions: 0.01,
-          branches: 0.02,
+          /*
+           * Today's measurement, floored - a ratchet, not a target.
+           *
+           * 3139/24513 lines, 3686/29179 statements, 847/7361 functions,
+           * 2116/21642 branches, measured on the run that set these. The
+           * denominator is the WHOLE client on purpose (see the note above),
+           * so every test anybody writes raises the number and nobody's
+           * partial first test for a new module can lower it.
+           *
+           * Raise these when a phase ends, never inside one: a threshold
+           * moved to match a single afternoon's work turns the next person's
+           * unrelated refactor red.
+           */
+          lines: 12.5,
+          statements: 12.5,
+          functions: 11,
+          branches: 9.5,
         },
       },
     },

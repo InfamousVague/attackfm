@@ -1,4 +1,4 @@
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 import { osNoticesEnabled } from '../settings/behaviourPrefs.ts';
 
 /**

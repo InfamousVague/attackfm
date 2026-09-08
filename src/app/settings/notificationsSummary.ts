@@ -1,5 +1,5 @@
 import { fetchPushPrefs, type ServerSession } from '../server.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 /*
  * The section list's one-line reading of the notifications pane ("4 of 6 on")

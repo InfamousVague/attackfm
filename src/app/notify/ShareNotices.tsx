@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { fetchShares } from '../servers/registry.ts';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 import { dismissNotice, noteNotice } from './notices.ts';
 
 /**

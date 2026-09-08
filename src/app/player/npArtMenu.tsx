@@ -1,6 +1,6 @@
 import { MenuItem } from '@glacier/react';
 import { AudioLines, BookOpenText, Check, Disc3, EyeOff, Image as ImageIcon, MicVocal, Sparkles } from '@glacier/icons';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 import type { ArtView } from './deckShared.ts';
 
 /**

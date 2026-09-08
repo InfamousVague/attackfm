@@ -52,6 +52,10 @@ jobs:
       # in scripts/i18n-scan.mjs.
       - run: npm run i18n:gate
 
+      # The synced-settings list names real settings. A typo in either
+      # spelling compiles, ships, and silently stops syncing that one setting.
+      - run: npm run prefs:check
+
       # The build is a check in its own right: `tsc --noEmit && vite build`,
       # and the OTA bundle is what actually ships.
       - run: npm run build

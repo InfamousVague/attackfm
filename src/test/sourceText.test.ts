@@ -30,8 +30,14 @@ import { join } from 'node:path';
 
 /* From the repo root, not from `import.meta.url`: under Vitest that resolves
    against the Vite server rather than the disk, and readFileSync then looks
-   for `/src/app/profile/...` at the filesystem root. */
-const HERE = join(process.cwd(), 'src', 'app', 'profile');
+   for `/src/...` at the filesystem root.
+
+   The whole of `src`, not one room. This started as a guard on `profile/`,
+   where the byte was found - and the day it moved up here it caught a second
+   one, `ALL_DRAWERS` in `player/fxEditing.tsx`, a sentinel written the same
+   way for the same good reason and invisible to grep for just as long. One
+   room's rule was never the point. */
+const HERE = join(process.cwd(), 'src');
 
 function sourcesIn(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -41,7 +47,7 @@ function sourcesIn(dir: string): string[] {
   });
 }
 
-describe('the profile room on disk', () => {
+describe('the source tree on disk', () => {
   it('has no source file that git and grep would read as BINARY', () => {
     const binary = sourcesIn(HERE).filter((path) => readFileSync(path).includes(0));
     expect(binary).toEqual([]);
@@ -59,7 +65,7 @@ describe('the profile room on disk', () => {
     expect(key.charCodeAt(6)).toBe(0);
     expect(key).toHaveLength(12);
     // And the file itself must keep spelling it that way.
-    const source = readFileSync(join(HERE, 'FriendProfilePage.tsx'), 'utf8');
+    const source = readFileSync(join(HERE, 'app', 'profile', 'FriendProfilePage.tsx'), 'utf8');
     expect(source).toContain('${fold(artist)}' + '\\u0000');
   });
 });

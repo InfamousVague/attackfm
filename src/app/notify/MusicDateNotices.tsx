@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { fetchDateCandidates } from '../api/curator.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { discoveryNoticesEnabled } from '../settings/behaviourPrefs.ts';
 import { dismissNotice, noteNotice } from './notices.ts';

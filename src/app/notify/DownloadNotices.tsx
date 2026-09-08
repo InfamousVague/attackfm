@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useHaptics, useToast } from '@glacier/react';
 import { artSized } from '../server.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useDownloadsOptional, type MusicImportState } from '../../plugins/importsBridge.ts';
 import { noteNotice, setNoticeScope } from './notices.ts';

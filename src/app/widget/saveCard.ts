@@ -1,6 +1,6 @@
 import { isAndroid } from '../core/platform.ts';
 import { isTauri } from '../core/tauri.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 /**
  * Put a rendered card (a PNG data URL) somewhere the person can send it.

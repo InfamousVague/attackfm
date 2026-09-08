@@ -19,7 +19,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { MusicImportJob, MusicImportState } from '../../plugins/importsBridge.ts';
 
-vi.mock('../i18n/LocaleShell.tsx', () => ({
+vi.mock('../i18n/translate.ts', () => ({
   translate: (key: string, options?: Record<string, unknown>) =>
     options ? `${key}(${JSON.stringify(options)})` : key,
 }));

@@ -359,7 +359,7 @@ export function shelfFor(kind: FxKind, drawer: string, query: string): FxNodeSpe
 }
 
 /** The segment that means "do not filter". */
-export const ALL_DRAWERS = ' all';
+export const ALL_DRAWERS = '\u0000all';
 
 // ── Getting back to what you just added ─────────────────────────────────────
 

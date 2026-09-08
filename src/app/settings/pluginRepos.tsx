@@ -11,7 +11,8 @@ import {
   type RemotePluginListing,
 } from '../../plugins/remote.ts';
 import { isNewer, listingsOf, type Feed } from './pluginFeeds.ts';
-import { Trans, translate, useT } from '../i18n/LocaleShell.tsx';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 /**
  * The repositories the marketplace pulls from, and what they offer.

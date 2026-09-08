@@ -23,7 +23,8 @@ import { type ImageKind } from './pickImage.ts';
 import { CropPhoto } from './CropPhoto.tsx';
 import { enterServer, remotePath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
-import { Trans, translate, useT } from '../i18n/LocaleShell.tsx';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 /**
  * A press-and-hold menu, but only when the menu would have something in it.

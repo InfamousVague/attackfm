@@ -102,24 +102,26 @@ const house = {
   'prefer-const': 'error',
   'no-duplicate-case': 'error',
 
-  /* WARN, with 12 findings. Every one is a defensive initialiser that both
-     arms of the branch below it overwrite - `let url: string | null = null`,
-     `let r = -1`, `let h = 0`. Whether the sentinel is dead weight or is the
-     line telling the reader what "not found" looks like here is a judgement
-     per site, and it belongs with the person reading that module, not with
-     the commit that installs the linter. */
-  'no-useless-assignment': 'warn',
+  /* ERROR, and it was WARN with 12 findings when the linter arrived. Every
+     one was a defensive initialiser that both arms of the branch below it
+     overwrote - `let url: string | null = null`, `let r = -1`, `let h = 0` -
+     and whether a sentinel is dead weight or the line telling the reader what
+     "not found" looks like was a judgement per site, made by the people
+     reading those modules rather than by the commit that installed the
+     linter. They were made; the count is zero; the rule holds it there. */
+  'no-useless-assignment': 'error',
 
-  /* WARN, with a backlog. `noUnusedLocals` has never been on, so nothing has
-     ever said these out loud. The `_` prefixes are the house's own way of
-     saying "named for the reader, not for the code".
+  /* ERROR, and the backlog behind it is gone. `noUnusedLocals` has never been
+     on, so nothing had ever said these out loud until the linter arrived. The
+     `_` prefixes are the house's own way of saying "named for the reader, not
+     for the code", and they still are.
 
      This rule must NEVER be extended to unreferenced EXPORTS. Around 207 of
      those exist and they are almost all over-exports used inside their own
      file - plus a handful that are parked on purpose and carry a header
      saying so. A sweep there deletes working, deliberately-kept code. */
   '@typescript-eslint/no-unused-vars': [
-    'warn',
+    'error',
     { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
   ],
 };
@@ -143,9 +145,12 @@ const reactRules = {
   /* WARN, with the largest backlog in the repo and the most judgement in it.
      The house pattern is deliberate: state is read through a mutable ref
      reassigned every render, and the dep array names only the discontinuities
-     - a track id, a room id, a beat's timestamp. Most findings here want an
-     annotated disable, not a longer dep array; a few are real. */
-  'react-hooks/exhaustive-deps': 'warn',
+     - a track id, a room id, a beat's timestamp. Most of the findings wanted
+     an annotated disable rather than a longer dep array; a few were real and
+     were fixed. At ERROR now the two answers are still both available - what
+     is no longer available is leaving one un-made, which is how the hub-switch
+     bug in useHomeFeed got in. */
+  'react-hooks/exhaustive-deps': 'error',
 };
 
 export default tseslint.config(
@@ -167,13 +172,14 @@ export default tseslint.config(
     rules: {
       ...house,
       ...reactRules,
-      /* WARN. ~32 files export a component beside something else. The fix is
-         usually to move the non-component export into a `.ts` sibling, which
-         is a testability win rather than lint appeasement - a pure helper
-         that lives beside a 900-line component is a helper nobody can test.
-         Context hooks and constants get named exemptions instead. */
+      /* ERROR, and this is the one that took the work. 113 findings across 52
+         files when the linter arrived: every pure helper living beside a
+         900-line component, where no test could reach it. They were moved into
+         `.ts` siblings and tested on the way past - ~250 cases came out of that
+         move alone - and the context hooks and constant tables that remain get
+         the named exemptions below. Zero findings, so it holds the line. */
       'react-refresh/only-export-components': [
-        'warn',
+        'error',
         {
           allowConstantExport: true,
           /* The named exemptions the note above promises: a context's own hook,
@@ -185,19 +191,18 @@ export default tseslint.config(
              the testability win, and the remaining warnings are that backlog. */
           allowExportNames: [
           'EQ_BANDS', 'EQ_BANDS_NARROW', 'EQ_NARROW_INDICES', 'EQ_PRESETS',
-          'EQ_PRESETS_NARROW', 'FACE_GEOMETRY', 'GENERATED_PLAYLIST_FOLDERS', 'GENRE_DOT',
-          'GENRE_TONES', 'HookScopeContext', 'LYRIC_WAYS', 'MOODS', 
-          'SongSelectionContext', 'UI_SCALES', 'useAcquire', 'useAppLocale', 'useAppearance',
-          'useBuy', 'useConnect', 'useDevicesAvailable', 'useDiscoverFeed',
-          'useDiscoverFeedOptional', 'useDjChat', 'useDjPlay', 'useEqualizer',
-          'useHasDownloadQueue', 'useIncoming', 'useIncomingFor', 'useInstaller', 'useJam',
-          'useJamOptional', 'useJustLanded', 'useLibrary', 'useLibrarySync',
-          'useNowPlayingMotion', 'useOwnedTrack', 'usePendingPlay', 'usePlayNowOptional',
-          'usePlayback', 'usePlaylists', 'usePluginCommands', 'usePluginDownloadSources',
-          'usePluginPages', 'usePluginSettingsSections', 'usePlugins', 'usePrefetchStatus',
-          'useQueueControls', 'useRadioOptional', 'useRefreshNonce', 'useRegistry',
-          'useRegistryOptional', 'useRepoFeeds', 'useSayNo', 'useServerSession', 'useSharing',
-          'useSongCount', 'useStemsOut', 'useT',
+          'EQ_PRESETS_NARROW', 'FACE_GEOMETRY', 'GENRE_DOT', 'GENRE_TONES',
+          'HookScopeContext', 'LYRIC_WAYS', 'MOODS', 'SongSelectionContext', 'useAcquire',
+          'useAppLocale', 'useAppearance', 'useBuy', 'useConnect', 'useDevicesAvailable',
+          'useDiscoverFeed', 'useDiscoverFeedOptional', 'useDjChat', 'useDjPlay',
+          'useEqualizer', 'useHasDownloadQueue', 'useIncoming', 'useIncomingFor',
+          'useInstaller', 'useJam', 'useJamOptional', 'useJustLanded', 'useLibrary',
+          'useLibrarySync', 'useNowPlayingMotion', 'useOwnedTrack', 'usePendingPlay',
+          'usePlayNowOptional', 'usePlayback', 'usePlaylists', 'usePluginCommands',
+          'usePluginDownloadSources', 'usePluginPages', 'usePluginSettingsSections',
+          'usePlugins', 'usePrefetchStatus', 'useQueueControls', 'useRadioOptional',
+          'useRefreshNonce', 'useRegistry', 'useRegistryOptional', 'useRepoFeeds', 'useSayNo',
+          'useServerSession', 'useSongCount', 'useStemsOut', 'useT',
           ],
         },
       ],
@@ -218,7 +223,7 @@ export default tseslint.config(
     rules: {
       ...house,
       ...reactRules,
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      'react-refresh/only-export-components': ['error', { allowConstantExport: true }],
     },
   },
 

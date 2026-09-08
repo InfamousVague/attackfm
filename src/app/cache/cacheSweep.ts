@@ -42,7 +42,7 @@ import {
 } from './cacheStore.ts';
 import { estimateBytes, extFor, qualityOfPath, wantedQuality } from './cacheQuality.ts';
 import { rankHotness } from './cacheHotness.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 import { persistManifest, setManifest, setManifestState, writeReport } from './cacheManifest.ts';
 
 // --- the sweep -------------------------------------------------------------

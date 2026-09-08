@@ -10,7 +10,7 @@
 import { searchLibrary } from '../search/trackSearch.ts';
 import type { CarNode } from './androidAudio.ts';
 import type { Track } from '../core/tauri.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 import { formatNumber } from '../ux/format.ts';
 
 /**

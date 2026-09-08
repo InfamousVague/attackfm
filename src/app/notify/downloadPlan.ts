@@ -14,7 +14,7 @@
 //! built, and the store's own tests passed, because they exercised the ring
 //! rather than the decision about what to put in it.
 
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 import { msOf } from './notices.ts';
 import type { MusicImportJob, MusicImportState } from '../../plugins/importsBridge.ts';
 

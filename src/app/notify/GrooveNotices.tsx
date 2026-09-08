@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useJamOptional } from '../player/jam.tsx';
 import { dismissNotice, msOf, noteNotice } from './notices.ts';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 /**
  * An ask into a groove, in the bell.

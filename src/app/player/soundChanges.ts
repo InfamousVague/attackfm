@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useEqualizer } from './equalizer.tsx';
 import { useFxChain } from './fxChain.ts';
 import { useStemsOut } from './StemsRoom.tsx';
-import { translate } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 import { formatLocale } from '../ux/format.ts';
 
 /**

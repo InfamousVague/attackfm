@@ -8,7 +8,8 @@ import { createInvite, inviteLink } from '../servers/registry.ts';
 import { enterServer, fetchServerInfo, linkAccount } from '../server.ts';
 import { forgetServer, knownServers, rememberServer, type KnownServer } from '../servers/servers.ts';
 import { fetchSavedServers, forgetServerEverywhere } from '../servers/serverSync.ts';
-import { Trans, translate, useT } from '../i18n/LocaleShell.tsx';
+import { Trans, useT } from '../i18n/LocaleShell.tsx';
+import { translate } from '../i18n/translate.ts';
 
 //! Where you listen - every server this device has entered, as cards.
 //!
