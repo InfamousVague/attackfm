@@ -3875,11 +3875,13 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     playing, position, duration, track, shuffle, repeat, volume, queue,
     setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
     allTracks, onTrackChange, onQueueChange, deckOwned,
+    upNext, onUpNextChange,
   });
   liveRef.current = {
     playing, position, duration, track, shuffle, repeat, volume, queue,
     setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
     allTracks, onTrackChange, onQueueChange, deckOwned,
+    upNext, onUpNextChange,
   };
   // ── Across an update ──────────────────────────────────────────────────────
   //

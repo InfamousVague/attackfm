@@ -46,6 +46,10 @@ export interface PlayerLiveState {
   allTracks: Track[];
   onTrackChange: ((track: Track) => void) | undefined;
   onQueueChange: ((tracks: Track[]) => void) | undefined;
+  /** The hand-queued lane and the way to change it, so a remote's "add to
+   *  queue" can land here without touching what is playing. */
+  upNext: Track[];
+  onUpNextChange: ((tracks: Track[]) => void) | undefined;
   /** Whether `track` is this device's own deck or a mirror of the one that
    *  holds playback - see the prop of the same name on Player. */
   deckOwned: boolean;
@@ -121,6 +125,25 @@ export function usePlayerConnect({
       next: () => liveRef.current.skipForward(),
       prev: () => liveRef.current.skipBack(),
       seek: (ms) => liveRef.current.commitSeek(ms / 1000),
+      /*
+       * A remote asked for songs to be added here. This is the other half of
+       * the seat-holder's queue being shared: a device that is only watching
+       * cannot edit its own lane usefully - nothing is playing there - so the
+       * ask travels and lands on the deck that IS playing.
+       *
+       * Nothing about playback moves. That was the bug this exists to end:
+       * "add to queue" on a watching phone fell into the local verb's
+       * nothing-is-playing shortcut and started the song on the phone,
+       * stealing the seat from the desktop mid-listen.
+       */
+      enqueue: (ids, next) => {
+        const rows = ids.map(findByConnectId).filter((t): t is Track => t != null);
+        if (rows.length === 0) return;
+        const lane = liveRef.current.upNext;
+        const fresh = rows.filter((t) => !lane.some((q) => q.path === t.path));
+        if (fresh.length === 0) return;
+        liveRef.current.onUpNextChange?.(next ? [...fresh, ...lane] : [...lane, ...fresh]);
+      },
       // A remote's fader obeys the same ceiling as the local one: without the
       // clamp a Connect command could push the gain past the boost cap (or to
       // arbitrary amplitudes) regardless of the setting.

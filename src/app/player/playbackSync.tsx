@@ -48,6 +48,10 @@ export interface PlaybackController {
   setVolume(volume: number): void;
   /** A remote picked a new track/queue for the active device to play. */
   setQueue(trackIds: number[], index: number): void;
+  /** A remote asked for songs to be ADDED to what is playing here - the front
+   *  of the hand-queued lane (`next`) or its end. Never takes playback over,
+   *  which is the whole difference from setQueue above. */
+  enqueue(trackIds: number[], next: boolean): void;
   /** Become the active device: load the session's track at its position. */
   becomeActive(state: ConnectSession): void;
   /** Stop playing here - another device took over. */
@@ -169,6 +173,12 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
             break;
           case 'setQueue':
             if (msg.command.queue) c.setQueue(msg.command.queue, msg.command.index ?? 0);
+            break;
+          case 'enqueueNext':
+            if (msg.command.queue) c.enqueue(msg.command.queue, true);
+            break;
+          case 'enqueueEnd':
+            if (msg.command.queue) c.enqueue(msg.command.queue, false);
             break;
         }
         break;

@@ -48,7 +48,24 @@ export interface ConnectSession {
 
 /** A transport command a remote asks the active device to perform. */
 export interface ConnectCommand {
-  action: 'play' | 'pause' | 'toggle' | 'next' | 'prev' | 'seek' | 'volume' | 'setQueue';
+  /*
+   * `enqueue*` are asks, not takeovers. `setQueue` REPLACES what the active
+   * device is playing (it plays the pick); these two only add to its
+   * hand-queued lane, which is what "add to queue" means from a device that is
+   * not the one playing. The hub forwards a command opaquely - its `action` is
+   * a plain string - so neither needed a server change.
+   */
+  action:
+    | 'play'
+    | 'pause'
+    | 'toggle'
+    | 'next'
+    | 'prev'
+    | 'seek'
+    | 'volume'
+    | 'setQueue'
+    | 'enqueueNext'
+    | 'enqueueEnd';
   positionMs?: number;
   volume?: number;
   queue?: number[];
