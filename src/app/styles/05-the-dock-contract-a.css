@@ -55,6 +55,9 @@ body:has(.npScreen[data-docked]) div[class*='_viewport_1nbns_'] {
  */
 body:has(.npScreen[data-docked]) .settingsScreen,
 body:has(.npScreen[data-docked]) .searchSummon,
+body:has(.npScreen[data-docked]) .searchSummon__scrim,
+body:has(.npScreen[data-docked]) .glassSheet,
+body:has(.npScreen[data-docked]) .glassSheet__scrim,
 body:has(.npScreen[data-docked]) .djLayer,
 body:has(.npScreen[data-docked]) .appNavMore__scrim,
 body:has(.npScreen[data-docked]) .appNavMore__menu,
@@ -62,6 +65,24 @@ body:has(.npScreen[data-docked]) .pullMark,
 body:has(.npScreen[data-docked]) .djToast {
   inset-inline-end: var(--np-dock-width);
 }
+
+/*
+ * The share sheets were the case the paragraph above describes, and they were
+ * missing from the list for as long as they have existed - it was only ever
+ * the width that hid it. `.glassSheet` centres on `margin-inline: auto` in the
+ * box it is given, and undocked that box is the window, so the sheet was
+ * centred on 1440 while the app pane ended at 944: 464..976 of glass across a
+ * player that ran 944.3..1423.8, overlapping it by 31.75px. Now it takes the
+ * same column the search palette takes and centres in that.
+ *
+ * THE SCRIM COMES WITH IT, and stops at the seam too - which is a decision,
+ * because the nav overflow's scrim four rules above deliberately does the
+ * opposite. That one PAINTS NOTHING, so climbing over the dock costs one
+ * swallowed tap; these paint 35% black, and the same climb would cost a
+ * covered player - the thing this whole chapter exists to prevent. So the
+ * dimmed area is the room the takeover is in, and the card stays beside it,
+ * lit and live, exactly as this contract's opening line says it should.
+ */
 
 /* Transform only - never opacity. An animation that is frozen at its first
    frame (a throttled or backgrounded webview does exactly this: the animation
