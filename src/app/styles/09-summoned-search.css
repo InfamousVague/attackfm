@@ -93,12 +93,24 @@
    * [data-docked]) .searchSummon` (chapter 05) rewrites `inset-inline-end` to
    * the dock's width, which narrows the BOX this sheet is laid out in; it wins
    * that property on specificity and this rule never touches it. What changes
-   * here is the sheet's width WITHIN that box, and `margin-inline: auto` then
-   * centres it in whatever box it was given. Docked, the column is 928px and
-   * the palette is 768 centred inside it; undocked it is 768 centred in 1440.
-   * The two rules answer different questions, which is why they compose.
+   * here is the sheet's width WITHIN that box - which is the box's OWN
+   * leftover room, with 48rem a CEILING on it rather than a width in its own
+   * right, because a percentage would not know that inset was ever written.
+   * A percentage on a fixed box resolves against the containing block, and
+   * with no transformed ancestor that is the VIEWPORT: `min(100%, 48rem)`
+   * asked the window and never the column. At 1024 docked the column is
+   * 634.88px, the cap took 768, `margin-inline: auto` absorbed the
+   * over-constraint by driving the trailing margin to -133.117px, and the
+   * palette lay 118px across the player the column exists to protect. An
+   * `auto` width asks the box how much room it has instead of asking the
+   * window, so the two rules compose at every width instead of only above
+   * ~1239px - below that the column is under 48rem and the cap is what binds.
+   * Docked at 1440 the column is 928px and the palette is still 768 centred
+   * inside it; at 1024 it is the column, 634.88 wide, and the auto margins
+   * have nothing left to absorb.
    */
-  inline-size: min(100%, var(--app-sheet-max));
+  inline-size: auto;
+  max-inline-size: var(--app-sheet-max);
   margin-inline: auto;
   block-size: var(--app-sheet-block);
   max-block-size: var(--app-sheet-block-max);
