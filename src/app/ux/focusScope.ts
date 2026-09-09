@@ -86,9 +86,13 @@
  * contract, the platform stamp or the pointer. No count for that shape,
  * deliberately: every measurement of it so far was taken in a pane stamped
  * `data-platform='ios'`, which React never reads back, so the tree kept an
- * `.appTitleBar` the real shape cannot have (`DESKTOP` gates the bar -
- * App.tsx:179 and :678 - and a tablet is coarse, so it renders `.mobileHeader`
- * instead). Nobody has yet measured the shape that ships.
+ * `.appTitleBar` the real shape cannot have (App's `DESKTOP`, which is
+ * `useDesktopLayout()`, gates the `<TitleBar className="appTitleBar">` - and a
+ * tablet is coarse, so it renders `.mobileHeader` instead). Nobody has yet
+ * measured the shape that ships. Named rather than cited by line: that
+ * sentence carried two App.tsx line numbers and both went stale inside this
+ * same workstream, one commit later, because the commit above it inserted
+ * lines. A name survives an insertion; a number does not.
  *
  * WHAT THIS DOES NOT DO, and must not: it does not enforce a modality the
  * paint does not have. Where a takeover has no dimmer, letting the keyboard
