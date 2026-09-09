@@ -235,6 +235,14 @@
   .searchSummon {
     --app-sheet-max: 48rem;
   }
+
+  /* The kit drawers' ceiling. Inside the gate rather than in their own rule
+     below, and the note there says why. */
+  .addPlaylistSheet.addPlaylistSheet,
+  .djTraitSheet.djTraitSheet,
+  .sendToFriendSheet.sendToFriendSheet {
+    max-block-size: var(--app-sheet-block-max);
+  }
 }
 
 :root[data-platform='desktop'] {
@@ -247,6 +255,12 @@
 
 :root[data-platform='desktop'] .searchSummon {
   --app-sheet-max: 48rem;
+}
+
+:root[data-platform='desktop'] .addPlaylistSheet.addPlaylistSheet,
+:root[data-platform='desktop'] .djTraitSheet.djTraitSheet,
+:root[data-platform='desktop'] .sendToFriendSheet.sendToFriendSheet {
+  max-block-size: var(--app-sheet-block-max);
 }
 
 /* The app's own sheet: a fixed element with both inline edges pinned centres
@@ -265,8 +279,31 @@
 
 /*
  * The kit Drawers worn as bottom sheets - the same object to a reader, so the
- * same width. Only the width: these are already content-height (the kit sizes
- * its own panel), so the block half of the contract has nothing to do here.
+ * same width, and the same ceiling.
+ *
+ * THE BLOCK HALF WAS SKIPPED HERE ON A FALSE READING, and this is the
+ * correction. "The kit sizes its own panel" is half true: `._panel._bottom`
+ * sets no height, so the panel is content-height - and it also sets
+ * `max-height: calc(100vh - var(--glacier-space-12))`, which is 835px in a
+ * 900px window. That is not content-height, it is the exact wall this chapter
+ * was written to take down: add-to-playlist with a real list of playlists
+ * measured 512 x 835, 93% of the window, beside a 512 x 310 invite sheet
+ * built from the same contract. Same app, same corner of the screen, one of
+ * them a panel and the other a wall.
+ *
+ * So they take --app-sheet-block-max too, and at 70dvh the long list scrolls
+ * in the body the kit already gives it (measured: 512 x 630, the panel's own
+ * scroller carrying the overflow).
+ *
+ * IT IS SET INSIDE THE GATE, unlike the width above, and that is not an
+ * oversight either. The contract's phone value for the ceiling is `100%` of
+ * the overlay - which is the whole viewport, and therefore LOOSER than the
+ * kit's own 100vh-minus-space-12. Handing that to these three would not be a
+ * no-op on a phone the way it is for our own sheets: it would beat the kit's
+ * max-height on source order and let every one of these drawers grow ~53px
+ * taller than it does today. The phone's ceiling here is the kit's, it is
+ * right, and it is not ours to restate - so ours applies only where the sheet
+ * becomes a panel.
  *
  * THE DOUBLED CLASS IS NOT A TYPO. The kit sizes its panel with
  * `._panel._bottom { width: 100% }`: two classes, which outranks one however
