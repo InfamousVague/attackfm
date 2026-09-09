@@ -9,11 +9,11 @@ import {
   CounterBadge,
   IconButton,
   PlayerBar,
-  Popover,
   useBeat,
   useLiveLevels,
 } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
+import { Popover } from '../ux/Popover.tsx';
 import {
   AudioLines,
   ChevronLeft,

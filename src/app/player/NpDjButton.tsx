@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { IconButton, Popover, Text } from '@glacier/react';
+import { IconButton, Text } from '@glacier/react';
+import { Popover } from '../ux/Popover.tsx';
 import { djDoorOpen, openDj } from '../nav/djDoor.ts';
 import { Bot, History, MessageCircle, Mic, Play, Radio, Sparkles, Users } from '@glacier/icons';
 import { useServerSession } from '../servers/serverSession.tsx';

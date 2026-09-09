@@ -1,4 +1,5 @@
-import { IconButton, Popover, Text } from '@glacier/react';
+import { IconButton, Text } from '@glacier/react';
+import { Popover } from '../ux/Popover.tsx';
 import { Airplay, Cast, Check, Globe, Laptop, MonitorSpeaker, Smartphone, Speaker } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { useConnect } from './playbackSync.tsx';

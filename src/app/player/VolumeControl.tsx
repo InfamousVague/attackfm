@@ -1,7 +1,8 @@
 import { useRef } from 'react';
 import { fireFelt } from '../core/haptics.ts';
 import { VOLUME_MAX, VOLUME_UNITY, snapToUnity } from './volume.ts';
-import { IconButton, Popover, Slider, volumeGain } from '@glacier/react';
+import { IconButton, Slider, volumeGain } from '@glacier/react';
+import { Popover } from '../ux/Popover.tsx';
 import { Volume2, VolumeX } from '@glacier/icons';
 import { usePlayback } from './playback.tsx';
 import { useT } from '../i18n/LocaleShell.tsx';

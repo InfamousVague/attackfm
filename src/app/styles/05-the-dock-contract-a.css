@@ -150,11 +150,53 @@ body:has(.npScreen[data-docked]) .djToast {
  * with the `inset` shorthand; that mismatch is chapter 49's and the band must
  * not be bent around it.
  *
- * ONE ABSENCE ON PURPOSE, in chapter 71's voice: the kit `Spotlight`
- * (`_root_6qyoi_1`) is not in this list. The app never renders it, and its
- * ring paints a 9999px spread over the whole window - so if it is ever
- * adopted it belongs with Music Date, which keeps the whole screen, not with
- * the takeovers that stop at the seam.
+ * TWO ABSENCES ON PURPOSE, in chapter 71's voice.
+ *
+ * The kit `Spotlight` (`_root_6qyoi_1`) is not in this list. The app never
+ * renders it, and its ring paints a 9999px spread over the whole window - so
+ * if it is ever adopted it belongs with Music Date, which keeps the whole
+ * screen, not with the takeovers that stop at the seam.
+ *
+ * The kit POPOVER (`_positioner_3pg0t_` / `_panel_3pg0t_`) is not in this list
+ * either, nor in the narrowing rule's, and it is the one this app actually
+ * renders - the notifications bell, on every page. It stands at an inline
+ * `z-index: 200`, above this chapter's band and above the scrim, and for two
+ * rounds it was absent here without a reason written down, which is how an
+ * enumeration certified as complete missed the most reachable layer in the
+ * app. So: THE REASON. Both of the moves this chapter knows are measurably
+ * wrong on it.
+ *   - Narrowing it does not move it, it ERASES it. The kit writes `left` and
+ *     `top` as inline styles and the panel has no author width, so an added
+ *     `inset-inline-end: var(--np-dock-width)` over-constrains the box. At
+ *     1024x768 docked, in one frame: computed width 337.734px -> 9.883px,
+ *     computed right 61.266px -> 389.12px against an inline `left: 625px`, the
+ *     panel going from 625.6..962.1 to 625.0..634.9. Identical with
+ *     `!important`. "Banded" is a category error besides - a band is a
+ *     DIMMER's second rectangle, taking `background: inherit` from a scrim; a
+ *     popover paints a panel, so a band on it would be an opaque slab hanging
+ *     off its edge.
+ *   - Ducking it below 59 fixes neither end. At 1024x768 docked with
+ *     `z-index: 58 !important`, three probes down the panel give
+ *     `searchSummon__scrim` / `notifyPanel` / `notifyRow` - dead at the top,
+ *     LIVE over the card, its "Clear all" still firing. 49 does bury it
+ *     (probes: scrim / `npScreen` / `npScreen`), and 49 is under the card's
+ *     own 50, so it would also bury every popover the docked card legitimately
+ *     raises. And on a PHONE, where this chapter's gate does not apply at all,
+ *     the scrim computes `display: none` while the bell above the palette is
+ *     deliberately live: at 375x812 the same three probes go from
+ *     `notifyPanel__head` / `notifyPanel` / `notifyRow` to
+ *     `searchSummon__handle` / `searchPageField` / `emptyState` - the panel
+ *     vanishes behind the palette entirely, so the one tappable control off
+ *     the palette would open something nobody can see. (A
+ *     `body:has(.searchSummon__scrim)` guard does not save it - the element is
+ *     present, just not displayed.) Either way it needs `!important` to land
+ *     at all: a plain rule leaves the computed z-index at 200, because the kit
+ *     writes it inline from a layout effect.
+ * So the popover is not a layer problem this chapter can solve; its rule is
+ * behavioural and lives in `src/app/ux/popoverStand.ts`, which closes a
+ * popover whose TRIGGER a takeover has just covered. This chapter's two lists
+ * stay the two lists the note above describes; a third one here would be the
+ * wrong answer to the right question.
  */
 body:has(.npScreen[data-docked]) .glassSheet__scrim::after,
 body:has(.npScreen[data-docked]) .searchSummon__scrim::after,

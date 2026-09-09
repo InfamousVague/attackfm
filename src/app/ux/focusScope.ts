@@ -157,8 +157,15 @@ const pressPoint = (el: HTMLElement, within?: HTMLElement): [number, number] | n
  * something containing it (a wrapper that paints nothing) - anything else is a
  * layer on top. Unanswerable means no: a control nobody can point at is not a
  * control focus may stand on.
+ *
+ * Exported, and shared rather than copied, because the POINTER rule now asks
+ * the same question of a popover's trigger - see ux/popoverStand.ts, which
+ * closes a popover whose trigger a takeover has just covered. One reachability
+ * predicate for both channels, or the day somebody tightens one of them the
+ * keyboard and the pointer start disagreeing about what is reachable, which is
+ * the exact failure this file exists to end.
  */
-const underNothing = (el: HTMLElement) => {
+export const underNothing = (el: HTMLElement) => {
   const at = pressPoint(el);
   if (!at) return false;
   const hit = document.elementFromPoint(at[0], at[1]);

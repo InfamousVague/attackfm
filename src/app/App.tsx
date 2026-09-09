@@ -51,6 +51,7 @@ import { ShareServer } from './library/ShareServer.tsx';
 import { CarPlayBridge } from './player/CarPlayBridge.tsx';
 import { installSheetDismiss } from './player/playerDismiss.ts';
 import { installFocusScope } from './ux/focusScope.ts';
+import { standDownCoveredPopovers } from './ux/popoverStand.ts';
 import { ConnectPlayRouter, PlayerHost } from './player/PlayerHost.tsx';
 import { GroovePlayRouter } from './player/GroovePlayRouter.tsx';
 import { GrooveNotices } from './notify/GrooveNotices.tsx';
@@ -205,6 +206,28 @@ export function App() {
     setRefreshNonce((n) => n + 1);
     await libraryRefresh.current();
   });
+  /*
+   * The palette's pointer half, and the sibling of the focus ring below: a
+   * popover left standing over a takeover is a lit control over a dimmed room.
+   * The kit already closes one when the takeover is raised by a PRESS - its
+   * panel dismisses on any outside pointerdown - so this covers only the routes
+   * that have no press in them: ⌘K (nav/useSearchSummon.ts), the
+   * `onOpenSearchPage` seam above, `openSearch()` from the nav stack, and a
+   * system-back restore. It runs in the commit that mounts the scrim, so the
+   * hit test inside sees it, and it closes only popovers whose TRIGGER the
+   * scrim now covers - the phone's bell and the docked card's own panels stay.
+   * See ux/popoverStand.ts.
+   *
+   * GlassSheet needs no call of its own: all four of its openers
+   * (SharePlaylist, ShareServer, ShareProfile, ShareJam) are pressed controls,
+   * and a press has already closed the popover. If a share sheet ever gains a
+   * pressless route - NotificationTapBridge.tsx is the seam to watch - it needs
+   * this line too.
+   */
+  useEffect(() => {
+    if (searchOpen) standDownCoveredPopovers();
+  }, [searchOpen]);
+
   // A Spotify link the phone opened here pops its own preview card now, mounted
   // as <SpotifyPreview /> inside the providers below - not the search overlay.
 

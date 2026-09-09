@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { IconButton, Popover, Text, useToast } from '@glacier/react';
+import { IconButton, Text, useToast } from '@glacier/react';
+import { Popover } from '../ux/Popover.tsx';
 import {
   Check,
   Clock,

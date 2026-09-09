@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button, CounterBadge, IconButton, Popover, Text } from '@glacier/react';
+import { Button, CounterBadge, IconButton, Text } from '@glacier/react';
+import { Popover } from '../ux/Popover.tsx';
 import { Bell, Download, Trash2, X } from '@glacier/icons';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { noticeGlyph } from './kinds.ts';

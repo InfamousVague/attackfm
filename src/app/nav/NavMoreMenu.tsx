@@ -12,11 +12,19 @@ import type { NavDest } from './navSeats.ts';
  * secondary destinations that no longer earn a permanent seat: Stats, the
  * download queue while one is running, and Settings.
  *
- * Built on the kit's Popover so the panel is a real one: it PORTALS to the body,
- * which is what gives it the glass and the blur (a hand-rolled panel nested
- * inside the bar's own backdrop-filter cannot blur - the filter traps it), and
- * brings outside-press/Escape dismissal for free. Controlled only so a chosen
- * row can close it on the way out.
+ * NOT built on the kit's Popover, whatever this comment used to say. The panel
+ * below is markup this file owns, portalled to the body with `createPortal` -
+ * and the portal is the load-bearing part, for the reason the note beside it
+ * gives: a hand-rolled panel nested inside the bar's own backdrop-filter cannot
+ * blur, because the filter traps it. Out at the body it blurs the page the way
+ * the bar does, and the fixed insets in chapter 05 put it back under the ⋮.
+ *
+ * Neither dismissal comes for free, so this file supplies both: the scrim's own
+ * `onPointerDown` is the outside press, and its own window `keydown` is the
+ * Escape. It holds `open` because it always did - a chosen row closes the menu
+ * on the way out. And anyone enumerating "what renders through the kit Popover"
+ * - the list ux/popoverStand.ts governs - must leave this file out; the only
+ * thing it imports from the kit is `CounterBadge`.
  */
 export function NavMoreMenu({
   overflow,
