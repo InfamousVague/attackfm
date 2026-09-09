@@ -20,10 +20,64 @@ import { underNothing } from './focusScope.ts';
  * and trigger - the behaviour core/overlayGuard.ts exists to hold back from
  * portalled listboxes - so a takeover raised BY A PRESS closes it on the way
  * up. Measured: bell popover open, a real press on the nav rail's Settings,
- * `popoverOpen: false` before the overlay paints. What is left is the routes
- * with no press in them: the ⌘K chord (nav/useSearchSummon.ts), the
- * `onOpenSearchPage` seam, `openSearch()` from the nav stack, and a
- * system-back restore. This file covers exactly those.
+ * `popoverOpen: false` before the overlay paints. What is left is every route
+ * with no press in it, and the first shape of this rule answered for one of
+ * them: App.tsx called a sweep in the commit that opened the search palette,
+ * and nothing else ever called it. That is not the rule this file's title
+ * states. Measured at 1280x720 on the shipped build, with a real click on the
+ * real bell and then the app's own `window.__AFM_SHARED_LINK__` entry point:
+ * kit Modal `_overlay_1r4l3_1` at `0,0,1280,720` z 100, title "From Spotify",
+ * and the notifications panel still standing at
+ * `860.476,55.734,357.025x180.106` z 200 with `aria-expanded="true"` and
+ * `underNothing(bell)` FALSE - the gate below would have closed it, and was
+ * never asked. A press inside that panel left both open; a press on the plain
+ * dimmer closed both. So it was a 357x180 live island in a room where every
+ * other pixel dismissed, carrying "Clear all" and an "Open downloads" that
+ * navigates.
+ *
+ * THE PRESSLESS ROUTES ARE NOT A LIST ANYBODY CAN KEEP. They are the ⌘K chord
+ * (nav/useSearchSummon.ts), the `onOpenSearchPage` seam, `openSearch()` from
+ * the nav stack, a system-back restore, and every bridge that raises a kit
+ * Modal off a link rather than a finger - servers/SpotifyPreview.tsx,
+ * servers/InviteBridge.tsx, playlists/SharedPlaylistBridge.tsx,
+ * profile/ProfileLinkBridge.tsx, player/JamLinkBridge.tsx,
+ * player/GrooveHearSheet.tsx, player/NearbyGrooveSheet.tsx - all fed by
+ * `servers/deepLink.ts`'s `deliver()` or by a room arriving over the wire.
+ * A call site per takeover is a list that goes stale the next time the app
+ * grows a bridge, which is how this one shipped with two of them uncovered.
+ *
+ * SO IT IS A WATCH, ON BOTH EDGES, and neither edge names a takeover:
+ *   - a popover is judged AS IT OPENS, so one that opens itself over a
+ *     takeover that is already standing is judged too. There is such a
+ *     popover: player/JamBadge.tsx opens the groove deck from a timer
+ *     (120 ms at the strip, 340 ms in the sheet) armed by `armGrooveDeck()`,
+ *     which player/jam.tsx calls when somebody ELSE's groove arrives over the
+ *     wire. Nothing in that route is a press. Measured with the equivalent
+ *     shape - a programmatic `.click()` on the real bell with the palette
+ *     open, which dispatches no pointerdown and so is deaf to the kit's own
+ *     outside-press dismissal, a faithful stand-in for a self-open - the panel
+ *     stood at `863.58,54,350.817x176.974` over 160.42px of the palette's
+ *     trailing edge, palette still `aria-modal="true"`.
+ *   - while ANY popover stands, a `MutationObserver` re-judges all of them on
+ *     any node ADDED to the document, which is how every takeover in this app
+ *     arrives: our own scrim is `{searchOpen && ...}` in App.tsx and the kit's
+ *     overlays mount and unmount with their dialogs. It is armed only while
+ *     the map is non-empty, so the app pays nothing for it the rest of the
+ *     time, and each sweep is one `querySelector` and one `elementFromPoint`
+ *     per open popover. WHAT THAT COSTS, measured rather than asserted: one
+ *     commit of 200 fresh nodes into `.appBody` at 1280x720 takes 1.4 ms with
+ *     a popover standing and 0.2 ms without (medians of five). The 1.2 ms is
+ *     the layout the hit test forces on a tree that has just changed - one
+ *     sweep per commit, not one per node, because the observer batches - and
+ *     it is only ever paid while a panel is open.
+ *
+ * WHAT THE WATCH DOES NOT SEE, and it is a childList watch on purpose: a layer
+ * that is already in the document and merely becomes visible - a class or a
+ * style toggled - moves no nodes and raises no record. No takeover in this app
+ * does that today; they mount and unmount. Watching attributes too would put a
+ * sweep behind every inline style the player writes while a panel is open,
+ * which is a real cost for a case that does not exist. The day a takeover
+ * appears by class alone, this is the line that has to grow.
  *
  * WHY BEING THE `open` PROP, rather than any of the three shorter answers:
  *   - a synthetic `pointerdown` at the document does close the kit, and it
@@ -67,6 +121,65 @@ export const STAND_MARK = 'data-popover-stand';
 const stands = new Map<string, () => void>();
 
 /**
+ * Judge ONE popover: close it unless a finger could still reach the control it
+ * hangs off.
+ *
+ * The gate is the whole of the rule, and it is why this is not "close every
+ * popover when anything opens". A popover whose trigger the finger can still
+ * press is not covered by anything and has no business closing: the phone's
+ * header bell is deliberately live above the palette's top edge, and the
+ * docked Now Playing card is deliberately live beside a takeover, with seven
+ * popovers of its own (equalizer, chapters, reading speed, volume, devices,
+ * the DJ, groove). Both keep theirs. The desktop title bar's bell, which the
+ * scrim and chapter 05's band cover, loses its.
+ *
+ * `underNothing` is focusScope's, deliberately shared rather than copied: the
+ * keyboard rule and the pointer rule must not be able to disagree about what
+ * is reachable. The panel it is told to ignore is this popover's OWN, found
+ * through the `aria-controls` the kit puts on the trigger while it is open
+ * (measured: `aria-controls="_r_7_"`, resolving to the portalled
+ * `DIV._positioner_3pg0t_1`). Without that, a popover whose panel the kit had
+ * to anchor over its own trigger would close itself the moment it opened.
+ *
+ * A trigger the DOM cannot produce - unmounted while its panel was still on
+ * screen - leaves that popover alone, which is today's behaviour rather than a
+ * break.
+ */
+function judge(mark: string, close: () => void): void {
+  const trigger = document.querySelector<HTMLElement>(`[${STAND_MARK}="${mark}"]`);
+  if (!trigger) return;
+  const owned = trigger.getAttribute('aria-controls');
+  if (underNothing(trigger, owned ? document.getElementById(owned) : null)) return;
+  close();
+}
+
+/** Judge every open popover, one at a time - the marks are what keep two of
+ *  them apart. */
+function sweep(): void {
+  for (const [mark, close] of stands) judge(mark, close);
+}
+
+/**
+ * The layer watch: armed while any popover stands, disarmed when the last one
+ * goes. See the header for what it does and does not see.
+ */
+let layers: MutationObserver | null = null;
+
+function arm(): void {
+  if (layers) return;
+  layers = new MutationObserver((records) => {
+    if (records.some((record) => record.addedNodes.length > 0)) sweep();
+  });
+  layers.observe(document.body, { childList: true, subtree: true });
+}
+
+function disarm(): void {
+  if (stands.size) return;
+  layers?.disconnect();
+  layers = null;
+}
+
+/**
  * Registers a popover's own close while it is open, and returns the mark to
  * put on its trigger.
  */
@@ -81,39 +194,19 @@ export function usePopoverStand(open: boolean, close: () => void): string {
     if (!open) return;
     const fire = () => closeRef.current();
     stands.set(mark, fire);
+    arm();
+    /* The opening edge, and the reason the rule is an invariant rather than a
+       sweep at one instant: this runs after the kit has portalled and placed
+       the panel, so a popover that opened itself over a takeover already
+       standing is closed on the way up, by the same gate. A popover a finger
+       opened cannot fail this - if the trigger were covered the press could
+       not have landed on it. */
+    judge(mark, fire);
     return () => {
       stands.delete(mark);
+      disarm();
     };
   }, [open, mark]);
   return mark;
 }
 
-/**
- * Close every open popover whose trigger a layer has just covered. Call it
- * from the commit that MOUNTS a takeover, so the hit test sees the new scrim.
- *
- * The gate is the whole of the rule, and it is why this is not "close every
- * popover when anything opens". A popover whose trigger the finger can still
- * press is not covered by anything and has no business closing: the phone's
- * header bell is deliberately live above the palette's top edge, and the
- * docked Now Playing card is deliberately live beside a takeover, with seven
- * popovers of its own (equalizer, chapters, reading speed, volume, devices,
- * the DJ, groove). Both keep theirs. The desktop title bar's bell, which the
- * scrim and chapter 05's band cover, loses its.
- *
- * `underNothing` is focusScope's, deliberately shared rather than copied: the
- * keyboard rule and the pointer rule must not be able to disagree about what
- * is reachable.
- *
- * A trigger the DOM cannot produce - unmounted while its panel was still on
- * screen - leaves that popover alone, which is today's behaviour rather than a
- * break.
- */
-export function standDownCoveredPopovers(): void {
-  for (const [mark, close] of stands) {
-    const trigger = document.querySelector<HTMLElement>(`[${STAND_MARK}="${mark}"]`);
-    if (!trigger) continue;
-    if (underNothing(trigger)) continue;
-    close();
-  }
-}

@@ -160,16 +160,29 @@ const pressPoint = (el: HTMLElement, within?: HTMLElement): [number, number] | n
  *
  * Exported, and shared rather than copied, because the POINTER rule now asks
  * the same question of a popover's trigger - see ux/popoverStand.ts, which
- * closes a popover whose trigger a takeover has just covered. One reachability
+ * closes a popover whose trigger a takeover has covered. One reachability
  * predicate for both channels, or the day somebody tightens one of them the
  * keyboard and the pointer start disagreeing about what is reachable, which is
  * the exact failure this file exists to end.
+ *
+ * `own` is the one layer a caller may declare is not in its way, and it exists
+ * for exactly one caller: a popover asking about its OWN trigger, while its
+ * OWN panel is on screen. The kit anchors the panel beside the trigger and at
+ * the bell it clears it entirely (measured at 1280x720: trigger
+ * `1181.664,7.5,36x36`, panel `860.476,55.734,357.025x180.106`) - but a
+ * trigger with no room below it would get a panel over itself, and a rule that
+ * read that as "covered" would close every popover the instant it opened. It
+ * is a hit test, not a z-index comparison, so this stays a statement about
+ * what is painted at that point and nothing else. The keyboard side passes
+ * nothing and is unchanged.
  */
-export const underNothing = (el: HTMLElement) => {
+export const underNothing = (el: HTMLElement, own?: HTMLElement | null) => {
   const at = pressPoint(el);
   if (!at) return false;
   const hit = document.elementFromPoint(at[0], at[1]);
-  return !!hit && (el.contains(hit) || hit.contains(el));
+  if (!hit) return false;
+  if (el.contains(hit) || hit.contains(el)) return true;
+  return !!own && own.contains(hit);
 };
 
 /**
