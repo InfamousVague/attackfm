@@ -12,6 +12,7 @@ import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import { PluginHookScope } from '../plugins/runtime.tsx';
 import { isDesktopApp } from './core/platform.ts';
 import { useDesktopLayout } from './ux/useDesktopLayout.ts';
+import { useSheetScrim } from './ux/useSheetScrim.ts';
 import type { Track } from './core/tauri.ts';
 import { SettingsModal } from './settings/SettingsModal.tsx';
 import { SearchPage } from './search/SearchPage.tsx';
@@ -177,6 +178,9 @@ export function App() {
   // run - the gesture hooks have to re-attach when it finally mounts, which
   // only a state-carried node can tell them.
   const DESKTOP = useDesktopLayout();
+  // Whether a takeover on this shape is DIMMED - the one fact both halves of
+  // the palette's modality follow. See ux/useSheetScrim.ts and ux/focusScope.ts.
+  const sheetScrim = useSheetScrim();
   const [swipeEl, setSwipeEl] = useState<HTMLElement | null>(null);
 
   const swipeRef = useCallback((node: HTMLElement | null) => setSwipeEl(node), []);
@@ -1081,14 +1085,28 @@ export function App() {
                 ref={summonDismissRef}
                 className="searchSummon"
                 role="dialog"
-                /* Says what the summons has always meant - it owns the screen
-                   while it is up, and Escape, the handle, the scrim and the
-                   system back are the ways out. Unconditional, like the
-                   sibling sheet's: the alternative would be an attribute that
-                   changes with the window, and a dialog that is only sometimes
-                   a dialog is worse for the reader who cannot see it than one
-                   that is always announced as one. */
-                aria-modal="true"
+                /* `aria-modal` says the outside is UNAVAILABLE, and that is
+                   only true where a dimmer paints. `role="dialog"` above is
+                   unconditional, so the palette is always announced as a
+                   dialog and always labelled; this one attribute follows
+                   `--app-sheet-scrim`, the same single fact the focus ring
+                   follows (ux/focusScope.ts).
+
+                   It used to be unconditional too, on the argument that a
+                   dialog which is only sometimes a dialog reads worse - which
+                   confuses the two attributes. The role is what announces it.
+                   What the modal flag claimed was false on the two shapes with
+                   no dimmer: at 375x812 the header's bell outside the palette
+                   hit-tests to itself, a press on it opens the notifications
+                   panel with the palette still up, it is the focus ring's own
+                   first stop by design, and nothing on its ancestor chain
+                   carries `inert` or `aria-hidden`. The markup said one thing
+                   and every other channel said the opposite.
+
+                   Absent rather than `"false"`: same computed meaning, and an
+                   explicit false invites the next reader to think a dialog's
+                   modality toggles. */
+                aria-modal={sheetScrim ? 'true' : undefined}
                 aria-label={t('nav.search')}
               >
                 {/* The drawer's handle: a visible way out, and the honest

@@ -1,6 +1,14 @@
 /**
  * The other half of `aria-modal="true"`.
  *
+ * The attribute is the half that VARIES: App.tsx sets it only where
+ * `--app-sheet-scrim` paints a dimmer, because on a phone and on a docked
+ * tablet there is none and the claim would be false. This file is the half
+ * that does not vary - and the two agree because they follow the same one
+ * fact. Where the dimmer paints, the attribute stands and this ring is closed;
+ * where it does not, the attribute is absent and this ring lets focus out to
+ * exactly the controls a finger can already press.
+ *
  * The search palette says it is a modal dialog, and against the pointer it
  * mostly is one: on a desktop window `.searchSummon__scrim` covers the room at
  * z 59 and the sheet stands at 60, so a click outside lands on the scrim and
@@ -69,13 +77,19 @@
  * paint does not have. Where a takeover has no dimmer, letting the keyboard
  * out to the same controls the finger can press is the honest answer; making
  * the keyboard stricter than the pointer is the same mistake as the role
- * guess, mirrored. The missing dimmer is a question for the sheet contract.
+ * guess, mirrored. The missing dimmer is a question for the sheet contract -
+ * and while it is missing, the MARKUP must not claim one either.
  *
  * It is unconditional, with no window gate. The scrim is gated because it is a
  * BOX and on a phone the box would be wrong; this is not a box. It listens for
- * one key and moves focus, so it changes no geometry and no touch path - and
- * unconditional is the only honest match for an `aria-modal` the markup sets
- * at every width.
+ * one key and moves focus, so it changes no geometry and no touch path. What
+ * varies instead is the attribute, which App.tsx now drops exactly where
+ * `--app-sheet-scrim` is `none` - exactly where this ring lets focus out.
+ * Before that the two halves contradicted each other on the two shapes with no
+ * dimmer: the markup said the outside was unavailable while this file
+ * deliberately kept the header's bell in the ring, because a finger can reach
+ * it and a keyboard-dead lit control is the regression this ring was written
+ * to end.
  */
 
 /**
