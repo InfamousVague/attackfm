@@ -12,7 +12,7 @@ import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import { PluginHookScope } from '../plugins/runtime.tsx';
 import { isDesktopApp } from './core/platform.ts';
 import { useDesktopLayout } from './ux/useDesktopLayout.ts';
-import { useSheetScrim } from './ux/useSheetScrim.ts';
+import { useRoomDimmed } from './ux/useRoomDimmed.ts';
 import type { Track } from './core/tauri.ts';
 import { SettingsModal } from './settings/SettingsModal.tsx';
 import { SearchPage } from './search/SearchPage.tsx';
@@ -178,9 +178,10 @@ export function App() {
   // run - the gesture hooks have to re-attach when it finally mounts, which
   // only a state-carried node can tell them.
   const DESKTOP = useDesktopLayout();
-  // Whether a takeover on this shape is DIMMED - the one fact both halves of
-  // the palette's modality follow. See ux/useSheetScrim.ts and ux/focusScope.ts.
-  const sheetScrim = useSheetScrim();
+  // Whether the palette's own dimmer COVERS THE ROOM - the one fact both
+  // halves of its modality follow, measured off the scrim below rather than
+  // inferred from a shape. See ux/useRoomDimmed.ts and ux/focusScope.ts.
+  const [scrimRef, roomDimmed] = useRoomDimmed();
   const [swipeEl, setSwipeEl] = useState<HTMLElement | null>(null);
 
   const swipeRef = useCallback((node: HTMLElement | null) => setSwipeEl(node), []);
@@ -236,8 +237,9 @@ export function App() {
       });
       /* The other half of the role="dialog" below: the keyboard follows the
          pointer. Focus may stand only where a press could land, whatever this
-         window's sheet contract makes of the scrim - which on a phone and on a
-         docked tablet is nothing at all. Same node, same lifetime. */
+         window's dimmer covers - which on a phone and a docked tablet is
+         nothing at all, and on a docked desktop is the app column and not the
+         player beside it. Same node, same lifetime. */
       const scope = installFocusScope(node);
       return () => {
         scope();
@@ -1077,6 +1079,7 @@ export function App() {
                     cannot do - and the reason this is markup rather than a
                     pseudo-element on the sheet. */}
                 <div
+                  ref={scrimRef}
                   className="searchSummon__scrim"
                   onClick={() => setSearchOpen(false)}
                   aria-hidden="true"
@@ -1086,27 +1089,30 @@ export function App() {
                 className="searchSummon"
                 role="dialog"
                 /* `aria-modal` says the outside is UNAVAILABLE, and that is
-                   only true where a dimmer paints. `role="dialog"` above is
-                   unconditional, so the palette is always announced as a
-                   dialog and always labelled; this one attribute follows
-                   `--app-sheet-scrim`, the same single fact the focus ring
-                   follows (ux/focusScope.ts).
+                   only true where the dimmer above COVERS THE ROOM.
+                   `role="dialog"` is unconditional, so the palette is always
+                   announced as a dialog and always labelled; this one
+                   attribute follows the scrim's own measured box, which is
+                   what the focus ring's hit tests follow too
+                   (ux/focusScope.ts, ux/useRoomDimmed.ts).
 
-                   It used to be unconditional too, on the argument that a
-                   dialog which is only sometimes a dialog reads worse - which
-                   confuses the two attributes. The role is what announces it.
-                   What the modal flag claimed was false on the two shapes with
-                   no dimmer: at 375x812 the header's bell outside the palette
-                   hit-tests to itself, a press on it opens the notifications
-                   panel with the palette still up, it is the focus ring's own
-                   first stop by design, and nothing on its ancestor chain
-                   carries `inert` or `aria-hidden`. The markup said one thing
-                   and every other channel said the opposite.
+                   It used to be unconditional, on the argument that a dialog
+                   which is only sometimes a dialog reads worse - which
+                   confuses the two attributes; the role is what announces it.
+                   Then it followed `--app-sheet-scrim`, which answers "does a
+                   dimmer paint at all" and so was still false on a docked
+                   desktop: measured at 1280x720, the scrim narrowed to
+                   `0,0,793.602,720` while the Now Playing card stood
+                   uncovered at `809.414,67.805` with `[inert]` 0, nothing
+                   `aria-hidden`, and five real Tabs cycling through its
+                   controls. Three shapes leave the outside reachable - a
+                   phone, a docked tablet, a docked desktop - and one box
+                   answers for all three without naming any of them.
 
                    Absent rather than `"false"`: same computed meaning, and an
                    explicit false invites the next reader to think a dialog's
                    modality toggles. */
-                aria-modal={sheetScrim ? 'true' : undefined}
+                aria-modal={roomDimmed ? 'true' : undefined}
                 aria-label={t('nav.search')}
               >
                 {/* The drawer's handle: a visible way out, and the honest

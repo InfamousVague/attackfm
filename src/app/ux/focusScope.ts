@@ -1,13 +1,30 @@
 /**
  * The other half of `aria-modal="true"`.
  *
- * The attribute is the half that VARIES: App.tsx sets it only where
- * `--app-sheet-scrim` paints a dimmer, because on a phone and on a docked
- * tablet there is none and the claim would be false. This file is the half
- * that does not vary - and the two agree because they follow the same one
- * fact. Where the dimmer paints, the attribute stands and this ring is closed;
- * where it does not, the attribute is absent and this ring lets focus out to
- * exactly the controls a finger can already press.
+ * The attribute is the half that VARIES: App.tsx sets it only where the
+ * dimmer's own box COVERS THE ROOM, measured off the scrim element itself
+ * (ux/useRoomDimmed.ts). This file is the half that does not vary, and the two
+ * agree because both are readings of the same paint rather than of a shape.
+ * Where the dimmer covers the room, every control outside the sheet hit-tests
+ * to it, so this ring comes out closed and the attribute is honest. Where it
+ * does not, the attribute is absent and this ring lets focus out to exactly
+ * the controls a finger can already press - and there are two such shapes, not
+ * one: a phone and a docked tablet, which paint no dimmer at all, and a docked
+ * DESKTOP, where chapter 05 narrows the dimmer to the app column and leaves
+ * the Now Playing card lit beside it on purpose. That third shape is the
+ * commonest desktop state there is, and for three commits the attribute
+ * claimed modality over it: measured at 1280x720 docked, scrim
+ * `0,0,793.602,720` at z 59, the card uncovered at `809.414,67.805`, `[inert]`
+ * 0, no `aria-hidden` on its chain, and this ring coming out
+ * `[Close search, Search, card one, card two]` while the markup said the
+ * outside was unavailable.
+ *
+ * WHAT "EVERY CONTROL OUTSIDE" DOES NOT COVER, named rather than enforced:
+ * `.djToast` computes z 65, above the scrim's 59, so while it stands its own
+ * button is reachable outside the sheet and the attribute overclaims by that
+ * one control for the seconds it is up. A kit popover used to be a second such
+ * exception, at an inline z 200 - ux/popoverStand.ts closes that one now, on
+ * both edges of it.
  *
  * The search palette says it is a modal dialog, and against the pointer it
  * mostly is one: on a desktop window `.searchSummon__scrim` covers the room at
@@ -83,13 +100,15 @@
  * It is unconditional, with no window gate. The scrim is gated because it is a
  * BOX and on a phone the box would be wrong; this is not a box. It listens for
  * one key and moves focus, so it changes no geometry and no touch path. What
- * varies instead is the attribute, which App.tsx now drops exactly where
- * `--app-sheet-scrim` is `none` - exactly where this ring lets focus out.
- * Before that the two halves contradicted each other on the two shapes with no
- * dimmer: the markup said the outside was unavailable while this file
- * deliberately kept the header's bell in the ring, because a finger can reach
- * it and a keyboard-dead lit control is the regression this ring was written
- * to end.
+ * varies instead is the attribute, which App.tsx now drops exactly where the
+ * dimmer's box stops short of the window - which is exactly where this ring
+ * lets focus out. Before that the two halves contradicted each other, first on
+ * the two shapes with no dimmer at all and then, once the attribute followed
+ * the contract token, on the docked desktop as well: the markup said the
+ * outside was unavailable while this file deliberately kept the header's bell,
+ * or the docked card's controls, in the ring - because a finger can reach them
+ * and a keyboard-dead lit control is the regression this ring was written to
+ * end.
  */
 
 /**
