@@ -1049,10 +1049,36 @@ export function App() {
                     gesture publishes --np-drag/data-np-dragging globally, so
                     the identical class gives the identical resolving blur. */}
                 <div className="npScreen__behind" aria-hidden="true" />
+                {/* The page behind, covered - the same scrim GlassSheet has,
+                    and the same rule paints both (chapter 71). It is here
+                    unconditionally and CSS decides whether it is a box: on a
+                    phone the palette is the whole screen under the header and
+                    `--app-sheet-scrim` is `none`, so this renders to nothing
+                    and the touch path is the one that was already right. On a
+                    desktop window the palette is a panel, and without this the
+                    page around it stayed clickable, scrollable and navigable
+                    under an open dialog.
+
+                    The press that lands on it closes, which is the half CSS
+                    cannot do - and the reason this is markup rather than a
+                    pseudo-element on the sheet. */}
+                <div
+                  className="searchSummon__scrim"
+                  onClick={() => setSearchOpen(false)}
+                  aria-hidden="true"
+                />
               <div
                 ref={summonDismissRef}
                 className="searchSummon"
                 role="dialog"
+                /* Says what the summons has always meant - it owns the screen
+                   while it is up, and Escape, the handle, the scrim and the
+                   system back are the ways out. Unconditional, like the
+                   sibling sheet's: the alternative would be an attribute that
+                   changes with the window, and a dialog that is only sometimes
+                   a dialog is worse for the reader who cannot see it than one
+                   that is always announced as one. */
+                aria-modal="true"
                 aria-label={t('nav.search')}
               >
                 {/* The drawer's handle: a visible way out, and the honest

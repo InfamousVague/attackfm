@@ -5,12 +5,44 @@
  * spring home is the transition, which the gesture suspends while a finger is
  * down so the sheet never lags the hand.
  */
-.glassSheet__scrim {
+/*
+ * THE SCRIM IS SHARED, because it is the same object twice: the page behind an
+ * open sheet, dimmed so the sheet reads as the subject and swallowed so the
+ * page cannot be used through it. One rule, one alpha, one z-index - two
+ * dimmers a shade apart would read as two mechanisms, and the search palette
+ * is the other one (.searchSummon, chapter 09), not a different kind of thing.
+ *
+ * WHAT IS NOT SHARED IS WHEN IT IS THERE, which is the whole reason the two
+ * classes are named separately below.
+ *
+ * A GlassSheet always has one. Even on a phone, where the sheet hangs from the
+ * header's line, the strip above it is somebody else's chrome and the scrim
+ * covers it.
+ *
+ * The palette's is gated on --app-sheet-scrim, and it is `none` on a phone on
+ * purpose. There the palette IS the screen under the header, so a dimmer
+ * behind it would darken nothing except what shows through its own glass -
+ * a change to a touch path that is already right. On a desktop window it is
+ * 768 x 630 of a 1440 x 900 window, and until this rule existed the other 62%
+ * was live: a click outside left the palette standing, a wheel scrolled the
+ * library under it, and the nav rail navigated - leaving the palette open over
+ * a page it had not been opened on. 122 pointer targets, measured; 0 now.
+ *
+ * The fallback is `none` rather than the bare `var()`: a scrim is invisible
+ * either way at rest, and if the contract ever went missing the phone must not
+ * be the surface that finds out.
+ */
+.glassSheet__scrim,
+.searchSummon__scrim {
   position: fixed;
   inset: 0;
   z-index: 59;
   background: rgba(0, 0, 0, 0.35);
   animation: glassSheetScrim 0.2s ease-out;
+}
+
+.searchSummon__scrim {
+  display: var(--app-sheet-scrim, none);
 }
 
 @keyframes glassSheetScrim {
@@ -81,7 +113,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .glassSheet,
-  .glassSheet__scrim {
+  .glassSheet__scrim,
+  .searchSummon__scrim {
     animation: none;
     transition: none;
   }
@@ -120,6 +153,21 @@
  *   --app-sheet-round-end  the TRAILING shoulders: square while the sheet is
  *                          flush against an edge, rounded once it floats clear
  *                          of one (see .searchSummon in chapter 09)
+ *   --app-sheet-scrim      whether the page behind needs covering: `none`
+ *                          while the sheet IS the screen, `block` once it is a
+ *                          panel with a live page around it (see the scrim at
+ *                          the top of this chapter)
+ *
+ * The fifth value arrived with the scrim, and it is a value rather than a
+ * third spelling of the gate for the same reason the other four are: the
+ * geometry and the coverage have to change together or the sheet stops being
+ * a wall while the page behind it is still being treated as one. A JS gate
+ * (useDesktopLayout) was the other candidate and is the wrong tool twice over
+ * - it is `isDesktopApp || 60rem`, so a desktop browser at 800px would take
+ * the panel geometry from CSS and no scrim from JS, and it hangs on a
+ * matchMedia change event that some of the webviews this ships in never fire
+ * (see useDockedSheet's note). The contract is the only thing that already
+ * knows, everywhere and at every width.
  *
  * WHY AN AUTO MARGIN IS THE ANCHOR. A sheet has both block insets pinned, so
  * once `--app-sheet-block` gives it a definite height the box is
@@ -169,6 +217,7 @@
   --app-sheet-block: auto;
   --app-sheet-block-max: 100%;
   --app-sheet-round-end: 0;
+  --app-sheet-scrim: none;
 }
 
 @media (min-width: 60rem) and (pointer: fine) {
@@ -177,6 +226,7 @@
     --app-sheet-block: fit-content;
     --app-sheet-block-max: 70dvh;
     --app-sheet-round-end: var(--glacier-radius-xl, 1.25rem);
+    --app-sheet-scrim: block;
   }
 
   /* Search is the one sheet that is not a card in a frame - it is a page of
@@ -192,6 +242,7 @@
   --app-sheet-block: fit-content;
   --app-sheet-block-max: 70dvh;
   --app-sheet-round-end: var(--glacier-radius-xl, 1.25rem);
+  --app-sheet-scrim: block;
 }
 
 :root[data-platform='desktop'] .searchSummon {

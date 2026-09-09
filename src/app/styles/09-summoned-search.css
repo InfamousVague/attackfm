@@ -80,6 +80,15 @@
    * of page out of the bottom of the screen. Floating clear of it, square
    * corners on a card that is not touching anything look like a mistake.
    *
+   * WHAT COVERS THE PAGE ONCE THIS STOPS BEING THE SCREEN. Nothing here: the
+   * scrim is `.searchSummon__scrim` (chapter 71), shared with GlassSheet's,
+   * and it is the other half of this block. A sheet that no longer covers the
+   * window leaves the window live, and a palette standing over a library you
+   * can still scroll, click and navigate away from is not a dialog - it is a
+   * card that has been left out. The scrim arrives with the panel geometry
+   * because it is gated on the same contract, and it is absent on a phone for
+   * the same reason the four values above resolve to nothing there.
+   *
    * HOW THIS COMPOSES WITH THE DOCKED NOW PLAYING. `body:has(.npScreen
    * [data-docked]) .searchSummon` (chapter 05) rewrites `inset-inline-end` to
    * the dock's width, which narrows the BOX this sheet is laid out in; it wins
