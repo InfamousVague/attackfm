@@ -1,0 +1,88 @@
+/*! Friends, drawn as people.
+ *!
+ *! The presence MARK: a face wearing what its owner is doing.
+ *!
+ *! It exists because presence in this app used to be colour and nothing
+ *! else - a green ring on the avatar for "online" and a green pulsing dot on
+ *! the live line for "playing", both spelling the same hue in three
+ *! hard-coded places (chunk 34). Two claims on one channel, and the pulse
+ *! that told them apart is switched off under reduced motion, which leaves
+ *! those users with hue alone. So: the ring answers "are they here?" by its
+ *! STROKE, the badge answers "doing what?" by its GLYPH, and colour is a
+ *! third channel that carries nothing on its own. The test is a greyscale
+ *! screenshot at 24px.
+ */
+
+:root {
+  /* The one green. Chunk 34 spelled oklch(0.72 0.17 150) three times; this is
+     that colour with a name, so a theme can move it once. */
+  --presence-live: var(--glacier-success-solid);
+}
+
+/* --- the mark ------------------------------------------------------------ */
+
+.presence {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  /* The badge has to paint OVER the ring. Both are children of this element
+     and `::after` paints after every child, so without a stacking context of
+     its own the ring's stroke crosses the badge and takes a bite out of the
+     glyph - invisible while the two are the same green, obvious the moment
+     the badge is the paused grey. */
+  isolation: isolate;
+}
+
+/* The ring is drawn as a border on a pseudo-element rather than a box-shadow,
+   because a shadow cannot be dashed - and dashed is the whole point: it is
+   the weaker claim, "we have heard from them but they are not beating". */
+.presence::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.presence[data-ring='solid']::after {
+  border: 2px solid var(--presence-live);
+}
+
+.presence[data-ring='dashed']::after {
+  border: 2px dashed var(--glacier-border-strong);
+}
+
+.presence[data-ring='none']::after {
+  border: none;
+}
+
+.presence__badge {
+  position: absolute;
+  inset-block-end: -2px;
+  inset-inline-end: -2px;
+  display: grid;
+  place-items: center;
+  inline-size: 16px;
+  block-size: 16px;
+  z-index: 1;
+  border-radius: 50%;
+  color: var(--glacier-text);
+  background: var(--glacier-surface-raised);
+  /* Ringed in the ground it sits on, so the badge reads as a plate ON the
+     face rather than a smudge in it - the same trick the overlapping People
+     faces use in chunk 13. */
+  box-shadow: 0 0 0 2px var(--glacier-surface);
+}
+
+.presence--lg .presence__badge {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+/* Playing is the one state that gets the solid fill. Paused, private and
+   hosting keep the raised plate: they are all "something is true about them",
+   and only one of them is music coming out right now. */
+.presence__badge[data-standing='playing'] {
+  color: var(--glacier-success-contrast);
+  background: var(--presence-live);
+}

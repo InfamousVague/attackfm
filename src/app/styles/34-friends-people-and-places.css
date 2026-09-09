@@ -215,12 +215,17 @@
   pointer-events: none;
 }
 
-/* A green ring on the mark while they are around - presence worn where the
-   eye already is, not another line of text. */
+/* A ring on the mark while they are around - presence worn where the eye
+   already is, not another line of text.
+   The hue is `--presence-live` (chunk 82) rather than a literal, because it
+   used to be this same oklch() spelled out in three places that meant three
+   different things. It is also no longer the ONLY thing saying so: the row's
+   live line carries a glyph now, so a reader who cannot see the green - or is
+   looking at a greyscale screenshot - still gets the claim. */
 .friendRow[data-online] .friendRow__face {
   box-shadow:
     0 0 0 2px var(--glacier-surface),
-    0 0 0 4px oklch(0.72 0.17 150);
+    0 0 0 4px var(--presence-live);
 }
 
 .friendRow__handle {
@@ -410,8 +415,8 @@
   inline-size: 6px;
   block-size: 6px;
   border-radius: 50%;
-  background: oklch(0.72 0.17 150);
-  box-shadow: 0 0 0 0 oklch(0.72 0.17 150 / 0.6);
+  background: var(--presence-live);
+  box-shadow: 0 0 0 0 color-mix(in oklch, var(--presence-live) 60%, transparent);
   animation: friendLivePulse 1.8s ease-out infinite;
   flex: none;
 }
@@ -424,13 +429,13 @@
 
 @keyframes friendLivePulse {
   0% {
-    box-shadow: 0 0 0 0 oklch(0.72 0.17 150 / 0.6);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--presence-live) 60%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 6px oklch(0.72 0.17 150 / 0);
+    box-shadow: 0 0 0 6px transparent;
   }
   100% {
-    box-shadow: 0 0 0 0 oklch(0.72 0.17 150 / 0);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 
@@ -444,7 +449,7 @@
   margin-inline-start: var(--glacier-space-2);
   font-size: var(--glacier-font-size-xs);
   font-weight: 500;
-  color: oklch(0.72 0.17 150);
+  color: var(--presence-live);
 }
 
 .friendStats__now {
