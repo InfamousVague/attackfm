@@ -263,14 +263,48 @@
   max-block-size: var(--app-sheet-block-max);
 }
 
-/* The app's own sheet: a fixed element with both inline edges pinned centres
-   itself on `margin-inline: auto` once it has a definite width, and one auto
-   block margin drops it onto the bottom edge once it has a definite height.
-   On a phone every one of these resolves to what was already there - 100%
-   wide, `auto` tall between the header's line and the bottom, both margins
-   zero - so this is one rule for both, not a desktop copy of a phone sheet. */
+/*
+ * The app's own sheet: a fixed element with both inline edges pinned, so
+ * `inline-size: auto` solves the width as the room actually LEFT between them
+ * - whoever narrowed it - and the contract's number is a CEILING on that
+ * rather than a width in its own right. The auto inline margins then centre
+ * whatever room is left over. One auto block margin still drops the sheet onto
+ * the bottom edge once its height is definite, and that half is unchanged.
+ *
+ * IT WAS `min(100%, var(--app-sheet-max))`, AND THAT IS THE MECHANISM THAT
+ * FAILED. A definite width only centres while it FITS the box; when it exceeds
+ * the box the box is over-constrained, the trailing inset is dropped in LTR
+ * and `margin-inline: auto` absorbs the difference by going NEGATIVE. And a
+ * percentage on a fixed box resolves against its containing block, which with
+ * no transformed ancestor is the VIEWPORT: `min(100%, ...)` asked the window
+ * and never learned about the `inset-inline-end` chapter 05 writes for the
+ * dock.
+ *
+ * ON A DESKTOP WINDOW THAT COULD NOT SHOW. There the cap is 32rem against a
+ * column that is never narrower than 595.2px, so the cap bound first and the
+ * percentage never got the chance to be wrong. The shape that shows it is a
+ * TABLET OR UNFOLDED FOLDABLE IN LANDSCAPE, which docks - `npWide` is
+ * `(min-width: 60rem) and (min-aspect-ratio: 1/1)` and asks nothing about the
+ * pointer - while failing both of this chapter's desktop gates above: its
+ * pointer is coarse, and platform.ts stamps iPadOS and Android `ios` and
+ * `android`, never `desktop`. So it takes the `:root` defaults, where
+ * `--app-sheet-max` is `100%`, and there `min(100%, 100%)` is the whole
+ * window. Measured at 1024x768 docked: 1024 wide against a 634.883px column,
+ * `margin-right: -389.117px`, 358.891px of glass lying across the whole of a
+ * card at 650..1008.891, and a press 40px inside that card landing on
+ * `glassSheet__body`. The seam inset was being computed perfectly and then
+ * thrown away.
+ *
+ * Chapter 09 carries the identical pair of declarations for the identical
+ * reason; this is the sibling being given the form its brother already has.
+ *
+ * On a phone every one of these resolves to what was already there - 100%
+ * wide, `auto` tall between the header's line and the bottom, both margins
+ * zero - so this is one rule for both, not a desktop copy of a phone sheet.
+ */
 .glassSheet {
-  inline-size: min(100%, var(--app-sheet-max));
+  inline-size: auto;
+  max-inline-size: var(--app-sheet-max);
   margin-inline: auto;
   block-size: var(--app-sheet-block);
   max-block-size: var(--app-sheet-block-max);
@@ -328,6 +362,23 @@
  * window there is no bottom panel to cap and a rule for one would be CSS that
  * has never drawn a pixel. The day one of those loses its gate, its class
  * comes here.
+ *
+ * THESE THREE DO NOT TAKE THE `auto` WIDTH THE SHEET ABOVE TAKES, and the
+ * reason is that they are not the same kind of box. Our sheet is `fixed` with
+ * both inline edges pinned, so `auto` there means "the room left between two
+ * insets". The kit's `._panel._bottom` is a STATIC FLEX ITEM inside
+ * `._overlay_1mvue_`, which is the fixed one - and chapter 05 already narrows
+ * that overlay to the app's column, so their `100%` resolves against a box
+ * that knows about the dock. Measured on the very shape that breaks
+ * `.glassSheet` (1024x768 docked, coarse-pointer contract): overlay 0..634.883,
+ * panel 0..634.883, both margins zero, overlap with the card 0.000. There is
+ * nothing here to fix.
+ *
+ * And `inline-size: auto` on a flex item is SHRINK-TO-FIT, not "the room
+ * left". Measured with exactly that pair injected here, add-to-playlist
+ * collapsed to 98.992px - the width of its one button - from 512px on the
+ * desktop branch and from 634.883px on the tablet one. Same two words,
+ * opposite meaning, because the box is a different kind of box.
  */
 .addPlaylistSheet.addPlaylistSheet,
 .djTraitSheet.djTraitSheet,
