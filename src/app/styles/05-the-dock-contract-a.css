@@ -82,7 +82,38 @@ body:has(.npScreen[data-docked]) .djToast {
  * covered player - the thing this whole chapter exists to prevent. So the
  * dimmed area is the room the takeover is in, and the card stays beside it,
  * lit and live, exactly as this contract's opening line says it should.
+ *
+ * THE SEAM IS RIGHT FOR THE PLAYER AND WRONG FOR THE TITLE BAR, which is what
+ * the rule above missed. The dock is a panel inside the app, not a second
+ * window: `.appBody` gives up the column but `.appWindow` keeps the whole
+ * width, so `.appTitleBar` runs edge to edge above the card, and the card
+ * itself starts below it (--np-dock-top, chapter 49). The strip between the
+ * top of the window and that line, inside the dock's column, is app chrome
+ * with no card under it - and a scrim that stops at the seam is one rectangle
+ * and cannot cover it. Measured at 1440x900 with a share sheet open: 35.6% of
+ * the window undimmed and three live buttons in it - Notifications, Invite a
+ * friend, Settings - and a real click on Settings opened a second takeover at
+ * z 100 with the first still standing underneath.
+ *
+ * So the scrim grows the one rectangle it is missing. A pseudo-element,
+ * because a box cannot be two rectangles; ON THE SCRIM rather than a fourth
+ * element in the markup, because a pseudo hit-tests as its originator, so the
+ * scrim's own onClick still closes the sheet when the press lands up there.
+ * `background: inherit` keeps chapter 71's one alpha - two rectangles a shade
+ * apart would read as two mechanisms. The gate is this chapter's, character
+ * for character: undocked the scrim is `inset: 0` and already covers the
+ * window, so an ungated band would paint a second 35% over the top strip.
  */
+body:has(.npScreen[data-docked]) .glassSheet__scrim::after,
+body:has(.npScreen[data-docked]) .searchSummon__scrim::after {
+  content: '';
+  position: fixed;
+  inset-block: 0 auto;
+  inset-inline-end: 0;
+  inline-size: var(--np-dock-width);
+  block-size: var(--np-dock-top);
+  background: inherit;
+}
 
 /* Transform only - never opacity. An animation that is frozen at its first
    frame (a throttled or backgrounded webview does exactly this: the animation
