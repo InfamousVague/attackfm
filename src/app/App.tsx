@@ -230,8 +230,10 @@ export function App() {
         // Nearly everything on this page is a button; see the option's note.
         dragAnywhere: true,
       });
-      /* The other half of the role="dialog" below: the scrim swallows the
-         pointer, this keeps the keyboard. Same node, same lifetime. */
+      /* The other half of the role="dialog" below: the keyboard follows the
+         pointer. Focus may stand only where a press could land, whatever this
+         window's sheet contract makes of the scrim - which on a phone and on a
+         docked tablet is nothing at all. Same node, same lifetime. */
       const scope = installFocusScope(node);
       return () => {
         scope();
