@@ -1408,7 +1408,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
      * THE ONE EXCEPTION is a song a crossfade carried in on a file resolved
      * before the console moved: nothing is loading it (the handover already
      * handed it up), so standing down here would leave it playing the old
-     * sound for its whole length. See `carriedStale` below.
+     * sound for its whole length. `staleAdoption` is where a handover says so.
      */
     const carried = nowTrack !== null && staleAdoption.current === nowTrack;
     if (carried) staleAdoption.current = null;
