@@ -12,7 +12,20 @@
     env(safe-area-inset-bottom, 0px) + var(--app-nav-height, 4rem) +
       var(--app-player-height, 0rem) + var(--glacier-space-2)
   );
-  z-index: 60;
+  /* 58, and the number is the argument. The takeover band starts at the shared
+     scrim's 59 (chapter 71), and this bar is not a takeover: it is a table's
+     own toolbar, portalled to the body so its glass can blur the page, not to
+     climb out of it. At 60 it stood one number above that scrim, so an open
+     palette or share sheet dimmed and swallowed the whole library and left six
+     lit, clickable verbs floating over it - 544 x 59.6 at (448, 765.5) in a
+     1440 x 900 window, every button hit-testing to itself. 58 is the top of
+     the page band: above the docked overflow menu at 56 and everything under
+     it, so nothing this used to cover is uncovered, and below the scrim, so
+     the bar dims with the page it belongs to. Raising the scrim instead would
+     fix only the surfaces that have one - on a phone the palette IS the screen
+     and `--app-sheet-scrim` is `none`, and there the bar climbed over the
+     palette itself. */
+  z-index: 58;
   display: flex;
   align-items: center;
   gap: var(--glacier-space-1);
