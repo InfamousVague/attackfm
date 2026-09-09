@@ -49,6 +49,7 @@ import { NotifyBell } from './notify/NotifyBell.tsx';
 import { ShareServer } from './library/ShareServer.tsx';
 import { CarPlayBridge } from './player/CarPlayBridge.tsx';
 import { installSheetDismiss } from './player/playerDismiss.ts';
+import { installFocusScope } from './ux/focusScope.ts';
 import { ConnectPlayRouter, PlayerHost } from './player/PlayerHost.tsx';
 import { GroovePlayRouter } from './player/GroovePlayRouter.tsx';
 import { GrooveNotices } from './notify/GrooveNotices.tsx';
@@ -224,11 +225,18 @@ export function App() {
   const summonDismissRef = useCallback(
     (node: HTMLElement | null) => {
       if (!node) return;
-      return installSheetDismiss(node, {
+      const dismiss = installSheetDismiss(node, {
         onDismiss: () => setSearchOpen(false),
         // Nearly everything on this page is a button; see the option's note.
         dragAnywhere: true,
       });
+      /* The other half of the role="dialog" below: the scrim swallows the
+         pointer, this keeps the keyboard. Same node, same lifetime. */
+      const scope = installFocusScope(node);
+      return () => {
+        scope();
+        dismiss();
+      };
     },
     [setSearchOpen],
   );
