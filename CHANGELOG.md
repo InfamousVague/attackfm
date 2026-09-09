@@ -15,6 +15,20 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.6.4
+
+- Friends who are listening right now get a card at the top of Discover - one
+  person at a time, with what they are on and a way in, and the others as faces
+  underneath. Tap one to hold them there.
+- You can tell who is playing, who is paused and who is just about without
+  relying on the colour green: the mark on a friend's face says which.
+- Hi-fi effects and filters now reach the device that is actually playing, the
+  way the mixer already did. Change the sound from your phone and the speaker
+  in the other room hears it.
+- A song you paused stays paused when you change its sound. It used to start
+  itself again a moment later.
+- Now Playing can hand the song to a friend, from a button beside the heart.
+
 ## 0.6.3
 
 - The Now Playing row scrolls back to its start again, so the queue button is
