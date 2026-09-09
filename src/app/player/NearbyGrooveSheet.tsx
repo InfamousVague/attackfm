@@ -3,7 +3,7 @@ import { Drawer, Modal } from '@glacier/react';
 import { Music, Users, Wifi } from '@glacier/icons';
 import { useMediaQuery } from '../ux/useMediaQuery.ts';
 import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
-import { FriendAvatar } from '../profile/RegistryFriends.tsx';
+import { FriendAvatar } from '../profile/FriendAvatar.tsx';
 import { MOBILE_PLAYER_QUERY } from './deckShared.ts';
 import { useJamOptional } from './jam.tsx';
 import { Trans, useT } from '../i18n/LocaleShell.tsx';

@@ -7,7 +7,7 @@ import { useNarrowViewport } from '../ux/useNarrowViewport.ts';
 import { openFriendPicker, sayNames, type PickedPerson } from '../nav/friendPickerDoor.ts';
 import { clearNewPlaylist, onNewPlaylist, type NewPlaylistRequest } from '../nav/newPlaylistDoor.ts';
 import { openPlaylistWith } from '../nav/playlistDoor.ts';
-import { FriendAvatar } from '../profile/RegistryFriends.tsx';
+import { FriendAvatar } from '../profile/FriendAvatar.tsx';
 import { usePlaylists } from './playlists.tsx';
 
 /**

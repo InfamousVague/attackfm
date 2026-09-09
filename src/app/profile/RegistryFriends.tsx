@@ -29,12 +29,15 @@ import {
   StatTile,
   Text,
 } from '@glacier/react';
-import { ArrowUpRight, ChartNoAxesColumn, Check, Clock, Flame, Headphones, Music, UserPlus, Users, X } from '@glacier/icons';
+import { ArrowUpRight, AudioLines, ChartNoAxesColumn, Check, Clock, Flame, Headphones, Pause, UserPlus, Users, X } from '@glacier/icons';
 import { useJamOptional } from '../player/jam.tsx';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { artistImageKnown, cachedArtistImage, resolveArtistImage } from '../albumArtist/artistImage.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { FriendAvatar } from './FriendAvatar.tsx';
+import { PresenceMark } from './PresenceMark.tsx';
+import { standingOf } from './friendStanding.ts';
 import { syncRegistryFriendsToHub } from './friendMirror.ts';
 import {
   acceptFriendRequest,
@@ -53,50 +56,6 @@ import { isOnline, listenedTime, seenAgo } from './friendPresence.ts';
 
 /** The app's translator, as a value the plain helpers below can be handed. */
 type T = ReturnType<typeof useT>;
-
-/**
- * A person, as a mark: a deterministic two-tone gradient from their handle
- * with their initial on it. The hue is the handle's and nobody else's, so the
- * same friend wears the same colour on every device and every visit - the
- * list reads as PEOPLE at a glance, not a column of grey monograms.
- */
-export function FriendAvatar({
-  handle,
-  size = 'md',
-  className,
-  src,
-}: {
-  handle: string;
-  size?: 'sm' | 'md' | 'lg';
-  className?: string;
-  /** The face they chose. The generated mark below is what a person without
-   *  one wears - and what everyone wore before there was a way to choose. */
-  src?: string | null;
-}) {
-  let hue = 7;
-  for (const ch of handle) hue = (hue * 31 + ch.codePointAt(0)!) % 360;
-  // A picture that will not load falls back to the mark rather than leaving a
-  // broken-image glyph in the row. It happens for real: the URL is cached
-  // forever by design, and the picture behind it can be taken down.
-  const [broken, setBroken] = useState(false);
-  useEffect(() => setBroken(false), [src]);
-  const photo = src && !broken;
-  return (
-    <span
-      className={`friendAvatar friendAvatar--${size}${className ? ` ${className}` : ''}`}
-      style={{
-        background: `linear-gradient(135deg, oklch(0.62 0.15 ${hue}), oklch(0.42 0.17 ${(hue + 55) % 360}))`,
-      }}
-      aria-hidden
-    >
-      {photo ? (
-        <img className="friendAvatar__photo" src={src} alt="" onError={() => setBroken(true)} />
-      ) : (
-        (handle[0] ?? '?').toUpperCase()
-      )}
-    </span>
-  );
-}
 
 /** The listening glance a friend chose to share: "6 hr 20 min this week · Jon Hopkins". */
 function weekGlance(t: T, f: RegistryFriend): string | null {
@@ -124,7 +83,13 @@ export function NowPlayingLine({ f, long = false }: { f: RegistryFriend; long?: 
   if (!np) return null;
   return (
     <span className="friendRow__live" data-paused={!np.playing || undefined}>
-      <Music size={12} aria-hidden />
+      {/* Playing and paused get DIFFERENT glyphs. They used to share `Music`
+          and be told apart by the dot beside it, which is a colour and an
+          animation - and the animation is switched off under reduced motion,
+          which left those readers with hue as the only difference between
+          "listening to" and "paused on". The silhouette carries it now; the
+          dot is a third channel that no longer has to carry anything. */}
+      {np.playing ? <AudioLines size={12} aria-hidden /> : <Pause size={12} aria-hidden />}
       <span className="friendRow__liveDot" aria-hidden />
       <span className="friendRow__liveText">
         {/* Verb and title are one sentence - German puts the title before the
@@ -205,6 +170,12 @@ export function FriendsSection({
   // Listen-along lives here so the ask sits on the friend who is playing. Null
   // outside the player's provider, which is where a signed-out list renders.
   const jam = useJamOptional();
+  // Who among these friends has a room open. The mark wears it, so the list
+  // says "walk in" where it used to say only "here".
+  const hostingHandles = useMemo(
+    () => new Set((jam?.friendJams ?? []).map((room) => room.hostName.toLowerCase())),
+    [jam?.friendJams],
+  );
   const [feed, setFeed] = useState<FriendsFeed | null>(null);
   // Why the feed is what it is: a registry that cannot be reached says so on
   // the page instead of leaving four skeleton rows "loading" forever.
@@ -631,7 +602,18 @@ export function FriendsSection({
                       loading="lazy"
                     />
                   )}
-                  <FriendAvatar handle={f.handle} size="md" className="friendRow__face" src={f.avatarUrl} />
+                  {/* The face, wearing what they are doing. One drawing of
+                      presence for the whole app - the row used to have its
+                      own, a green ring that said "online" and nothing else,
+                      and said it in a channel a third of readers cannot
+                      separate from the paused state beside it. */}
+                  <PresenceMark
+                    f={f}
+                    standing={standingOf(f, Date.now())}
+                    size="md"
+                    hosting={hostingHandles.has(f.handle.toLowerCase())}
+                    className="friendRow__face"
+                  />
                   <span className="friendRow__who">
                     <span className="friendRow__handle">{f.handle}</span>
                     <span className="friendRow__meta">

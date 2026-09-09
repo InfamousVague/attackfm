@@ -26,7 +26,8 @@ import { RANGES, dayToLocalMs, fmtAxisMinutes, fmtDayMs, fmtHour } from './stats
 import { formatNumber } from '../ux/format.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 import { ArtChip, Heading, RowArt } from './StatsBits.tsx';
-import { FriendAvatar, FriendStats } from './RegistryFriends.tsx';
+import { FriendAvatar } from './FriendAvatar.tsx';
+import { FriendStats } from './RegistryFriends.tsx';
 import { seenAgo } from './friendPresence.ts';
 import type { RegistryFriend } from '../servers/registry.ts';
 import { ArtistLink } from '../ux/ArtistLink.tsx';

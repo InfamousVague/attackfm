@@ -1,7 +1,7 @@
 import { Button, Drawer, Spinner, Text } from '@glacier/react';
 import { Check, Send } from '@glacier/icons';
 import { useEffect, useState } from 'react';
-import { FriendAvatar } from './RegistryFriends.tsx';
+import { FriendAvatar } from './FriendAvatar.tsx';
 import { fetchFriends, sendShare, type RegistryFriend } from '../servers/registry.ts';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { Trans, useT } from '../i18n/LocaleShell.tsx';

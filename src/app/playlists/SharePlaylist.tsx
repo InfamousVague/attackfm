@@ -11,7 +11,7 @@ import { useLibrary } from '../library/library.tsx';
 import { artSized } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 import { GlassSheet } from '../ux/GlassSheet.tsx';
-import { FriendAvatar } from '../profile/RegistryFriends.tsx';
+import { FriendAvatar } from '../profile/FriendAvatar.tsx';
 import { shoot } from '../widget/shot.ts';
 import { Trans, useSongCount, useT } from '../i18n/LocaleShell.tsx';
 import { formatNumber } from '../ux/format.ts';

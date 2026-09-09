@@ -34,7 +34,7 @@ import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { publishJamShare } from '../servers/registry.ts';
 import { ShareJamSheet } from './ShareJam.tsx';
 import { hostOf, jamQrDataUrl } from './jamShare.ts';
-import { FriendAvatar } from '../profile/RegistryFriends.tsx';
+import { FriendAvatar } from '../profile/FriendAvatar.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useRoomTrack, useRoomTracks } from './roomTrack.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';

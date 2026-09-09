@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { clearProfileLink, onProfileLink } from '../servers/deepLink.ts';
 import { fetchProfileCard, sendFriendRequest, type ProfileCard } from '../servers/registry.ts';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
-import { FriendAvatar } from './RegistryFriends.tsx';
+import { FriendAvatar } from './FriendAvatar.tsx';
 import { Trans, useT } from '../i18n/LocaleShell.tsx';
 
 /**
