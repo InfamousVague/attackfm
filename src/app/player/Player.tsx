@@ -1162,9 +1162,14 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * this reload is allowed to start the music. A recovery always was mid-play
    * by construction (`noteStall` stands down unless `wantPlaying`), so it
    * resumes; a change of SOUND can arrive at a deck the listener has put down,
-   * and re-colouring what is paused must leave it paused.
+   * and re-colouring what is paused must leave it paused. A RETRY has no
+   * intent of its own - it is the load that just failed, asked for again - so
+   * it inherits the one that load was carrying (see the assignment below).
    */
-  const resumeInPlace = async (toSeconds?: number, why: 'recovery' | 'sound' = 'recovery') => {
+  const resumeInPlace = async (
+    toSeconds?: number,
+    why: 'recovery' | 'sound' | 'retry' = 'recovery',
+  ) => {
     const audio = activeAudio();
     const current = liveRef.current.track;
     if (!audio || !current || remoteOnlyRef.current) return;
@@ -1265,11 +1270,25 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         { once: true },
       );
     }
-    // A recovery was always mid-playback, so it resumes. A seek is only a
-    // seek, and a change of SOUND is not a transport instruction at all: asked
-    // for while paused, either must land on the new source and stay there
-    // rather than start the music.
-    pendingPlay.current = asked || why === 'sound' ? wantPlaying.current : true;
+    /*
+     * A recovery was always mid-playback, so it resumes. A seek is only a
+     * seek, and a change of SOUND is not a transport instruction at all: asked
+     * for while paused, either must land on the new source and stay there
+     * rather than start the music.
+     *
+     * A RETRY asks for whatever the failed load was going to do, and
+     * `pendingPlay` is already that answer, still standing: `canplay` is the
+     * only thing that clears it and `canplay` is precisely what did not
+     * happen. So a re-colour that errors on a paused deck retries and lands
+     * paused, while a song the listener tapped whose FIRST load lost the
+     * network still starts when the retry lands - the load effect had set
+     * `pendingPlay` from `autoplay || engaged`, and that survives to here.
+     * `wantPlaying` is the other half of the inheritance, for a source that
+     * died mid-song: nothing is pending then, because the track started
+     * minutes ago, and the music must come back.
+     */
+    if (why === 'retry') pendingPlay.current = pendingPlay.current || wantPlaying.current;
+    else pendingPlay.current = asked || why === 'sound' ? wantPlaying.current : true;
     setActiveSrc(fresh);
   };
 
@@ -2223,7 +2242,25 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           recoverTimer.current = window.setTimeout(
             () => {
               recoverTimer.current = undefined;
-              void resumeInPlace();
+              /*
+               * As a RETRY, which lands the way the load that failed was going
+               * to. A bare call here says `recovery`, and `recovery` means
+               * "start the music" - so a filter tapped on a PAUSED deck whose
+               * reload lost the network (or, on a remote track, met the aged
+               * token the comment above is about) came back playing, on a deck
+               * the listener had put down. The re-colour door is the one that
+               * makes that reachable, and it is reachable from another device
+               * now that the console travels.
+               *
+               * Not gated on `wantPlaying` the way `noteStall` is, which would
+               * be the other way to say it: this ladder is also what heals the
+               * FIRST load of a song somebody just tapped, and `wantPlaying`
+               * is not true yet at that point - `canplay` is what sets it. A
+               * gate there would leave a tapped song silently unplayed, and
+               * leave a paused deck holding a dead source with the sound the
+               * console says is on never actually loaded.
+               */
+              void resumeInPlace(undefined, 'retry');
             },
             RETRY_BACKOFF_MS[resumeCount.current] ?? 4000,
           );

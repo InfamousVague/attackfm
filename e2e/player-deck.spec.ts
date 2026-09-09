@@ -497,6 +497,97 @@ test.describe('the sound console', () => {
     expect(Math.abs((await seekAt(seek)) - stopped)).toBeLessThan(3);
   });
 
+  test('a re-colour the network refuses is retried, and the paused deck stays down', async ({ page }) => {
+    /*
+     * The same listener and the same pause, with one connection lost on the way.
+     *
+     * A re-colour is a fetch, and a fetch can fail: a dropped connection, a hub
+     * restarted under it, or the aged stream token that arrives as an
+     * UNSUPPORTED SOURCE rather than as a network error (see `renewable` in
+     * Player.tsx's error handler, which was written for exactly that). All
+     * three land on the error ladder, and the ladder asks for the source again.
+     *
+     * That second ask is the whole scenario. It is not a new instruction from
+     * anybody - it is the re-colour, once more - so it has to land the way the
+     * re-colour would have landed: on a deck that is still paused. A retry that
+     * says "recovery" instead means "start the music", and the listener's
+     * evidence is a record that began playing itself a couple of seconds after
+     * they put it down and tapped a filter.
+     */
+    await openLibrary(page, DEVICE.kim);
+    await page.getByRole('button', { name: playAll, exact: true }).click();
+    await expect(nowPlaying(page)).toBeVisible();
+    const seek = nowPlaying(page).getByRole('slider', { name: 'Seek' });
+    await expect.poll(async () => seekAt(seek), { timeout: 15_000 }).toBeGreaterThan(1);
+
+    await nowPlaying(page).getByRole('button', { name: 'Pause' }).click();
+    await expect
+      .poll(async () => (await audioState(page)).every((el) => el.paused), { timeout: 10_000 })
+      .toBe(true);
+    const stopped = await seekAt(seek);
+
+    /*
+     * THE ORACLE, armed while the deck is down: `play` is the event an element
+     * raises when it starts, whoever started it and however briefly. A deck
+     * that starts itself cannot do it without firing this, and unlike reading
+     * `paused` at one instant it cannot be missed by looking a moment too late.
+     * Both decks are listened to - a crossfade owns two - and neither is
+     * replaced for the life of the page.
+     */
+    await page.evaluate(() => {
+      const w = window as unknown as { __afmStarted: number };
+      w.__afmStarted = 0;
+      for (const el of document.querySelectorAll('audio')) {
+        el.addEventListener('play', () => {
+          w.__afmStarted += 1;
+        });
+      }
+    });
+
+    // The first coloured stream is refused, and only the first: what is under
+    // test is the RETRY, so the ladder has to be allowed to succeed.
+    const asked: string[] = [];
+    await page.route(/\/api\/transcode\/.*fx2=/, async (route) => {
+      asked.push(route.request().url());
+      if (asked.length === 1) await route.abort('connectionfailed');
+      else await route.continue();
+    });
+
+    await openSoundConsole(page);
+    await tapFilter(page, 'Telephone');
+
+    // The scenario happened rather than being described: the coloured stream
+    // was asked for, lost, and asked for AGAIN. Counted by the reload nonce,
+    // so an element having another go at the same URL is not mistaken for the
+    // ladder having run.
+    const nonce = (url: string) => new URL(url).searchParams.get('r') ?? '';
+    await expect
+      .poll(() => new Set(asked.map(nonce)).size, { timeout: 30_000 })
+      .toBeGreaterThan(1);
+
+    // And the retry LANDED - bytes arrived and decoded past `canplay`, which
+    // is the exact moment at which a deck that is going to start itself does.
+    const decks = () =>
+      page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLAudioElement>('audio')).map((el) => ({
+          src: el.getAttribute('src') ?? '',
+          ready: el.readyState,
+        })),
+      );
+    await expect
+      .poll(async () => (await decks()).some((d) => d.src.includes('fx2=') && d.ready >= 3), {
+        timeout: 30_000,
+      })
+      .toBe(true);
+
+    // Nothing started. The three things a listener would notice, in the order
+    // they would notice them.
+    expect(await page.evaluate(() => (window as unknown as { __afmStarted: number }).__afmStarted)).toBe(0);
+    expect((await audioState(page)).every((el) => el.paused)).toBe(true);
+    expect((await systemNowPlaying(page)).state).not.toBe('playing');
+    expect(Math.abs((await seekAt(seek)) - stopped)).toBeLessThan(3);
+  });
+
   test('a speed filter keeps the place it was at, both on and off', async ({ page }) => {
     const encoded: string[] = [];
     page.on('request', (r) => {
