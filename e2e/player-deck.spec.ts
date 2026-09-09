@@ -609,9 +609,26 @@ test.describe('the sound console', () => {
      * as far in and jump the music backwards by half the song so far.
      */
     const barAtOn = await seekAt(seek);
+    /*
+     * WHICH encode - not "the last one". `encoded` catches every transcode the
+     * page makes, and the deck has other reasons to encode: the next track is
+     * prefetched, and the crossfade peeks ahead. Those ask for a file from its
+     * beginning, so they carry no `seek` param at all, and `seekOf` reads that
+     * as 0.
+     * Run alone this test is quick enough that the filter's request is always
+     * the most recent one; under a full parallel suite it is not, and the
+     * assertion read one of the others and failed on a zero the app never
+     * asked for. Measured: alone, the only request here is
+     * `{seek: "6.567", fx2: yes}` - the filter's own request always carries
+     * both, and nothing else has a reason to carry `fx2`. So name it by that
+     * rather than by its position. If the app stops making one, the poll times
+     * out, which is still a failure.
+     */
+    const filtered = () => encoded.filter((url) => url.includes('fx2='));
+    const before = filtered().length;
     await tapFilter(page, 'Half speed');
-    await expect.poll(() => encoded.length, { timeout: 25_000 }).toBeGreaterThan(0);
-    const askedFor = seekOf(encoded[encoded.length - 1]!);
+    await expect.poll(() => filtered().length, { timeout: 25_000 }).toBeGreaterThan(before);
+    const askedFor = seekOf(filtered().at(-1)!);
     expect(askedFor).toBeGreaterThan(barAtOn - 1);
     expect(askedFor).toBeLessThan(barAtOn + 4);
 
@@ -627,12 +644,21 @@ test.describe('the sound console', () => {
     const barAtOff = await seekAt(seek);
     await page.locator('.fxFilters__clear').click();
 
-    await expect
-      .poll(async () => (await audioState(page)).some((el) => !el.paused && !el.src.includes('fx2=')), {
-        timeout: 25_000,
-      })
-      .toBe(true);
-    const landed = Math.max(...(await audioState(page)).filter((el) => !el.paused).map((el) => el.at));
+    /*
+     * Playing and BACK WHERE THEY WERE are two moments, not one. The element
+     * is unpaused as soon as its source is set and seeked a frame or two
+     * later, so a single sample taken the instant the poll goes true reads 0 -
+     * which is what the full suite caught, running slower under parallel
+     * workers than this test does alone. Polling for the place as well closes
+     * that window without softening the bound: a deck that genuinely never
+     * seeks never leaves 0, so it times out here rather than passing.
+     */
+    const plainAt = async () => {
+      const live = (await audioState(page)).filter((el) => !el.paused && !el.src.includes('fx2='));
+      return live.length === 0 ? 0 : Math.max(...live.map((el) => el.at));
+    };
+    await expect.poll(plainAt, { timeout: 25_000 }).toBeGreaterThan(0);
+    const landed = await plainAt();
     expect(landed).toBeGreaterThan(barAtOff * 0.5 - 2);
     expect(landed).toBeLessThan(barAtOff * 0.75);
   });
