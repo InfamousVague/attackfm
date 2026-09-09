@@ -1,8 +1,10 @@
 /*! Friends, drawn as people.
  *!
- *! The presence MARK: a face wearing what its owner is doing.
+ *! Two things live here: the presence MARK, which is a face wearing what its
+ *! owner is doing, and the HERO, which is one friend at a time with the rest
+ *! as faces beneath them.
  *!
- *! It exists because presence in this app used to be colour and nothing
+ *! The mark exists because presence in this app used to be colour and nothing
  *! else - a green ring on the avatar for "online" and a green pulsing dot on
  *! the live line for "playing", both spelling the same hue in three
  *! hard-coded places (chunk 34). Two claims on one channel, and the pulse
@@ -85,4 +87,212 @@
 .presence__badge[data-standing='playing'] {
   color: var(--glacier-success-contrast);
   background: var(--presence-live);
+}
+
+/* --- the hero ------------------------------------------------------------ */
+
+.friendsHero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  /* Named, and queried by name below. The hero has to lay itself out against
+     the width it actually got, not the window's: the docked Now Playing column
+     takes a fixed slice off the content pane, so on a 1200px desktop with the
+     player open this card is nearer a tablet's width than a laptop's, and a
+     media query would put a two-column card into a one-column space. */
+  container-type: inline-size;
+  container-name: friendsHero;
+}
+
+.friendsHero__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  overflow: hidden;
+  padding: var(--glacier-space-4);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  /* The card holds its height across a turn. Without this the whole page
+     shifts every twenty seconds as one friend's week strip wraps and the
+     next one's does not, which is a page that will not sit still. */
+  min-block-size: 11rem;
+}
+
+.friendsHero__band {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  opacity: 0.4;
+}
+
+.friendsHero__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--glacier-gradient-scrim-2);
+  pointer-events: none;
+}
+
+.friendsHero__who,
+.friendsHero__week,
+.friendsHero__actions {
+  position: relative;
+}
+
+.friendsHero__who {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+/* minmax(0, 1fr), never a bare 1fr: `1fr` is `minmax(auto, 1fr)` and a long
+   song title would set the column's width from its own content and push the
+   face off the card. Chunk 13 already carries this scar. */
+.friendsHero__words {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.friendsHero__handle {
+  margin: 0;
+  font-weight: 700;
+  font-size: var(--glacier-font-size-lg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendsHero__line {
+  margin: 0;
+  min-inline-size: 0;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.friendsHero__line--quiet {
+  font-style: italic;
+}
+
+/* The live line is `NowPlayingLine`, borrowed whole from the friend row, and
+   the row draws it as an INLINE-flex box. An inline box is sized shrink-to-fit,
+   and shrink-to-fit never goes below min-content - which, for a line whose text
+   child is `white-space: nowrap`, is the entire untruncated title. So a German
+   title ran three hundred pixels past the card's edge and was merely HIDDEN by
+   the card's overflow: the sentence lost its end with no ellipsis to admit it,
+   and clipping is not truncating.
+   `min-inline-size: 0` alone cannot fix that - it governs how a flex ITEM
+   shrinks inside a container of known width, not how the container itself is
+   sized. The box has to become block-level first, so it takes the column's
+   width as given; then the item can shrink into it and ellipsise. */
+.friendsHero__line .friendRow__live {
+  display: flex;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.friendsHero__line .friendRow__liveText {
+  min-inline-size: 0;
+}
+
+/* A wrapping row of pills, not a three-column grid: a long label wraps to a
+   second line instead of ellipsising the number, and the number is the half
+   that matters. */
+.friendsHero__week {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.friendsHero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+  margin-block-start: auto;
+}
+
+/* Wide enough for a column: the face and words take the leading side and the
+   week and verbs sit beside them, so the hero is a card on a desktop rather
+   than a billboard. The docked Now Playing column already narrows the content
+   pane, so this crosses its breakpoint on its own. */
+@container friendsHero (min-width: 34rem) {
+  .friendsHero__card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'who   actions'
+      'week  actions';
+    align-items: start;
+  }
+
+  .friendsHero__who {
+    grid-area: who;
+  }
+
+  .friendsHero__week {
+    grid-area: week;
+  }
+
+  .friendsHero__actions {
+    grid-area: actions;
+    flex-direction: column;
+    align-items: stretch;
+    margin-block-start: 0;
+  }
+}
+
+/* --- the rail ------------------------------------------------------------ */
+
+.friendsRail__row {
+  display: flex;
+  gap: var(--glacier-space-3);
+  padding-block-end: 2px;
+}
+
+.friendChip {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  inline-size: 4.5rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* The seated friend, marked as the same person as the hero above rather than
+   a second one. Opacity alone would say "disabled"; the others are dimmed
+   instead, which says "not this one" without saying anything is wrong. */
+.friendChip:not([aria-current]) {
+  opacity: 0.55;
+}
+
+.friendChip:hover:not([aria-current]),
+.friendChip:focus-visible:not([aria-current]) {
+  opacity: 1;
+}
+
+.friendChip__handle {
+  inline-size: 100%;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  text-align: center;
+  overflow: hidden;
+  /* Truncated, never abbreviated to an initial: a cut-off name is still a
+     name, and an initial is a puzzle. */
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendChip[aria-current] .friendChip__handle {
+  color: var(--glacier-text);
+  font-weight: 650;
 }

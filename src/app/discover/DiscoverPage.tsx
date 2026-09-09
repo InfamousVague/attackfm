@@ -20,6 +20,7 @@ import { DiscoverFeedProvider, useDiscoverFeed } from '../home/DiscoverFeed.tsx'
 import { DiscoverHero } from './DiscoverHero.tsx';
 import { heroLead } from './heroLead.ts';
 import { MusicDateChip } from '../library/MusicDateChip.tsx';
+import { FriendsHero } from './FriendsHero.tsx';
 import { TrendingShelves } from './TrendingShelves.tsx';
 import { PeopleShelf } from './PeopleShelf.tsx';
 import { useT } from '../i18n/LocaleShell.tsx';
@@ -138,6 +139,12 @@ function DiscoverBody({
         <MusicDateChip mine={feed.auditions.mine} />
       </div>
 
+      {/* Who is about, one person at a time. Above the machine's shelves on
+          purpose: everything below this line was made for you by something
+          that is not a person, and a friend who is listening right now
+          outranks all of it. Renders nothing when the room is empty. */}
+      <FriendsHero onOpenFriends={onOpenFriends} />
+
       {/* What the curator MADE for you, the near half: the daylist (unless
           the hero took it) and the daily and mood mixes, feature first. The
           longer tail - made from your library, the stations - sits below the
@@ -153,7 +160,7 @@ function DiscoverBody({
       <NewMusicShelf onPlay={onPlay} />
 
       {/* The other people: friends listening now, a jam to join, Music Date. */}
-      <PeopleShelf onOpenFriends={onOpenFriends} />
+      <PeopleShelf />
 
       {/* The curator's longer tail: everything else it built from the
           library, and the stations. */}

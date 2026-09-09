@@ -1,52 +1,41 @@
-import { Flame, Headphones, Radio } from '@glacier/icons';
+import { Flame, Radio } from '@glacier/icons';
 import { useMemo } from 'react';
 import dateChip from '../../assets/chip-music-date.webp';
 import { Shelf } from '../home/homeCards.tsx';
 import { Trans, useT } from '../i18n/LocaleShell.tsx';
 import { useDiscoverFeed } from '../home/DiscoverFeed.tsx';
-import { useFriendsGlance } from '../profile/friendsGlance.ts';
-import { FriendAvatar } from '../profile/RegistryFriends.tsx';
-import { useRegistryOptional } from '../servers/registrySession.tsx';
+import { FriendAvatar } from '../profile/FriendAvatar.tsx';
 import { useJamOptional } from '../player/jam.tsx';
 import { musicDateDoorOpen, openMusicDate } from '../nav/musicDateDoor.ts';
 import { mosaicArts } from '../ux/artLoad.ts';
-import type { RegistryFriend } from '../servers/registry.ts';
 import type { Jam } from '../api/jams.ts';
 
 /**
- * People: the three ways this page is not only you and the machine.
+ * People: the ways this page is not only you and the machine.
  *
- * One card each, and each only when there is somebody behind the door -
- * friends who are listening right now (the registry's presence, read from
- * the poll the notification bell already runs), a groove a friend is hosting
- * (the groove provider's own poll), and Music Date, which is a room full of
- * strangers' songs. A card onto an empty room is worse than no card, so the
- * shelf is as short as the evening is quiet, and absent when nobody is about.
+ * One card each, and each only when there is somebody behind the door - a
+ * groove a friend is hosting (the groove provider's own poll), and Music
+ * Date, which is a room full of strangers' songs. A card onto an empty room
+ * is worse than no card, so the shelf is as short as the evening is quiet,
+ * and absent when nobody is about.
+ *
+ * Friends who are listening used to be a third card here, and it conflated
+ * two claims: it filtered on `online || nowPlaying?.playing` and then titled
+ * itself after the first match, so on a quiet evening the headline named a
+ * friend who had merely opened the app. They are now the hero above this
+ * shelf (`FriendsHero`), which keeps standing and presence apart and says
+ * which it means. Drawing them in both places would be the same evening
+ * announced twice.
  */
-export function PeopleShelf({
-  onOpenFriends,
-}: {
-  /** The Friends page - where the live card leads. */
-  onOpenFriends?: () => void;
-}) {
+export function PeopleShelf() {
   const { session, auditions } = useDiscoverFeed();
-  const registry = useRegistryOptional();
-  const friends = useFriendsGlance();
   const jam = useJamOptional();
   const t = useT();
 
-  // Online, or heard from with a song on: the registry's own two signals.
-  const live = useMemo(
-    () => friends.filter((f) => f.online || f.nowPlaying?.playing),
-    [friends],
-  );
   const room = jam?.friendJams[0] ?? null;
   const dateOpen = session !== null && musicDateDoorOpen();
 
   const cards: React.ReactNode[] = [];
-  if (registry?.session && live.length > 0) {
-    cards.push(<FriendsLiveCard key="friends" friends={live} onOpen={onOpenFriends} />);
-  }
   if (jam && room) {
     cards.push(<JamCard key="jam" jam={room} onJoin={() => void jam.join(room.id)} />);
   }
@@ -59,56 +48,6 @@ export function PeopleShelf({
     <Shelf title={t('discover.people')} count={cards.length}>
       {cards}
     </Shelf>
-  );
-}
-
-/** Friends hearing something right now: their faces, and what the first is on. */
-function FriendsLiveCard({ friends, onOpen }: { friends: RegistryFriend[]; onOpen?: () => void }) {
-  const t = useT();
-  const playing = friends.find((f) => f.nowPlaying?.playing) ?? friends[0]!;
-  const song = playing.nowPlaying;
-  const others = friends.length - 1;
-  return (
-    <button type="button" className="peopleCard" onClick={onOpen} disabled={!onOpen}>
-      <span className="peopleCard__face peopleCard__face--friends" aria-hidden>
-        {friends.slice(0, 4).map((f) => (
-          <FriendAvatar key={f.id} handle={f.handle} size="lg" src={f.avatarUrl ?? undefined} />
-        ))}
-        <span className="peopleCard__glyph">
-          <Headphones size={16} />
-        </span>
-      </span>
-      <span className="peopleCard__text">
-        <span className="peopleCard__title">
-          {/* One friend is named, several are counted - which is a plural
-              form, not two sentences: languages that count differently at two
-              or at eleven get to say so in the catalogue. */}
-          {t('discover.friendsLive', { count: friends.length, handle: playing.handle })}
-        </span>
-        <span className="peopleCard__blurb">
-          {/* One whole sentence per case rather than a line assembled here.
-              The handle, the song and the "+2 others" tail read in this order
-              in English and the separators between them are English
-              punctuation; a translator who only ever sees the pieces cannot
-              move either. `count` is the OTHERS, so a language with a dual
-              form gets to say "and two more" its own way. */}
-          {song?.playing
-            ? others > 0
-              ? t('discover.friendPlayingMore', {
-                  count: others,
-                  handle: playing.handle,
-                  title: song.title,
-                  artist: song.artist,
-                })
-              : t('discover.friendPlaying', {
-                  handle: playing.handle,
-                  title: song.title,
-                  artist: song.artist,
-                })
-            : t('discover.onlineNow')}
-        </span>
-      </span>
-    </button>
   );
 }
 
