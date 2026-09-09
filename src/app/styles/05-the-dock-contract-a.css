@@ -26,7 +26,10 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
    Shrinking the overlay re-scopes everything inside (panels size against the
    overlay), so one inset moves the whole family into the app's pane.
    The hashed selectors pin the current kit build; a rebuild that changes
-   them fails soft - overlays return to full-viewport, nothing breaks. */
+   them fails soft - overlays return to full-viewport, nothing breaks.
+   Three of these four names appear again in the band rule at the end of this
+   chapter, which covers the chrome ABOVE the card for the same overlays this
+   rule narrows; the two lists are one decision and want updating together. */
 body:has(.npScreen[data-docked]) div[class*='_overlay_1r4l3_'],
 body:has(.npScreen[data-docked]) div[class*='_overlay_1mvue_'],
 body:has(.npScreen[data-docked]) div[class*='_overlay_10yq3_'],
@@ -95,21 +98,73 @@ body:has(.npScreen[data-docked]) .djToast {
  * friend, Settings - and a real click on Settings opened a second takeover at
  * z 100 with the first still standing underneath.
  *
- * So the scrim grows the one rectangle it is missing. A pseudo-element,
- * because a box cannot be two rectangles; ON THE SCRIM rather than a fourth
+ * So the dimmer grows the one rectangle it is missing. A pseudo-element,
+ * because a box cannot be two rectangles; ON THE DIMMER rather than a fifth
  * element in the markup, because a pseudo hit-tests as its originator, so the
- * scrim's own onClick still closes the sheet when the press lands up there.
- * `background: inherit` keeps chapter 71's one alpha - two rectangles a shade
- * apart would read as two mechanisms. The gate is this chapter's, character
- * for character: undocked the scrim is `inset: 0` and already covers the
- * window, so an ungated band would paint a second 35% over the top strip.
+ * dimmer's own onClick still closes the takeover when the press lands up
+ * there. The gate is this chapter's, character for character: undocked these
+ * are all `inset: 0` and already cover the window, so an ungated band would
+ * paint a second dimming over the top strip.
+ *
+ * IT IS NOT ONE SCRIM, IT IS EVERY TAKEOVER DIMMER THIS CHAPTER NARROWS. Ours
+ * are two; the kit's Modal, Drawer and AlertDialog overlays are the other
+ * three, and they had the same hole for the same reason - measured at 1024x768
+ * docked with a kit Modal up, Notifications and Settings both hit-tested to
+ * themselves, lit, over a dimmed room. The list is the narrowing rule's list
+ * four rules above, minus two members that would gain nothing:
+ * `_viewport_1nbns_` is the toast portal, transparent and `pointer-events:
+ * none`, so a band there would inherit `rgba(0,0,0,0)` and swallow nothing;
+ * `_overlay_hk2xo_` is the kit CommandPalette, which this app never renders
+ * and this chapter does not narrow. The hashed names pin this kit build
+ * exactly as the narrowing rule's do, and fail the same way - no band, which
+ * is today's behaviour rather than a break.
+ *
+ * `background: inherit` was written for chapter 71's one alpha, and now it
+ * carries more than one: each band takes ITS OWN dimmer's background, so no
+ * band is ever a shade apart from the rectangle it extends - 35% black on our
+ * two, `--glacier-overlay` at 65% on the kit's three. That is the point of
+ * inheriting rather than naming a colour.
+ *
+ * `position: absolute`, AND THIS IS THE ONLY SUBTLE LINE HERE. The kit's
+ * overlays carry `backdrop-filter`, and a backdrop-filtered element is a
+ * containing block for FIXED descendants - so a `position: fixed` band inside
+ * one resolves against the overlay's OWN narrowed box instead of the viewport
+ * and lands 245.766px INSIDE the app column, over nothing, leaving both
+ * buttons lit. Measured, both ways, in one frame. `absolute` with
+ * `inset-inline: 100% auto` hangs the band off the dimmer's own inline-end
+ * edge whatever that edge is, and grows it outward by the dock's width. On our
+ * two scrims - fixed, unfiltered, therefore already a containing block for an
+ * absolute child - it computes the identical rectangle the fixed version
+ * computed (left 634.883px, top 0, 389.117 x 67.109, rgba(0,0,0,0.35)), which
+ * is what lets one rule serve all five.
+ *
+ * THE BAND IS LOGICAL AND MUST STAY LOGICAL; `right: 0` is the first thing the
+ * next reader will try and it is measurably worse. In RTL the whole contract
+ * mirrors - `.appBody`'s `padding-inline-end` puts the app's content
+ * physically right (measured: padding-left 389.12px, the rail at 824..1024)
+ * and the title bar's trailing pair mirrors with it, Notifications at cx 79.2
+ * and Settings at cx 33.1 - so the logical band lands on exactly those two and
+ * kills them. Forced physical in the same frame, the band jumps to 634.883 and
+ * both buttons go live again, over a double-dark corner where it now overlaps
+ * the scrim. The card alone stays physically right, because chapter 49 pins it
+ * with the `inset` shorthand; that mismatch is chapter 49's and the band must
+ * not be bent around it.
+ *
+ * ONE ABSENCE ON PURPOSE, in chapter 71's voice: the kit `Spotlight`
+ * (`_root_6qyoi_1`) is not in this list. The app never renders it, and its
+ * ring paints a 9999px spread over the whole window - so if it is ever
+ * adopted it belongs with Music Date, which keeps the whole screen, not with
+ * the takeovers that stop at the seam.
  */
 body:has(.npScreen[data-docked]) .glassSheet__scrim::after,
-body:has(.npScreen[data-docked]) .searchSummon__scrim::after {
+body:has(.npScreen[data-docked]) .searchSummon__scrim::after,
+body:has(.npScreen[data-docked]) div[class*='_overlay_1r4l3_']::after,
+body:has(.npScreen[data-docked]) div[class*='_overlay_1mvue_']::after,
+body:has(.npScreen[data-docked]) div[class*='_overlay_10yq3_']::after {
   content: '';
-  position: fixed;
+  position: absolute;
   inset-block: 0 auto;
-  inset-inline-end: 0;
+  inset-inline: 100% auto;
   inline-size: var(--np-dock-width);
   block-size: var(--np-dock-top);
   background: inherit;

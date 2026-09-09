@@ -24,11 +24,12 @@
      underneath rather than beside it. Measured at 52px and declared here. */
   --app-titlebar-height: 3.25rem;
   /* Where the dock's card starts: the title bar it hangs under, plus the
-     card's own top air. Named because the takeover scrims read it too - the
-     strip of the dock's column ABOVE this line is the app's own chrome, not
-     the card, and a scrim that stops at the seam has to cover it or leave
-     three lit buttons standing over a dimmed room (chapter 05). One number,
-     so the card's top and the scrim's band can never drift apart. */
+     card's own top air. Named because every takeover dimmer the dock contract
+     narrows reads it too - ours and the kit's alike - since the strip of the
+     dock's column ABOVE this line is the app's own chrome, not the card, and a
+     dimmer that stops at the seam has to cover it or leave lit buttons
+     standing over a dimmed room (chapter 05). One number, so the card's top
+     and the bands can never drift apart. */
   --np-dock-top: calc(
     max(var(--glacier-space-3), env(safe-area-inset-top, 0px)) + var(--app-titlebar-height, 0px)
   );
