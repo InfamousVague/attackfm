@@ -2,24 +2,10 @@ import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react
 import { BeatWave, type BeatWaveBeat } from './BeatWave.tsx';
 import { fireMicroTick, fireNativeHaptic } from '../core/haptics.ts';
 import { REDUCED_MOTION_QUERY } from '../ux/useReducedMotion.ts';
+import { settleVelocity, targetVelocity } from './discMotor.ts';
 
 /** One revolution every six seconds - the pace the old CSS keyframes set. */
 const FULL_DEG_PER_SEC = 360 / 6;
-
-/**
- * How fast the platter runs while the track is still loading, as a multiple of
- * playing speed. A real CD spins up long before the laser reads anything, and
- * that whirr is the machine telling you it is working - which is exactly what a
- * buffering strip has to say and usually says with a spinner nobody reads.
- *
- * Bounded at just under 3x: past that the printed art smears into a grey ring
- * and stops reading as a disc at all.
- */
-const SPOOL_RATE = 2.8;
-
-/** Milliseconds per unit of velocity while spooling up - so the run to
- *  SPOOL_RATE takes a bit over a second, long enough to read as a ramp. */
-const SPOOL_UP_MS = 420;
 
 /**
  * The flick: release the platter while it is moving fast and it FREEWHEELS -
@@ -65,11 +51,6 @@ const FLICK_SETTLED = 0.08;
 const CAPTURE_RANGE = 0.36;
 const CAPTURE_PULL = 0.55;
 
-/** And coming back down to playing speed, which is a drop rather than a ramp:
- *  the disc catches the track the moment there is one, the way a transport
- *  clamps to speed when the read head locks. */
-const SPOOL_SETTLE_MS = 150;
-
 /**
  * The player strip's artwork square, as a CD: the album art printed across
  * the whole disc face, a clear hub and spindle hole punched through it, and
@@ -81,8 +62,8 @@ const SPOOL_SETTLE_MS = 150;
  * platter does not stop on a frame: a pause brakes it to a standstill and a
  * play catches it back up to speed, over the same stretch the player's audio
  * ramp takes - press pause and the disc runs down exactly as the pitch does.
- * The ramp is linear in velocity, which is what constant friction does to a
- * real platter.
+ * What speed is asked for and how the platter gets there is discMotor's
+ * (it is the part worth testing); this file integrates the answer.
  *
  * Mostly presentational: the strip's TrackInfo square gives it its size, the
  * Player hands it the art, whether to turn, and how long the motor takes.
@@ -112,9 +93,10 @@ export function SpinningDisc({
   art: string | null;
   spinning: boolean;
   /**
-   * The track is loading. The platter runs up to SPOOL_RATE while this is
-   * true and drops back to playing speed the moment it clears - so the wait
-   * looks like a machine working rather than a UI stalling.
+   * The track is loading. The platter spins up to the spool rate - several
+   * times playing speed, a drive seeking - while this is true, and coasts
+   * back down to playing speed once it clears, so the wait looks like a
+   * machine working rather than a UI stalling.
    */
   spooling?: boolean;
   /**
@@ -182,10 +164,14 @@ export function SpinningDisc({
   params.current = { spinning, spooling, spinUpMs, spinDownMs, onScratch, onScratchEnd };
 
   useEffect(() => {
-    // Stillness asked for is stillness given: the disc holds its face. (This
-    // also disables the flick: with no loop there is nothing to freewheel, and
-    // the release path knows to fall back to a plain stop.)
-    if (window.matchMedia?.(REDUCED_MOTION_QUERY).matches) return;
+    // Stillness asked for is stillness given: the disc holds its face. The
+    // motor's answer to reduced motion is a standstill (targetVelocity says
+    // so), and not starting the loop is that answer applied once rather than
+    // sixty times a second. (It also disables the flick: with no loop there
+    // is nothing to freewheel, and the release path knows to fall back to a
+    // plain stop.)
+    const reducedMotion = window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false;
+    if (reducedMotion) return;
     cancelAnimationFrame(frame.current);
     last.current = performance.now();
     const tick = (now: number) => {
@@ -193,21 +179,9 @@ export function SpinningDisc({
       // rotation and release it as a spin-blur on the next frame.
       const dt = Math.min(0.1, (now - last.current) / 1000);
       last.current = now;
-      const { spinning: on, spooling: spool, spinUpMs: up, spinDownMs: down } = params.current;
-      // Loading outranks playing: the disc spins up while the bytes are still
-      // coming, whether or not sound has started.
-      const target = spool ? SPOOL_RATE : on ? 1 : 0;
-      const rising = velocity.current < target;
-      // Four different ramps, and which one applies is a question about the
-      // direction AND the destination: spooling up is its own slow build,
-      // coming DOWN to a still-turning speed is the fast catch, and coming
-      // down to zero is the ordinary brake the pause style bought.
-      const ms = rising ? (spool ? SPOOL_UP_MS : up) : target > 0 ? SPOOL_SETTLE_MS : down;
-      const step = ms <= 0 ? SPOOL_RATE : (dt * 1000) / ms;
-      velocity.current =
-        velocity.current < target
-          ? Math.min(target, velocity.current + step)
-          : Math.max(target, velocity.current - step);
+      const { spinning, spooling, spinUpMs, spinDownMs } = params.current;
+      const target = targetVelocity({ spinning, spooling, reducedMotion });
+      velocity.current = settleVelocity(velocity.current, target, dt, { spinUpMs, spinDownMs });
       if (scratching.current) {
         // Held. Bleed the motor to a stop so releasing does not fling it, and
         // leave the face exactly where the hand left it.
