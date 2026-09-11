@@ -15,6 +15,19 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.6.5
+
+- On a computer, a drawer is a panel rather than a wall: the search palette and
+  the share sheets take the room they were given instead of the whole window,
+  and they stop at the edge of the Now Playing card rather than lying across it.
+- Long lists in a drawer scroll to the end again instead of running off the
+  bottom of the screen.
+- While a drawer is open, the page behind it really is behind it - the dimmer
+  reaches the buttons along the top of the window, the selection bar dims with
+  the list it belongs to, and a menu left open no longer floats above it all.
+- Tab stays inside the search palette and cannot walk onto something you can no
+  longer point at. Closing it puts you back where you were typing.
+
 ## 0.6.4
 
 - Friends who are listening right now get a card at the top of Discover - one
