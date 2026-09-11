@@ -1,5 +1,6 @@
 import { clearEnhancers, nextEnhancer, primeEnhancers } from './smartShuffle.ts';
 import { useDesktopLayout } from '../ux/useDesktopLayout.ts';
+import { useSplitViewport } from '../ux/useSplitViewport.ts';
 
 import { trackIdFromPath } from '../server.ts';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -666,20 +667,40 @@ export function Player({
    * and it keeps the desktop and a sideways fold while letting anything held
    * upright have the whole width back.
    */
+  const sideways = useMediaQuery('(min-aspect-ratio: 1/1)');
   /*
-   * Wide enough for the split, which is now a question about THREE columns.
+   * Wide enough for the split - and that is TWO questions, one per shape.
    *
-   * 700px was the floor when the split was content + dock. The desktop nav is
-   * a full-height rail holding 12.5rem of that, so the old floor left a
-   * content pane narrower than the dock beside it. 60rem is the app's own
-   * desktop threshold (DESKTOP_SHAPE) - the same line everything else calls
-   * "past a phone" - and it leaves rail, content and dock each a workable
-   * share.
+   * On the desktop it is a question about THREE columns. 700px was the floor
+   * when the split was content + dock. The desktop nav is a full-height rail
+   * holding 12.5rem of that, so the old floor left a content pane narrower
+   * than the dock beside it. 60rem is the app's own desktop threshold
+   * (DESKTOP_SHAPE) - the same line everything else calls "past a phone" -
+   * and it leaves rail, content and dock each a workable share.
    *
-   * The aspect clause stays: a tall narrow window is not a desktop shape
-   * however wide it says it is, and a side pane in one is a column of nothing.
+   * Raising the floor to 60rem for the rail's sake was right for the rail
+   * and quietly took the split away from the one screen it was drawn for. An
+   * unfolded foldable is about 840px across - over the old 700, under the new
+   * 960 - and it wears the PHONE chrome (a thumb, no cursor, so no rail), so
+   * the rail's arithmetic never applied to it. It was left with a phone's
+   * full-screen sheet on a screen twice a phone's width. So the floor is the
+   * rail's only where the rail is; the phone shape asks the width-alone
+   * question in useSplitViewport, which is drawn to catch a fold and a tablet
+   * and miss every phone held upright.
+   *
+   * `deskShape` decides which floor applies rather than a third media query,
+   * because it is the same answer the shell already gave: whichever nav is
+   * standing is what the dock has to share the width with.
    */
-  const npWide = useMediaQuery('(min-width: 60rem) and (min-aspect-ratio: 1/1)');
+  const deskShape = useDesktopLayout();
+  const deskWide = useMediaQuery('(min-width: 60rem)');
+  const splitWide = useSplitViewport();
+  /*
+   * The aspect clause stays, for both: a tall narrow window is not a desktop
+   * shape however wide it says it is, and a side pane in one is a column of
+   * nothing. A fold held upright takes npBig's branch below instead.
+   */
+  const npWide = sideways && (deskShape ? deskWide : splitWide);
   /**
    * The desktop wears the same split as an unfolded foldable.
    *
@@ -721,7 +742,6 @@ export function Player({
   const npBig = useMediaQuery(
     '(min-width: 600px) and (min-height: 600px) and (max-aspect-ratio: 1/1)',
   );
-  const deskShape = useDesktopLayout();
   const sheetShape = mobileControls || deskShape;
   /*
    * The dock, folded away by hand.

@@ -112,3 +112,50 @@ body:has(.npScreen[data-docked]) .appWindow {
   visibility: hidden;
 }
 
+
+/*
+ * The split on the PHONE shape: an unfolded foldable, a tablet on its side.
+ *
+ * `useDesktopLayout` keeps a thumb-driven screen on the phone chrome however
+ * wide it is, and that is right - but the dock's rules above were written
+ * around the desktop's furniture, and a fold has none of it. Three things
+ * differ, and `.mobileHeader` is how the stylesheet knows which shape it is
+ * dressing: the header is rendered for every surface that is not the desktop
+ * and for nothing that is, so it is the phone shape's signature the way the
+ * title bar is the desktop's.
+ *
+ * THE COLUMN IS WIDER. 38vw was measured against what is left after a
+ * 12.5rem rail; with no rail the app has the whole width to share, so the
+ * dock takes 45vw - the app still keeps the wider half - floored at 22rem so
+ * the art and the transport have a phone's worth of room on the narrowest
+ * screen that splits (768px, where 45vw would be 346), and capped at 30rem
+ * so a desktop-sized touch window cannot build the ballroom the note at the
+ * top of this file is about.
+ *
+ * THERE IS NO TITLE BAR TO HANG UNDER. The desktop dock starts below the bar
+ * because the bar names the app and runs the whole way across; the phone's
+ * header is page chrome, not window chrome, and it steps aside with the rest
+ * of the page. The column takes the full height, which on a 700px-tall
+ * screen is the difference between the art reading as art and as a stamp.
+ */
+body:has(.mobileHeader) {
+  --np-dock-width: clamp(22rem, 45vw, 30rem);
+  --app-titlebar-height: 0px;
+}
+
+/*
+ * THE CHROME STEPS ASIDE. The body padding above shrinks `.appBody`, and the
+ * rail and the content live inside it - but the phone's header is a flex
+ * sibling above the body and the tab bar is absolute against the window, so
+ * both of them ran the full width and sat under the column: the header's
+ * settings cog behind the art, the bar's last two tabs behind the transport,
+ * and a "browseable left side" whose primary navigation was half covered.
+ * Each ends where the dock begins, by the same measure the body gives up.
+ */
+body:has(.npScreen[data-docked]) .mobileHeader {
+  margin-inline-end: var(--np-dock-width);
+}
+
+body:has(.npScreen[data-docked]) .appNavBar {
+  inset-inline-end: calc(var(--app-nav-inset) + var(--np-dock-width));
+}
