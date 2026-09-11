@@ -186,18 +186,33 @@ const pressPoint = (el: HTMLElement, within?: HTMLElement): [number, number] | n
  * closes a popover whose trigger a takeover has covered. One reachability
  * predicate for both channels, or the day somebody tightens one of them the
  * keyboard and the pointer start disagreeing about what is reachable, which is
- * the exact failure this file exists to end.
+ * the exact failure this file exists to end. That file asks it a THIRD time,
+ * of somewhere to put focus: the kit focuses a popover's panel as it mounts
+ * and restores nothing when something else closes it, so the gate hands focus
+ * back to whoever held it - but only if this predicate still says a finger
+ * could land there, and otherwise to the document, where the `at === -1`
+ * branch in the handler below picks the next Tab up.
  *
  * `own` is the one layer a caller may declare is not in its way, and it exists
  * for exactly one caller: a popover asking about its OWN trigger, while its
  * OWN panel is on screen. The kit anchors the panel beside the trigger and at
  * the bell it clears it entirely (measured at 1280x720: trigger
- * `1181.664,7.5,36x36`, panel `860.476,55.734,357.025x180.106`) - but a
- * trigger with no room below it would get a panel over itself, and a rule that
- * read that as "covered" would close every popover the instant it opened. It
- * is a hit test, not a z-index comparison, so this stays a statement about
- * what is painted at that point and nothing else. The keyboard side passes
- * nothing and is unchanged.
+ * `1181.664,7.5,36x36`, panel `860.476,55.734,357.025x180.106`), but the kit
+ * places the panel and nothing here promises it always clears: a trigger with
+ * no room around it could get a panel over itself, and a rule that read that
+ * as "covered" would close such a popover on the first layer that moved. No
+ * site in this app produces one - driven at 1280x200 and 1280x110 the kit
+ * clamped the panel and then overflowed the viewport rather than flipping it
+ * over the trigger - so this argument is written from the rule the caller
+ * needs, not from a shape that has been observed. And it cuts both ways, which
+ * is the honest half: were such a panel ever to exist it would ALSO survive a
+ * takeover, because the hit at its trigger would be the panel (inline z 200)
+ * rather than the overlay (z 100), and `own.contains(hit)` is unconditional.
+ * That trade is deliberate - a popover that can never open is worse than one
+ * that outlives a dimmer - but it is the price, and it is written down here
+ * rather than discovered. It is a hit test, not a z-index comparison, so this
+ * stays a statement about what is painted at that point and nothing else. The
+ * keyboard side passes nothing and is unchanged.
  */
 export const underNothing = (el: HTMLElement, own?: HTMLElement | null) => {
   const at = pressPoint(el);
