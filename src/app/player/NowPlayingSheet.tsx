@@ -25,7 +25,7 @@ import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import { Popover } from '../ux/Popover.tsx';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, ChevronLeft, ChevronRight, Gauge, Heart, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Send, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Users, Volume2 } from '@glacier/icons';
+import { AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, ChevronLeft, ChevronRight, Gauge, Heart, ListMusic, ListPlus, MicOff, MicVocal, Pause, Play, Repeat, Share2, Shuffle, SkipBack, SkipForward, Sparkles, TableOfContents, Trash2, Users, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { SMART_SHUFFLE_LABEL_KEY } from './smartShuffle.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
@@ -1968,10 +1968,14 @@ export function NowPlayingSheet({
             for. Here it is one reach from the title it acts on, beside the
             other thing you DO to a song.
 
-            A paper plane, not the chrome's share glyph, because it is not the
-            same verb: that one hands out your server, this one hands over a
-            song - and it is already the glyph the song's own menu uses for
-            this exact drawer.
+            The three-node share glyph - the one the profile card's Share
+            button wears - by request. It drew a paper plane for a while, on
+            the argument that handing over a song is a different verb from
+            the chrome's share, which hands out your server. It is, but a
+            silhouette does not carry a verb; the accessible name does, and
+            what a listener brings to a glyph is what it meant the last place
+            they saw it. Share looks like this on the profile, so share looks
+            like this here, and the label says what travels.
 
             LEFT of the heart, so the heart stays the row's end-stop: it is
             the control a thumb reaches for without looking, and it must not
@@ -1986,7 +1990,7 @@ export function NowPlayingSheet({
             aria-label={t('player.sendToFriend')}
             onClick={() => setSending(track)}
           >
-            <Send size={20} />
+            <Share2 size={20} />
           </IconButton>
         )}
         {!following && (

@@ -112,6 +112,11 @@ test('the song playing reaches a friend’s inbox on another account', async ({ 
   await expect(page.locator('.npScreen__actions .npScreen__send')).toHaveCount(0);
   // And ONE share affordance on this screen, not two.
   await expect(page.getByRole('button', { name: 'Send to a friend', exact: true })).toHaveCount(1);
+  // WHAT IT LOOKS LIKE: the three-node share glyph the profile card's Share
+  // button wears, not a paper plane. The icon set stamps its own name on the
+  // svg, which is the one thing about the drawing a test can read back.
+  await expect(sendSeat(page).locator('svg.lucide-share-2')).toHaveCount(1);
+  await expect(sendSeat(page).locator('svg.lucide-send')).toHaveCount(0);
 
   const title = (await nowPlaying(page).locator('.npScreen__title').first().innerText()).trim();
   await sendSeat(page).click();
