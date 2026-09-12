@@ -565,13 +565,13 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         const tracks = [
           ...new Set(paths.map(trackIdFromPath).filter((t): t is number => t !== null)),
         ];
-        const id = await createRemotePlaylist(session, trimmed, tracks);
-        // The folder goes on BEFORE the list is shown anywhere. The create
-        // route takes a name and songs only, so the folder is a second write
-        // - and until it lands the list is, to every music surface, an
-        // ordinary playlist. Filed first, settled second: nothing draws a
-        // book collection as a music list even for the one render between.
         const folder = opts.folder?.trim() || '';
+        // The folder rides the create: a hub from 0.1.96 files the list there in
+        // the same request, so no other device polling in between can see a
+        // book collection as a music playlist. An older hub ignores the field,
+        // so the folder is ALSO written after - and before the list is shown
+        // anywhere here: filed first, settled second.
+        const id = await createRemotePlaylist(session, trimmed, tracks, folder || undefined);
         if (folder) {
           try {
             await updateRemotePlaylist(session, id, { folder });

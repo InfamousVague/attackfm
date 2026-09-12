@@ -72,11 +72,15 @@ export async function createRemotePlaylist(
   session: ServerSession,
   name: string,
   tracks: number[] = [],
+  folder?: string,
 ): Promise<number> {
   const reply = await request<{ id: number }>(session.url, '/api/playlists', {
     method: 'POST',
     token: session.token,
-    body: JSON.stringify({ name, tracks }),
+    // The folder rides the create on a hub that files it there (a book
+    // collection must never be a music playlist, even between two requests);
+    // an older hub ignores the field, and the caller files it after.
+    body: JSON.stringify(folder ? { name, tracks, folder } : { name, tracks }),
   });
   return reply.id;
 }

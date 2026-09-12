@@ -838,6 +838,14 @@ pub async fn create_playlist(
     if let Some(tracks) = body.tracks {
         let _ = state.db.set_playlist_tracks(id, &tracks);
     }
+    // Filed where it was asked to be filed, in the same request. A book
+    // collection IS a playlist in the `Books` folder, and a list created
+    // folderless and filed by a second request is, for the moment between
+    // them, a music playlist on every device that polls - so the folder rides
+    // the create. A client that sends none gets what it always got.
+    if let Some(folder) = body.folder.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+        let _ = state.db.set_playlist_meta(id, None, Some(folder), None);
+    }
     Ok(Json(json!({ "id": id, "name": name })))
 }
 
