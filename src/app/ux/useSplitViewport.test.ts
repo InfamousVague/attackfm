@@ -40,15 +40,16 @@ afterEach(() => {
 });
 
 describe('useSplitViewport', () => {
-  it('asks about width alone - no pointer, no aspect', () => {
+  it('asks about room alone - no pointer, no aspect', () => {
     const { asked } = hinge(false);
     renderHook(() => useSplitViewport());
     expect(asked).toContain(SPLIT_SHAPE);
     expect(SPLIT_SHAPE).not.toMatch(/pointer|hover|aspect/);
-    // 48rem: over every phone in portrait, under every fold opened sideways
-    // and every tablet. The number is the decision; a change to it should
-    // have to change this line too.
-    expect(SPLIT_SHAPE).toBe('(min-width: 48rem)');
+    // 48rem across: over every phone in portrait, under every fold opened
+    // sideways and every tablet. 32rem down: over the fold (~700) and every
+    // tablet, under every phone held sideways (~420). The numbers are the
+    // decision; a change to either should have to change this line too.
+    expect(SPLIT_SHAPE).toBe('(min-width: 48rem) and (min-height: 32rem)');
   });
 
   it('follows the hinge live, both ways', () => {

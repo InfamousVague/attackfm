@@ -18,7 +18,7 @@ import {
   Heart,
   Users,
 } from '@glacier/icons';
-import { Send } from '@glacier/icons';
+import { Share2 } from '@glacier/icons';
 import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { SendToFriendDialog } from '../profile/SendToFriend.tsx';
@@ -224,7 +224,7 @@ export function TrackMenu({
   }
   // By name, to a friend's own hub - no file leaves this one.
   if (registry?.session) {
-    more.push({ key: 'send', icon: <Send size={15} />, label: t('library.sendToFriend'), run: () => setSending(true) });
+    more.push({ key: 'send', icon: <Share2 size={15} />, label: t('library.sendToFriend'), run: () => setSending(true) });
   }
   // An endless run in this song's direction. It plays first, and the station
   // keeps the queue fed behind it for as long as it is on - see radio.tsx.

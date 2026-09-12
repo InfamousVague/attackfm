@@ -40,6 +40,8 @@ test.use({ afmUser: 'ana' });
 const PHONE = { width: 390, height: 844 };
 /** A foldable's inner screen, open and sideways. */
 const FOLD = { width: 840, height: 700 };
+/** A big phone held sideways: wide enough to split, far too short to. */
+const PHONE_SIDEWAYS = { width: 915, height: 412 };
 /** Past 60rem with a fine pointer: the rail, the title bar, the desktop dock. */
 const DESKTOP = { width: 1280, height: 800 };
 
@@ -136,6 +138,31 @@ test.describe('a phone in portrait', () => {
     expect(f.sheet?.width).toBe(PHONE.width);
 
     await page.screenshot({ path: join(SHOTS, 'a-phone-portrait.png') });
+    await page.getByRole('button', { name: 'Close now playing' }).click();
+    await pauseHere(page);
+  });
+});
+
+test.describe('a phone held sideways', () => {
+  test.use({ viewport: PHONE_SIDEWAYS, isMobile: true, hasTouch: true });
+
+  test('keeps the whole-screen sheet - it is wide, but not tall enough for two rooms', async ({ page, world }) => {
+    await boot(page, world);
+    expect(await coarsePointer(page)).toBe(true);
+    await startTheMusic(page);
+
+    await page.locator('.playerBarShell').click({ position: { x: 100, y: 8 } });
+    await expect(nowPlaying(page)).toBeVisible();
+
+    // Past 48rem across, so width alone would have split it: a column a
+    // third of a 412px-tall screen is a stamp, not a player.
+    const f = await frame(page);
+    expect(f.viewport.width).toBe(PHONE_SIDEWAYS.width);
+    expect(f.open).toBe(true);
+    expect(f.docked).toBe(false);
+    expect(f.sheet?.width).toBe(PHONE_SIDEWAYS.width);
+
+    await page.screenshot({ path: join(SHOTS, 'a2-phone-sideways.png') });
     await page.getByRole('button', { name: 'Close now playing' }).click();
     await pauseHere(page);
   });
