@@ -657,8 +657,25 @@ test.describe('the sound console', () => {
       const live = (await audioState(page)).filter((el) => !el.paused && !el.src.includes('fx2='));
       return live.length === 0 ? 0 : Math.max(...live.map((el) => el.at));
     };
-    await expect.poll(plainAt, { timeout: 25_000 }).toBeGreaterThan(0);
-    const landed = await plainAt();
+    // Captured AS the poll succeeds, never re-read after it. The fixture's songs
+    // are 12-22 s and this scenario spends most of one: play past 5 s, tap the
+    // filter, wait out six more seconds of bar. The song can therefore END
+    // between the poll going true and a second read - and an ended deck is a
+    // paused deck with no live element, so `plainAt` answers 0 and the bound
+    // below fails on a number the app never produced. Same mistake as reading
+    // the wrong request above: a value is only true at the instant its condition
+    // was.
+    let landed = 0;
+    await expect
+      .poll(
+        async () => {
+          const at = await plainAt();
+          if (at > 0) landed = at;
+          return landed;
+        },
+        { timeout: 25_000 },
+      )
+      .toBeGreaterThan(0);
     expect(landed).toBeGreaterThan(barAtOff * 0.5 - 2);
     expect(landed).toBeLessThan(barAtOff * 0.75);
   });
