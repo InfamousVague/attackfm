@@ -43,6 +43,7 @@ import {
   useImportTargets,
 } from '../app/servers/importServer.ts';
 import { ImportServerPicker } from '../app/servers/ImportServerPicker.tsx';
+import { expectPlaylistLanding } from '../app/downloads/importLanding.ts';
 
 export const HOST_API_VERSION = 1;
 
@@ -111,6 +112,11 @@ export function installHostRuntime(): PluginHost {
         noteImportServerRejected,
         ImportServerPicker,
       },
+      // Where a pasted playlist link takes you. The importer's palette
+      // command enqueues a link and closes; the page the hub makes for a
+      // playlist is opened by core (ImportLanding) once the queue names it,
+      // and this is how the plugin says it is expecting that.
+      '@attackfm/app/importLanding': { expectPlaylistLanding },
     },
   };
   (globalThis as { __ATTACKFM_HOST__?: PluginHost }).__ATTACKFM_HOST__ = host;

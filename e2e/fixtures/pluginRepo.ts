@@ -210,6 +210,18 @@ export class PluginRepo {
     return listing;
   }
 
+  /**
+   * Publish a REAL built bundle, with the listing the builder wrote for it
+   * (`dist-plugins/index.json`) - bytes, hash and all. For the scenarios that
+   * are about what a shipped plugin does inside the app, where a stub bundle
+   * would only test the stub.
+   */
+  publishBundle(listing: StubListing & Record<string, unknown>, code: string): StubListing {
+    this.bundles.set(listing.entry, code);
+    this.listings.set(listing.id, listing);
+    return listing;
+  }
+
   /** Take a plugin off the shelf. A repository dropping one is NOT an uninstall. */
   withdraw(id: string): void {
     this.listings.delete(id);

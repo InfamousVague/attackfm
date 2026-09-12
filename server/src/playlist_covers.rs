@@ -66,17 +66,33 @@ pub async fn upload(
         Some(owner) if owner == caller.id => {}
         _ => return Err((StatusCode::NOT_FOUND, "no such playlist".to_string())),
     }
+    let name = store(&state, playlist_id, &body)?;
+    Ok(Json(json!({ "cover": name })))
+}
+
+/// Write image bytes in as a playlist's cover and point the row at the file.
+///
+/// The upload above is one caller; an import staging a playlist from a
+/// pasted link is the other, wearing the picture the source's page showed.
+/// Both go through the same sniff, the same size ceiling and the same
+/// temp-then-rename, so a picture fetched from a CDN is held to exactly what
+/// a person's own upload is. Returns the stored filename.
+pub(crate) fn store(
+    state: &AppState,
+    playlist_id: i64,
+    body: &[u8],
+) -> Result<String, (StatusCode, String)> {
     if body.len() > MAX_BYTES {
         return Err((StatusCode::PAYLOAD_TOO_LARGE, "that image is too big".into()));
     }
-    let Some(ext) = image_kind(&body) else {
+    let Some(ext) = image_kind(body) else {
         return Err((
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
             "covers must be a JPEG, PNG or WebP".to_string(),
         ));
     };
 
-    let dir = covers_dir(&state);
+    let dir = covers_dir(state);
     if let Err(e) = std::fs::create_dir_all(&dir) {
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
@@ -85,7 +101,7 @@ pub async fn upload(
     // PNG for a JPEG would leave the PNG serving forever under a stale row.
     let name = format!("{playlist_id}.{ext}");
     let tmp = dir.join(format!(".{playlist_id}.part"));
-    if let Err(e) = std::fs::write(&tmp, &body) {
+    if let Err(e) = std::fs::write(&tmp, body) {
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
     if let Err(e) = std::fs::rename(&tmp, dir.join(&name)) {
@@ -102,7 +118,7 @@ pub async fn upload(
         .db
         .set_playlist_meta(playlist_id, None, None, Some(&name))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(json!({ "cover": name })))
+    Ok(name)
 }
 
 /// Drop a playlist's cover, falling the tile back to its song mosaic.

@@ -2148,6 +2148,8 @@
     "theOwner": "el propietario",
     "thisSong": "esta canción",
     "tileFreshLabel": "{{name}}, nueva",
+    "wantDownloaded": "descargada — añadiéndola",
+    "wantMissing": "no se encontró esta canción",
     "whoHasThis": "Quién tiene esta lista",
     "whoHasThisMenu": "Quién la tiene…"
   },

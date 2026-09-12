@@ -168,6 +168,13 @@ interface PlaylistsContextValue {
   unshare?: (id: string, userId: number) => Promise<void>;
   /** Let yourself out of a list a friend shared with you. */
   leave?: (id: string) => Promise<void>;
+  /**
+   * Fetch the lists again, now. Server-only. For the moment a list is made
+   * somewhere other than here - the hub staging one from a pasted playlist
+   * link - and a page for it is about to be asked for: the heartbeat would
+   * bring it in half a minute, and a page opened before then steps back out.
+   */
+  refresh?: () => Promise<void>;
 }
 
 const PlaylistsContext = createContext<PlaylistsContextValue | null>(null);
@@ -815,6 +822,7 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         editSeq.current += 1;
         await refresh();
       },
+      refresh,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- metaFor() above reads the playlistMeta module store the rule cannot see; metaRev is the useSyncExternalStore tick that says it moved.
   }, [remote, others, session, mutate, refresh, metaRev, settle]);

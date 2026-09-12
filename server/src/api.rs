@@ -770,8 +770,19 @@ pub async fn playlists(State(state): State<Arc<AppState>>, headers: HeaderMap) -
                 .db
                 .playlist_wants_for(p.id)
                 .into_iter()
-                .map(|(k, title, artist, url, created_at)| {
-                    json!({ "k": k, "title": title, "artist": artist, "url": url, "createdAt": created_at })
+                .map(|(k, title, artist, url, created_at, failed)| {
+                    // `error` is null while the song is still expected and
+                    // the reason once the fetch that was meant to bring it
+                    // gave up - what lets the page stop the spinner and say
+                    // so, instead of waiting on a download nobody is running.
+                    json!({
+                        "k": k,
+                        "title": title,
+                        "artist": artist,
+                        "url": url,
+                        "createdAt": created_at,
+                        "error": if failed.is_empty() { serde_json::Value::Null } else { json!(failed) },
+                    })
                 })
                 .collect();
             json!({

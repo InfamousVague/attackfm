@@ -32,6 +32,7 @@ import { closeTopOverlay, useSystemBack } from './nav/systemBack.ts';
 import { installTapHaptics, useHapticsPref } from './core/haptics.ts';
 import { installOverlayGuard } from './core/overlayGuard.ts';
 import { DownloadNotices } from './notify/DownloadNotices.tsx';
+import { ImportLanding } from './downloads/ImportLanding.tsx';
 import { VerboseNotices } from './notify/VerboseNotices.tsx';
 import { FriendNotices } from './notify/FriendNotices.tsx';
 import { ShareNotices } from './notify/ShareNotices.tsx';
@@ -971,6 +972,11 @@ export function App() {
                 the toast provider, because that is where both halves are
                 reachable. */}
             <DownloadNotices />
+            {/* Where a pasted playlist link takes you: the page of the list
+                the hub staged for it. Same depth, same reasons, and inside
+                the playlists provider so the list is fetched before its page
+                is asked for. Headless. */}
+            <ImportLanding />
             {/* Same depth as DownloadNotices for the same reasons: inside the
                 plugin providers, under ToastProvider. Headless. */}
             <VerboseNotices />

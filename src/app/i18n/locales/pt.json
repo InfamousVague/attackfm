@@ -2148,6 +2148,8 @@
     "theOwner": "o dono",
     "thisSong": "esta música",
     "tileFreshLabel": "{{name}}, nova",
+    "wantDownloaded": "transferida — a adicionar",
+    "wantMissing": "não foi possível encontrar esta música",
     "whoHasThis": "Quem tem esta playlist",
     "whoHasThisMenu": "Quem a tem…"
   },

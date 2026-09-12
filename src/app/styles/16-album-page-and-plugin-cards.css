@@ -237,6 +237,13 @@
   mask: radial-gradient(circle closest-side, transparent 62%, #000 64%);
 }
 
+/* The mark where a ring would turn, for a song the fetch gave up on: the
+   row stops pretending motion and says so in the danger colour, and the X
+   beside it is a remove rather than a cancel. */
+.incomingCell__mark[data-failed] {
+  color: var(--glacier-danger-text);
+}
+
 /* The status line under an arriving song's name - "downloading", "waiting for
    its turn", or the reason a failed one can be retried. A shade quieter than a
    real artist line, because it is a state, not a name. */

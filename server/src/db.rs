@@ -2007,6 +2007,20 @@ impl Db {
                 conn.execute(&format!("ALTER TABLE playlists ADD COLUMN {decl}"), [])?;
             }
         }
+        // Why a want has not landed, when the fetch that was meant to bring
+        // it has given up. A want used to be a promise with only two ends -
+        // filed, or still waiting - and an import that could not find the
+        // song left it waiting forever, wearing a spinner over nothing. Same
+        // runtime ALTER as the playlist columns: the schema batch never
+        // re-runs on a deployed box.
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('playlist_wants')")?
+            .query_map([], |r| r.get(0))?
+            .filter_map(Result::ok)
+            .collect();
+        if !have.iter().any(|c| c == "failed") {
+            conn.execute("ALTER TABLE playlist_wants ADD COLUMN failed TEXT NOT NULL DEFAULT ''", [])?;
+        }
         // Which DEVICE a session belongs to, so one phone can be signed out of
         // one hub without every other device of the same person going with it.
         // Same runtime ALTER as above: the schema batch never re-runs on a
@@ -7389,7 +7403,8 @@ impl Db {
 
     /// Files a not-yet-owned song into a playlist. Idempotent per (playlist, k);
     /// a re-add refreshes the title/artist/url in case a later sighting knows
-    /// them better but does not disturb the created order.
+    /// them better but does not disturb the created order. It also clears a
+    /// failure mark: asking again is a fresh ask.
     pub fn playlist_want_put(
         &self,
         user_id: i64,
@@ -7403,30 +7418,57 @@ impl Db {
             "INSERT INTO playlist_wants (user_id, playlist_id, k, title, artist, url, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(playlist_id, k) DO UPDATE SET
-               title = excluded.title, artist = excluded.artist, url = excluded.url",
+               title = excluded.title, artist = excluded.artist, url = excluded.url,
+               failed = ''",
             params![user_id, playlist_id, k, title, artist, url, now_ms()],
         )?;
         Ok(())
     }
 
     /// One playlist's wants, oldest first (they were filed in an order):
-    /// (k, title, artist, url, created_at).
+    /// (k, title, artist, url, created_at, failed). `failed` is '' while the
+    /// want is still expected, and the reason once the fetch meant to bring
+    /// it has given up.
     pub fn playlist_wants_for(
         &self,
         playlist_id: i64,
-    ) -> Vec<(String, String, String, String, i64)> {
+    ) -> Vec<(String, String, String, String, i64, String)> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT k, title, artist, url, created_at FROM playlist_wants
-             WHERE playlist_id = ?1 ORDER BY created_at ASC",
+            "SELECT k, title, artist, url, created_at, failed FROM playlist_wants
+             WHERE playlist_id = ?1 ORDER BY created_at ASC, rowid ASC",
         ) else {
             return Vec::new();
         };
         stmt.query_map(params![playlist_id], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
         .unwrap_or_default()
+    }
+
+    /// The fetch that was meant to bring this want has given up, and this is
+    /// why. The want stays - the sweep's bounded retry still owes it a try,
+    /// and a later landing by any road still settles it - but the page can
+    /// stop drawing a spinner over it. A want already gone is a no-op.
+    pub fn playlist_want_fail(&self, playlist_id: i64, k: &str, why: &str) -> rusqlite::Result<()> {
+        let why: String = why.chars().take(600).collect();
+        self.lock().execute(
+            "UPDATE playlist_wants SET failed = ?3 WHERE playlist_id = ?1 AND k = ?2",
+            params![playlist_id, k, why],
+        )?;
+        Ok(())
+    }
+
+    /// Every failure mark on a list's wants, lifted - what a retried import
+    /// does before it runs again, so the rows go back to waiting rather than
+    /// reading as failed under a download that is happening.
+    pub fn playlist_wants_unfail(&self, playlist_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE playlist_wants SET failed = '' WHERE playlist_id = ?1 AND failed != ''",
+            params![playlist_id],
+        )?;
+        Ok(())
     }
 
     /// Every want across a user's playlists: (user_id, playlist_id, k, title,
@@ -13453,5 +13495,78 @@ mod playlist_activity {
         assert!(add(&s, s.ana, t));
         let n: i64 = s.db.lock().query_row("SELECT COUNT(*) FROM playlist_activity", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1, "the stale share is gone, the add remains");
+    }
+}
+
+#[cfg(test)]
+mod playlist_want_failures {
+    //! A want has three ends now, not two: filed, still waiting, and "the
+    //! fetch gave up, and here is why". The third is what an import that
+    //! could not find a song leaves behind, and it must survive the round
+    //! trip through the row without touching the want's place in the order.
+
+    fn db(name: &str) -> super::Db {
+        let dir = std::env::temp_dir().join(format!("afm-wantfail-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        super::Db::open(&dir.join("t.sqlite")).unwrap()
+    }
+
+    #[test]
+    fn a_failure_is_carried_and_a_re_add_clears_it() {
+        let db = db("mark");
+        let user = db.create_user("lister", "x", false).unwrap();
+        let list = db.create_playlist(user, "Imported").unwrap();
+        db.playlist_want_put(user, list, "a|first", "First", "A", "").unwrap();
+        db.playlist_want_put(user, list, "b|second", "Second", "B", "").unwrap();
+
+        let rows = db.playlist_wants_for(list);
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.5.is_empty()), "fresh wants carry no failure: {rows:?}");
+
+        db.playlist_want_fail(list, "b|second", "All providers failed").unwrap();
+        let rows = db.playlist_wants_for(list);
+        // The order is the filing order, failure or not.
+        assert_eq!(rows[0].0, "a|first");
+        assert_eq!(rows[1].0, "b|second");
+        assert_eq!(rows[0].5, "");
+        assert_eq!(rows[1].5, "All providers failed");
+
+        // Asking for the song again is a fresh ask: the mark goes.
+        db.playlist_want_put(user, list, "b|second", "Second", "B", "").unwrap();
+        assert_eq!(db.playlist_wants_for(list)[1].5, "");
+
+        // And a mark on a want that is not there marks nothing.
+        db.playlist_want_fail(list, "c|third", "nope").unwrap();
+        assert_eq!(db.playlist_wants_for(list).len(), 2);
+    }
+
+    #[test]
+    fn a_retry_lifts_every_mark_on_the_list_and_only_that_list() {
+        let db = db("unfail");
+        let user = db.create_user("lister", "x", false).unwrap();
+        let list = db.create_playlist(user, "One").unwrap();
+        let other = db.create_playlist(user, "Two").unwrap();
+        db.playlist_want_put(user, list, "a|x", "X", "A", "").unwrap();
+        db.playlist_want_put(user, list, "a|y", "Y", "A", "").unwrap();
+        db.playlist_want_put(user, other, "a|z", "Z", "A", "").unwrap();
+        db.playlist_want_fail(list, "a|x", "gone").unwrap();
+        db.playlist_want_fail(list, "a|y", "gone").unwrap();
+        db.playlist_want_fail(other, "a|z", "gone").unwrap();
+
+        db.playlist_wants_unfail(list).unwrap();
+        assert!(db.playlist_wants_for(list).iter().all(|r| r.5.is_empty()));
+        assert_eq!(db.playlist_wants_for(other)[0].5, "gone", "the other list keeps its mark");
+    }
+
+    #[test]
+    fn a_settled_want_is_gone_whatever_its_mark_said() {
+        let db = db("settle");
+        let user = db.create_user("lister", "x", false).unwrap();
+        let list = db.create_playlist(user, "One").unwrap();
+        db.playlist_want_put(user, list, "a|x", "X", "A", "").unwrap();
+        db.playlist_want_fail(list, "a|x", "gone").unwrap();
+        db.playlist_want_remove(list, "a|x").unwrap();
+        assert!(db.playlist_wants_for(list).is_empty());
     }
 }

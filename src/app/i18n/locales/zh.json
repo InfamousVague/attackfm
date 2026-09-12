@@ -1880,6 +1880,8 @@
     "theOwner": "所有者",
     "thisSong": "这首歌",
     "tileFreshLabel": "{{name}}，新",
+    "wantDownloaded": "已下载 — 正在加入",
+    "wantMissing": "找不到这首歌",
     "whoHasThis": "谁有这个歌单",
     "whoHasThisMenu": "谁有这个…"
   },

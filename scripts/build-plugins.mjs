@@ -56,6 +56,7 @@ const HOST_MODULES = new Set([
   '@attackfm/app/equalizer',
   '@attackfm/app/fxChain',
   '@attackfm/app/importServer',
+  '@attackfm/app/importLanding',
 ]);
 
 /**

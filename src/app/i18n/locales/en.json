@@ -2014,6 +2014,8 @@
     "theOwner": "the owner",
     "thisSong": "this song",
     "tileFreshLabel": "{{name}}, new",
+    "wantDownloaded": "downloaded — filing it in",
+    "wantMissing": "could not find this song",
     "whoHasThis": "Who has this playlist",
     "whoHasThisMenu": "Who has this…"
   },

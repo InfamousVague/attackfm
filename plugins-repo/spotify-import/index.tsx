@@ -15,6 +15,24 @@ import { SpotifyAccountSettings } from './SpotifyAccountSettings.tsx';
  * did. useDownloads resolves because this hook runs below the plugin's own
  * DownloadsProvider in the PluginProviders chain.
  */
+/**
+ * Where a pasted PLAYLIST link takes you: the page the hub stages for it.
+ *
+ * Looked up when the command runs, never imported. A bundle's host imports are
+ * resolved the moment it loads and a missing one throws, and this plugin is
+ * published with every hub deploy - so an app from before the seam existed
+ * (anything older than the release that added it, native builds included)
+ * would refuse to load the whole importer rather than go without one
+ * convenience. An app without the seam simply stays where it was, as before.
+ */
+function expectPlaylistLanding(link: string): void {
+  const host = (globalThis as { __ATTACKFM_HOST__?: { modules?: Record<string, unknown> } }).__ATTACKFM_HOST__;
+  const seam = host?.modules?.['@attackfm/app/importLanding'] as
+    | { expectPlaylistLanding?: (link: string) => void }
+    | undefined;
+  seam?.expectPlaylistLanding?.(link);
+}
+
 function useImportCommands({ query, close }: PaletteContext): readonly PluginCommand[] {
   // The hooks are called first, unconditionally, so the early returns below
   // can never change this instance's hook order.
@@ -37,6 +55,10 @@ function useImportCommands({ query, close }: PaletteContext): readonly PluginCom
       keywords: link,
       exclusive: true,
       run: () => {
+        // A playlist link becomes a playlist page; core takes you there once
+        // the hub has named it. Said before the enqueue, so a fast answer
+        // cannot arrive to nobody waiting.
+        expectPlaylistLanding(link);
         void enqueue(link);
         close();
       },
@@ -82,7 +104,7 @@ export const spotifyImport: Plugin = {
     'Downloads pasted Spotify, Apple Music, Tidal, Deezer, YT Music, and Qobuz links into the library.',
   icon: <Download size={22} />,
   author: 'AttackFM',
-  version: '1.6.0',
+  version: '1.7.0',
   tags: ['Importer', 'Downloads'],
   // The engine runs where the music lives. On a desktop that is the local
   // SpotiFLAC subprocess; signed into a server it is the hub, which downloads

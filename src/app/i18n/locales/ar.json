@@ -2550,6 +2550,8 @@
     "theOwner": "المالك",
     "thisSong": "هذه الأغنية",
     "tileFreshLabel": "{{name}}، جديدة",
+    "wantDownloaded": "تم التنزيل — جارٍ الإضافة",
+    "wantMissing": "تعذر العثور على هذه الأغنية",
     "whoHasThis": "من لديه هذه القائمة",
     "whoHasThisMenu": "من لديه هذه…"
   },

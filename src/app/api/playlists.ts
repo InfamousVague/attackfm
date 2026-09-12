@@ -54,6 +54,11 @@ export interface PlaylistWant {
   /** The catalogue link, when one was known when it was filed. '' otherwise. */
   url: string;
   createdAt: number;
+  /** Why it has not landed, once the fetch meant to bring it has given up -
+   *  the download's own words, or 'not found' when nothing could be found to
+   *  fetch. Null or absent while the song is still expected. The want stays
+   *  (the hub's sweep still owes it a retry) but the page can stop spinning. */
+  error?: string | null;
 }
 
 export async function fetchRemotePlaylists(session: ServerSession): Promise<RemotePlaylist[]> {

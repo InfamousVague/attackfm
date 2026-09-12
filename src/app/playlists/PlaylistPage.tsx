@@ -11,7 +11,7 @@ import {
   useToast,
 } from '@glacier/react';
 import { EdgeScrollRow } from '../ux/EdgeScrollRow.tsx';
-import { ArrowDownUp, AudioLines, Check, EllipsisVertical, FolderClosed, FolderOpen, FolderPlus, Image as ImageIcon, ListMusic, LogOut, Pencil, Play, Plus, Shuffle, Trash2, Users, X } from '@glacier/icons';
+import { ArrowDownUp, AudioLines, Check, CircleAlert, EllipsisVertical, FolderClosed, FolderOpen, FolderPlus, Image as ImageIcon, ListMusic, LogOut, Pencil, Play, Plus, Shuffle, Trash2, Users, X } from '@glacier/icons';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
@@ -42,6 +42,9 @@ import { markSharedSeen } from './sharedSeen.ts';
 import { dismissNotice } from '../notify/notices.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
+import { shortFailure } from '../library/incomingStatus.ts';
+import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
+import { NOT_FOUND, importJobFor, wantProgress } from './wantProgress.ts';
 import { setHeaderActions } from '../nav/headerActions.ts';
 import { useOfferShare } from '../nav/shareDoor.ts';
 import type { Track } from '../core/tauri.ts';
@@ -226,6 +229,15 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   );
   const wants = useMemo(() => playlist?.wants ?? [], [playlist]);
   const arriving = useMemo(() => wants.filter((w) => !ownedKeys.has(w.k)), [wants, ownedKeys]);
+  // The import bringing these, when the hub staged this list from a pasted
+  // link and its card is still in the queue: what lets each ghost say where
+  // its song actually is. Only the primary hub's own lists can have one; a
+  // list on another hub carries no wants at all.
+  const downloads = useDownloadsOptional();
+  const importJob = useMemo(
+    () => (playlist && !playlist.origin ? importJobFor(downloads?.jobs, playlist.id) : null),
+    [downloads?.jobs, playlist],
+  );
   // Reconcile the fast path: the moment a want's song is in the library, ask
   // the box to file it into this list rather than wait for its own sweep. The
   // key list is a stable string so this fires on a genuine landing, not every
@@ -421,29 +433,67 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
    */
   const wantGhosts = useMemo<GhostRow[]>(
     () =>
-      arriving.map((w) => ({
-        key: w.k,
-        title: w.title,
-        // Same join the download ghosts use, for the same reason: where the
-        // credit sits relative to the status is the translator's call.
-        note: w.artist
-          ? t('downloads.statusWithArtist', { artist: w.artist, status: t('playlists.onTheWay') })
-          : t('playlists.onTheWay'),
-        action: removeWant ? (
-          <button
-            type="button"
-            className="incomingCell__act"
-            aria-label={t('downloads.cancelTrack', { title: w.title })}
-            onClick={(e) => {
-              e.stopPropagation();
-              removeWant(playlistId!, w.k);
-            }}
-          >
-            <X size={15} />
-          </button>
-        ) : undefined,
-      })),
-    [arriving, removeWant, playlistId, t],
+      arriving.map((w) => {
+        // Where the song is, off the import bringing it - the same per-song
+        // reading the queue's card makes. A want the hub marked as lost says
+        // so in the hub's words, or in ours when it simply found nothing:
+        // a row that spins over a download nothing is running is the one
+        // thing this page must never show.
+        const p = wantProgress(w, importJob);
+        const status =
+          p.state === 'failed'
+            ? p.reason === NOT_FOUND || !p.reason
+              ? t('playlists.wantMissing')
+              : shortFailure(p.reason, t)
+            : p.state === 'downloaded'
+              ? t('playlists.wantDownloaded')
+              : p.state === 'downloading'
+                ? t('downloads.downloading')
+                : p.state === 'queued'
+                  ? t('downloads.waitingTurn')
+                  : t('playlists.onTheWay');
+        return {
+          key: w.k,
+          title: w.title,
+          // Same join the download ghosts use, for the same reason: where the
+          // credit sits relative to the status is the translator's call.
+          note: w.artist ? t('downloads.statusWithArtist', { artist: w.artist, status }) : status,
+          // The leading cell wears the state the way the library's arriving
+          // band does: a turning ring while the file comes down, a resting
+          // one for its turn in the queue, a full one once the file is here
+          // and only the filing remains, and a mark where the fetch gave up.
+          lead:
+            p.state === 'waiting' ? undefined : (
+              <span className="incomingCell__mark" data-failed={p.state === 'failed' || undefined} aria-hidden>
+                {p.state === 'failed' ? (
+                  <CircleAlert size={14} />
+                ) : p.state === 'downloaded' ? (
+                  <span className="incomingCell__ring" style={{ ['--p' as string]: '100%' }} />
+                ) : (
+                  <span className="artistAlbumSpin" data-still={p.state === 'queued' || undefined} />
+                )}
+              </span>
+            ),
+          action: removeWant ? (
+            <button
+              type="button"
+              className="incomingCell__act"
+              aria-label={
+                p.state === 'failed'
+                  ? t('playlists.removeTrack', { title: w.title })
+                  : t('downloads.cancelTrack', { title: w.title })
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                removeWant(playlistId!, w.k);
+              }}
+            >
+              <X size={15} />
+            </button>
+          ) : undefined,
+        };
+      }),
+    [arriving, importJob, removeWant, playlistId, t],
   );
 
   const playlistShape = useMemo<SongTableShape>(

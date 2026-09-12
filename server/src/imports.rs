@@ -198,6 +198,14 @@ pub struct ImportJob {
     /// clear for it, so a tap never waits behind the collector or a sync.
     #[serde(default)]
     pub now_playing: bool,
+    /// The playlist this import is filling, when it is a playlist link the
+    /// hub staged a list for up front: made the moment the listing was read,
+    /// one want per song, so the listener has a page to watch the songs land
+    /// on rather than a card in a queue. None for a single, an album, a link
+    /// whose listing never came, and every job from before the field existed
+    /// - those still get their list made at the end, the old way.
+    #[serde(default)]
+    pub playlist_id: Option<i64>,
 }
 
 pub struct ImportManager {
@@ -924,7 +932,17 @@ async fn file_into_playlist(state: &Arc<AppState>, job_id: &str) {
     // A list fetched for ANOTHER box (a peer's claim, origin "collector") is
     // that box's to make; here it would be a playlist under whoever this
     // box's owner is, for songs they never asked for.
-    if job.kind != "playlist" || job.owner <= 0 || job.state != "done" || job.origin == "collector" {
+    if job.kind != "playlist" || job.owner <= 0 || job.origin == "collector" {
+        return;
+    }
+    // A list staged up front already exists with its wants in it: this run's
+    // files settle those, in the order the source listed them, and whatever
+    // could not be found is marked so rather than left spinning.
+    if let Some(playlist_id) = job.playlist_id {
+        settle_staged_wants(state, &job, playlist_id);
+        return;
+    }
+    if job.state != "done" {
         return;
     }
     let mut ids: Vec<i64> = Vec::with_capacity(job.track_ids.len() + job.owned_track_ids.len());
@@ -957,6 +975,103 @@ async fn file_into_playlist(state: &Arc<AppState>, job_id: &str) {
     if let Err(e) = state.db.set_playlist_tracks(playlist_id, &ids) {
         eprintln!("[imports] could not fill playlist {name:?}: {e}");
     }
+}
+
+/// The end of a staged playlist import: every want the run brought a file
+/// for becomes a row, everything the library already held does too, and the
+/// rest are marked with why - a page must never spin over a song nothing is
+/// fetching any more.
+///
+/// The rows are appended in the WANTS' order, which is the source's running
+/// order, not the download's; that is the whole reason to know the listing
+/// before the first byte. Songs the run filed that the listing never named
+/// (a capped embed lists a hundred of a hundred and fifty) go on the end, so
+/// the list is still whole. Every append is `playlist_append_track` - the
+/// atomic, deduplicating single-row write - never a whole-list rewrite.
+fn settle_staged_wants(state: &Arc<AppState>, job: &ImportJob, playlist_id: i64) {
+    let identities = state.db.track_identities();
+    let mut landed: Vec<(i64, String, String)> = Vec::new();
+    for id in job.track_ids.iter().chain(job.owned_track_ids.iter()) {
+        if landed.iter().any(|(l, ..)| l == id) {
+            continue;
+        }
+        if let Some((_, artist, title, _)) = identities.iter().find(|(tid, ..)| tid == id) {
+            landed.push((*id, artist.clone(), title.clone()));
+        }
+    }
+    let wants: Vec<(String, String, String)> = state
+        .db
+        .playlist_wants_for(playlist_id)
+        .into_iter()
+        .map(|(k, title, artist, ..)| (k, title, artist))
+        .collect();
+    let (matched, unmatched) = match_wants_to_landed(&wants, &landed);
+    let mut filed: Vec<i64> = Vec::new();
+    for (k, id) in matched {
+        let _ = state.db.playlist_append_track(playlist_id, id);
+        let _ = state.db.playlist_want_remove(playlist_id, &k);
+        filed.push(id);
+    }
+    // A want this run did not bring may still be here by another road - a
+    // twin already in the library under a credit the listing spelt
+    // differently. The ordinary settle takes that; only what is truly absent
+    // is marked.
+    let finished = job.state == "done" || job.state == "error";
+    for k in unmatched {
+        if crate::collector::settle_want_now(state, job.owner, playlist_id, &k) {
+            continue;
+        }
+        if finished {
+            // A run that ended well and still did not bring this one found
+            // nothing to fetch: said in the one fixed word the client
+            // translates, rather than a sentence it would have to quote.
+            let why = match job.state.as_str() {
+                "error" => job.error.clone().unwrap_or_else(|| "The download failed.".to_string()),
+                _ => "not found".to_string(),
+            };
+            let _ = state.db.playlist_want_fail(playlist_id, &k, &why);
+        }
+    }
+    for (id, ..) in landed {
+        if !filed.contains(&id) {
+            let _ = state.db.playlist_append_track(playlist_id, id);
+        }
+    }
+}
+
+/// Which landed track each want is, by the identity the wants are keyed on:
+/// the exact credit first, the lead credit second - the same two looks the
+/// settle sweep gives a promised heart, for the same reason (a listing says
+/// "Czarface", the file says "CZARFACE, Frankie Pulitzer"). Each landed track
+/// answers for at most one want, so a list with the same song twice does not
+/// file one file twice. Returns the matches in the wants' order, then the
+/// keys nothing answered for.
+fn match_wants_to_landed(
+    wants: &[(String, String, String)],
+    landed: &[(i64, String, String)],
+) -> (Vec<(String, i64)>, Vec<String>) {
+    let mut taken: Vec<i64> = Vec::new();
+    let mut matched = Vec::new();
+    let mut unmatched = Vec::new();
+    for (k, title, artist) in wants {
+        let lead = crate::discovery::lead_key(artist, title);
+        let hit = landed
+            .iter()
+            .find(|(id, a, t)| !taken.contains(id) && crate::discovery::key_of(a, t) == *k)
+            .or_else(|| {
+                landed
+                    .iter()
+                    .find(|(id, a, t)| !taken.contains(id) && crate::discovery::lead_key(a, t) == lead)
+            });
+        match hit {
+            Some((id, ..)) => {
+                taken.push(*id);
+                matched.push((k.clone(), *id));
+            }
+            None => unmatched.push(k.clone()),
+        }
+    }
+    (matched, unmatched)
 }
 
 /// Frees an in-flight slot and wakes the scheduler when a job task ends -
@@ -1500,6 +1615,7 @@ pub async fn enqueue_internal(
         via: via.to_string(),
         // Server-raised (collector, sync): a background add, never a tap.
         now_playing: false,
+        playlist_id: None,
     };
     let id = job.id.clone();
     state.imports.jobs.lock().await.push(job);
@@ -1605,6 +1721,8 @@ pub(crate) async fn fail_delegated(state: &Arc<AppState>, job_id: &str, why: &st
         track_id: None,
         detail: None,
     });
+    // The list staged for it, if any, learns its wants are not coming.
+    file_into_playlist(state, job_id).await;
 }
 
 /// How recently a download box must have claimed work for a pasted link to
@@ -1697,6 +1815,7 @@ pub async fn enqueue(
         // Only a tapped single song is now-playing; the client sets it, and
         // detect_kind must agree it is a track for the flag to matter.
         now_playing: body.now_playing && is_song_kind(kind),
+        playlist_id: None,
     };
     {
         let mut jobs = state.imports.jobs.lock().await;
@@ -1732,46 +1851,199 @@ pub async fn enqueue(
         }
     }
 
-    // Best-effort pretty metadata; the queue never waits on Spotify.
-    let meta_state = Arc::clone(&state);
-    let meta_id = job.id.clone();
-    let meta_kind = kind.to_string();
-    let meta_owner = caller.id;
-    tokio::spawn(async move {
-        if let Some(meta) = fetch_embed_meta(&url, &meta_kind).await {
-            let expected: Vec<(String, String)> =
-                meta.items.iter().map(|i| (i.artist.clone(), i.title.clone())).collect();
-            meta_state
-                .imports
-                .update(&meta_id, |j| {
-                    j.title = meta.name;
-                    j.artwork_url = meta.cover;
-                    if j.total.is_none() {
-                        j.total = meta.total;
-                    }
-                    j.tracks = meta.titles;
-                    j.items = meta.items;
-                })
-                .await;
-            meta_state.imports.flush().await;
-            // A delegated link whose every song is already here needs no
-            // download box at all: the card is finished on the spot and the
-            // offer withdrawn - while nobody has taken it. (Taken means the
-            // peer is fetching; its own presence report finishes the card.)
-            if delegate && !expected.is_empty() {
-                let held = crate::collector::held_track_ids(&meta_state, &expected);
-                if held.len() >= expected.len() {
-                    if let Ok(pull) = meta_state.db.pull_id_for(meta_owner, &delegated_ext_id(&meta_id)) {
-                        if meta_state.db.forget_offered_pull(pull).unwrap_or(false) {
-                            land_delegated(&meta_state, &meta_id, &held).await;
-                        }
+    // Best-effort pretty metadata; the QUEUE never waits on Spotify - the job
+    // is already pushed and the scheduler poked. The RESPONSE waits for a
+    // playlist link, briefly: what it carries back is the id of the list the
+    // hub just staged, and the one thing the person who pasted a playlist
+    // wants next is to be taken to it. A single or an album is done before
+    // anyone would look, so those answer at once as they always did.
+    let meta = MetaTask { state: Arc::clone(&state), id: job.id.clone(), kind: kind.to_string(), owner: caller.id, delegate, url };
+    if kind == "playlist" {
+        match tokio::time::timeout(PLAYLIST_META_WAIT, fetch_embed_meta(&meta.url, &meta.kind)).await {
+            Ok(fetched) => {
+                meta.take(fetched).await;
+                let staged = {
+                    let jobs = state.imports.jobs.lock().await;
+                    jobs.iter().find(|j| j.id == job.id).cloned()
+                };
+                return Ok(Json(staged.unwrap_or(job)));
+            }
+            Err(_) => {
+                // Slow, not absent: keep waiting in the background so the
+                // list is still staged when the page finally answers, and
+                // the client sees it on a later poll.
+                tokio::spawn(async move {
+                    let fetched = fetch_embed_meta(&meta.url, &meta.kind).await;
+                    meta.take(fetched).await;
+                });
+            }
+        }
+    } else {
+        tokio::spawn(async move {
+            let fetched = fetch_embed_meta(&meta.url, &meta.kind).await;
+            meta.take(fetched).await;
+        });
+    }
+
+    Ok(Json(job))
+}
+
+/// How long a playlist enqueue holds its response for the listing. The embed
+/// page usually answers inside a second or two; past this the response goes
+/// back without a playlist id and the staging finishes behind it.
+const PLAYLIST_META_WAIT: Duration = Duration::from_secs(8);
+
+/// Everything the embed-metadata step needs to know about the job it is
+/// decorating, gathered so the same step can run inline (a playlist link,
+/// whose response waits) or spawned (everything else, and a slow listing).
+struct MetaTask {
+    state: Arc<AppState>,
+    id: String,
+    kind: String,
+    owner: i64,
+    delegate: bool,
+    url: String,
+}
+
+impl MetaTask {
+    /// Wear the listing, then act on it: a playlist link becomes a staged
+    /// playlist with a want per song, and a delegated link whose every song is
+    /// already here is finished on the spot.
+    async fn take(&self, meta: Option<EmbedMeta>) {
+        let Some(meta) = meta else { return };
+        let expected: Vec<(String, String)> =
+            meta.items.iter().map(|i| (i.artist.clone(), i.title.clone())).collect();
+        self.state
+            .imports
+            .update(&self.id, |j| {
+                j.title = meta.name;
+                j.artwork_url = meta.cover;
+                if j.total.is_none() {
+                    j.total = meta.total;
+                }
+                j.tracks = meta.titles;
+                j.items = meta.items;
+            })
+            .await;
+        self.state.imports.flush().await;
+        if self.kind == "playlist" {
+            stage_playlist(&self.state, &self.id).await;
+        }
+        // A delegated link whose every song is already here needs no
+        // download box at all: the card is finished on the spot and the
+        // offer withdrawn - while nobody has taken it. (Taken means the
+        // peer is fetching; its own presence report finishes the card.)
+        if self.delegate && !expected.is_empty() {
+            let held = crate::collector::held_track_ids(&self.state, &expected);
+            if held.len() >= expected.len() {
+                if let Ok(pull) = self.state.db.pull_id_for(self.owner, &delegated_ext_id(&self.id)) {
+                    if self.state.db.forget_offered_pull(pull).unwrap_or(false) {
+                        land_delegated(&self.state, &self.id, &held).await;
                     }
                 }
             }
         }
-    });
+    }
+}
 
-    Ok(Json(job))
+/// How long the hub gives the source's CDN for the cover it is about to wear.
+const COVER_FETCH_WAIT: Duration = Duration::from_secs(10);
+
+/// A playlist link becomes a playlist NOW, not when the last song lands.
+///
+/// The list is made the moment its listing is read - the source's name, the
+/// source's picture, and one want per song - so that importing a playlist is
+/// importing a PLAYLIST: a page you are taken to, with a row per song that
+/// says where each one is, rather than a card in a queue that turns into a
+/// list some minutes later with no word in between. The wants are the same
+/// plan-to-acquire members a song filed by hand becomes, so the page needs
+/// no second machinery: a song this box already owns is filed at once with
+/// no ghost, and the rest wait for the download this job IS. Nothing here
+/// raises a second fetch per want - `file_into_playlist` settles them when
+/// this job's own files land.
+///
+/// Only for a job that knows who raised it, and never for a list fetched on
+/// another box's behalf (origin "collector"): that list is the other box's
+/// to make. Re-importing a link refills the list of the same name rather
+/// than standing a second one beside it, which is what the end-of-job path
+/// always did.
+async fn stage_playlist(state: &Arc<AppState>, job_id: &str) {
+    let job = {
+        let jobs = state.imports.jobs.lock().await;
+        let Some(j) = jobs.iter().find(|j| j.id == job_id) else { return };
+        j.clone()
+    };
+    if job.kind != "playlist" || job.owner <= 0 || job.origin == "collector" || job.playlist_id.is_some() {
+        return;
+    }
+    if job.items.iter().all(|i| i.title.trim().is_empty() || i.artist.trim().is_empty()) {
+        // A listing with no names in it stages nothing; the end-of-job path
+        // still makes the list from whatever files arrive.
+        return;
+    }
+    let name = if job.title.trim().is_empty() { "Imported playlist" } else { job.title.trim() };
+    let existing = state
+        .db
+        .playlists(job.owner)
+        .into_iter()
+        .find(|p| p.name == name && p.role == "owner")
+        .map(|p| (p.id, p.cover));
+    let (playlist_id, has_cover) = match existing {
+        Some((id, cover)) => (id, !cover.is_empty()),
+        None => match state.db.create_playlist(job.owner, name) {
+            Ok(id) => (id, false),
+            Err(e) => {
+                eprintln!("[imports] could not stage a playlist for {name:?}: {e}");
+                return;
+            }
+        },
+    };
+    for item in &job.items {
+        let (title, artist) = (item.title.trim(), item.artist.trim());
+        if title.is_empty() || artist.is_empty() {
+            continue;
+        }
+        let k = crate::discovery::key_of(artist, title);
+        if let Err(e) = state.db.playlist_want_put(job.owner, playlist_id, &k, title, artist, "") {
+            eprintln!("[imports] could not file a want into {name:?}: {e}");
+            continue;
+        }
+        // Already here? Then it is a row, not a ghost.
+        crate::collector::settle_want_now(state, job.owner, playlist_id, &k);
+    }
+    state.imports.update(job_id, |j| j.playlist_id = Some(playlist_id)).await;
+    state.imports.flush().await;
+    // The picture last, and only onto a list that has none: a cover somebody
+    // chose by hand outranks the source's, and a slow CDN must not hold the
+    // wants back. Failure here costs the picture and nothing else.
+    if !has_cover {
+        if let Some(cover) = job.artwork_url.as_deref() {
+            if let Some(bytes) = fetch_cover_bytes(cover).await {
+                if let Err((_, why)) = crate::playlist_covers::store(state, playlist_id, &bytes) {
+                    eprintln!("[imports] the cover for {name:?} did not take: {why}");
+                }
+            }
+        }
+    }
+}
+
+/// The source's cover, as bytes, or None for anything that is not a picture
+/// the cover store would keep. Bounded in time and in size, since this is a
+/// URL read off a page the hub did not write.
+async fn fetch_cover_bytes(url: &str) -> Option<Vec<u8>> {
+    if !url.starts_with("https://") {
+        return None;
+    }
+    let client = reqwest::Client::builder().timeout(COVER_FETCH_WAIT).build().ok()?;
+    let reply = client.get(url).header("User-Agent", EMBED_UA).send().await.ok()?;
+    if !reply.status().is_success() {
+        return None;
+    }
+    let bytes = reply.bytes().await.ok()?;
+    if bytes.is_empty() || bytes.len() > 4 * 1024 * 1024 {
+        return None;
+    }
+    Some(bytes.to_vec())
 }
 
 /// `POST /api/imports/{id}/cancel`
@@ -1817,6 +2089,10 @@ pub async fn cancel(
             })
             .await;
         state.imports.flush().await;
+        // A staged playlist's wants hear about it too, or they wait on a
+        // download that is never going to run. (A RUNNING job's cancel goes
+        // through the worker's own error path, which already tells them.)
+        file_into_playlist(&state, &id).await;
     }
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -1869,6 +2145,7 @@ pub async fn retry(
             _ => return Err((StatusCode::FORBIDDEN, no_downloader_here())),
         }
     }
+    let mut staged: Option<i64> = None;
     state
         .imports
         .update(&id, |j| {
@@ -1880,9 +2157,15 @@ pub async fn retry(
                 j.current_index = None;
                 j.files = Vec::new();
                 j.track_ids = Vec::new();
+                staged = j.playlist_id;
             }
         })
         .await;
+    // The wants a failed playlist import marked as lost go back to waiting:
+    // the download that failed them is about to run again.
+    if let Some(playlist_id) = staged {
+        let _ = state.db.playlist_wants_unfail(playlist_id);
+    }
     // A collector pull whose job is retried goes back to queued with it, or
     // the second attempt's file would land with no stamp - a plain track in
     // everyone's library from an audition that failed the first time.
@@ -2090,5 +2373,52 @@ mod failure_text_tests {
 
         std::env::remove_var("AFM_IMPORTS");
         std::env::remove_var("AFM_SPOTIFLAC");
+    }
+}
+
+#[cfg(test)]
+mod staged_want_matching {
+    //! The join between a staged listing and what the run actually filed.
+    //! Names are the only handle - the download never learns which listing
+    //! row a file came from - so the match has to forgive what a file's tags
+    //! and a source's listing disagree about, and nothing else.
+    use super::match_wants_to_landed;
+
+    fn want(artist: &str, title: &str) -> (String, String, String) {
+        (crate::discovery::key_of(artist, title), title.to_string(), artist.to_string())
+    }
+
+    #[test]
+    fn files_in_the_listings_order_and_names_what_is_missing() {
+        let wants = vec![want("Tame Impala", "Let It Happen"), want("Czarface", "Bomb Thrown"), want("Nobody", "Never Came")];
+        // Landed in download order, which is not the listing's.
+        let landed = vec![
+            (7, "CZARFACE, Frankie Pulitzer".to_string(), "Bomb Thrown".to_string()),
+            (3, "Tame Impala".to_string(), "Let It Happen".to_string()),
+        ];
+        let (matched, unmatched) = match_wants_to_landed(&wants, &landed);
+        let ids: Vec<i64> = matched.iter().map(|(_, id)| *id).collect();
+        assert_eq!(ids, vec![3, 7], "the wants' order, not the download's: {matched:?}");
+        assert_eq!(unmatched, vec![wants[2].0.clone()]);
+    }
+
+    #[test]
+    fn a_landed_track_answers_for_one_want_only() {
+        let wants = vec![want("A", "Same"), want("A", "Same")];
+        let landed = vec![(1, "A".to_string(), "Same".to_string())];
+        let (matched, unmatched) = match_wants_to_landed(&wants, &landed);
+        assert_eq!(matched.len(), 1);
+        assert_eq!(unmatched.len(), 1, "the second copy has nothing to become");
+    }
+
+    #[test]
+    fn an_exact_match_beats_a_lead_match_on_another_row() {
+        let wants = vec![want("A, B", "Song")];
+        let landed = vec![
+            (1, "A".to_string(), "Song".to_string()),
+            (2, "A, B".to_string(), "Song".to_string()),
+        ];
+        let (matched, _) = match_wants_to_landed(&wants, &landed);
+        assert_eq!(matched, vec![(wants[0].0.clone(), 2)]);
     }
 }

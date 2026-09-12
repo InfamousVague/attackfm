@@ -1880,6 +1880,8 @@
     "theOwner": "オーナー",
     "thisSong": "この曲",
     "tileFreshLabel": "{{name}}、新着",
+    "wantDownloaded": "ダウンロード済み — 追加中",
+    "wantMissing": "この曲は見つかりませんでした",
     "whoHasThis": "このプレイリストを持っている人",
     "whoHasThisMenu": "持っている人…"
   },

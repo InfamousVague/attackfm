@@ -97,6 +97,12 @@ export interface MusicImportJob {
    * "the collector · for &lt;name&gt;", "Spotify mirror · &lt;name&gt;". Absent on
    * jobs from before the hub stamped it, and on the local desktop engine. */
   via?: string;
+  /** The playlist the hub staged for a PLAYLIST link the moment it read the
+   * listing - the server's number - so the app can take the listener to a
+   * page with a row per song rather than a card in a queue. Absent on a
+   * single, an album, a listing that never came, and a server from before
+   * the hub staged lists up front; null on a job the hub knows has none. */
+  playlistId?: number | null;
 }
 
 export interface DownloadsContextValue {

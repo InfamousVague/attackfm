@@ -47,7 +47,11 @@ export interface PlannedNotice {
   title: string;
   body: string;
   artUrl: string | null;
-  door: 'downloads';
+  /** Where a press lands: the queue, or - for a playlist link the hub made
+   *  a list for - that list, which is what the news is actually about. */
+  door: 'downloads' | 'playlist';
+  /** The store's id of the list a `'playlist'` door opens. */
+  playlist?: string;
 }
 
 export interface Plan {
@@ -165,7 +169,12 @@ export function planFromQueue(
           title: translate('notices.dropsLabel'),
           body: landedLine(job),
           artUrl: job.artworkUrl,
-          door: 'downloads',
+          // A playlist the hub staged a list for is news about THAT list:
+          // the row opens it, where the songs now are, not the queue they
+          // came through.
+          ...(typeof job.playlistId === 'number'
+            ? { door: 'playlist' as const, playlist: String(job.playlistId) }
+            : { door: 'downloads' as const }),
           // A single song landing is a playable piece of news: carry its
           // name so a tap on the tray can start it, not just open the app.
           ...(one && job.title

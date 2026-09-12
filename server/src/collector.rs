@@ -778,14 +778,22 @@ fn importable_url(url: &str) -> bool {
 
 /// Whether a queued/running job is already fetching this key. Shared by the
 /// pending-like and want retries so neither piles a second job on a live one.
+///
+/// A single-song job names its song in `title`/`subtitle`; a playlist job
+/// names its songs in `items`, and the wants an import staged for its own
+/// playlist are exactly those. Without the second look the want sweep, past
+/// its ten-minute grace, would raise a single-track job for a song that is
+/// forty rows down a list still downloading.
 async fn job_moving_for(state: &Arc<AppState>, k: &str) -> bool {
     let jobs = state.imports.jobs.lock().await;
     jobs.iter().any(|j| {
         (j.state == "queued" || j.state == "downloading")
-            && j.subtitle
+            && (j
+                .subtitle
                 .as_deref()
                 .map(|a| crate::discovery::key_of(a, &j.title) == k)
                 .unwrap_or(false)
+                || j.items.iter().any(|i| crate::discovery::key_of(&i.artist, &i.title) == k))
     })
 }
 

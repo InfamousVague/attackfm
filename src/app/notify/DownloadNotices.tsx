@@ -89,6 +89,7 @@ export function DownloadNotices() {
         body: n.body,
         art: artSized(n.artUrl, 160),
         door: n.door,
+        ...(n.playlist ? { playlist: n.playlist } : {}),
         ...(n.song ? { song: n.song } : {}),
       });
     }

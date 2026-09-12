@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Spinner, Text } from '@glacier/react';
 import { Download } from '@glacier/icons';
 import { isMusicImportLink, useDownloadsOptional } from '../../plugins/importsBridge.ts';
-import { watchIfPlaylist } from '../nav/downloadsDoor.ts';
+import { expectPlaylistLanding } from '../downloads/importLanding.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 import { formatNumber } from '../ux/format.ts';
 
@@ -38,10 +38,12 @@ export function ImportFromSearch({ query }: { query: string }) {
     void Promise.resolve(downloads.enqueue(link)).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : t('search.importQueueFailed'));
     });
-    // A playlist takes minutes and many songs; open the Downloads pane so it
-    // lands somewhere you can watch, rather than behind the search you pasted
-    // into. A single or an album is done before you would look, so it stays.
-    watchIfPlaylist(link);
+    // A playlist takes minutes and many songs, and the hub makes the list
+    // for it the moment it reads the listing - so say the link is expected to
+    // land somewhere, and ImportLanding takes you to that page (or, on a hub
+    // that names none, to the Downloads pane as before). A single or an album
+    // is done before you would look, and is never expected.
+    expectPlaylistLanding(link);
   }, [link, downloads, t]);
 
   if (!link) return null;
