@@ -15,6 +15,25 @@ export interface NavDest {
   icon: ReactNode;
   active: boolean;
   go: () => void;
+  /**
+   * Things waiting for the reader at this destination, when it has any: the
+   * number the seat wears, and the whole sentence a screen reader says for
+   * it ("3 things waiting for you on your profile") - a sentence rather than
+   * a noun to glue after the number, because the count and the noun trade
+   * places between languages. Absent, or zero, and the seat wears nothing.
+   */
+  waiting?: { count: number; label: string };
+}
+
+/**
+ * The id a seat describes itself by, or nothing when it has no count to be
+ * described by. The badge (nav/WaitingBadge) renders on the same test, so
+ * the seat's aria-describedby and the element it names always agree -
+ * a reference to an id that is not in the document is read as silence, and
+ * silence over a count is the wrong direction for this to fail in.
+ */
+export function describedBy(id: string, waiting: NavDest['waiting']): string | undefined {
+  return waiting && waiting.count > 0 ? id : undefined;
 }
 
 /**

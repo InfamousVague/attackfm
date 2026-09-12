@@ -1,8 +1,10 @@
 import { useNavPill } from './useNavPill.ts';
 import { ArrowDownToLine, LibraryBig, Search, Settings, Telescope } from '@glacier/icons';
-import { useMemo, useRef } from 'react';
+import { useId, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { atSize, useNavSeats, type NavDest } from './navSeats.ts';
+import { atSize, describedBy, useNavSeats, type NavDest } from './navSeats.ts';
+import { WaitingBadge } from './WaitingBadge.tsx';
+import { useProfileAttention } from '../profile/profileAttention.ts';
 import { useAcquire, usePluginPages } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { NavMoreMenu } from './NavMoreMenu.tsx';
@@ -101,6 +103,13 @@ export function PrimaryNav({
    * top of ⋮ is the thing that comes out of it first.
    */
   const barRef = useRef<HTMLElement | null>(null);
+  // What the profile page is waiting on the reader for - friend requests,
+  // groove asks, songs sent - as one number the seat wears. Fed by the polls
+  // that already run for the bell; nothing here asks anybody anything.
+  const waiting = useProfileAttention();
+  // One root for the badges' ids, so a seat can point at its own count with
+  // aria-describedby (see WaitingBadge) without a hook per row.
+  const badgeIds = useId();
   // The lit plate slides between tabs rather than blinking from one to the
   // next - see useNavPill. Bar only: the rail marks its active row with a
   // border and a wash rather than a travelling plate, because a column's rows
@@ -149,6 +158,11 @@ export function PrimaryNav({
       icon: <NavProfileIcon />,
       active: tab === 'profile' || tab === 'friends',
       go: () => onTab('profile'),
+      // The questions waiting on that page, worn as a number so the page
+      // gets opened - the whole point of a badge on a seat you are not on.
+      // Zero is no badge at all rather than a "0"; the lanes it sums are
+      // each taken to nothing by their own sign-out.
+      waiting: waiting > 0 ? { count: waiting, label: t('nav.profileWaiting', { count: waiting }) } : undefined,
     });
     // Other plugin pages keep their seats; Books does not, having moved into
     // the Library's toggle.
@@ -166,7 +180,7 @@ export function PrimaryNav({
     // `t` is in here on purpose: react-i18next hands back a NEW t when the
     // language changes, and without it the memo would hold the old labels -
     // a nav bar still in English under an app that is not.
-  }, [pages, libraryActive, tab, onTab, t]);
+  }, [pages, libraryActive, tab, onTab, t, waiting]);
 
   const seats = useNavSeats(barRef, dests.length);
   /*
@@ -220,12 +234,19 @@ export function PrimaryNav({
               className="appNavRail__item"
               data-active={d.active || undefined}
               aria-current={d.active ? 'page' : undefined}
+              aria-describedby={describedBy(`${badgeIds}${d.key}`, d.waiting)}
               onClick={d.go}
             >
               <span className="appNavRail__icon" aria-hidden>
                 {d.icon}
               </span>
               <span className="appNavRail__label">{d.label}</span>
+              {/* At the row's trailing end, the way a sidebar counts its
+                  mail - not on the glyph's corner as the phone bar does. A
+                  rail row is a glyph AND a word with room after them; a
+                  count hung off an 18px glyph in that row would sit on the
+                  word. The ⋮ menu's Downloads row already counts this way. */}
+              <WaitingBadge id={`${badgeIds}${d.key}`} waiting={d.waiting} className="appNavBadge--row" />
             </button>
           ))}
         </div>
@@ -295,6 +316,7 @@ export function PrimaryNav({
           icon={atSize(d.icon, 26)}
           label={d.label}
           active={d.active}
+          waiting={d.waiting}
           onClick={d.go}
         />
       ))}
@@ -312,22 +334,32 @@ function BarTab({
   icon,
   label,
   active,
+  waiting,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   active?: boolean;
+  waiting?: NavDest['waiting'];
   onClick: () => void;
 }) {
+  const badgeId = useId();
   return (
     <button
       type="button"
       className="appNavBarTab"
       data-active={active || undefined}
       aria-current={active ? 'page' : undefined}
+      aria-describedby={describedBy(badgeId, waiting)}
       onClick={onClick}
     >
-      <span className="appNavBarTab__icon">{icon}</span>
+      {/* The glyph's seat is `position: relative` for exactly this: the
+          count rides its corner, the same corner (and the same class) the
+          ⋮ beside it hangs the download count off. */}
+      <span className="appNavBarTab__icon">
+        {icon}
+        <WaitingBadge id={badgeId} waiting={waiting} className="appNavBadge--corner" />
+      </span>
       <span className="appNavBarTab__label">{label}</span>
     </button>
   );

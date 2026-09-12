@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { fetchShares } from '../servers/registry.ts';
+import { publishProfileAttention, shareAttentionOf } from '../profile/profileAttention.ts';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { translate } from '../i18n/translate.ts';
 import { dismissNotice, noteNotice } from './notices.ts';
@@ -36,6 +37,8 @@ export function ShareNotices() {
     if (!session) {
       for (const id of raised) dismissNotice(id);
       raised.clear();
+      // The seat's count of them goes with the rows.
+      publishProfileAttention('shares', 0);
       return;
     }
 
@@ -45,6 +48,9 @@ export function ShareNotices() {
       try {
         const inbox = await fetchShares(session.token);
         if (!alive) return;
+        // What the Friends page will draw with an Accept on it, counted the
+        // way the page counts it, for the Profile seat.
+        publishProfileAttention('shares', shareAttentionOf(inbox));
         const open = new Set<string>();
         const askedAbout = new Set<string>();
         for (const s of inbox) {

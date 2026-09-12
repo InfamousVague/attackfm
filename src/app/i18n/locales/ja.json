@@ -841,6 +841,7 @@
     "more": "その他",
     "primary": "メインメニュー",
     "profile": "プロフィール",
+    "profileWaiting_other": "プロフィールで{{count}}件があなたを待っています",
     "search": "検索",
     "settings": "設定",
     "stats": "統計"

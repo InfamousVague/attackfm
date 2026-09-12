@@ -1021,6 +1021,9 @@
     "more": "Plus",
     "primary": "Navigation principale",
     "profile": "Profil",
+    "profileWaiting_many": "{{count}} choses vous attendent sur votre profil",
+    "profileWaiting_one": "{{count}} chose vous attend sur votre profil",
+    "profileWaiting_other": "{{count}} choses vous attendent sur votre profil",
     "search": "Rechercher",
     "settings": "Réglages",
     "stats": "Stats"

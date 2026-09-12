@@ -1291,6 +1291,12 @@
     "more": "المزيد",
     "primary": "التنقل الرئيسي",
     "profile": "الملف الشخصي",
+    "profileWaiting_few": "{{count}} أشياء بانتظارك في ملفك الشخصي",
+    "profileWaiting_many": "{{count}} شيئًا بانتظارك في ملفك الشخصي",
+    "profileWaiting_one": "شيء واحد بانتظارك في ملفك الشخصي",
+    "profileWaiting_other": "{{count}} شيء بانتظارك في ملفك الشخصي",
+    "profileWaiting_two": "شيئان بانتظارك في ملفك الشخصي",
+    "profileWaiting_zero": "لا شيء بانتظارك في ملفك الشخصي",
     "search": "بحث",
     "settings": "الإعدادات",
     "stats": "الإحصاءات"

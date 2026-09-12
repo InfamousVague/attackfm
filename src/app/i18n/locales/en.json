@@ -931,6 +931,8 @@
     "more": "More",
     "primary": "Primary",
     "profile": "Profile",
+    "profileWaiting_one": "{{count}} thing waiting for you on your profile",
+    "profileWaiting_other": "{{count}} things waiting for you on your profile",
     "search": "Search",
     "settings": "Settings",
     "stats": "Stats"

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { fetchFriends as fetchRegistryFriends } from '../servers/registry.ts';
 import { clearFriendsGlance, publishFriendsGlance } from '../profile/friendsGlance.ts';
+import { publishProfileAttention } from '../profile/profileAttention.ts';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { dismissNotice, noteNotice } from './notices.ts';
 import { translate } from '../i18n/translate.ts';
@@ -55,6 +56,9 @@ export function FriendNotices() {
       for (const id of raised) dismissNotice(id);
       raised.clear();
       clearFriendsGlance();
+      // And the seat's count of them: a question asked of an account that
+      // is no longer the one looking at the screen.
+      publishProfileAttention('friendRequests', 0);
       return;
     }
 
@@ -69,6 +73,9 @@ export function FriendNotices() {
         // The same answer, published for the surfaces that want a glance at
         // the friends themselves (Discover's People shelf) - one poll, not two.
         publishFriendsGlance(feed.friends);
+        // The asks themselves are a standing count as well as rows: the
+        // Profile seat wears how many are still waiting for an answer.
+        publishProfileAttention('friendRequests', feed.incoming.length);
         const open = new Set<string>();
         for (const ask of feed.incoming) {
           const id = `friends:${ask.id}`;

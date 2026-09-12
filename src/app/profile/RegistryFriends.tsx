@@ -39,6 +39,7 @@ import { FriendAvatar } from './FriendAvatar.tsx';
 import { PresenceMark } from './PresenceMark.tsx';
 import { standingOf } from './friendStanding.ts';
 import { syncRegistryFriendsToHub } from './friendMirror.ts';
+import { publishProfileAttention, shareAttentionOf } from './profileAttention.ts';
 import {
   acceptFriendRequest,
   announce,
@@ -186,6 +187,10 @@ export function FriendsSection({
   const [addOpen, setAddOpen] = useState(false);
   // Songs friends have sent, by name, waiting for a yes.
   const [shares, setShares] = useState<Share[]>([]);
+  // Whether the inbox above is the registry's word yet. `[]` is also what it
+  // holds before the first read lands, and that must not be mistaken for "no
+  // songs waiting" by the count below.
+  const sharesRead = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -197,11 +202,30 @@ export function FriendsSection({
       setFeedError(e instanceof Error && e.message ? e.message : t('profile.registryNotAnswering'));
     }
     try {
-      setShares(await fetchShares(token));
+      const inbox = await fetchShares(token);
+      sharesRead.current = true;
+      setShares(inbox);
     } catch {
       // A registry from before songs could be sent has no inbox to show.
     }
   }, [token, t]);
+
+  /*
+   * The Profile seat's count, kept honest by the page that answers it.
+   *
+   * The notice pollers publish these same numbers on their own clocks, but a
+   * poll is ninety seconds and the reader has just pressed Accept: the card
+   * has gone from the page, and a badge still saying 1 over an empty section
+   * is the badge lying. From the STATE rather than the handlers, so every
+   * way the lists change - the refresh after an accept, a share taken, a
+   * sender refused - republishes without each handler having to remember to.
+   */
+  useEffect(() => {
+    if (feed) publishProfileAttention('friendRequests', feed.incoming.length);
+  }, [feed]);
+  useEffect(() => {
+    if (sharesRead.current) publishProfileAttention('shares', shareAttentionOf(shares));
+  }, [shares]);
 
   /**
    * Take a song a friend sent: ask YOUR OWN hub for it by name. The hub

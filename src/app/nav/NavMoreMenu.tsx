@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CounterBadge } from '@glacier/react';
 import { ChartNoAxesColumn, Download, EllipsisVertical, Settings } from '@glacier/icons';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
-import type { NavDest } from './navSeats.ts';
+import { describedBy, type NavDest } from './navSeats.ts';
+import { WaitingBadge } from './WaitingBadge.tsx';
 
 /**
  * The bar's overflow: a vertical-ellipsis tab that opens the app's "rest of the
@@ -43,16 +44,40 @@ export function NavMoreMenu({
 }) {
   const [open, setOpen] = useState(false);
   const t = useT();
+  // One root for the overflow rows' badge ids - a row that carries a count
+  // points at it with aria-describedby (see WaitingBadge).
+  const badgeIds = useId();
   // The queue's presence, for the Downloads row and the count riding the ⋮.
   const dl = useDownloadsOptional();
   const pulling = dl?.active.length ?? 0;
   const failed = dl?.jobs.filter((j) => j.state === 'error').length ?? 0;
-  // The badge says one thing or the other, never both: what is still pulling
-  // while anything is, and otherwise what is left broken. Both are counts, so
-  // both are plurals rather than a number glued to a word.
-  const badgeLabel = pulling > 0
+  /*
+   * A seat folded in here that somebody is waiting on. On a phone too narrow
+   * for Profile to keep its bar seat, its count lives on a row inside this
+   * menu - which is exactly where nobody looks until something tells them
+   * to. So the ⋮ carries it too.
+   */
+  // The Downloads row's own count is only ever about downloads.
+  const downloadsLabel = pulling > 0
     ? t('notices.downloading', { count: pulling })
     : t('downloads.failedCount', { count: failed });
+  const asking = overflow.filter((d) => d.waiting && d.waiting.count > 0);
+  const askingCount = asking.reduce((n, d) => n + (d.waiting?.count ?? 0), 0);
+  // The badge says ONE thing, in this order: what is still pulling while
+  // anything is (it is moving, and it is why the menu is worth opening now);
+  // then a person waiting for an answer; then what is left broken, which is a
+  // standing fact the Downloads row keeps saying and can wait behind a
+  // question. All counts, so all plurals rather than a number glued to a word.
+  const badge =
+    pulling > 0
+      ? { count: pulling, tone: 'accent' as const, label: t('notices.downloading', { count: pulling }) }
+      : askingCount > 0
+        ? {
+            count: askingCount,
+            tone: 'accent' as const,
+            label: asking.map((d) => d.waiting!.label).join(', '),
+          }
+        : { count: failed, tone: 'danger' as const, label: downloadsLabel };
   /*
    * When the scrim last closed the menu.
    *
@@ -123,11 +148,11 @@ export function NavMoreMenu({
           <EllipsisVertical size={26} />
           <CounterBadge
             className="appNavBadge--corner"
-            count={pulling > 0 ? pulling : failed}
+            count={badge.count}
             max={99}
             size="sm"
-            tone={pulling === 0 ? 'danger' : 'accent'}
-            aria-label={badgeLabel}
+            tone={badge.tone}
+            aria-label={badge.label}
           />
         </span>
         <span className="appNavBarTab__label">{t('nav.more')}</span>
@@ -164,6 +189,7 @@ export function NavMoreMenu({
             role="menuitem"
             className="appNavBarPlugins__item"
             data-active={d.active || undefined}
+            aria-describedby={describedBy(`${badgeIds}${d.key}`, d.waiting)}
             onClick={() => {
               setOpen(false);
               d.go();
@@ -173,6 +199,11 @@ export function NavMoreMenu({
               {d.icon}
             </span>
             <span className="appNavBarPlugins__itemLabel">{d.label}</span>
+            {/* A seat folded in here keeps its count: on a phone too narrow
+                for Profile to hold a bar seat, the only sign that somebody
+                asked would otherwise be behind the very menu it hides in.
+                The same trailing seat the Downloads row below uses. */}
+            <WaitingBadge id={`${badgeIds}${d.key}`} waiting={d.waiting} className="appNavBadge--row" />
           </button>
         ))}
 
@@ -226,7 +257,7 @@ export function NavMoreMenu({
               max={99}
               size="sm"
               tone={pulling === 0 ? 'danger' : 'accent'}
-              aria-label={badgeLabel}
+              aria-label={downloadsLabel}
             />
           </button>
         )}

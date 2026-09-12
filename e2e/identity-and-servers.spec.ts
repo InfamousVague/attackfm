@@ -581,6 +581,57 @@ test('a friend request through the registry: asked, accepted, and on both lists'
 
   const two = await askedCtx.newPage();
   await two.goto('/');
+
+  // The seat says so BEFORE the page is opened - which is what a count on a
+  // seat is for. The count is kept out of the seat's NAME on purpose (see
+  // nav/WaitingBadge): it is the button's description, so this locator goes
+  // on matching the seat by the same name every other suite uses.
+  const nav = two.getByRole('navigation', { name: 'Primary' });
+  const seat = nav.getByRole('button', { name: 'Profile', exact: true });
+  const badge = seat.getByRole('status', { includeHidden: true });
+  const sentence = '1 thing waiting for you on your profile';
+  // This project's viewport is a desktop's, so this is the rail: the count
+  // sits at the trailing end of the row, the way a sidebar counts its mail.
+  await expect(nav.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+  await expect(seat).toHaveAccessibleDescription(sentence);
+  await expect(badge).toHaveText('1');
+
+  // The phone bar, at a phone's width: the count rides the glyph's corner
+  // and has to stay inside the tab that owns it, on the trailing side of the
+  // glyph - which is the right when the page reads left to right and the
+  // left when it reads the other way, because the seat is logical.
+  //
+  // The layout follows the viewport through a media query, a beat AFTER the
+  // resize, and the rail's badge would pass every check below on its own.
+  // The ⋮ is the bar's and nobody else's, so its arrival is the proof that
+  // what is being measured is the bar.
+  await two.setViewportSize({ width: 390, height: 844 });
+  await expect(nav.getByRole('button', { name: 'More', exact: true })).toBeVisible();
+  await expect(seat).toHaveAccessibleDescription(sentence);
+  await expect(badge).toBeVisible();
+  const inside = async () => {
+    const [tab, count] = await Promise.all([seat.boundingBox(), badge.boundingBox()]);
+    if (!tab || !count) return null;
+    return {
+      contained:
+        count.x >= tab.x &&
+        count.y >= tab.y &&
+        count.x + count.width <= tab.x + tab.width &&
+        count.y + count.height <= tab.y + tab.height,
+      trailing: count.x + count.width / 2 > tab.x + tab.width / 2,
+    };
+  };
+  await expect.poll(inside).toEqual({ contained: true, trailing: true });
+  await two.evaluate(() => {
+    document.documentElement.dir = 'rtl';
+  });
+  await expect.poll(inside).toEqual({ contained: true, trailing: false });
+  await two.evaluate(() => {
+    document.documentElement.dir = 'ltr';
+  });
+  await two.setViewportSize({ width: 1280, height: 720 });
+  await expect(nav.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+
   await two.getByRole('button', { name: 'Profile', exact: true }).last().click();
   await expect(two.getByRole('heading', { name: 'Wants to be friends' })).toBeVisible();
   await expect(two.getByText(asker.account.handle, { exact: false }).first()).toBeVisible();
@@ -590,6 +641,10 @@ test('a friend request through the registry: asked, accepted, and on both lists'
   // shape of every "they cannot see me" report there has ever been.
   await expect(two.getByRole('heading', { name: 'Wants to be friends' })).toHaveCount(0);
   await expect(two.getByText(asker.account.handle, { exact: false }).first()).toBeVisible();
+  // And the seat: the question answered, its count gone with it - from the
+  // page's own re-read of the list, not from a poll a minute and a half on.
+  await expect(badge).toHaveCount(0);
+  await expect(seat).toHaveAccessibleDescription('');
 
   await one.reload();
   await one.getByRole('button', { name: 'Profile', exact: true }).last().click();

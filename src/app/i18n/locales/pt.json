@@ -1021,6 +1021,9 @@
     "more": "Mais",
     "primary": "Principal",
     "profile": "Perfil",
+    "profileWaiting_many": "{{count}} coisas à tua espera no teu perfil",
+    "profileWaiting_one": "{{count}} coisa à tua espera no teu perfil",
+    "profileWaiting_other": "{{count}} coisas à tua espera no teu perfil",
     "search": "Pesquisa",
     "settings": "Definições",
     "stats": "Estatísticas"

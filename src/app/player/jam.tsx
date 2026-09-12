@@ -9,6 +9,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useRegistryOptional } from '../servers/registrySession.tsx';
 import { ServerError } from '../api/http.ts';
 import { syncRegistryFriendsToHub } from '../profile/friendMirror.ts';
+import { publishProfileAttention } from '../profile/profileAttention.ts';
 import { sayNames } from '../nav/friendPickerDoor.ts';
 import { pushJamState, trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
@@ -528,6 +529,14 @@ export function JamProvider({ children }: { children: ReactNode }) {
   }, [refresh, inJam]);
 
   const hosting = current !== null && session !== null && isHost(current, session.username);
+
+  // The asks, as a number the Profile seat can wear. From the STATE rather
+  // than from inside `refresh`, so an answer given here - accept, decline -
+  // takes the count down the moment the list shrinks, and a session ending
+  // (the list emptied above) takes it to nothing.
+  useEffect(() => {
+    publishProfileAttention('grooveInvites', invites.length);
+  }, [invites]);
 
   // Where this room is heard. A room never chosen for (restored by a poll, an
   // older install) is heard here - today's behaviour - and never asked from

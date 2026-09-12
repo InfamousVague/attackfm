@@ -841,6 +841,7 @@
     "more": "更多",
     "primary": "主导航",
     "profile": "个人主页",
+    "profileWaiting_other": "个人主页有 {{count}} 项等你处理",
     "search": "搜索",
     "settings": "设置",
     "stats": "统计"

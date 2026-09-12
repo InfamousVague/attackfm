@@ -931,6 +931,8 @@
     "more": "Mehr",
     "primary": "Hauptnavigation",
     "profile": "Profil",
+    "profileWaiting_one": "{{count}} Sache wartet auf deinem Profil auf dich",
+    "profileWaiting_other": "{{count}} Sachen warten auf deinem Profil auf dich",
     "search": "Suche",
     "settings": "Einstellungen",
     "stats": "Statistiken"
