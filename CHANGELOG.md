@@ -15,6 +15,20 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.6.7
+
+- Keyboard shortcuts: Space to play and pause, the arrows to seek and change
+  the volume, Shift with them to change songs, and a few letters besides.
+  Settings has a Keyboard page to see them all and change any of them.
+- Collections for audiobooks: gather books on the Books shelf into lists of
+  your own, and play through them in order. They stay out of your playlists.
+- The Profile button shows a count when a friend request, a jam invite or a
+  song from a friend is waiting for your answer.
+- When another device takes over the music, every device's progress bar shows
+  where the song really is, instead of starting again from the top.
+- A song you start on your phone just as the app opens keeps playing and takes
+  over, instead of stopping because another device was playing.
+
 ## 0.6.6
 
 - On a slow connection, a song you have on this device plays from your saved
