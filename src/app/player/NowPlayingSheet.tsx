@@ -650,7 +650,6 @@ export function NowPlayingSheet({
   tint,
   dispArtwork,
   activeElsewhere,
-  activeDeviceName,
   dispPlaying,
   playing,
   audible,
@@ -726,8 +725,6 @@ export function NowPlayingSheet({
   tint: ArtTint | null;
   dispArtwork: string | null;
   activeElsewhere: boolean;
-  /** Whose deck this screen is driving, while it drives another's. */
-  activeDeviceName: string | null;
   dispPlaying: boolean;
   playing: boolean;
   audible: boolean;
@@ -1876,16 +1873,6 @@ export function NowPlayingSheet({
           {/* Which server this song lives on - shown only with more than one
               live, where it is the answer to a question a person has. */}
           {originText && !following && <span className="npScreen__origin">{originText}</span>}
-          {/* Say whose speakers this is coming out of. The strip has carried
-              this since Connect shipped; the full screen showed no sign at
-              all, so a phone driving the desktop looked exactly like a phone
-              playing to itself - right up until you wondered why the room
-              was silent. */}
-          {activeElsewhere && !following && (
-            <span className="npScreen__codec">
-              {t('player.playingOn', { device: activeDeviceName ?? t('player.anotherDevice') })}
-            </span>
-          )}
           {/* A caption now, not a door: chapter select moved into the
               transport, where the thumb already is. */}
           {!following && (doorLabel || chapterLabel) && (

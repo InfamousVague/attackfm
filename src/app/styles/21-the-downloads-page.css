@@ -357,14 +357,31 @@
 
 /* ── Connect device picker ───────────────────────────────────────────────── */
 
-/* The trigger takes the brand colour whenever there is live playback: when
-   this device is the one playing, and equally when it is playing on another
-   device (the standard "it's playing over there" tell). Uses the solid accent,
-   not the near-white `--glacier-accent`, so it actually reads against the idle
-   white icon. */
+/* The trigger takes the brand colour whenever there is live playback. Uses the
+   solid accent, not the near-white `--glacier-accent` (which does not exist),
+   so it actually reads against the idle white icon. */
 .deviceTrigger[data-connected],
 .deviceTrigger[data-active] {
   color: var(--glacier-accent-solid);
+}
+
+/*
+ * ...and it SAYS WHICH. Here and elsewhere used to be one look - the same
+ * accent on the same glyph - which was survivable while Now Playing also wrote
+ * "Playing on Android" under the artist. That line is gone, and this button is
+ * where the fact lives now, so elsewhere gets a plate: the soft accent behind
+ * the device's own glyph (the component swaps the speaker for a phone, a
+ * laptop, a TV). Here stays a coloured glyph and nothing more. The doubled
+ * class is for the kit: a ghost IconButton paints its own transparent
+ * background from a class of its own, and one class of ours does not outrank
+ * it by source order alone.
+ */
+.deviceTrigger.deviceTrigger[data-connected] {
+  background: var(--glacier-accent-soft);
+}
+
+.deviceTrigger.deviceTrigger[data-connected]:hover {
+  background: var(--glacier-accent-soft-hover);
 }
 
 .devicePanel {

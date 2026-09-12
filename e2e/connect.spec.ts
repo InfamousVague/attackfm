@@ -104,14 +104,17 @@ const NEXT = /^Next( track)?$/;
 /**
  * What this device says about where the music is.
  *
- * The two surfaces word it differently - the strip writes "· on Desk" beside
- * the artist, the dock writes "Playing on Desk" under the title - and which one
- * a device is wearing changes as the seat moves. Read off `innerText`, which is
- * the rendered text and therefore never the hidden copy of the other surface.
+ * The two surfaces say it differently - the strip writes "· on Desk" beside
+ * the artist, and the dock's device button is NAMED "Playing on Desk — change"
+ * (the dock used to write it under the title too, and that pill is gone) - and
+ * which one a device is wearing changes as the seat moves. The strip is read
+ * off `innerText`, which is the rendered text and never a hidden copy; the
+ * button by role, which skips hidden controls the same way.
  */
 const saysPlayingOn = async (page: Page, name: string): Promise<boolean> => {
   const text = await page.locator('body').innerText();
-  return text.includes(`\u00b7 on ${name}`) || text.includes(`Playing on ${name}`);
+  if (text.includes(`\u00b7 on ${name}`)) return true;
+  return (await page.getByRole('button', { name: `Playing on ${name} — change`, exact: true }).count()) > 0;
 };
 
 /** Whether this browser is making a sound: the deck's own elements, not the
@@ -243,6 +246,18 @@ test('the seat moves to the device that asks for it, mid-song, and comes back', 
   // this half exists to prevent.
   await expect.poll(() => audible(desk), { timeout: 20_000 }).toBe(false);
   await expect.poll(() => saysPlayingOn(desk, PHONE.name), { timeout: 15_000 }).toBe(true);
+  // WHERE it says so. The dock used to write "Playing on Phone" under the
+  // title, and that pill is gone: the device button carries it now - named for
+  // the device, and on a plate that "playing here" does not wear, because the
+  // two used to be one look and the pill was the only thing telling them apart.
+  const where = desk.getByRole('button', { name: `Playing on ${PHONE.name} — change`, exact: true }).first();
+  await expect(where).toBeVisible();
+  const dock = desk.locator('[role="dialog"][aria-label="Now playing"]');
+  if (await dock.count()) {
+    expect(await dock.locator('.npScreen__meta').innerText()).not.toContain(`Playing on ${PHONE.name}`);
+  }
+  const plate = await where.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(plate).not.toBe('rgba(0, 0, 0, 0)');
   await closeSettings(phone);
 
   // ...and back, which is its own bug: a device handed the seat while it was
@@ -254,6 +269,10 @@ test('the seat moves to the device that asks for it, mid-song, and comes back', 
   await expect.poll(() => watch.state?.playing ?? false).toBe(true);
   await closeSettings(desk);
   await expect.poll(() => saysPlayingOn(phone, DESK.name), { timeout: 15_000 }).toBe(true);
+  // Back here, the plate comes off: a coloured glyph is "here", a plate is "there".
+  const here = desk.locator('.deviceTrigger[data-active]:visible').first();
+  await expect(here).toBeVisible();
+  expect(await here.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(plate);
 });
 
 test('a remote drives the device that is playing, and hears the answer', async () => {

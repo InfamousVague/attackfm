@@ -4693,7 +4693,6 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           dispArtwork={dispArtwork}
           following={following}
           activeElsewhere={activeElsewhere}
-          activeDeviceName={activeDeviceName}
           dispPlaying={dispPlaying}
           playing={playing}
           audible={audible}

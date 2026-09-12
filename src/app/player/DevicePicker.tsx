@@ -30,11 +30,11 @@ import { useT } from '../i18n/LocaleShell.tsx';
  * doors show the same rows because they are the same component.
  */
 
-function KindIcon({ kind }: { kind: string }) {
-  if (kind === 'phone') return <Smartphone size={16} />;
-  if (kind === 'desktop') return <Laptop size={16} />;
-  if (kind === 'web') return <Globe size={16} />;
-  return <MonitorSpeaker size={16} />;
+function KindIcon({ kind, size = 16 }: { kind: string; size?: number }) {
+  if (kind === 'phone') return <Smartphone size={size} />;
+  if (kind === 'desktop') return <Laptop size={size} />;
+  if (kind === 'web') return <Globe size={size} />;
+  return <MonitorSpeaker size={size} />;
 }
 
 /**
@@ -329,14 +329,37 @@ export function DevicePicker({
   const activeElsewhere =
     (activeDeviceId != null && activeDeviceId !== thisDeviceId) || cast.session != null;
   const activeHere = cast.session == null && activeDeviceId != null && activeDeviceId === thisDeviceId;
+  /*
+   * WHERE, when it is not here.
+   *
+   * Now Playing used to say this in a pill under the artist - "Playing on
+   * Android" - and the pill is gone: a second line of meta under the title is
+   * a line the title has to share, for a fact that belongs to the one control
+   * that can change it. So this button carries it now, and it has to carry it
+   * unmistakably, which it did not: `data-connected` and `data-active` painted
+   * the same accent, so "the sound is on your laptop" and "the sound is right
+   * here" were one look. Elsewhere now wears the device's own glyph on a
+   * tinted plate, and its name is in the label.
+   *
+   * A TV being cast to outranks a Connect seat, as it does for the state
+   * above: while a cast session stands, that is where the sound is.
+   */
+  const where = cast.session
+    ? { name: cast.session.device, kind: 'cast' }
+    : activeElsewhere
+      ? (devices.find((d) => d.id === activeDeviceId) ?? null)
+      : null;
   // Says which of the three things this button currently is, so a screen reader
   // is not told "connect to a device" by a control whose panel will say there
   // are none.
   const label = activeElsewhere
-    ? t('player.deviceLabelElsewhere')
+    ? where?.name
+      ? t('player.deviceLabelOn', { device: where.name })
+      : t('player.deviceLabelElsewhere')
     : hasConnect || hasCast || airplay
       ? t('player.deviceLabelConnect')
       : t('player.deviceLabelHere');
+  const glyphSize = size === 'md' ? 20 : 16;
 
   return (
     <Popover
@@ -352,7 +375,13 @@ export function DevicePicker({
           data-active={activeHere || undefined}
           className="deviceTrigger"
         >
-          <MonitorSpeaker size={size === 'md' ? 20 : 16} />
+          {where?.kind === 'cast' ? (
+            <Cast size={glyphSize} />
+          ) : where ? (
+            <KindIcon kind={where.kind} size={glyphSize} />
+          ) : (
+            <MonitorSpeaker size={glyphSize} />
+          )}
         </IconButton>
       }
     >
