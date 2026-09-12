@@ -438,10 +438,23 @@ export function SongPage({
               // does not match a title search and would sit oddly over "no
               // results". `incomingScope` gates the whole feature off On repeat.
               incoming={incomingScope && !filtering ? incomingHere : undefined}
-              // Liked songs open in the order they were LIKED, newest first -
-              // the order the server already sends them in, and the one thing
-              // this page knows that an alphabetical sort cannot recover.
-              defaultSort={view === 'liked' ? null : undefined}
+              /*
+               * Every one of these pages opens in the order it was HANDED,
+               * with no header sorting it.
+               *
+               * Each page builds that order on purpose, and it is the one
+               * thing the page knows that an alphabetical sort cannot recover:
+               * Liked is the order the hearts went on, On repeat is most
+               * played first (the count stands in the leading cell), Recently
+               * added is newest first, and All songs is the library newest
+               * first. Only Liked used to say so. The rest took the table's
+               * own default - Title, ascending - so On repeat opened
+               * alphabetised, with the play counts in front of it scrambled
+               * and the song you actually play most wherever its name put it.
+               * The headers still sort on a tap; they just do not start out
+               * having been tapped.
+               */
+              defaultSort={null}
             />
               </>
             )}

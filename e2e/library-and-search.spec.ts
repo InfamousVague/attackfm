@@ -28,6 +28,7 @@ import {
   songCell,
   songRow,
 } from './fixtures/playlists.ts';
+import { homeFeed, idsByTitle, idsOf, installFeeds } from './fixtures/feeds.ts';
 import type { Page } from '@playwright/test';
 
 /**
@@ -183,18 +184,73 @@ test('a relaunch paints the cached index before the hub answers', async ({ page,
   }
 });
 
+/** Whether any header of the songs grid is sorting it. */
+async function sortedHeaders(page: Page): Promise<string[]> {
+  return page
+    .getByRole('grid', { name: 'Songs' })
+    .getByRole('columnheader')
+    .evaluateAll((els) =>
+      els
+        .filter((el) => /^(ascending|descending)$/.test(el.getAttribute('aria-sort') ?? ''))
+        .map((el) => `${(el.textContent ?? '').trim()}:${el.getAttribute('aria-sort')}`),
+    );
+}
+
+test('On repeat opens most played first, and no header has sorted it', async ({ page, hub, world }) => {
+  /*
+   * The page's whole subject is the order. The table used to impose its own
+   * default - Title, ascending - over it, so the song played most sat wherever
+   * its name put it, under a count that no longer described the row beside
+   * it. The feed is stubbed because a fresh hub has no listening history; the
+   * three songs are named in an order that is deliberately NOT alphabetical,
+   * so an alphabetised table cannot pass by coincidence.
+   */
+  const byTitle = await idsByTitle(hub);
+  const played = ['Signal Fade', 'Copper Wire', 'Paper Lantern'];
+  const ids = idsOf(byTitle, played);
+  await installFeeds(page, world, {
+    home: homeFeed({
+      heavy: ids,
+      heavyPlays: ids.map((id, i) => ({ id, plays: 9 - i * 3 })),
+    }),
+  });
+  await openLibrary(page);
+  await page.getByRole('button', { name: /On repeat/ }).first().click();
+  await expect(page.getByRole('grid', { name: 'Songs' })).toBeVisible();
+
+  await expect.poll(() => shownTitles(page)).toEqual(played);
+  expect(await sortedHeaders(page)).toEqual([]);
+});
+
+test('Recently added opens newest record first, and no header has sorted it', async ({ page, hub }) => {
+  await openLibrary(page);
+  await openRecent(page);
+  // Rows of one record share their insert stamp, so the order is asserted by
+  // RECORD: the first row belongs to the newest one, which alphabetical order
+  // would only land on by accident.
+  const newest = await newestFirst(hub);
+  await expect
+    .poll(async () => {
+      const first = (await shownTitles(page))[0];
+      return newest.find((t) => t.title === first)?.album ?? null;
+    })
+    .toBe(newest[0]!.album);
+  expect(await sortedHeaders(page)).toEqual([]);
+});
+
 test('a sorted table plays the row pointed at, and queues the list as shown', async ({ page }) => {
   await openLibrary(page);
   await openRecent(page);
 
-  // Alphabetical by title is the table's opening order; one click on the
-  // header turns it round, which is the cheapest way to get a displayed order
-  // that is not the stored one.
+  // The table opens in its handed order, newest first; one click on the
+  // header sorts it by title, which is the cheapest way to get a displayed
+  // order that is not the stored one.
   const before = await shownTitles(page);
+  const byTitle = [...before].sort((a, b) => a.localeCompare(b));
+  expect(before, 'the fixture must not arrive already alphabetical').not.toEqual(byTitle);
   await page.getByRole('columnheader', { name: 'Title' }).click();
-  await expect.poll(async () => (await shownTitles(page))[0]).toBe(before[before.length - 1]);
+  await expect.poll(() => shownTitles(page)).toEqual(byTitle);
   const shown = await shownTitles(page);
-  expect(shown).toEqual([...before].reverse());
 
   /*
    * The row the finger went down on is the row that opens.
