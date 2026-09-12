@@ -666,6 +666,7 @@
     "viewBiggest": "Biggest",
     "viewByArtist": "By artist",
     "viewLabel": "How the files are listed",
+    "waitingForBox": "waiting for the download box",
     "waitingTurn": "waiting for its turn",
     "wifiAnyConnection": "Automatic downloads use whatever connection is here, mobile data included. Downloads only happen while the app is open.",
     "wifiCannotTell": "This device cannot tell Wi-Fi from mobile data, so downloads carry on regardless. Playing music, pinned songs and Check now are never held back.",

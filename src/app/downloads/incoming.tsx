@@ -19,6 +19,7 @@ import {
   type PendingLike,
 } from '../server.ts';
 import { identityKey, leadKey } from './identity.ts';
+import { isBoxQuiet } from './boxQuiet.ts';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -61,6 +62,11 @@ export interface IncomingTrack {
    *  it daily): shown as a resting ring and a word, not a spinner pretending
    *  motion over an empty queue. */
   stalled?: boolean;
+  /** Stalled for a DIFFERENT reason: the hub hands its downloading to another
+   *  box, and that box has not called in for a while - asleep, restarted, or
+   *  gone. Said as such, because "waiting for its turn" over a queue nothing is
+   *  working through is the same lie as a spinner. */
+  boxQuiet?: boolean;
   /** The import job for this song FAILED and can be started again. Present
    *  only when a failed job is actually sitting in the queue to retry, so a
    *  row never offers a button that would do nothing. */
@@ -110,6 +116,18 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
   const [collectorRecent, setCollectorRecent] = useState<
     { title: string; artist: string; state: string }[]
   >([]);
+  /*
+   * Whether the box this hub hands its downloading to has gone quiet.
+   *
+   * A hub in collector mode downloads nothing itself: every song is taken by a
+   * box (a home server) and delivered back. When that box sleeps or dies with
+   * a song in hand, the hub goes on calling it in flight - and every row for
+   * it spun on every device, for hours, surviving an app restart because it
+   * is the hub's state. The status already says when the box last called in;
+   * past the same twenty minutes the hub uses to let a cancel through
+   * (collector.rs BOX_QUIET_MS), those rows stop spinning and say why.
+   */
+  const [boxQuiet, setBoxQuiet] = useState(false);
 
   // One poll for the two server feeds. The importer bridge polls itself, so
   // its jobs come through the context below without a fetch here.
@@ -117,6 +135,7 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
     if (!session) {
       setPending([]);
       setCollectorRecent([]);
+      setBoxQuiet(false);
       return undefined;
     }
     let alive = true;
@@ -129,6 +148,7 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
       void fetchCollectorStatus(session)
         .then((s) => {
           if (!alive) return;
+          setBoxQuiet(isBoxQuiet(s.delegates, s.peerSeenAt, Date.now()));
           const inflight = (s.recent ?? []).filter(
             (r) => r.state === 'offered' || r.state === 'fetching' || r.state === 'queued',
           );
@@ -264,8 +284,15 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
         artwork: null,
         progress: null,
         source: 'collector',
+        stalled: boxQuiet || undefined,
+        boxQuiet: boxQuiet || undefined,
       });
     }
+
+    // A card this hub handed to the box, while the box is quiet: at rest, and
+    // saying why. A job running on THIS hub is not the box's to stall.
+    const quietFor = (job: { service: string }) =>
+      boxQuiet && job.service === 'peer' ? { stalled: true, boxQuiet: true } : {};
 
     // The importer's active jobs, expanded to songs. A multi-track job knows
     // its running track and a real fraction; a single import is one song and
@@ -285,6 +312,7 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
             progress: frac,
             source: 'import',
             onCancel: cancel,
+            ...quietFor(job),
           });
         }
       } else {
@@ -299,11 +327,12 @@ export function IncomingProvider({ children }: { children: ReactNode }) {
           progress: frac,
           source: 'import',
           onCancel: cancel,
+          ...quietFor(job),
         });
       }
     }
     return out;
-  }, [pending, collectorRecent, downloads, landed, session]);
+  }, [pending, collectorRecent, downloads, landed, session, boxQuiet]);
 
   // The moment a key crosses from incoming to owned: the ghost was here last
   // render and the library holds it now. This drives BOTH halves of the

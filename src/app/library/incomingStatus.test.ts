@@ -141,3 +141,19 @@ describe('incomingStatus', () => {
     expect(incomingStatus(incoming({ artist: '' }), tr)).toBe('downloads.downloading');
   });
 });
+
+describe('a song whose download box has gone quiet', () => {
+  it('says it is waiting for the box, not for its turn - nothing is taking turns', () => {
+    const line = incomingStatus(incoming({ source: 'import', stalled: true, boxQuiet: true }), tr);
+    expect(line).toContain('downloads.waitingForBox');
+    expect(line).not.toContain('downloads.waitingTurn');
+  });
+
+  it('still says what went wrong when there is a failure to retry', () => {
+    const line = incomingStatus(
+      incoming({ source: 'import', stalled: true, boxQuiet: true, onRetry: () => {}, failure: 'Not found' }),
+      tr,
+    );
+    expect(line).not.toContain('downloads.waitingForBox');
+  });
+});

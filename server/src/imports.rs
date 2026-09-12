@@ -2072,10 +2072,22 @@ pub async fn cancel(
                 if !state.db.forget_offered_pull(pull).unwrap_or(false)
                     && state.db.pull_owner_kind(pull).is_some()
                 {
-                    return Err((
-                        StatusCode::CONFLICT,
-                        "The download box already took this one; it will arrive shortly.".into(),
-                    ));
+                    // Taken. That vetoes the cancel only while the box that took
+                    // it is still calling in: a box silent for twenty minutes is
+                    // not downloading anything, and "it will arrive shortly" is
+                    // then a promise nobody is keeping - the listener pressing
+                    // the X on a download that is going nowhere gets what they
+                    // asked for. (If the box does come back and deliver, the
+                    // files land as library tracks with no card, which is a far
+                    // smaller wrong than a row that cannot be dismissed.)
+                    let quiet = crate::collector::box_quiet(crate::collector::peer_seen_at(&state), crate::db::now_ms());
+                    if !quiet {
+                        return Err((
+                            StatusCode::CONFLICT,
+                            "The download box already took this one; it will arrive shortly.".into(),
+                        ));
+                    }
+                    let _ = state.db.forget_pull(pull);
                 }
             }
         }

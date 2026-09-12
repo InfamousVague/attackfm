@@ -728,6 +728,7 @@
     "viewBiggest": "Maiores",
     "viewByArtist": "Por artista",
     "viewLabel": "Como os ficheiros são listados",
+    "waitingForBox": "à espera do servidor de transferências",
     "waitingTurn": "à espera da sua vez",
     "wifiAnyConnection": "As transferências automáticas usam a ligação que houver, dados móveis incluídos. Só acontecem com a app aberta.",
     "wifiCannotTell": "Este dispositivo não distingue Wi-Fi de dados móveis, por isso as transferências continuam à mesma. A música a tocar, as músicas fixadas e o Verificar agora nunca ficam à espera.",

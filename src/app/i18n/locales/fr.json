@@ -728,6 +728,7 @@
     "viewBiggest": "Les plus gros",
     "viewByArtist": "Par artiste",
     "viewLabel": "Comment les fichiers sont listés",
+    "waitingForBox": "en attente du serveur de téléchargement",
     "waitingTurn": "attend son tour",
     "wifiAnyConnection": "Les téléchargements automatiques utilisent la connexion disponible, données mobiles comprises. Ils n'ont lieu que lorsque l'app est ouverte.",
     "wifiCannotTell": "Cet appareil ne distingue pas le Wi-Fi des données mobiles : les téléchargements continuent quoi qu'il arrive. La lecture, les titres épinglés et Vérifier ne sont jamais retenus.",

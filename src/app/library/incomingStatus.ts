@@ -36,7 +36,9 @@ export function incomingStatus(t: IncomingTrack, tr: Tr): string {
     ? tr('downloads.downloading')
     : t.onRetry
       ? shortFailure(t.failure, tr)
-      : tr('downloads.waitingTurn');
+      : t.boxQuiet
+        ? tr('downloads.waitingForBox')
+        : tr('downloads.waitingTurn');
   // The credit and the status are joined through a catalogue entry rather than
   // an em dash written here, because which side of the dash each half sits on
   // - and whether a dash is the right mark at all - is the translator's call.

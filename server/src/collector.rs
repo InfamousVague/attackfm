@@ -430,6 +430,67 @@ pub fn spawn(state: Arc<AppState>) {
 /// forgets it ever asked. Long enough to cover a home server that is off for
 /// the night, short enough that the pool moves on.
 const UNANSWERED_MS: i64 = 24 * 60 * 60 * 1000;
+
+/*
+ * A CLAIM WHOSE BOX HAS GONE QUIET.
+ *
+ * A taken pull used to get its whole day from the claim, however the box that
+ * took it was doing. So a home server that claimed a song and then slept,
+ * restarted, or crashed mid-download left the song "downloading" on every
+ * device for twenty-four hours - wearing a spinner in the song table, with a
+ * cancel button the hub refused ("the download box already took this one; it
+ * will arrive shortly") because the box HAD taken it. Restarting the app
+ * changed nothing: the ghost is the hub's state, redrawn every poll.
+ *
+ * The box stamps `collector.peer_seen_at` on every call it makes - a claim, a
+ * missing-check, each file's upload, each delivery report - so a box that is
+ * working through a playlist calls in as every song lands. Silence on that
+ * clock means the box is not working. Two thresholds, read off it:
+ */
+/// A claim older than this, from a box silent for this long, is not coming:
+/// the card fails with a reason and a Retry. Hours, not minutes, because a
+/// single long download makes no calls until its file is ready.
+const BOX_GONE_MS: i64 = 2 * 60 * 60 * 1000;
+/// A box silent this long can no longer veto a cancel: the listener pressing
+/// the X on a download nothing is running gets what they asked for.
+pub(crate) const BOX_QUIET_MS: i64 = 20 * 60 * 1000;
+
+/// What becomes of a delegated pull, from its clocks alone.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum DelegatedFate {
+    /// Still reasonably on its way.
+    Wait,
+    /// Taken by a box that has since gone silent for hours.
+    BoxGone,
+    /// Offered, or taken, and nothing has come of it in a day.
+    Unanswered,
+}
+
+/// The decision `settle_delegated_row` acts on, kept pure so it can be tested
+/// without a hub. `created_at` is the pull's clock - the claim time once taken
+/// (see `claim_offered_pull`); `peer_seen_at` is the box's last call, or None
+/// if no box has ever called.
+pub(crate) fn delegated_fate(taken: bool, created_at: i64, peer_seen_at: Option<i64>, now: i64) -> DelegatedFate {
+    if now - created_at > UNANSWERED_MS {
+        return DelegatedFate::Unanswered;
+    }
+    let box_silent = peer_seen_at.is_none_or(|seen| now - seen > BOX_GONE_MS);
+    if taken && now - created_at > BOX_GONE_MS && box_silent {
+        return DelegatedFate::BoxGone;
+    }
+    DelegatedFate::Wait
+}
+
+/// Whether the box has been silent long enough that a claim no longer holds
+/// off a cancel.
+pub(crate) fn box_quiet(peer_seen_at: Option<i64>, now: i64) -> bool {
+    peer_seen_at.is_none_or(|seen| now - seen >= BOX_QUIET_MS)
+}
+
+/// The box's last call, off the clock every peer-channel call stamps.
+pub(crate) fn peer_seen_at(state: &AppState) -> Option<i64> {
+    state.db.meta_get("collector.peer_seen_at").and_then(|v| v.parse::<i64>().ok())
+}
 /// How many wants may be outstanding at once. Offers accumulate while no peer
 /// is listening - one every cycle, per listener - and a queue that grows all
 /// week is not a queue, it is a backlog nobody asked for. At the cap the
@@ -558,17 +619,22 @@ async fn settle_delegated_row(state: &Arc<AppState>, row: DelegatedRow) {
                 return;
             }
             // The clock restarts at the claim (claim_offered_pull), so a taken
-            // pull gets its day from the peer picking it up, not from the paste.
-            if now_ms() - created_at > UNANSWERED_MS {
-                let _ = state.db.fail_pull(pull_id);
-                if let Some(job) = job {
-                    let why = if marker == crate::db::Db::PULL_TAKEN {
-                        "The download box took it but never delivered it. Retry to offer it again."
-                    } else {
-                        "No download box answered in a day. Retry when it is back."
-                    };
-                    crate::imports::fail_delegated(state, job, why).await;
+            // pull gets its day from the peer picking it up, not from the paste
+            // - and its hours of silence are counted from there too.
+            let taken = marker == crate::db::Db::PULL_TAKEN;
+            let why = match delegated_fate(taken, created_at, peer_seen_at(state), now_ms()) {
+                DelegatedFate::Wait => return,
+                DelegatedFate::BoxGone => {
+                    "The download box went quiet before delivering this. Retry when it is back."
                 }
+                DelegatedFate::Unanswered if taken => {
+                    "The download box took it but never delivered it. Retry to offer it again."
+                }
+                DelegatedFate::Unanswered => "No download box answered in a day. Retry when it is back.",
+            };
+            let _ = state.db.fail_pull(pull_id);
+            if let Some(job) = job {
+                crate::imports::fail_delegated(state, job, why).await;
             }
             return;
         }
@@ -586,7 +652,11 @@ async fn settle_delegated_row(state: &Arc<AppState>, row: DelegatedRow) {
          * damage this distinction avoids. Dropping the row lets the ordinary
          * scoring offer it again; the paths and tracks tables cascade with it.
          */
-        if now_ms() - created_at > UNANSWERED_MS {
+        // The same for a claim whose box went quiet: forgotten, so the song
+        // can be offered again when a box is listening - it is not the song's
+        // fault the box slept.
+        let taken = marker == crate::db::Db::PULL_TAKEN;
+        if delegated_fate(taken, created_at, peer_seen_at(state), now_ms()) != DelegatedFate::Wait {
             let _ = state.db.forget_pull(pull_id);
         }
     }
@@ -2991,5 +3061,66 @@ mod date_deal_tests {
         assert_eq!(db.pulled_ext_ids(me, 0).len(), 5, "the ledger holds everything");
         assert_eq!(db.collector_buys_since(me, 0), 2, "the cadence counts the collector's live buys");
         assert_eq!(db.collector_buys_since(me, crate::db::now_ms() + 1), 0, "inside the window only");
+    }
+}
+
+
+#[cfg(test)]
+mod delegated_fates {
+    //! What becomes of a pull out with a download box, from its clocks alone.
+    //! The case this exists for: a box that claimed a song and then slept or
+    //! crashed left it "downloading" on every device for a whole day, with a
+    //! cancel the hub refused.
+
+    use super::{box_quiet, delegated_fate, DelegatedFate, BOX_GONE_MS, BOX_QUIET_MS, UNANSWERED_MS};
+
+    const NOW: i64 = 10_000_000_000;
+    const MIN: i64 = 60 * 1000;
+
+    #[test]
+    fn a_fresh_claim_waits() {
+        assert_eq!(delegated_fate(true, NOW - 5 * MIN, Some(NOW - 5 * MIN), NOW), DelegatedFate::Wait);
+    }
+
+    #[test]
+    fn a_claim_from_a_box_silent_for_hours_is_given_up_on() {
+        let claimed = NOW - BOX_GONE_MS - MIN;
+        assert_eq!(delegated_fate(true, claimed, Some(claimed), NOW), DelegatedFate::BoxGone);
+    }
+
+    #[test]
+    fn a_long_download_from_a_box_that_keeps_calling_waits_its_day() {
+        // Hours since the claim, but the box called in a minute ago - it is
+        // working through a playlist, one upload at a time.
+        let claimed = NOW - BOX_GONE_MS - 60 * MIN;
+        assert_eq!(delegated_fate(true, claimed, Some(NOW - MIN), NOW), DelegatedFate::Wait);
+    }
+
+    #[test]
+    fn an_offer_nobody_took_is_not_the_box_going_quiet() {
+        // Untaken, the box's silence decides nothing short of the day: that
+        // is a home server that is off, and the offer simply waits.
+        let offered = NOW - BOX_GONE_MS - 60 * MIN;
+        assert_eq!(delegated_fate(false, offered, None, NOW), DelegatedFate::Wait);
+    }
+
+    #[test]
+    fn a_box_that_never_called_counts_as_silent() {
+        let claimed = NOW - BOX_GONE_MS - MIN;
+        assert_eq!(delegated_fate(true, claimed, None, NOW), DelegatedFate::BoxGone);
+    }
+
+    #[test]
+    fn the_day_still_ends_everything() {
+        let raised = NOW - UNANSWERED_MS - MIN;
+        assert_eq!(delegated_fate(false, raised, Some(NOW), NOW), DelegatedFate::Unanswered);
+        assert_eq!(delegated_fate(true, raised, Some(NOW), NOW), DelegatedFate::Unanswered);
+    }
+
+    #[test]
+    fn a_quiet_box_no_longer_vetoes_a_cancel() {
+        assert!(!box_quiet(Some(NOW - MIN), NOW));
+        assert!(box_quiet(Some(NOW - BOX_QUIET_MS), NOW));
+        assert!(box_quiet(None, NOW));
     }
 }

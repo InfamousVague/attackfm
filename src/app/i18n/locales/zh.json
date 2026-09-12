@@ -604,6 +604,7 @@
     "viewBiggest": "最大",
     "viewByArtist": "按艺人",
     "viewLabel": "文件的排列方式",
+    "waitingForBox": "等待下载服务器",
     "waitingTurn": "排队等候中",
     "wifiAnyConnection": "自动下载会用当前任何网络，包括移动数据。只有应用打开时才会下载。",
     "wifiCannotTell": "本设备分不清 Wi-Fi 和移动数据，所以下载照常进行。正在播放的音乐、已固定的歌曲和「立即检查」永远不会被拦下。",
