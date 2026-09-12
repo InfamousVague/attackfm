@@ -45,7 +45,7 @@ import { effectsOn } from './effects.ts';
 import { fxChainOn } from './fxChain.ts';
 import { stemDropParam } from './stemDrop.ts';
 import { trackIdFromPath } from '../server.ts';
-import { serverSeemsDown } from '../api/reachability.ts';
+import { serverSeemsDown, streamStrained } from '../api/reachability.ts';
 
 const CACHE = 'attackfm-queue-v1';
 /** A host that cannot be reached on purpose - these keys are matched, never
@@ -89,7 +89,7 @@ function keyFor(path: string): string {
  * refused for carrying an effect still plays when there is nothing to render it.
  */
 function mayServe(path: string): boolean {
-  if (serverSeemsDown()) return true;
+  if (serverSeemsDown() || streamStrained()) return true;
   if (effectsOn() || fxChainOn()) return false;
   return stemDropParam(trackIdFromPath(path)) === null;
 }

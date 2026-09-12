@@ -92,6 +92,47 @@ export function serverSeemsDown(): boolean {
   return down;
 }
 
+/*
+ * SLOW IS NOT DOWN - and it needs the same answer.
+ *
+ * Everything above counts SILENCE: a fetch that got no reply, a media element
+ * that failed at the transport. A slow connection produces neither. Its JSON
+ * calls come back late but they come back (and every reply resets the flag),
+ * and a starving <audio> fires `waiting` and `stalled`, never `error`. So on a
+ * bad train wifi the hub "seems up" forever, and the gates that decline a
+ * song's local copy in the hub's favour - the effects rack above all - went on
+ * declining it: the deck retried the stream that could not keep up, retried
+ * it again, and stopped, on a song sitting whole on the disk. "A song that
+ * plays without its filters beats a song that does not play" was only ever
+ * applied to a dead hub; it is exactly as true of a hub the wire cannot reach
+ * at the speed of music.
+ *
+ * STRAINED is that second fact. The deck notes it when it has had to reach for
+ * a stream's source again - a stall that outlasted its grace, or a first load
+ * that never got as far as `canplay` - and only when a copy on this device
+ * could answer instead. It holds for a few minutes after the last note, not
+ * until some request succeeds: a slow connection answers requests all day, and
+ * a strain lifted by the first reply would hand the song straight back to the
+ * stream that just failed it, on the very next seek.
+ */
+const STRAIN_HOLD_MS = 3 * 60_000;
+let strainedUntil = 0;
+
+/**
+ * The wire could not carry a stream. Returns whether this begins a NEW
+ * episode - so a caller can say so once, not on every stall of one bad patch.
+ */
+export function noteStreamStrained(now: number = Date.now()): boolean {
+  const fresh = now >= strainedUntil;
+  strainedUntil = now + STRAIN_HOLD_MS;
+  return fresh;
+}
+
+/** Whether a local copy should be preferred over the stream for now. */
+export function streamStrained(now: number = Date.now()): boolean {
+  return now < strainedUntil;
+}
+
 export function subscribeReachability(fn: () => void): () => void {
   listeners.add(fn);
   return () => {

@@ -2230,6 +2230,7 @@
     "stemsWorkingPercent": "جارٍ تفكيك الأغنية · {{percent}}٪ · {{seconds}} ث",
     "stillLookingUp": "ما زال البحث عن أغنية جاريًا",
     "stop": "إيقاف",
+    "strainedToSaved": "الاتصال لا يواكب، لذا تُشغَّل النسخة المحفوظة على هذا الجهاز، دون مؤثراتك الصوتية.",
     "theHost": "المضيف",
     "thenFromList": "ثم، مما تُشغّله",
     "transportGroup": "أدوات التحكم بالتشغيل",

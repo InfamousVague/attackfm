@@ -1870,6 +1870,7 @@
     "stemsWorkingPercent": "Séparation du titre · {{percent}} % · {{seconds}} s",
     "stillLookingUp": "Recherche d'un titre en cours",
     "stop": "Arrêter",
+    "strainedToSaved": "La connexion ne suit pas : lecture de la copie enregistrée sur cet appareil, sans vos effets sonores.",
     "theHost": "l'hôte",
     "thenFromList": "Ensuite, dans ce que vous écoutez",
     "transportGroup": "Commandes de lecture",

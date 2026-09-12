@@ -22,16 +22,16 @@ import { sleepsAtAnEnd } from './sleepTimer.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VOLUME_UNITY } from './volume.ts';
 import { recordResume } from '../servers/resumeSync.ts';
-import { useEffects } from './effects.ts';
+import { effectsOn, useEffects } from './effects.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
-import { useFxChain, chainRate } from './fxChain.ts';
+import { fxChainOn, useFxChain, chainRate } from './fxChain.ts';
 import { recordDiag } from '../diag/diagLog.ts';
 import { loadAudioSource, loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from '../core/tauri.ts';
-import { warmQueue } from './queueBuffer.ts';
+import { isBuffered, warmQueue } from './queueBuffer.ts';
 import { isPendingPath } from './pendingTrack.ts';
 import { isRemotePath } from '../server.ts';
 import { fireFelt, fireNativeHaptic, heartbeatHaptic, HEARTBEATS, HEARTBEAT_DUB_MS, HEARTBEAT_EVERY_MS } from '../core/haptics.ts';
-import { noteMediaSilent, serverSeemsDown } from '../api/reachability.ts';
+import { noteMediaSilent, noteStreamStrained, serverSeemsDown, streamStrained } from '../api/reachability.ts';
 import { isHeld } from '../downloads/offline.ts';
 import { loadScrubTape } from './scrubTape.ts';
 import { useConnect } from './playbackSync.tsx';
@@ -52,7 +52,7 @@ import { useSystemBack } from '../nav/systemBack.ts';
 import { setNowPlayingDoor } from '../nav/nowPlayingDoor.ts';
 import { usePlayerDismiss } from './playerDismiss.ts';
 import { subscribeDeckHold } from './deckHold.ts';
-import { stemDropOnTrack, useStemDrop } from './stemDrop.ts';
+import { stemDropOnTrack, stemDropParam, useStemDrop } from './stemDrop.ts';
 import { initDockWave } from './dockWave.ts';
 import { useMediaQuery } from '../ux/useMediaQuery.ts';
 import { REDUCED_MOTION_QUERY } from '../ux/useReducedMotion.ts';
@@ -995,6 +995,19 @@ export function Player({
 
   /** How long a frozen clock is tolerated before reaching for the source. */
   const STALL_GRACE_MS = 1600;
+  /**
+   * How long a song's FIRST load may go without reaching `canplay` before a
+   * copy on this device is reached for instead.
+   *
+   * The stall ladder cannot see this case: the deck calls play() only from
+   * `canplay`, so an element still waiting for its first bytes is paused, and
+   * `stalled` on a paused element is ignored - a song tapped on a slow
+   * connection simply sat there. Four seconds is several times what a healthy
+   * encode takes to become playable, and the watch is only armed when there IS
+   * a local copy to go to, so on a good connection it never has anything to do.
+   */
+  const FIRST_LOAD_GRACE_MS = 4000;
+  const firstLoadTimer = useRef<number | undefined>(undefined);
   /** Waits between reloads, then giving up honestly. */
   /**
  * How long the rack waits for the tapping to stop before re-colouring.
@@ -1164,6 +1177,8 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const clearStall = () => {
     window.clearTimeout(recoverTimer.current);
     recoverTimer.current = undefined;
+    window.clearTimeout(firstLoadTimer.current);
+    firstLoadTimer.current = undefined;
     stalledAt.current = 0;
     resumeCount.current = 0;
     setBuffering(false);
@@ -1202,10 +1217,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
        * one lap instead of spinning; the counter resets whenever a track
        * actually starts.
        */
-      if (serverSeemsDown() && offlineSkips.current < liveRef.current.queue.length) {
+      if ((serverSeemsDown() || streamStrained()) && offlineSkips.current < liveRef.current.queue.length) {
         const upcoming = liveRef.current.queue;
         const at = upcoming.findIndex((t) => t.path === current.path);
-        const next = upcoming.slice(at + 1).find((t) => isHeld(t.path));
+        const next = upcoming.slice(at + 1).find((t) => isHeld(t.path) || isBuffered(t.path));
         if (next && liveRef.current.onTrackChange) {
           offlineSkips.current += 1;
           resumeCount.current = 0;
@@ -1520,6 +1535,29 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resumeInPlace is redefined every render
   }, [dropState.revision]);
 
+  /**
+   * The stream could not keep up, and this device holds the song.
+   *
+   * Says so to reachability, which is what turns the local-copy gates (the
+   * vault's, the queue buffer's) from "the hub can colour this, go to the hub"
+   * to "take the copy": the reload that follows resolves onto the disk and the
+   * song plays on from where it was. Returns false - and notes nothing - when
+   * there is no copy to go to, because then there is nothing to prefer and a
+   * strain would only change what a LATER song does.
+   *
+   * The copy is the finished mix, so whatever the rack, the chain or the
+   * mixer was doing to the stream is not in it. That trade is the right one
+   * - a song without its filters beats a song that stops - but it is a change
+   * the listener did not ask for, so it is said aloud, once per bad patch.
+   */
+  const strainOnto = (path: string): boolean => {
+    if (!isRemotePath(path) || !(isHeld(path) || isBuffered(path))) return false;
+    const fresh = noteStreamStrained();
+    const coloured = effectsOn() || fxChainOn() || stemDropParam(trackIdFromPath(path)) !== null;
+    if (fresh && coloured) toast({ message: t('player.strainedToSaved') });
+    return true;
+  };
+
   /** Arm the ladder. Idempotent: an episode already running keeps its timer. */
   const noteStall = () => {
     if (!wantPlaying.current || remoteOnlyRef.current) return;
@@ -1531,7 +1569,12 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     recoverTimer.current = window.setTimeout(() => {
       recoverTimer.current = undefined;
       // Still dry? Only then is it worth throwing the connection away.
-      if (stalledAt.current !== 0) void resumeInPlace();
+      if (stalledAt.current === 0) return;
+      // And if this device holds the song, the connection is not worth
+      // reaching for again at all: the reload below lands on the copy.
+      const path = liveRef.current.track?.path;
+      if (path) strainOnto(path);
+      void resumeInPlace();
     }, STALL_GRACE_MS + wait);
   };
 
@@ -2511,12 +2554,42 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       analyserRef.current?.scrub.eject();
       pendingPlay.current = autoplayRef.current || engaged.current;
       setActiveSrc(url);
+      /*
+       * THE FIRST LOAD, WATCHED.
+       *
+       * Armed only for a song meant to play, loading off the wire, that this
+       * device also holds - which is to say, only when the resolver has just
+       * DECLINED a copy on the disk (an effect on, a part dropped) in the
+       * hub's favour. If the hub cannot get it as far as `canplay` in time, the
+       * copy was the right answer after all: note the strain and ask again,
+       * and the gates hand over the file. A RETRY, so it lands the way this
+       * load was going to - playing if it was to play, at any position a
+       * hand-off has already asked for - and a song with no copy is left to
+       * load at whatever speed the wire allows, since cutting that connection
+       * would only start it over.
+       */
+      const streamed = /^https?:\/\//.test(url) && !/^https?:\/\/asset\.localhost/.test(url);
+      if (pendingPlay.current && streamed && isRemotePath(track.path) && (isHeld(track.path) || isBuffered(track.path))) {
+        const path = track.path;
+        window.clearTimeout(firstLoadTimer.current);
+        firstLoadTimer.current = window.setTimeout(() => {
+          firstLoadTimer.current = undefined;
+          if (cancelled || liveRef.current.track?.path !== path) return;
+          const el = activeAudio();
+          if (!el || el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
+          if (!strainOnto(path)) return;
+          void resumeInPlace(undefined, 'retry');
+        }, FIRST_LOAD_GRACE_MS);
+      }
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(firstLoadTimer.current);
+      firstLoadTimer.current = undefined;
       // Asset-protocol URLs are not object URLs; only a blob needs releasing.
       if (created?.startsWith('blob:')) URL.revokeObjectURL(created);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a load is per TRACK; the first-load watch calls resumeInPlace and strainOnto, which are redefined every render and read live state through refs, and re-running the load for either would restart the song
   }, [track]);
 
   // Tapping a song you do not own opens Now Playing straight onto it, downloading

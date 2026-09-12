@@ -12,7 +12,7 @@
 //! songs it does not.
 
 import { effectsOn } from '../player/effects.ts';
-import { serverSeemsDown } from '../api/reachability.ts';
+import { serverSeemsDown, streamStrained } from '../api/reachability.ts';
 import { fxChainOn } from '../player/fxChain.ts';
 import { stemDropParam } from '../player/stemDrop.ts';
 import { originFromPath, remotePath, trackIdFromPath } from '../server.ts';
@@ -236,8 +236,14 @@ function offlineSource(path: string): string | null {
    * This is the whole reason a liked song would not start with the home server
    * down: the vault had it, and the resolver was handing it back a null because
    * an effect was switched on weeks ago.
+   *
+   * And a hub that is up but cannot be reached at the speed of music is the
+   * same case, which this gate did not see: a slow connection is never
+   * "down", so a held song with an effect on buffered, retried and stopped.
+   * `streamStrained` is the deck's word that the stream has already failed to
+   * keep up (see reachability.ts).
    */
-  if (serverSeemsDown()) return heldPath(path);
+  if (serverSeemsDown() || streamStrained()) return heldPath(path);
   if (effectsOn() || fxChainOn()) return null;
   if (stemDropParam(trackIdFromPath(path)) !== null) return null;
   return heldPath(path);

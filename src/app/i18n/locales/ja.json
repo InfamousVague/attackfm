@@ -1630,6 +1630,7 @@
     "stemsWorkingPercent": "曲を分解中 · {{percent}}% · {{seconds}}秒",
     "stillLookingUp": "まだ曲を調べています",
     "stop": "停止",
+    "strainedToSaved": "接続が追いつかないため、この端末に保存されたコピーを再生しています（サウンドエフェクトなし）。",
     "theHost": "ホスト",
     "thenFromList": "その次は、再生中のリストから",
     "transportGroup": "再生コントロール",

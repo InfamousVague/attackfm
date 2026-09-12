@@ -1750,6 +1750,7 @@
     "stemsWorkingPercent": "Song wird zerlegt · {{percent}} % · {{seconds}} s",
     "stillLookingUp": "Ein Song wird noch nachgeschlagen",
     "stop": "Stopp",
+    "strainedToSaved": "Die Verbindung kommt nicht hinterher – es läuft die auf diesem Gerät gespeicherte Kopie, ohne deine Soundeffekte.",
     "theHost": "Gastgeber",
     "thenFromList": "Danach, aus dem, was du hörst",
     "transportGroup": "Wiedergabesteuerung",

@@ -120,3 +120,65 @@ describe('subscribers', () => {
     expect(beats).toBe(2);
   });
 });
+
+/*
+ * SLOW, as opposed to down. A slow connection answers every request and never
+ * fails a media element at the transport, so nothing above ever fires for it -
+ * which is why a song held on the device with an effect on buffered, retried
+ * and stopped instead of playing its copy.
+ */
+describe('the strained flag', () => {
+  const MIN = 60_000;
+
+  it('starts unstrained', async () => {
+    const r = await fresh();
+    expect(r.streamStrained()).toBe(false);
+  });
+
+  it('holds for minutes after the deck notes it, then lifts on its own', async () => {
+    const r = await fresh();
+    const at = 1_000_000;
+    r.noteStreamStrained(at);
+    expect(r.streamStrained(at + 1)).toBe(true);
+    expect(r.streamStrained(at + 2 * MIN)).toBe(true);
+    expect(r.streamStrained(at + 3 * MIN + 1)).toBe(false);
+  });
+
+  it('says a bad patch has begun once, not on every stall inside it', async () => {
+    const r = await fresh();
+    const at = 1_000_000;
+    expect(r.noteStreamStrained(at)).toBe(true);
+    expect(r.noteStreamStrained(at + 20_000)).toBe(false);
+    expect(r.noteStreamStrained(at + 40_000)).toBe(false);
+  });
+
+  it('is extended by every note, so a connection that keeps failing stays strained', async () => {
+    const r = await fresh();
+    const at = 1_000_000;
+    r.noteStreamStrained(at);
+    r.noteStreamStrained(at + 2 * MIN);
+    expect(r.streamStrained(at + 4 * MIN)).toBe(true);
+    expect(r.streamStrained(at + 5 * MIN + 1)).toBe(false);
+    // ...and a note after it has lifted is a new patch, said again.
+    expect(r.noteStreamStrained(at + 6 * MIN)).toBe(true);
+  });
+
+  it('is NOT lifted by the server answering - a slow connection answers all day', async () => {
+    const r = await fresh();
+    r.noteStreamStrained();
+    r.noteServerAnswered();
+    r.noteServerAnswered();
+    expect(r.streamStrained()).toBe(true);
+  });
+
+  it('is a different fact from down, in both directions', async () => {
+    const r = await fresh();
+    r.noteStreamStrained();
+    expect(r.serverSeemsDown()).toBe(false);
+    const s = await fresh();
+    s.noteServerSilent();
+    s.noteServerSilent();
+    expect(s.serverSeemsDown()).toBe(true);
+    expect(s.streamStrained()).toBe(false);
+  });
+});

@@ -1630,6 +1630,7 @@
     "stemsWorkingPercent": "正在拆这首歌 · {{percent}}% · {{seconds}} 秒",
     "stillLookingUp": "还在查一首歌",
     "stop": "停止",
+    "strainedToSaved": "网络跟不上，正在播放保存在此设备上的副本，不含你的音效。",
     "theHost": "房主",
     "thenFromList": "然后，来自你正在播放的列表",
     "transportGroup": "播放控制",

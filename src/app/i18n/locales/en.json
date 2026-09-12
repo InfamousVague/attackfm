@@ -1750,6 +1750,7 @@
     "stemsWorkingPercent": "Taking the song apart · {{percent}}% · {{seconds}}s",
     "stillLookingUp": "Still looking up a song",
     "stop": "Stop",
+    "strainedToSaved": "The connection can’t keep up, so this is the copy saved on this device — without your sound effects.",
     "theHost": "the host",
     "thenFromList": "Then, from what you’re playing",
     "transportGroup": "Playback controls",
