@@ -256,8 +256,14 @@ test('the seat moves to the device that asks for it, mid-song, and comes back', 
   if (await dock.count()) {
     expect(await dock.locator('.npScreen__meta').innerText()).not.toContain(`Playing on ${PHONE.name}`);
   }
-  const plate = await where.evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(plate).not.toBe('rgba(0, 0, 0, 0)');
+  // Read with the pointer off the control and the paint settled: the kit's
+  // ghost button transitions its background and lights it on hover, so a
+  // single sample taken the instant the seat flips can read either state, or
+  // a frame of the way between them.
+  const background = (el: Element) => getComputedStyle(el).backgroundColor;
+  await desk.mouse.move(1, 1);
+  await expect.poll(() => where.evaluate(background)).not.toBe('rgba(0, 0, 0, 0)');
+  const plate = await where.evaluate(background);
   await closeSettings(phone);
 
   // ...and back, which is its own bug: a device handed the seat while it was
@@ -272,7 +278,8 @@ test('the seat moves to the device that asks for it, mid-song, and comes back', 
   // Back here, the plate comes off: a coloured glyph is "here", a plate is "there".
   const here = desk.locator('.deviceTrigger[data-active]:visible').first();
   await expect(here).toBeVisible();
-  expect(await here.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(plate);
+  await desk.mouse.move(1, 1);
+  await expect.poll(() => here.evaluate(background)).not.toBe(plate);
 });
 
 test('a remote drives the device that is playing, and hears the answer', async () => {
