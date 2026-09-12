@@ -15,6 +15,22 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.6.6
+
+- On a slow connection, a song you have on this device plays from your saved
+  copy instead of buffering, retrying and stopping - even with a sound effect
+  on. The effect sits out until the connection can keep up, and you are told.
+- A foldable opened sideways shows Now Playing in a column on the right, with
+  the rest of the app still open beside it. Close the hinge and it goes back.
+- On repeat opens with your most played song first, and Recently added and All
+  songs open newest first, rather than all of them A to Z.
+- The "Playing on" line under the artist is gone. The devices button shows
+  where the song is instead: that device's own icon, on a highlight.
+- The disc spins up properly fast while a song is buffering, and winds back
+  down when it arrives.
+- The share button on Now Playing uses the share icon.
+- A count on the buttons under Now Playing no longer has its top cut off.
+
 ## 0.6.5
 
 - On a computer, a drawer is a panel rather than a wall: the search palette and
