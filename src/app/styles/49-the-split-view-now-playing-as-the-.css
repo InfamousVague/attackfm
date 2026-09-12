@@ -141,6 +141,16 @@ body:has(.npScreen[data-docked]) .appWindow {
 body:has(.mobileHeader) {
   --np-dock-width: clamp(22rem, 45vw, 30rem);
   --app-titlebar-height: 0px;
+  /* Restated, not inherited. `--np-dock-top` is a calc over the title bar's
+     height, and a custom property's var()s are substituted where it is
+     DECLARED - on :root, where the bar is still 3.25rem - and inherited as
+     that finished value. Zeroing the bar here alone therefore moved nothing:
+     measured, the fold's card still started 52px down with its content 98px
+     taller than the card. Declaring the same sum on this element makes it
+     read this element's bar. */
+  --np-dock-top: calc(
+    max(var(--glacier-space-3), env(safe-area-inset-top, 0px)) + var(--app-titlebar-height, 0px)
+  );
 }
 
 /*
