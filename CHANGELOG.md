@@ -15,6 +15,15 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.6.8
+
+- Importing a playlist takes you straight to the playlist, with a row for every
+  song saying where it is: waiting, downloading, or not found.
+- Songs that stopped arriving no longer spin in your song list forever. When
+  the server fetching them goes quiet, the row says so, and you can cancel it.
+- A new book collection no longer shows up among your playlists on another
+  device for a moment while it is being made.
+
 ## 0.6.7
 
 - Keyboard shortcuts: Space to play and pause, the arrows to seek and change
