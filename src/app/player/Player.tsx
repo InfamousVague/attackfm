@@ -4324,6 +4324,11 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     jam,
     liveRef,
     positionRef,
+    // The element's own clock, for the reports: see the note where it is read.
+    readPosition: () => {
+      const el = activeAudio();
+      return el && Number.isFinite(el.currentTime) ? deckTime(el) : positionRef.current;
+    },
     playbackRef,
     resumeRef,
     track,
@@ -4375,12 +4380,8 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to the mode flip; everything else is read through refs
   }, [silent]);
 
-  // Becoming a remote pauses local audio, even if the explicit release did not
-  // arrive (a seat claimed out from under this device).
-  useEffect(() => {
-    if (activeElsewhere && playing) setPlayingState(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to the mode flip
-  }, [activeElsewhere]);
+  // Finding the seat elsewhere while playing - stop, or claim it - lives with
+  // the rest of the seat logic in usePlayerConnect.
 
   /*
    * A surface that IS the output - the karaoke stage, the pad sampler - takes

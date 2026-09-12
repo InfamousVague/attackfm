@@ -1097,3 +1097,137 @@ describe('the frames the fixture describes', () => {
     expect(SOUND_ACTIONS.map(soundField)).toEqual(['gains', 'effects', 'chain']);
   });
 });
+
+/**
+ * FINDING THE SEAT ELSEWHERE WHILE PLAYING: stop, or claim.
+ *
+ * A device whose seat is taken from it stops - two devices must never play at
+ * once. A device that was playing before its socket could tell it anybody
+ * else was (the app just opened, or it is back from the background) pressed
+ * play on newer information than the seat holder's, and claims the seat for
+ * the song it is on. Before this it paused, so the song somebody had just
+ * chosen stopped under their thumb and the other device played on.
+ */
+const NONE: Track[] = [];
+
+function seatBench(opts: { held: boolean }) {
+  const playingSong = song(2);
+  const setPlayingState = vi.fn();
+  const onTrackChange = vi.fn();
+  let registered: { becomeActive: (state: never) => void } | null = null;
+  const live: MutableRefObject<PlayerLiveState> = {
+    current: {
+      playing: true,
+      position: 3,
+      duration: 200,
+      track: playingSong,
+      shuffle: false,
+      repeat: 'off',
+      volume: 100,
+      queue: [],
+      setPlayingState,
+      commitSeek: vi.fn(),
+      allTracks: [song(1), song(2)],
+      onTrackChange,
+      onQueueChange: vi.fn(),
+      deckOwned: true,
+    } as unknown as PlayerLiveState,
+  };
+  const makeConnect = (activeDeviceId: string | null) => ({
+    connected: true,
+    thisDeviceId: 'this-device',
+    activeDeviceId,
+    activeElsewhere: activeDeviceId !== null && activeDeviceId !== 'this-device',
+    carries: new Set<string>(),
+    session: null,
+    registerController: vi.fn((c: { becomeActive: (state: never) => void } | null) => {
+      if (c) registered = c;
+    }),
+    reportState: vi.fn(),
+    transfer: vi.fn(),
+    sendCommand: vi.fn(),
+  });
+  const props = (connect: ReturnType<typeof makeConnect>) => ({
+    connect: connect as unknown as Parameters<typeof usePlayerConnect>[0]['connect'],
+    jam: null as unknown as Parameters<typeof usePlayerConnect>[0]['jam'],
+    liveRef: live,
+    positionRef: { current: 3 },
+    playbackRef: { current: { volumeBoost: false } } as unknown as Parameters<
+      typeof usePlayerConnect
+    >[0]['playbackRef'],
+    resumeRef: { current: null } as MutableRefObject<null>,
+    track: playingSong,
+    playing: true,
+    shuffle: false,
+    repeat: 'off' as const,
+    volume: 100,
+    // Stable, as the Player's state is: a fresh [] per render would re-run
+    // the report effect on every rerender, which the app never does.
+    queue: NONE,
+    upNext: NONE,
+    seekTick: 0,
+    duration: 200,
+    commitSeek: vi.fn(),
+    setPlayingState,
+    silent: false,
+  });
+  // A fresh socket: nobody known to hold the seat, or this device holding it.
+  let connect = makeConnect(opts.held ? 'this-device' : null);
+  const view = renderHook((p: { c: ReturnType<typeof makeConnect> }) => usePlayerConnect(props(p.c)), {
+    initialProps: { c: connect },
+  });
+  return {
+    setPlayingState,
+    onTrackChange,
+    /** The hub says the desk holds the seat. */
+    seatGoesTo: (id: string) => {
+      connect = makeConnect(id);
+      view.rerender({ c: connect });
+      return connect;
+    },
+    becomeActive: () => registered!.becomeActive({
+      activeDeviceId: 'this-device',
+      trackId: 1,
+      positionMs: 90_000,
+      playing: true,
+      shuffle: false,
+      repeat: 'off',
+      volume: 100,
+      queue: [1],
+      queueIndex: 0,
+      updatedAt: Date.now(),
+    } as never),
+  };
+}
+
+describe('the seat found elsewhere while playing', () => {
+  it('is CLAIMED by a device that has not held it since its socket came up', () => {
+    const b = seatBench({ held: false });
+    const connect = b.seatGoesTo('desk');
+    expect(connect.transfer).toHaveBeenCalledWith('this-device');
+    expect(b.setPlayingState).not.toHaveBeenCalledWith(false);
+  });
+
+  it('stops a device that held it and had it taken', () => {
+    const b = seatBench({ held: true });
+    const connect = b.seatGoesTo('desk');
+    expect(b.setPlayingState).toHaveBeenCalledWith(false);
+    expect(connect.transfer).not.toHaveBeenCalled();
+  });
+
+  it('keeps its own song when the hub answers the claim with the old holder’s', () => {
+    // The hub's `becomeActive` carries the session as it stood: the desk's
+    // song, ninety seconds in. Loading it would replace the song this device
+    // claimed the seat FOR.
+    const b = seatBench({ held: false });
+    b.seatGoesTo('desk');
+    b.becomeActive();
+    expect(b.onTrackChange).not.toHaveBeenCalled();
+  });
+
+  it('still takes a hand-off it did not claim - "play it here" loads the session’s song', () => {
+    const b = seatBench({ held: true });
+    b.becomeActive();
+    expect(b.onTrackChange).toHaveBeenCalledOnce();
+  });
+});

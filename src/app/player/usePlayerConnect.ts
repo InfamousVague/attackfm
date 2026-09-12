@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MutableRefObject } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { PlayerRepeat } from '@glacier/react';
 import { soundFrame, type SoundAction } from './soundCommands.ts';
 import type { ConnectCommand } from './connect.ts';
@@ -17,6 +17,10 @@ import { peekRoomTrack, resolveRoomTracks, roomTrack } from './roomTrack.ts';
 import { deviceId } from './connect.ts';
 import type { Track } from '../core/tauri.ts';
 import type { JamCommand } from '../server.ts';
+
+/** How long after claiming the seat a `becomeActive` is taken as the answer
+ *  to that claim rather than as a hand-off of somebody else's song. */
+const CLAIM_WINDOW_MS = 10_000;
 
 /** A member's command older than this is stale - the hub drops them at the
  *  same age, and a slow reply must not land a fifteen-second-old pause. */
@@ -82,6 +86,7 @@ export function usePlayerConnect({
   jam,
   liveRef,
   positionRef,
+  readPosition,
   playbackRef,
   resumeRef,
   track,
@@ -101,6 +106,12 @@ export function usePlayerConnect({
   jam: JamValue;
   liveRef: MutableRefObject<PlayerLiveState>;
   positionRef: MutableRefObject<number>;
+  /**
+   * Where the deck actually is, in song seconds - read off the playing
+   * element rather than React state. Optional so a caller without a deck
+   * (the tests' benches) falls back to `positionRef`.
+   */
+  readPosition?: () => number;
   playbackRef: MutableRefObject<Playback>;
   resumeRef: MutableRefObject<PendingResume>;
   track: Track | null;
@@ -120,6 +131,37 @@ export function usePlayerConnect({
    *  follow below must never take the room's song over. See PlayerHost. */
   silent?: boolean;
 }): void {
+  /*
+   * WHO GOT THERE FIRST.
+   *
+   * A device that is watching routes a pick to the one playing, so a watching
+   * phone never starts a song of its own. A phone whose Connect socket is not
+   * up yet - the app just opened, or it is on its way back from the
+   * background - is not watching: a song tapped there plays right there. When
+   * the socket then comes up it learns that the desk holds the seat, and it
+   * used to do what a device does when its seat is taken from it: pause. The
+   * song somebody had just chosen stopped under their thumb, the desk played
+   * on, and nothing claimed anything.
+   *
+   * The two cases are told apart by whether this device has held the seat at
+   * all since its socket came up. One that has, and then finds the seat
+   * elsewhere, had it taken - it stops, as before. One that has not, and is
+   * playing, pressed play before it could know anybody else was - and the
+   * press is the newer intent, so it claims the seat for the song it is on.
+   */
+  const heldSinceConnect = useRef(false);
+  /**
+   * The claim this device just made, and for which song. The hub answers a
+   * transfer with `becomeActive` carrying the session AS IT STOOD - the old
+   * holder's song and place - which is right for "play it here" and exactly
+   * wrong for a claim made by playing: loading it would drop the song this
+   * device was on for the desk's, at the desk's position, and report THAT, so
+   * every bar read the desk's old song ticking on until a skip corrected it.
+   */
+  const claimingWith = useRef<{ trackId: number; at: number } | null>(null);
+  /** Bumped when a claim lands, so the report below speaks for this device. */
+  const [claimLanded, setClaimLanded] = useState(0);
+
   useEffect(() => {
     const findByConnectId = (id: number) =>
       liveRef.current.allTracks.find((t) => trackIdFromPath(t.path) === id) ?? null;
@@ -195,6 +237,15 @@ export function usePlayerConnect({
        * cross-track play.
        */
       becomeActive: (state) => {
+        // A seat this device CLAIMED by playing: the session in the frame is
+        // the old holder's, and the song this device is on is the answer. Keep
+        // playing it, and report it now that the hub will take the report.
+        const claim = claimingWith.current;
+        claimingWith.current = null;
+        if (claim && Date.now() - claim.at < CLAIM_WINDOW_MS) {
+          setClaimLanded((n) => n + 1);
+          return;
+        }
         if (state.trackId == null) {
           recordDiag('connect', 'handed playback with no track in the session');
           return;
@@ -741,6 +792,36 @@ export function usePlayerConnect({
   // never claims the seat; pressing play does, which is how playback starts
   // cold. Position is not a dep (the server extrapolates); seekTick stands in
   // for the one position jump extrapolation cannot follow.
+  // A fresh socket has held nothing yet (see heldSinceConnect).
+  useEffect(() => {
+    heldSinceConnect.current = false;
+  }, [connect.connected]);
+  useEffect(() => {
+    if (connect.connected && connect.activeDeviceId === connect.thisDeviceId) heldSinceConnect.current = true;
+  }, [connect.connected, connect.activeDeviceId, connect.thisDeviceId]);
+
+  /*
+   * Finding the seat elsewhere while playing: stop, or claim.
+   *
+   * Stopping is the rule, and it holds even if the hub's explicit `release`
+   * never arrives - a seat claimed out from under this device must not leave
+   * two devices playing. The one exception is a device that has not held the
+   * seat since its socket came up (see heldSinceConnect): it was playing before
+   * it could know, and it claims instead. Never on a silent deck (following a
+   * groove on a speaker), which is not playing anything of its own.
+   */
+  useEffect(() => {
+    if (!connect.activeElsewhere || !playing) return;
+    const id = track ? trackIdFromPath(track.path) : null;
+    if (connect.connected && !heldSinceConnect.current && id !== null && !silent) {
+      claimingWith.current = { trackId: id, at: Date.now() };
+      connect.transfer(connect.thisDeviceId);
+      return;
+    }
+    setPlayingState(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to the seat flipping; the rest is read as it stands
+  }, [connect.activeElsewhere]);
+
   const ownsPlayback = connect.activeDeviceId === connect.thisDeviceId;
   const shouldReport = connect.connected && !!track && (playing || ownsPlayback);
   /*
@@ -783,7 +864,18 @@ export function usePlayerConnect({
       ? pending && pending.trackId === id
         ? Math.max(0, Math.round(pending.positionMs))
         : 0
-      : Math.max(0, Math.round(positionRef.current * 1000));
+      : /*
+         * The DECK's clock, not React's. `positionRef` carries the position
+         * STATE, which catches up with a seek on the next timeupdate - so a
+         * report that went out in between said where the song was before the
+         * seek. Measured after a hand-off: the new holder loads the song,
+         * seeks five seconds in, and its next report (the one the loaded
+         * metadata sends) said 0 - so every other device drew the song from
+         * the top while it played five seconds on, until the next
+         * discontinuity. The element's own time is right the moment the seek
+         * lands.
+         */
+        Math.max(0, Math.round((readPosition ? readPosition() : positionRef.current) * 1000));
     reportedTrack.current = id;
     // Where the playing song sits in the context, so the tail after it can be
     // appended behind the hand-queued lane. -1 when the song came from that
@@ -851,6 +943,6 @@ export function usePlayerConnect({
      * beat later rather than standing for the whole track.
      */
     // eslint-disable-next-line react-hooks/exhaustive-deps -- discontinuities only; position rides refs
-  }, [shouldReport, track, duration, playing, shuffle, repeat, volume, seekTick, queue, upNext]);
+  }, [shouldReport, track, duration, playing, shuffle, repeat, volume, seekTick, queue, upNext, claimLanded]);
 
 }
