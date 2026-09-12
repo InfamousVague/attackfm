@@ -18,8 +18,9 @@
  * the real thing rather than a reload.
  */
 import { expect, test, type World } from './fixtures/hub.ts';
-import { pauseHere, playHere, soloDeck } from './fixtures/deck.ts';
+import { pauseHere, playHere, soloDeck, tapFilter } from './fixtures/deck.ts';
 import type { Locator, Page } from '@playwright/test';
+import { writeFileSync } from 'node:fs';
 
 /** Wide enough for `(min-width: 60rem)`, which is what puts the rail up. */
 const DESKTOP = { width: 1280, height: 800 };
@@ -470,6 +471,98 @@ test.describe('the page and its chrome', () => {
     // A control on the strip is a control, not a handle.
     await pauseHere(page);
     await expect(page.locator('.npScreen')).toHaveCount(0);
+  });
+
+  test('a count on the action row is whole, and the row is no taller for it', async ({ page, world }) => {
+    /*
+     * The action row scrolls sideways, and a scroll container clips on BOTH
+     * axes - `overflow-x: auto` computes the other axis to something that
+     * clips too. The sound seat hangs its count off its top corner, 0.15rem
+     * above the tallest thing in the row, so the top of the "1" was sliced
+     * off the moment a filter went on. The row now bleeds inside its own clip
+     * (`--edge-bleed`, styles/04) without growing, and both halves of that are
+     * asserted from rects: the badge inside the scrollport, and the wrapper
+     * around the row exactly as tall as its padding plus one control - which
+     * is what it measured before the fix, so a bleed that leaked into the
+     * sheet's column would fail here even with the badge whole.
+     */
+    await boot(page, world, PHONE);
+    await playHere(page, page.getByRole('button', { name: 'Play', exact: true }).first());
+    await page.locator('.playerBarShell').click({ position: { x: 100, y: 8 } });
+    const sheet = page.getByRole('dialog', { name: 'Now playing' });
+    await expect(sheet).toHaveAttribute('data-open', 'true');
+
+    // One filter, through the seat's own door, and the console shut again so
+    // the badge is what is on screen rather than the panel over it.
+    await sheet.getByRole('button', { name: 'Sound', exact: true }).click();
+    await expect(page.locator('.soundConsole')).toBeVisible();
+    await tapFilter(page, 'Telephone');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.soundConsole')).toHaveCount(0);
+    await expect(sheet).toHaveAttribute('data-open', 'true');
+    // A filter is chain nodes and the count is of nodes, so the number is the
+    // filter's business; that there IS one is the badge's.
+    await expect(sheet.locator('.soundTrigger__badge')).toHaveText(/^\d+$/);
+
+    const geometry = () =>
+      sheet.evaluate((root) => {
+        const rect = (el: Element | null) => {
+          const b = el?.getBoundingClientRect() ?? new DOMRect();
+          return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, height: b.height };
+        };
+        const row = root.querySelector('.npScreen__actions');
+        const wrap = row?.parentElement ?? null;
+        return {
+          seats: row?.children.length ?? 0,
+          row: rect(row),
+          wrap: rect(wrap),
+          wrapPadTop: wrap ? parseFloat(getComputedStyle(wrap).paddingBlockStart) : NaN,
+          seat: rect(root.querySelector('.soundTrigger')),
+          badge: rect(root.querySelector('.soundTrigger__badge')),
+          edgeEnd: row ? getComputedStyle(row).getPropertyValue('--edge-end').trim() : '',
+        };
+      });
+    const g = await geometry();
+    // Kept on every run, pass or fail: the numbers and the picture are what a
+    // reviewer compares against the build before this one.
+    writeFileSync(test.info().outputPath('geometry.json'), JSON.stringify(g, null, 2));
+    await page.screenshot({ path: test.info().outputPath('sheet.png') });
+    await page.screenshot({
+      path: test.info().outputPath('action-row.png'),
+      clip: { x: 0, y: Math.max(0, g.wrap.top - 12), width: PHONE.width, height: g.wrap.height + 24 },
+    });
+
+    // Whole, inside the clip. A badge whose top is above the row's is a badge
+    // with its top cut off, whatever a screenshot at 1x makes of it.
+    expect(g.badge.top).toBeGreaterThanOrEqual(g.row.top);
+    expect(g.badge.bottom).toBeLessThanOrEqual(g.row.bottom);
+    // ...and the room did not come out of the column: the wrapper starts its
+    // padding above the seat and ends where the seat ends, no bleed between.
+    expect(Math.abs(g.wrap.top + g.wrapPadTop - g.seat.top)).toBeLessThan(0.5);
+    expect(Math.abs(g.wrap.bottom - g.seat.bottom)).toBeLessThan(0.5);
+
+    // The fade is still the row's, both ways round. Narrow enough that even
+    // four seats cannot fit, so there is an end, and the arrow that says so.
+    const wrap = sheet.locator('.npScreen__actionsWrap');
+    for (const dir of ['ltr', 'rtl'] as const) {
+      await page.evaluate((d) => {
+        document.documentElement.dir = d;
+      }, dir);
+      await page.setViewportSize({ width: 280, height: 800 });
+      await expect(wrap).toHaveAttribute('data-edge-end', '');
+      await expect(sheet.getByRole('button', { name: 'More controls' })).toBeVisible();
+      const narrow = await geometry();
+      expect(parseFloat(narrow.edgeEnd)).toBeGreaterThan(0);
+      expect(narrow.badge.top).toBeGreaterThanOrEqual(narrow.row.top);
+      expect(narrow.badge.bottom).toBeLessThanOrEqual(narrow.row.bottom);
+      await page.setViewportSize(PHONE);
+    }
+    await page.evaluate(() => {
+      document.documentElement.dir = 'ltr';
+    });
+
+    await page.getByRole('button', { name: 'Close now playing' }).click();
+    await pauseHere(page);
   });
 
   test('the desktop docks Now Playing beside the app rather than over it', async ({ page, world }) => {

@@ -580,6 +580,25 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
      other scrolling - the pair computes to auto/auto and the row would grow
      its own vertical scrollbar over a button's focus ring. */
   overflow-y: hidden;
+  /* And that clip is on both axes, which is the trap the line above sets.
+     Whatever a control hangs outside its own box in the block direction - a
+     count badge on its top corner (`.soundTrigger__badge`), the kit's focus
+     ring two pixels out and two wide - is sliced off at the row's edge as
+     soon as that control is the tallest thing in the row, which a row of
+     equal buttons makes always. So a row can BLEED: block padding inside the
+     clip and an equal negative margin outside it. The scrollport grows by
+     the bleed, no control moves, and the row is not a pixel taller in the
+     column it sits in - a wrapper around it measures exactly what it did.
+     Padding alone would push the row's neighbours apart, the margin alone
+     would pull them under it; the two only mean anything as a pair, hence
+     the one property both read. Zero here, so a row that never asked looks
+     exactly as it did: three rows in the DJ and groove panels already pad
+     their own two pixels, and a later `padding-block` would override this
+     padding but not this margin, which is the one way the pair goes wrong.
+     The Now Playing action row opts in (`.npScreen__actions`, chapter 07). */
+  --edge-bleed: 0px;
+  padding-block: var(--edge-bleed);
+  margin-block: calc(-1 * var(--edge-bleed));
   /* On the scroll axis only. Containing the CROSS axis here would eat the
      vertical drag that belongs to the page this row is sitting in. */
   overscroll-behavior-x: contain;

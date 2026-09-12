@@ -279,6 +279,13 @@
   gap: var(--glacier-space-5);
   flex: none;
   color: var(--glacier-text-muted);
+  /* Room inside the scroller's clip for what a seat hangs off its own box
+     (`.edgeScroll`, chapter 04). The sound seat's count rides 0.15rem above
+     the tallest thing in the row and lost its top to the clip the moment a
+     filter went on. A quarter rem covers the badge and a focus ring (two
+     pixels out, two wide) both, and costs the sheet's column nothing: the
+     bleed is padding and negative margin in equal measure. */
+  --edge-bleed: 0.25rem;
 }
 
 /*
