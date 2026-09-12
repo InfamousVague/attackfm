@@ -38,6 +38,8 @@ export const PANE_KEYWORDS: Record<string, string> = {
   'local-ai': 'local ai model ollama llm endpoint embeddings curator dj mixes stations health owner report',
   handbook:
     'handbook guide manual documentation docs how it works help plugin develop developer api build publish gestures audiobook audiobooks books read along narrator transcription',
+  keyboard:
+    'keyboard shortcuts shortcut keys hotkeys hotkey keybinds keybindings bindings rebind chord space play pause escape arrows media keys',
 };
 
 /**
@@ -319,6 +321,15 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     labelKey: 'settings.testsOnlyFailures',
     descriptionKey: 'settings.testsOnlyFailuresGloss',
     keywords: 'only failures failed red broken filter narrow hide passing what broke',
+  },
+  {
+    // Anchors on the first row of the pane (play/pause), which every shape
+    // renders; the pane has no chunks, so the reveal lands on mount.
+    id: 'keyboard-shortcuts',
+    pane: 'keyboard',
+    labelKey: 'settings.keyboardShortcuts',
+    descriptionKey: 'settings.keyboardShortcutsGloss',
+    keywords: 'keyboard shortcuts shortcut keys hotkeys hotkey keybinds keybindings bindings rebind change key space play pause arrows',
   },
   {
     id: 'import-server',

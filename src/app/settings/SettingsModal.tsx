@@ -3,7 +3,7 @@
 // GeneralPane / PlaybackPane / PluginsPane (+ pluginRepos) / MobileSettings,
 // shared bits in settingsShared.ts, useMediaQuery deduped into ux/.
 import { SearchField, TabbedModal } from '@glacier/react';
-import { Bell, Blocks, BookOpen, Bot, CircleUserRound, Disc3, Download, FlaskConical, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
+import { Bell, Blocks, BookOpen, Bot, CircleUserRound, Disc3, Download, FlaskConical, HardDrive, Info, Keyboard, Library, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
@@ -43,6 +43,8 @@ import { useSharing } from '../profile/sharingPref.ts';
 import { sharePositionEnabled } from './behaviourPrefs.ts';
 import { onlineMetadataEnabled } from './netPrefs.ts';
 import { PlaybackSettings } from './PlaybackPane.tsx';
+import { KeyboardPane } from './KeyboardPane.tsx';
+import { customBindingCount, useKeymap } from '../keys/keymap.ts';
 import { PluginsSettings } from './PluginsPane.tsx';
 import { MobileSettings } from './MobileSettings.tsx';
 import {
@@ -95,6 +97,10 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   const { devices } = useConnect();
   const { all: allPlugins, isEnabled } = usePlugins();
   const { source, tracks } = useLibrary();
+
+  // The keys pane's one-line reading: how many rows are off their shipped
+  // chord. Live, because the pane edits the store while the rail is showing.
+  const customKeys = customBindingCount(useKeymap());
 
   const playbackBits = [
     pb.crossfade > 0 ? t('settings.summaryCrossfade', { seconds: pb.crossfade }) : null,
@@ -163,6 +169,21 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       content: <PlaybackSettings />,
       summary: playbackBits.length > 0 ? playbackBits.slice(0, 2).join(' · ') : t('settings.summaryPlaybackStandard'),
       tint: 'pink',
+      group: 0,
+    },
+    // Which key does what. Beside Playback because that is what most of the
+    // keys drive; shown on every shape, since a tablet with a keyboard is a
+    // phone as far as the media queries can tell.
+    {
+      id: 'keyboard',
+      label: t('settings.paneKeyboard'),
+      icon: <Keyboard size={16} />,
+      content: <KeyboardPane />,
+      summary:
+        customKeys > 0
+          ? t('settings.summaryKeyboardCustom', { count: customKeys })
+          : t('settings.summaryKeyboardDefault'),
+      tint: 'slate',
       group: 0,
     },
     // Who you are, and everything attached to that: the servers saved to the

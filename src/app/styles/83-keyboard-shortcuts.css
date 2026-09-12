@@ -1,0 +1,68 @@
+/* ── Keyboard shortcuts ──────────────────────────────────────────────────────
+   The Keyboard pane (settings/KeyboardPane.tsx): the key caps a row prints in
+   its value slot, the row that is listening for a new chord, and the warning
+   two rows wear when they share one. The caps themselves are the kit's Kbd;
+   only their arrangement lives here. */
+
+.keyCaps {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+
+.keyCaps__cap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+/* Between caps on the machines whose modifiers are words: "Ctrl + Shift + →"
+   reads as one chord, "Ctrl Shift →" as three keys in a row. The Mac's glyphs
+   get the same join for consistency; it is quiet enough not to matter. */
+.keyCaps__plus {
+  color: var(--glacier-text-muted);
+  font-size: 0.72rem;
+}
+
+.keyCaps--none {
+  color: var(--glacier-text-muted);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+/* The row that is waiting for a press: accent, and a slow breath so the eye
+   finds which row is listening without a border moving. */
+.keysRecording {
+  color: var(--glacier-accent-text);
+  font-weight: 550;
+  white-space: nowrap;
+  animation: keys-listening 1.4s ease-in-out infinite;
+}
+
+@keyframes keys-listening {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .keysRecording {
+    animation: none;
+  }
+}
+
+/* The same warm amber the settings callouts use for a warning. */
+.keysConflict {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: oklch(0.75 0.15 80);
+}
+
+.keysRow__controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}

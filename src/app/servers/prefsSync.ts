@@ -96,6 +96,10 @@ export const SYNCED_KEYS = [
   // rest of this list does; see playlists/playlistMeta.ts for why it is not on
   // the music server with the playlist itself.
   'attackfm-playlist-meta',
+  // Which key does what. A habit of the hands, not a fact about the machine -
+  // and spelled with `mod` rather than ⌘ or Ctrl (keys/chords.ts) precisely so
+  // the same map lands on a Mac and a Windows box unchanged.
+  'attackfm-keymap',
 ] as const;
 
 /**

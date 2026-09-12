@@ -28,7 +28,7 @@ import { DjSetBridge } from './booth/DjSetBridge.tsx';
 import { PendingPlayProvider, PendingPlayWatcher } from './player/pendingPlay.tsx';
 import { isPendingPath } from './player/pendingTrack.ts';
 import { useSwipeBack } from './nav/useSwipeBack.ts';
-import { useSystemBack } from './nav/systemBack.ts';
+import { closeTopOverlay, useSystemBack } from './nav/systemBack.ts';
 import { installTapHaptics, useHapticsPref } from './core/haptics.ts';
 import { installOverlayGuard } from './core/overlayGuard.ts';
 import { DownloadNotices } from './notify/DownloadNotices.tsx';
@@ -69,6 +69,7 @@ import { setNowPlayingPath } from './player/nowPlayingStore.ts';
 import { settingsBack } from './settings/settingsBack.ts';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
+import { useKeyboardShortcuts } from './keys/useKeyboardShortcuts.ts';
 import { PageRefreshProvider } from './nav/pageRefresh.tsx';
 import { useLibrary } from './library/library.tsx';
 import { AppProviders } from './nav/AppProviders.tsx';
@@ -206,6 +207,12 @@ export function App() {
     setRefreshNonce((n) => n + 1);
     await libraryRefresh.current();
   });
+  // The keyboard: Space, the arrows, the letters - one listener for the life
+  // of the app (keys/useKeyboardShortcuts.ts). The deck it drives registers
+  // itself from inside the Player; the two doors it needs from up here are
+  // search and "put down whatever is on top", which is the same stack the
+  // Android back gesture walks.
+  useKeyboardShortcuts({ openSearch: () => setSearchOpen(true), closeTop: closeTopOverlay });
   // A Spotify link the phone opened here pops its own preview card now, mounted
   // as <SpotifyPreview /> inside the providers below - not the search overlay.
 

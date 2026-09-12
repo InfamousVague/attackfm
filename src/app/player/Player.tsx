@@ -20,7 +20,7 @@ import { setDriveBoostStrength, useDriveBoost } from './driveBoost.ts';
 import { usePlayback } from './playback.tsx';
 import { sleepsAtAnEnd } from './sleepTimer.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
-import { VOLUME_UNITY } from './volume.ts';
+import { VOLUME_MAX, VOLUME_UNITY } from './volume.ts';
 import { recordResume } from '../servers/resumeSync.ts';
 import { effectsOn, useEffects } from './effects.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
@@ -50,6 +50,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useJamOptional } from './jam.tsx';
 import { useSystemBack } from '../nav/systemBack.ts';
 import { setNowPlayingDoor } from '../nav/nowPlayingDoor.ts';
+import { setKeyboardDeck, type KeyboardDeck } from '../keys/deckDoor.ts';
 import { usePlayerDismiss } from './playerDismiss.ts';
 import { subscribeDeckHold } from './deckHold.ts';
 import { stemDropOnTrack, stemDropParam, useStemDrop } from './stemDrop.ts';
@@ -2100,6 +2101,17 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     line: widgetLine,
     favourite: dispFavorite,
   });
+
+  // The keyboard's ref beside the car's, and the same shape: registered once
+  // as a getter (keys/deckDoor.ts) and reassigned every render further down,
+  // once the remote-aware handlers exist, so a press always acts through the
+  // current ones. Filled during the same render that mounts this, so the
+  // getter never hands out null.
+  const keyboardDeck = useRef<KeyboardDeck | null>(null);
+  useEffect(() => {
+    setKeyboardDeck(() => keyboardDeck.current!);
+    return () => setKeyboardDeck(null);
+  }, []);
 
   // Push EQ edits onto the live filters as they happen.
   useEffect(() => {
@@ -4695,6 +4707,64 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // The speaker being taken by the system is about THIS deck's sound: a
     // call on a follower's phone pauses its own deck, not the whole room.
     local: { setPlaying: setPlayingState },
+  };
+
+  /*
+   * The keyboard's handles, through the same seam and for the same reason:
+   * refreshed every render, read at the moment of the press. Every verb is
+   * the DISPLAYED transport's - the remote's while mirroring, the room's while
+   * following - so Space on a phone that is only holding the remote pauses
+   * the device that is playing, exactly as its own Pause button does.
+   */
+  keyboardDeck.current = {
+    togglePlay: () => dispSetPlaying(!dispPlaying),
+    next: () => {
+      if (dispCanSkip) dispSkipForward();
+    },
+    previous: () => {
+      if (dispCanSkip) dispSkipBack();
+    },
+    seekBy: (seconds) => {
+      if (!(dispDuration > 0)) return;
+      onSeekEndDisp(Math.min(dispDuration, Math.max(0, dispPosition + seconds)));
+    },
+    // The phone's fader is pinned at unity (see the volume state above): the
+    // hardware buttons are its volume control, and an arrow key on a tablet
+    // must not put a second fader in front of them.
+    volumeBy: (delta) => {
+      if (isMobile) return;
+      const ceiling = volumeBoost ? VOLUME_MAX : VOLUME_UNITY;
+      setVolumeState(Math.min(ceiling, Math.max(0, volume + delta)));
+    },
+    toggleMute: () => setMutedState(!muted),
+    cycleShuffle,
+    cycleRepeat,
+    toggleFavourite: dispToggleFavoriteFelt,
+    // The queue lives inside the Now Playing surface on every shape, so on a
+    // shape where that surface is lifted rather than docked, asking for the
+    // queue lifts it first - the strip's own queue button does the same.
+    toggleQueue: () => {
+      if (npQueue) {
+        setNpQueue(false);
+        return;
+      }
+      if (!npOpen && !npDocked) {
+        if (!liftable) return;
+        setNpOpen(true);
+      }
+      setNpQueue(true);
+    },
+    toggleNowPlaying: () => {
+      if (liftable) {
+        if (npOpen) closeNowPlaying(false);
+        else setNpOpen(true);
+        return;
+      }
+      // Docked: the pane folds away only while idle, the rule the drag
+      // gesture keeps, and a folded pane comes back on the same key.
+      if (dockDismissed) setDockDismissed(false);
+      else if (npDocked && !playing) setDockDismissed(true);
+    },
   };
 
   return (

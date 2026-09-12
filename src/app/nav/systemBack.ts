@@ -18,6 +18,14 @@ import { useEffect, useRef } from 'react';
 type BackHandler = () => boolean;
 
 const handlers: BackHandler[] = [];
+/**
+ * The handlers that are SHEETS - registered through `useSystemBack` while
+ * something is open over the page - as opposed to the nav stack's own, which
+ * walks page history. The Escape key (keys/actions.ts) wants the first kind
+ * and never the second: Escape puts down what is on top, it does not go back
+ * a page.
+ */
+const overlays = new WeakSet<BackHandler>();
 
 /** Register a back handler on top of the stack; returns its unregister. */
 export function onSystemBack(handler: BackHandler): () => void {
@@ -35,11 +43,26 @@ export function useSystemBack(active: boolean, close: () => void): void {
   closeRef.current = close;
   useEffect(() => {
     if (!active) return;
-    return onSystemBack(() => {
+    const handler: BackHandler = () => {
       closeRef.current();
       return true;
-    });
+    };
+    overlays.add(handler);
+    return onSystemBack(handler);
   }, [active]);
+}
+
+/**
+ * Put down the top sheet, if there is one: the newest overlay on the stack,
+ * skipping the nav handler underneath. True when something closed. This is
+ * what the Escape key does when no kit modal is holding it.
+ */
+export function closeTopOverlay(): boolean {
+  for (let i = handlers.length - 1; i >= 0; i--) {
+    const handler = handlers[i];
+    if (handler && overlays.has(handler)) return handler();
+  }
+  return false;
 }
 
 declare global {
