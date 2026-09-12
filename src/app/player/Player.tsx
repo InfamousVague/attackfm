@@ -1008,6 +1008,23 @@ export function Player({
    */
   const FIRST_LOAD_GRACE_MS = 4000;
   const firstLoadTimer = useRef<number | undefined>(undefined);
+  /**
+   * What a stall has to be before it counts against the WIRE.
+   *
+   * One stall is not evidence. The busiest cause of a stall on a healthy
+   * connection is a change of sound: the hub has to start a fresh encode, and
+   * on a busy box that can freeze the element for a couple of seconds - right
+   * after the listener asked for the very filter a strain would take away. So
+   * a stall that begins within ENCODE_STARTUP_MS of a re-colour is the encoder
+   * warming up and is not counted, and the rest must happen twice inside
+   * STRAIN_WINDOW_MS before the stream is given up on. A connection that cannot
+   * carry music stalls again straight after the ladder reconnects it, so it
+   * gets there in a few seconds; a hiccup does not get there at all.
+   */
+  const ENCODE_STARTUP_MS = 8000;
+  const STRAIN_WINDOW_MS = 45_000;
+  const soundReloadAt = useRef(0);
+  const wireStalls = useRef<number[]>([]);
   /** Waits between reloads, then giving up honestly. */
   /**
  * How long the rack waits for the tapping to stop before re-colouring.
@@ -1324,6 +1341,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
      */
     if (why === 'retry') pendingPlay.current = pendingPlay.current || wantPlaying.current;
     else pendingPlay.current = asked || why === 'sound' ? wantPlaying.current : true;
+    // A fresh encode is about to spin up; its first seconds of silence are the
+    // encoder's, not the wire's (see ENCODE_STARTUP_MS).
+    if (why === 'sound') soundReloadAt.current = Date.now();
     setActiveSrc(fresh);
   };
 
@@ -1570,10 +1590,17 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       recoverTimer.current = undefined;
       // Still dry? Only then is it worth throwing the connection away.
       if (stalledAt.current === 0) return;
-      // And if this device holds the song, the connection is not worth
-      // reaching for again at all: the reload below lands on the copy.
+      // And if the wire has now failed this song twice - not counting the
+      // encoder warming up after a change of sound - and this device holds it,
+      // the connection is not worth reaching for again: the reload below lands
+      // on the copy instead.
+      const now = Date.now();
+      const since = stalledAt.current;
+      if (since - soundReloadAt.current > ENCODE_STARTUP_MS) {
+        wireStalls.current = [...wireStalls.current.filter((at) => now - at < STRAIN_WINDOW_MS), now];
+      }
       const path = liveRef.current.track?.path;
-      if (path) strainOnto(path);
+      if (path && wireStalls.current.length >= 2) strainOnto(path);
       void resumeInPlace();
     }, STALL_GRACE_MS + wait);
   };
@@ -2512,6 +2539,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // against the previous one is void.
     clearStall();
     lastGoodPos.current = 0;
+    // A new song's stalls are its own: one bad patch at the end of the last
+    // song is not two against this one.
+    wireStalls.current = [];
     // The played trail, for shuffle manners and the DJ's memory.
     recentRef.current = [...recentRef.current.slice(-19), track.path];
     let cancelled = false;
