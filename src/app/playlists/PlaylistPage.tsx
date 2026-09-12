@@ -35,6 +35,7 @@ import { SongTable, type GhostRow, type SongTableShape } from '../library/SongTa
 const NO_ROWS = '.playlistRow__main--never';
 import { useFollowNowPlaying } from '../player/nowPlayingStore.ts';
 import { usePlaylists } from './playlists.tsx';
+import { isReservedFolder } from './collections.ts';
 import { CoverWall } from './CoverWall.tsx';
 import { notePlaylistPlayed } from './playlistRecency.ts';
 import { markSharedSeen } from './sharedSeen.ts';
@@ -117,6 +118,8 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   const [describing, setDescribing] = useState<string | null>(null);
   /** The name of a folder being created, or null when no dialog is open. */
   const [newFolder, setNewFolder] = useState<string | null>(null);
+  /** The new-folder name was one of the app's own, and was refused. */
+  const [folderRefused, setFolderRefused] = useState(false);
   /** True while a chosen cover is travelling to the server. */
   const [coverBusy, setCoverBusy] = useState(false);
   /** What the filter box holds. '' shows the whole list. */
@@ -179,8 +182,14 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   // Every folder that exists, which is every folder anything is filed in:
   // there is no separate list of folders to keep, because a folder IS the
   // playlists that name it.
+  // Minus the reserved ones: the server's own folders are not a place to
+  // file a list you made, and the Books folder would turn this list into a
+  // book collection. The shelf's tile menu keeps the same rule.
   const folders = useMemo(
-    () => [...new Set(playlists.map((p) => p.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    () =>
+      [...new Set(playlists.map((p) => p.folder).filter((f) => f && !isReservedFolder(f)))].sort(
+        (a, b) => a.localeCompare(b),
+      ),
     [playlists],
   );
   useEffect(() => {
@@ -705,7 +714,13 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                 </MenuItem>
               )}
               {isOwner && (
-              <MenuItem icon={<FolderPlus size={15} />} onSelect={() => setNewFolder('')}>
+              <MenuItem
+                icon={<FolderPlus size={15} />}
+                onSelect={() => {
+                  setFolderRefused(false);
+                  setNewFolder('');
+                }}
+              >
                 {t('playlists.newFolder')}
               </MenuItem>
               )}
@@ -918,6 +933,13 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
           onSubmit={(e) => {
             e.preventDefault();
             const name = (newFolder ?? '').trim();
+            // The app's own folder names are refused with a reason: filed
+            // under `Books` this list would become a book collection and
+            // leave the Library without a word.
+            if (isReservedFolder(name)) {
+              setFolderRefused(true);
+              return;
+            }
             // A folder is only a label on the playlists in it, so an empty one
             // would have nowhere to exist - naming it and filing this playlist
             // are the same act.
@@ -928,13 +950,21 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
           <Input
             autoFocus
             value={newFolder ?? ''}
-            onChange={(e) => setNewFolder(e.currentTarget.value)}
+            onChange={(e) => {
+              setNewFolder(e.currentTarget.value);
+              setFolderRefused(false);
+            }}
             placeholder={t('playlists.folderNameExample')}
             aria-label={t('playlists.folderName')}
           />
           <Button type="submit" variant="solid">
             {t('playlists.moveHere')}
           </Button>
+          {folderRefused && (
+            <Text tone="danger" size="xs" role="status">
+              {t('playlists.folderReserved')}
+            </Text>
+          )}
         </form>
       </Modal>
 

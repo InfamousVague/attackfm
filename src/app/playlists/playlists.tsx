@@ -89,6 +89,16 @@ export interface Playlist {
   origin?: string;
 }
 
+/**
+ * What a list is born as, beyond its name and songs. The folder is here
+ * rather than a `setMeta` a beat later because on a server the list exists
+ * - and is on every music surface - the moment the POST answers, and a book
+ * collection must never be a music playlist even for one heartbeat.
+ */
+export interface CreateOptions {
+  folder?: string;
+}
+
 interface PlaylistsContextValue {
   playlists: Playlist[];
   /**
@@ -97,12 +107,22 @@ interface PlaylistsContextValue {
    * the song that prompted the new list is in it from the first moment rather
    * than added a beat later.
    */
-  create: (name: string, paths?: readonly string[]) => Promise<string>;
+  create: (name: string, paths?: readonly string[], opts?: CreateOptions) => Promise<string>;
   remove: (id: string) => void;
   rename: (id: string, name: string) => void;
   /** Appends a track; already-present paths are left where they are. */
   addTrack: (id: string, path: string) => void;
   removeTrack: (id: string, path: string) => void;
+  /**
+   * Appends SEVERAL tracks as one edit, in the order given; already-present
+   * paths keep their seats. A loop over `addTrack` is not the same thing on a
+   * server: each call reads the list as it stood before the loop began, so
+   * the whole-list PUT an older hub takes carries only the last song, and
+   * even the append route a sharing hub takes shows one row until the
+   * refetch. A book is twelve sections filed at once, which is what this is.
+   */
+  addTracks: (id: string, paths: readonly string[]) => void;
+  removeTracks: (id: string, paths: readonly string[]) => void;
   /**
    * File a song this box does not own yet into a playlist and start fetching
    * it: it shows as an arriving ghost and becomes a real row when it lands.
@@ -243,7 +263,7 @@ function LocalPlaylists({ children }: { children: ReactNode }) {
   const value = useMemo<PlaylistsContextValue>(
     () => ({
       playlists,
-      create: (name: string, paths: readonly string[] = []) => {
+      create: (name: string, paths: readonly string[] = [], opts: CreateOptions = {}) => {
         const id = makeId();
         const trimmed = name.trim() || 'New Playlist';
         setPlaylists((prev) => [
@@ -254,7 +274,7 @@ function LocalPlaylists({ children }: { children: ReactNode }) {
             paths: [...new Set(paths)],
             createdAt: Date.now(),
             description: '',
-            folder: '',
+            folder: opts.folder?.trim() ?? '',
             coverUrl: null,
           },
         ]);
@@ -276,6 +296,20 @@ function LocalPlaylists({ children }: { children: ReactNode }) {
         setPlaylists((prev) =>
           prev.map((p) => (p.id === id ? { ...p, paths: p.paths.filter((x) => x !== path) } : p)),
         ),
+      addTracks: (id: string, paths: readonly string[]) =>
+        setPlaylists((prev) =>
+          prev.map((p) =>
+            p.id === id
+              ? { ...p, paths: [...p.paths, ...paths.filter((x) => !p.paths.includes(x))] }
+              : p,
+          ),
+        ),
+      removeTracks: (id: string, paths: readonly string[]) => {
+        const gone = new Set(paths);
+        setPlaylists((prev) =>
+          prev.map((p) => (p.id === id ? { ...p, paths: p.paths.filter((x) => !gone.has(x)) } : p)),
+        );
+      },
       reorder: (id: string, paths: readonly string[]) =>
         setPlaylists((prev) => prev.map((p) => (p.id === id ? { ...p, paths: [...paths] } : p))),
       setMeta: (id: string, patch: { description?: string; folder?: string }) =>
@@ -517,7 +551,7 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
 
     return {
       playlists,
-      create: async (name: string, paths: readonly string[] = []) => {
+      create: async (name: string, paths: readonly string[] = [], opts: CreateOptions = {}) => {
         const trimmed = name.trim() || 'New Playlist';
         // Only tracks the server knows can ride a server playlist; a local file
         // becomes one when the folder sync uploads it, not before.
@@ -525,11 +559,37 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
           ...new Set(paths.map(trackIdFromPath).filter((t): t is number => t !== null)),
         ];
         const id = await createRemotePlaylist(session, trimmed, tracks);
+        // The folder goes on BEFORE the list is shown anywhere. The create
+        // route takes a name and songs only, so the folder is a second write
+        // - and until it lands the list is, to every music surface, an
+        // ordinary playlist. Filed first, settled second: nothing draws a
+        // book collection as a music list even for the one render between.
+        const folder = opts.folder?.trim() || '';
+        if (folder) {
+          try {
+            await updateRemotePlaylist(session, id, { folder });
+          } catch {
+            // A hub too old for folders ignores the PUT; the fallback below
+            // keeps the filing on this device the way setMeta does.
+          }
+        }
         editSeq.current += 1;
-        settle([...remoteRef.current, { id, name: trimmed, updatedAt: Date.now(), tracks }]);
+        settle([
+          ...remoteRef.current,
+          { id, name: trimmed, updatedAt: Date.now(), tracks, ...(folder ? { folder } : {}) },
+        ]);
         // Awaited, not fired: the caller may seat people in the new list
         // next, and `share` gates on the `role` only the refetch carries.
         await refresh();
+        if (folder) {
+          // A server from before decoration answers with no `description`
+          // field at all and dropped the folder on the floor; the device
+          // meta store is where every read falls back to on such a hub.
+          const row = remoteRef.current.find((p) => p.id === id);
+          if (row && row.description === undefined) {
+            setStoredMeta(metaKey(session.url, String(id)), { folder });
+          }
+        }
         return String(id);
       },
       remove: (id: string) => {
@@ -582,6 +642,51 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
             shares(target)
               ? removePlaylistTrack(session, target.id, trackId)
               : updateRemotePlaylist(session, target.id, { tracks }),
+        );
+      },
+      addTracks: (id: string, paths: readonly string[]) => {
+        const target = byId(id);
+        if (!target || target.role === 'viewer') return;
+        const have = new Set(target.tracks);
+        const added: number[] = [];
+        for (const path of paths) {
+          const trackId = trackIdFromPath(path);
+          if (trackId === null || have.has(trackId)) continue;
+          have.add(trackId);
+          added.push(trackId);
+        }
+        if (added.length === 0) return;
+        const tracks = [...target.tracks, ...added];
+        mutate(
+          remote.map((p) => (p.id === target.id ? { ...p, tracks } : p)),
+          // One row at a time on a sharing hub, awaited in turn so the
+          // sections land in reading order; the whole list in one PUT on a
+          // hub from before the single-track routes.
+          async () => {
+            if (!shares(target)) {
+              await updateRemotePlaylist(session, target.id, { tracks });
+              return;
+            }
+            for (const trackId of added) await appendPlaylistTrack(session, target.id, trackId);
+          },
+        );
+      },
+      removeTracks: (id: string, paths: readonly string[]) => {
+        const target = byId(id);
+        if (!target || target.role === 'viewer') return;
+        const gone = new Set(paths.map(trackIdFromPath).filter((t): t is number => t !== null));
+        const leaving = target.tracks.filter((t) => gone.has(t));
+        if (leaving.length === 0) return;
+        const tracks = target.tracks.filter((t) => !gone.has(t));
+        mutate(
+          remote.map((p) => (p.id === target.id ? { ...p, tracks } : p)),
+          async () => {
+            if (!shares(target)) {
+              await updateRemotePlaylist(session, target.id, { tracks });
+              return;
+            }
+            for (const trackId of leaving) await removePlaylistTrack(session, target.id, trackId);
+          },
         );
       },
       addWant: async (id, target) => {

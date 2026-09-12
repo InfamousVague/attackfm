@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { usePlaylists } from '../playlists/playlists.tsx';
+import { isBookCollection } from '../playlists/collections.ts';
 import { onCarPlayPlay } from './carplay.ts';
 import {
   bindNativeTransport,
@@ -24,7 +25,11 @@ import { translate } from '../i18n/translate.ts';
  */
 export function CarPlayBridge({ onPlay }: { onPlay: (track: Track, queue: Track[]) => void }) {
   const { tracks, favoriteTracks } = useLibrary();
-  const { playlists } = usePlaylists();
+  const { playlists: every } = usePlaylists();
+  // The car's Playlists branch resolves its rows against the SONGS, so a book
+  // collection would open there as an empty list; the car has a Books branch
+  // of its own for the shelf.
+  const playlists = useMemo(() => every.filter((p) => !isBookCollection(p)), [every]);
   const latest = useRef({ tracks, favoriteTracks, playlists, onPlay });
   latest.current = { tracks, favoriteTracks, playlists, onPlay };
 

@@ -1,6 +1,6 @@
 import { TrackMenu } from '../../app/library/TrackMenu.tsx';
 import { Button, ContextMenu, MenuItem, Modal, ProgressBar, Spinner, Text } from '@glacier/react';
-import { ArrowDownToLine, ListX, BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, SkipForward, Trash2, Upload } from '@glacier/icons';
+import { ArrowDownToLine, ListPlus, ListX, BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, SkipForward, Trash2, Upload } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { PluginPageProps } from '../types.ts';
 import { useLibrary } from '../../app/library/library.tsx';
@@ -31,6 +31,8 @@ import { request, ServerError } from '../../app/api/http.ts';
 import { isTauri } from '../../app/core/tauri.ts';
 import type { Track } from '../../app/core/tauri.ts';
 import { JOB_ACTIVE, transcribeRows, type TranscribeJob } from './transcribeRows.ts';
+import { Collections } from './Collections.tsx';
+import { AddToCollectionDialog } from './AddToCollection.tsx';
 
 /*
  * Restored 2026-08-22. This page was deleted whole on 12 August when
@@ -918,6 +920,7 @@ function BookMenu({
   shape,
   className,
   onChanged,
+  onFile,
   children,
 }: {
   book: ShelfBook;
@@ -926,6 +929,10 @@ function BookMenu({
   className?: string;
   /** Re-walk the library so the removed book leaves this device's shelf. */
   onChanged: () => void | Promise<void>;
+  /** Open the add-to-collection sheet for this book. The sheet is the
+   *  page's, not the menu's: a drawer opened from inside a context menu is
+   *  torn down with the menu that opened it. */
+  onFile: () => void;
   children: ReactNode;
 }) {
   const t = useT();
@@ -971,7 +978,13 @@ function BookMenu({
   const hasCard = !!shape && (shape.openingMs > 0 || shape.creditsMs > 0);
   const skipping = hasCard && bookSkips(ids);
 
-  if (!session || ids.length === 0) return <div className={className}>{children}</div>;
+  /*
+   * No early return for a local library any more. The menu used to be
+   * nothing at all without a server - every verb in it spoke to one - but
+   * a collection is kept by the playlist store, which has a local half, so
+   * filing a book is a thing every library can do. The server verbs gate
+   * themselves below, as they always did.
+   */
 
   const keepWholeBook = async () => {
     if (!session || keeping) return;
@@ -1064,6 +1077,12 @@ function BookMenu({
         aria-label={t('books.cardActions', { title: book.title })}
         content={
           <>
+            {/* First, because it is the one verb here that every listener on
+                every library has: collections are the playlist store's, and
+                the store has a local half. */}
+            <MenuItem icon={<ListPlus size={15} />} onSelect={onFile}>
+              {t('books.addToCollection')}
+            </MenuItem>
             {/* Offered only when a transcript actually found something, and
                 worded as what will happen rather than as a setting: the whole
                 point is that it is per book, so a global-sounding label would
@@ -1082,7 +1101,7 @@ function BookMenu({
                 all, outside that ranking. */}
             {/* The vault is a native folder, so a browser has nowhere to put a
                 book. An item that silently does nothing is worse than no item. */}
-            {isTauri() && (
+            {session && isTauri() && (
             <MenuItem
               icon={keeping ? <Spinner size="sm" aria-label="" /> : <ArrowDownToLine size={15} />}
               onSelect={() => void keepWholeBook()}
@@ -1098,7 +1117,7 @@ function BookMenu({
                   : t('books.keepOnDevice')}
             </MenuItem>
             )}
-            {isTauri() && allHeld && !keeping && (
+            {session && isTauri() && allHeld && !keeping && (
               <MenuItem icon={<Trash2 size={15} />} onSelect={() => void releaseBook()}>
                 {t('books.removeFromDevice')}
               </MenuItem>
@@ -1155,7 +1174,7 @@ function BookMenu({
   );
 }
 
-export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
+export function BooksPage({ onPlay, onOpenPlaylist, headerSlot }: PluginPageProps) {
   const t = useT();
   const { session } = useServerSession();
   const { books, rescan, isFavorite, toggleFavorite } = useLibrary();
@@ -1344,6 +1363,10 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
   /** The book and place a catch-up was asked for, held here rather than in the
    *  sheet so closing the sheet does not take the recap with it. */
   const [recap, setRecap] = useState<{ track: Track; ms: number } | null>(null);
+  /** The book being filed into a collection. Page state for the same reason
+   *  as the recap: the sheet is asked for from a card's menu and from the
+   *  chapters dialog, and must outlive both. */
+  const [filing, setFiling] = useState<ShelfBook | null>(null);
 
   // The hero's figures and its one verb: how much shelf there is, and the
   // book most recently touched - the one "pick up where you left off" means.
@@ -1456,7 +1479,14 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
     const at = standing(book);
     const shape = shapeOf(book);
     return (
-      <BookMenu key={book.key} book={book} shape={shapeOf(book)} className="bookCard" onChanged={rescan}>
+      <BookMenu
+        key={book.key}
+        book={book}
+        shape={shapeOf(book)}
+        className="bookCard"
+        onChanged={rescan}
+        onFile={() => setFiling(book)}
+      >
         {/* Over the cover's top-left corner, not in the row of affordances
             below. It sits OUTSIDE the play button rather than inside it: a
             button within a button is invalid markup, and the press would be
@@ -1567,6 +1597,11 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
       {headerSlot}
       <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
 
+      {/* Collections first: the lists a reader keeps are the working surface
+          of the shelf, the way playlists lead the Library - above the books
+          themselves, which are the read-only rest. */}
+      <Collections books={books} onOpen={onOpenPlaylist} />
+
       {/* There is no field here any more. Finding a book is Search's job -
           it already asks `filterBooks` over this same shelf and carries a
           Books chip to narrow to it - and a page that both browsed and
@@ -1625,8 +1660,31 @@ export function BooksPage({ onPlay, headerSlot }: PluginPageProps) {
         />
       )}
 
+      {/* Rendered only while asked for, so the sheet's own draft (a half-typed
+          new name) starts fresh for the next book. */}
+      {filing && (
+        <AddToCollectionDialog book={filing} books={books} open onClose={() => setFiling(null)} />
+      )}
+
       {open && (
         <Modal open onClose={() => setOpen(null)} title={open.title}>
+          {/* The book's own page, such as it is: the one place a book is
+              opened rather than played. Filing it into a collection is
+              offered here as well as on the card's hold menu, and steps
+              aside the way the recap does - a drawer over a dialog is two
+              focus traps. */}
+          <div className="bookChapters__catch">
+            <Button
+              variant="soft"
+              size="sm"
+              onClick={() => {
+                setFiling(open);
+                setOpen(null);
+              }}
+            >
+              <ListPlus size={15} /> {t('books.addToCollection')}
+            </Button>
+          </div>
           {/* The way back in. THIS is the sheet a book gets opened from three
               weeks later, before anything is playing - so the recap is offered
               here rather than only inside the player, and it reads the mark

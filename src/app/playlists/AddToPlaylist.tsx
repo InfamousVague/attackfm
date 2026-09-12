@@ -6,7 +6,7 @@ import { useLibrary } from '../library/library.tsx';
 import { fold, titleKey } from '../library/owned.ts';
 import { MosaicCover } from './PlaylistShowcase.tsx';
 import { usePlaylists } from './playlists.tsx';
-import { isGeneratedPlaylist } from './generated.ts';
+import { isMusicPlaylist } from './collections.ts';
 import { openNewPlaylist } from '../nav/newPlaylistDoor.ts';
 import { Trans, useSongCount, useT } from '../i18n/LocaleShell.tsx';
 import type { Track } from '../core/tauri.ts';
@@ -55,10 +55,12 @@ function AddToPlaylistPanel({
   const { toast } = useToast();
   const { playlists: every, addTrack, removeTrack, addWant, removeWant } = usePlaylists();
   const { tracks } = useLibrary();
-  // Only the lists a person keeps. The server's chart and new-music lists
-  // are playlists too, and they crowded this picker until the ones you made
-  // were under a scroll of "Top" this and that.
-  const playlists = useMemo(() => every.filter((p) => !isGeneratedPlaylist(p)), [every]);
+  // Only the lists a person keeps FOR SONGS. The server's chart and new-music
+  // lists are playlists too, and they crowded this picker until the ones you
+  // made were under a scroll of "Top" this and that; a book collection is a
+  // playlist too, and a song filed into one would sit unseen among the
+  // chapters of a twelve-hour reading.
+  const playlists = useMemo(() => every.filter(isMusicPlaylist), [every]);
   // One owned song is still the common case; the plural paths only change the
   // words and the row semantics ("in this list" means ALL of them are).
   const track = list[0] ?? null;

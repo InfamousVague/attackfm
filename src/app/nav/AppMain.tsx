@@ -12,6 +12,9 @@ import { ResumeElsewhere } from '../servers/ResumeElsewhere.tsx';
 import { AlbumPage } from '../albumArtist/AlbumPage.tsx';
 import { ArtistPage } from '../albumArtist/ArtistPage.tsx';
 import { PlaylistPage } from '../playlists/PlaylistPage.tsx';
+import { CollectionPage } from '../playlists/CollectionPage.tsx';
+import { usePlaylists } from '../playlists/playlists.tsx';
+import { isBookCollection } from '../playlists/collections.ts';
 import { MixPage } from '../playlists/MixPage.tsx';
 import { SongPage, type SongCollection } from '../library/SongPage.tsx';
 import { LibraryView } from '../library/LibraryView.tsx';
@@ -106,6 +109,15 @@ export function AppMain({
   onProfileRoom: (room: 'stats' | null) => void;
 }) {
   const pages = usePluginPages();
+  /*
+   * Which page a playlist id opens as. A book collection is a playlist in
+   * the store (collections.ts), so the door is one door - but the room
+   * behind it is the shelf's, not the song table's. Decided here, by the
+   * list's folder, so the two pages stay two components: a page that
+   * switched shape mid-life would change its hook count under React.
+   */
+  const { playlists } = usePlaylists();
+  const openedList = detail?.kind === 'playlist' ? playlists.find((p) => p.id === detail.id) : undefined;
   // Books is no longer a standalone page - it is a toggle inside the Library -
   // so a tab that still names it (a session that predates the move) falls
   // through to the Library rather than rendering the shelf on its own.
@@ -228,12 +240,16 @@ export function AppMain({
           onGone={onCloseDetail}
         />
       ) : detail?.kind === 'playlist' ? (
-        <PlaylistPage
-          id={detail.id}
-          onPlay={onPlay}
-          onOpenArtist={onOpenArtist}
-          onGone={onCloseDetail}
-        />
+        openedList && isBookCollection(openedList) ? (
+          <CollectionPage id={detail.id} onPlay={onPlay} onGone={onCloseDetail} />
+        ) : (
+          <PlaylistPage
+            id={detail.id}
+            onPlay={onPlay}
+            onOpenArtist={onOpenArtist}
+            onGone={onCloseDetail}
+          />
+        )
       ) : detail?.kind === 'mix' ? (
         <MixPage
           title={detail.title}

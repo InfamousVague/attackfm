@@ -212,3 +212,36 @@ describe('the store on disk', () => {
     expect(metaFor(key)).toEqual({});
   });
 });
+
+describe('create with a folder / addTracks / removeTracks', () => {
+  it('is born IN the folder, so a book collection is never a music list for a render', async () => {
+    const result = store();
+    let id = '';
+    await act(async () => {
+      id = await result.current.create('Bedtime', [], { folder: 'Books' });
+    });
+    expect(result.current.playlists.find((p) => p.id === id)?.folder).toBe('Books');
+    // The folder is trimmed like every other decoration, and absent means loose.
+    await act(async () => {
+      id = await result.current.create('Loose', []);
+    });
+    expect(result.current.playlists.find((p) => p.id === id)?.folder).toBe('');
+  });
+
+  it('addTracks appends several as one edit, in the order given, skipping what is there', async () => {
+    // A book is twelve sections filed at once; twelve addTrack calls each
+    // read the list as it stood before the first, which on a server is the
+    // last section only.
+    const result = store();
+    const id = await withList(result, 'L', ['/a.mp3']);
+    act(() => result.current.addTracks(id, ['/c.mp3', '/a.mp3', '/b.mp3']));
+    expect(result.current.playlists[0]?.paths).toEqual(['/a.mp3', '/c.mp3', '/b.mp3']);
+  });
+
+  it('removeTracks takes several out and leaves the rest in their seats', async () => {
+    const result = store();
+    const id = await withList(result, 'L', ['/a.mp3', '/b.mp3', '/c.mp3', '/d.mp3']);
+    act(() => result.current.removeTracks(id, ['/b.mp3', '/d.mp3', '/zzz.mp3']));
+    expect(result.current.playlists[0]?.paths).toEqual(['/a.mp3', '/c.mp3']);
+  });
+});

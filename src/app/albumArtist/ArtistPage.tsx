@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
 import { usePlaylists } from '../playlists/playlists.tsx';
+import { isBookCollection } from '../playlists/collections.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { groupAlbums, isBy } from './albums.ts';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
@@ -121,10 +122,12 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
   const audition = useArtistAudition(artist, session, onPlay);
 
   // The listener's own playlists that feature this artist, each wearing the
-  // covers of the artist's songs inside it.
+  // covers of the artist's songs inside it. Book collections stay out: the
+  // shelf is where an author's books are, and this rail draws songs.
   const inPlaylists = useMemo(() => {
     const byPath = new Map(theirs.map((t) => [t.path, t] as const));
     return playlists
+      .filter((playlist) => !isBookCollection(playlist))
       .map((playlist) => {
         const featured = playlist.paths
           .map((p) => byPath.get(p))

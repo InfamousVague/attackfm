@@ -21,9 +21,17 @@
  * every other suite starts as - exactly as global-setup left him.
  */
 import type { Locator, Page } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
 import { expect, test } from './fixtures/hub.ts';
+import { hubPlaylists, rowMenuItem, sweepPlaylists } from './fixtures/playlists.ts';
 
 test.use({ afmUser: 'ana' });
+
+/** Where the collection scenarios leave their pictures. `AFM_E2E_SHOTS` to
+ *  put them somewhere else; the default is inside the run root, which is
+ *  what a cold e2e directory deletes. */
+const SHOTS = process.env.AFM_E2E_SHOTS ?? `${process.env.AFM_E2E_ROOT ?? 'e2e/.run'}/shots`;
+mkdirSync(SHOTS, { recursive: true });
 
 /**
  * ONE DEVICE, ON ITS OWN.
@@ -495,6 +503,199 @@ test('a book is ONE row in search, however many files it is made of', async ({ p
   await expect(books).toBeVisible();
   await expect(books.getByRole('option')).toHaveCount(1);
   await expect(books.getByRole('option')).toContainText('The Long Ascent');
+
+  expect(crashes).toEqual([]);
+});
+
+/**
+ * Collections: a playlist for books, kept OUT of the playlists.
+ *
+ * Every collection this file makes wears this prefix and is swept after each
+ * test, whether the test finished or died halfway - one hub serves every
+ * suite, and a list left behind is a list the next suite counts.
+ */
+const MINE = 'E2E-C ';
+
+test.afterEach(async ({ hub }) => {
+  await sweepPlaylists(hub, MINE);
+});
+
+/**
+ * Open a book card's hold menu the way a pointer does: a real right-click on
+ * a point of the card that is ON SCREEN.
+ *
+ * Not `dispatchEvent('contextmenu')`, which the song rows use. That event
+ * carries no pointer position, and the kit places a context menu at the
+ * pointer - so for a card that sits at the bottom of the viewport (the shelf
+ * card does, under the Collections row) the menu was measured at x 0, y 720:
+ * wholly below a 720px window, where no click can land and no scroll can
+ * bring it without dismissing it. A real right-click there opens the menu
+ * flipped up and on screen. And `page.mouse` rather than a locator click,
+ * because a locator click scrolls first and a scroll closes the menu.
+ */
+async function holdMenu(page: Page, card: Locator): Promise<void> {
+  await expect(card).toBeVisible();
+  const box = (await card.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  const y = Math.min(box.y + Math.min(box.height / 2, 30), viewport.height - 4);
+  await page.mouse.click(box.x + box.width / 2, y, { button: 'right' });
+}
+
+/** The name dialog, filled in and committed. */
+async function nameCollection(page: Page, name: string, verb: 'Create' | 'Save'): Promise<void> {
+  const field = page.getByRole('textbox', { name: 'Collection name' });
+  await expect(field).toBeVisible();
+  await field.fill(name);
+  await page.getByRole('button', { name: verb, exact: true }).click();
+}
+
+test('a collection is made on the shelf, takes a whole book, and is nowhere among the playlists', async ({
+  page,
+  hub,
+}) => {
+  const crashes: string[] = [];
+  page.on('pageerror', (error) => crashes.push(error.message));
+  const name = `${MINE}Bedtime`;
+
+  await page.goto('/');
+  await openShelf(page);
+
+  /*
+   * MADE FROM THE SHELF, AND LANDING ON ITS OWN PAGE.
+   *
+   * The tile is the shelf's "New Playlist": the name is the whole form, and
+   * the page it opens is the collection's - the book-shaped one, not the song
+   * table. The kicker is the tell: a playlist page says "Playlist" there.
+   */
+  await page.getByRole('button', { name: 'New collection' }).click();
+  await nameCollection(page, name, 'Create');
+  await expect(page.getByRole('heading', { name })).toBeVisible();
+  await expect(page.getByText('Collection', { exact: true })).toBeVisible();
+  await expect(page.getByText('0 books')).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/collection-empty.png`, fullPage: true });
+
+  /*
+   * BORN IN THE FOLDER. The folder is the only thing that makes this a
+   * collection rather than a playlist, so it has to be on the hub's row from
+   * the first fetch - a create that filed it a beat later would show the list
+   * among the music for one heartbeat, and on a slow hub for several.
+   */
+  const made = (await hubPlaylists(hub)).find((p) => p.name === name);
+  expect(made?.folder).toBe('Books');
+
+  // Back to the shelf: the tile is there, and says it is empty.
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Library' }).click();
+  await openShelf(page);
+  const tile = page.getByRole('button', { name: new RegExp(name) });
+  await expect(tile).toBeVisible();
+  await expect(tile).toContainText('0 books');
+
+  /*
+   * THE WHOLE BOOK, FROM ITS HOLD MENU.
+   *
+   * Driven the way a thumb drives it: the card wears the same ContextMenu
+   * every song row does, and a `contextmenu` event on it is what the hold
+   * hook itself dispatches at the end of a press (see fixtures/playlists.ts
+   * on why a synthetic right-click is not the same gesture). The sheet is the
+   * add-to-playlist sheet re-cut for books, and its row's pressed state IS
+   * "this book is in it".
+   */
+  await holdMenu(page, bookCard(page, 'Start'));
+  const menu = page.getByRole('menu', { name: 'The Long Ascent actions' });
+  await expect(menu).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'Add to collection…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Add to collection' });
+  await expect(sheet).toBeVisible();
+  const row = sheet.getByRole('button', { name: new RegExp(name) });
+  await expect(row).toHaveAttribute('aria-pressed', 'false');
+  await row.click();
+  await expect(row).toHaveAttribute('aria-pressed', 'true');
+  await page.screenshot({ path: `${SHOTS}/add-to-collection.png`, fullPage: true });
+  await sheet.getByRole('button', { name: 'Close' }).click();
+  await expect(sheet).toBeHidden();
+
+  // Every SECTION went in, in reading order - a collection holds readings,
+  // never a chapter of one - and the hub agrees with the sheet.
+  await expect
+    .poll(async () => (await hubPlaylists(hub)).find((p) => p.name === name)?.tracks?.length)
+    .toBe(12);
+  const rows = await hub.get<{ tracks: LibraryRow[] }>('/api/library?since=0&limit=500');
+  const idOf = (title: string) => rows.tracks.find((t) => t.kind === 'book' && t.title === title)!.id;
+  const filed = (await hubPlaylists(hub)).find((p) => p.name === name)!.tracks!;
+  expect(filed.slice(0, 3)).toEqual([idOf('Chapter 1'), idOf('Chapter 2'), idOf('Chapter 3')]);
+  expect(filed.at(-1)).toBe(idOf('Chapter 12'));
+
+  // The tile counts it, and the page lists it as ONE book.
+  await expect(tile).toContainText('1 book');
+  await page.screenshot({ path: `${SHOTS}/shelf-with-collection.png`, fullPage: true });
+  await tile.click();
+  await expect(page.getByRole('heading', { name })).toBeVisible();
+  const list = page.getByRole('list', { name: 'Books in this collection' });
+  await expect(list.getByRole('listitem')).toHaveCount(1);
+  await expect(list).toContainText('The Long Ascent');
+  await expect(list).toContainText('12 chapters');
+  await page.screenshot({ path: `${SHOTS}/collection-page.png`, fullPage: true });
+
+  /*
+   * AND NOWHERE AMONG THE PLAYLISTS.
+   *
+   * This is the half that fails silently: a collection IS a playlist row, and
+   * every music surface that forgot the gate would draw it - the Library's
+   * grid as a "Books" folder of one, the add-to-playlist sheet as a row to
+   * file a song into. Both are checked against the same list that was just
+   * seen on the shelf.
+   */
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Library' }).click();
+  await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
+  const sections = page.getByRole('radiogroup', { name: 'Library section' });
+  await sections.getByText('Music', { exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Playlists' })).toBeVisible();
+  await expect(page.getByRole('button', { name: new RegExp(name) })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /Books/ })).toHaveCount(0);
+
+  await page.getByRole('button', { name: /^Recent/ }).first().click();
+  await expect(page.getByRole('grid', { name: 'Songs' })).toBeVisible();
+  await rowMenuItem(page, 'Margin Sketch', 'The Quiet Ledger', 'Add to playlist…');
+  const picker = page.getByRole('dialog', { name: 'Add to playlist' });
+  await expect(picker).toBeVisible();
+  await expect(picker.getByRole('button', { name: new RegExp(name) })).toHaveCount(0);
+  await picker.getByRole('button', { name: 'Close' }).click();
+
+  expect(crashes).toEqual([]);
+});
+
+test('a collection is renamed and deleted from its own page, and the books stay on the shelf', async ({
+  page,
+  hub,
+}) => {
+  const crashes: string[] = [];
+  page.on('pageerror', (error) => crashes.push(error.message));
+  const name = `${MINE}Long drive`;
+  const after = `${MINE}Longer drive`;
+
+  await page.goto('/');
+  await openShelf(page);
+  await page.getByRole('button', { name: 'New collection' }).click();
+  await nameCollection(page, name, 'Create');
+  await expect(page.getByRole('heading', { name })).toBeVisible();
+
+  await page.getByRole('button', { name: `${name} actions` }).click();
+  await page.getByRole('menuitem', { name: 'Rename' }).click();
+  await nameCollection(page, after, 'Save');
+  await expect(page.getByRole('heading', { name: after })).toBeVisible();
+  await expect.poll(async () => (await hubPlaylists(hub)).some((p) => p.name === after)).toBe(true);
+
+  await page.getByRole('button', { name: `${after} actions` }).click();
+  await page.getByRole('menuitem', { name: 'Delete collection' }).click();
+  const confirm = page.getByRole('dialog', { name: `Delete “${after}”?` });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.getByRole('heading', { name: after })).toHaveCount(0);
+  await expect.poll(async () => (await hubPlaylists(hub)).some((p) => p.name === after)).toBe(false);
+
+  // The shelf is untouched: the book was only ever NAMED in the collection.
+  await openShelf(page);
+  await expect(page.getByText('The Long Ascent').first()).toBeVisible();
 
   expect(crashes).toEqual([]);
 });

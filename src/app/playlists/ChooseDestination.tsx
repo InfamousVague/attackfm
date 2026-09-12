@@ -1,6 +1,7 @@
 import { Modal, Text } from '@glacier/react';
 import { Heart, ListMusic, Plus } from '@glacier/icons';
 import { usePlaylists } from './playlists.tsx';
+import { isMusicPlaylist } from './collections.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 import { openNewPlaylist } from '../nav/newPlaylistDoor.ts';
 import type { FileDestination } from '../downloads/filePlan.ts';
@@ -29,8 +30,12 @@ export function ChooseDestination({
   onClose: () => void;
   onChoose: (dest: FileDestination | null) => void;
 }) {
-  const { playlists } = usePlaylists();
+  const { playlists: every } = usePlaylists();
   const t = useT();
+  // The same rooms the add-to-playlist panel keeps out: a song downloading
+  // into a chart list would only be lost on the next refresh, and one filed
+  // into a book collection would sit among chapters where nothing draws it.
+  const playlists = every.filter(isMusicPlaylist);
 
   const pick = (dest: FileDestination | null) => {
     onChoose(dest);

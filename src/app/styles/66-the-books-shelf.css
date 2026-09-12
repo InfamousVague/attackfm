@@ -1024,3 +1024,107 @@ span.bookCard__readAlong {
   margin-block-end: var(--glacier-space-2);
   border-block-end: 1px solid var(--glacier-border-subtle);
 }
+
+/* ---- Collections ------------------------------------------------------- */
+
+/* The shelf's own playlists. The tiles are the Library's playlist tiles
+   (`.playlistTile` in the showcase grid) worn unchanged, because a
+   collection is the same kind of door; only the shelf around them is this
+   page's. The one-line blurb sits between the heading and the grid the way
+   a section subtitle does elsewhere on the page. */
+.bookCollections .showcaseGrid {
+  --card-track: clamp(7.08rem, 5.52rem + 2.64vw, 8.88rem);
+}
+.bookCollections__blurb {
+  margin-block: calc(-1 * var(--glacier-space-1)) var(--glacier-space-3);
+}
+
+/* The collection page: one row per BOOK, numbered, in running order.
+   Wider than a book card and shorter than a chapter row, because a row's job
+   here is to be read down a list - which book is third - and then pressed. */
+.collectionRows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.collectionRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+.collectionRow__main {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.collectionRow__main:hover .collectionRow__title,
+.collectionRow__main:focus-visible .collectionRow__title {
+  color: var(--glacier-accent-text);
+}
+.collectionRow__n {
+  flex: none;
+  inline-size: 1.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+}
+.collectionRow__cover {
+  flex: none;
+  inline-size: 3.25rem;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-sunken);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--glacier-accent-text);
+}
+.collectionRow__cover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+.collectionRow__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+.collectionRow__title {
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.collectionRow__sub {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.collectionRow__remove {
+  flex: none;
+}
+
+/* The new-collection field at the foot of the add-to-collection sheet:
+   the same form the rename dialogs use, with room above it so it reads as
+   its own act rather than the last row of the list. */
+.addCollection__new {
+  margin-block-start: var(--glacier-space-3);
+}

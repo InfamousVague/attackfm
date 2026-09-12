@@ -19,6 +19,7 @@ import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'r
 import { useLibrary } from '../library/library.tsx';
 import { OnRepeatChip } from '../library/OnRepeatChip.tsx';
 import { usePlaylists, type Playlist } from './playlists.tsx';
+import { isBookCollection, isReservedFolder } from './collections.ts';
 import { sharedSeenKey, useSharedSeen } from './sharedSeen.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
@@ -171,24 +172,41 @@ function tileMenuTarget(from: Element): Element | null {
 function NewFolderForm({ onDone }: { onDone: (name: string) => void }) {
   const t = useT();
   const [name, setName] = useState('');
+  // A folder called `Books` would make this a book collection - the folder
+  // is the whole mechanism - so the name is refused here, with a reason,
+  // rather than filed and quietly gone from the Library.
+  const [refused, setRefused] = useState(false);
   return (
     <form
       className="playlistCreate"
       onSubmit={(e) => {
         e.preventDefault();
-        onDone(name.trim());
+        const clean = name.trim();
+        if (isReservedFolder(clean)) {
+          setRefused(true);
+          return;
+        }
+        onDone(clean);
       }}
     >
       <Input
         autoFocus
         value={name}
-        onChange={(e) => setName(e.currentTarget.value)}
+        onChange={(e) => {
+          setName(e.currentTarget.value);
+          setRefused(false);
+        }}
         placeholder={t('playlists.folderNameExample')}
         aria-label={t('playlists.folderName')}
       />
       <Button type="submit" variant="solid">
         {t('playlists.moveHere')}
       </Button>
+      {refused && (
+        <Text tone="danger" size="xs" role="status">
+          {t('playlists.folderReserved')}
+        </Text>
+      )}
     </form>
   );
 }
@@ -317,13 +335,15 @@ export function PlaylistShowcase({
   // Same rule the page's menu follows: a folder IS the playlists that name it.
   // The server's own folders (Charts, New music) are left out - they are not
   // yours to file a playlist into, and offering them as a move target would
-  // detach that list from the refresh that keeps them current.
+  // detach that list from the refresh that keeps them current. The Books
+  // folder is left out for the opposite reason: filing a song list there
+  // would make it a book collection.
   const folders = useMemo(
     () =>
       [
         ...new Set(
           playlists
-            .filter((p) => !p.origin && !GENERATED_FOLDERS.has(p.folder))
+            .filter((p) => !p.origin && !isReservedFolder(p.folder))
             .map((p) => p.folder)
             .filter(Boolean),
         ),
@@ -411,11 +431,17 @@ export function PlaylistShowcase({
    * folder's position should not move when you play something inside it.
    */
   const { loose, foldered, generated, elsewhere, shared } = useMemo(() => {
-    const sorted = [...playlists].sort(
-      (a, b) =>
-        Math.max(b.createdAt, playlistPlayedAt(b.id)) -
-        Math.max(a.createdAt, playlistPlayedAt(a.id)),
-    );
+    // Book collections are drawn on the Books shelf and nowhere here - not
+    // as a folder of their own, not among a friend's lists, not under
+    // another hub's name. A list of chapters among the music was the whole
+    // reason the shelf keeps books apart from songs.
+    const sorted = playlists
+      .filter((p) => !isBookCollection(p))
+      .sort(
+        (a, b) =>
+          Math.max(b.createdAt, playlistPlayedAt(b.id)) -
+          Math.max(a.createdAt, playlistPlayedAt(a.id)),
+      );
     const out: typeof sorted = [];
     const groups = new Map<string, typeof sorted>();
     // Lists that live on another of this account's hubs sit under that hub's

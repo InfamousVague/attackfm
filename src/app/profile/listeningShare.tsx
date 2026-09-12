@@ -4,6 +4,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { announce, postPresence, publishProfile } from '../servers/registry.ts';
 import { useLibrary } from '../library/library.tsx';
 import { usePlaylists } from '../playlists/playlists.tsx';
+import { isBookCollection } from '../playlists/collections.ts';
 import { tracksOfHub } from '../server.ts';
 import { fold } from '../core/fold.ts';
 import { setProfileSharing } from '../api/profile.ts';
@@ -87,7 +88,9 @@ export function ListeningShareBridge() {
   const { playlists } = usePlaylists();
   const songs = tracksOfHub(tracks, server).length;
   const artists = useMemo(() => new Set(tracksOfHub(tracks, server).map((t) => fold(t.artist))).size, [tracks, server]);
-  const lists = playlists.filter((p) => !p.origin).length;
+  // The profile's "playlists" figure counts lists of songs; a book
+  // collection is the shelf's, not a number about the music.
+  const lists = playlists.filter((p) => !p.origin && !isBookCollection(p)).length;
   const lastSent = useRef<string>('');
   useEffect(() => {
     if (!registry || !server || songs === 0) return;

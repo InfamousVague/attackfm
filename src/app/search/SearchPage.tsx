@@ -35,6 +35,7 @@ import { shelve } from '../library/bookShelf.ts';
 import { filterBooks } from '../library/bookSearch.ts';
 import { useRippleWave } from '../ux/rippleWave.ts';
 import { usePlaylists } from '../playlists/playlists.tsx';
+import { isBookCollection } from '../playlists/collections.ts';
 import { useQueueControls } from '../player/queueControls.tsx';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -238,7 +239,9 @@ export function SearchPage({
   const lists = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return playlists.filter((p) => p.name.toLowerCase().includes(q));
+    // A book collection is found from the Books shelf, not among the
+    // playlists: a hit here opens as a list of songs and finds none.
+    return playlists.filter((p) => !isBookCollection(p) && p.name.toLowerCase().includes(q));
   }, [playlists, query]);
 
   const shown = useMemo(() => new Set(lib.songs.map((s) => s.track.path)), [lib.songs]);
