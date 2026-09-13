@@ -68,6 +68,17 @@ src-tauri/gen/android/app/src/main/java/com/mattssoftware/attackfm/generated/
 !src-tauri/gen/android/app/src/main/res/drawable/ic_widget_next.xml
 !src-tauri/gen/android/app/src/main/res/drawable/ic_widget_heart.xml
 !src-tauri/gen/android/app/src/main/res/drawable/ic_widget_heart_on.xml
+# The update announcement's status-bar glyph (UpdateAlerts.kt).
+!src-tauri/gen/android/app/src/main/res/drawable/ic_notify_update.xml
+# JVM unit tests for the hand-written layer's pure rules (UpdateAlertRulesTest).
+# `tauri android init` never makes this directory, so it would only ever be
+# lost to the blanket ignore above, never overwritten.
+!src-tauri/gen/android/app/src/test/
+!src-tauri/gen/android/app/src/test/java/
+!src-tauri/gen/android/app/src/test/java/com/
+!src-tauri/gen/android/app/src/test/java/com/mattssoftware/
+!src-tauri/gen/android/app/src/test/java/com/mattssoftware/attackfm/
+!src-tauri/gen/android/app/src/test/java/com/mattssoftware/attackfm/**
 # The app's build script is no longer purely generated: it carries the release
 # signingConfigs that make a Play-acceptable bundle. Untracked, that wiring
 # lived on one Mac's disk and a fresh clone silently produced unsigned

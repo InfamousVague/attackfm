@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.6.9
+
+- On Android, the app can tell you when a new version is out, even while it is
+  closed. It is off until you turn on Update notifications in Settings, under
+  Notifications, and it needs the newest Android app.
+
 ## 0.6.8
 
 - Importing a playlist takes you straight to the playlist, with a row for every

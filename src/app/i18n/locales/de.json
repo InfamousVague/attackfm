@@ -1088,7 +1088,11 @@
     "stemsStartedLabel": "Song wird zerlegt",
     "stoppedSharing": "{{actor}} teilt {{playlist}} nicht mehr",
     "testBody": "So sieht eine Mitteilung aus.",
-    "thatLink": "Dieser Link"
+    "thatLink": "Dieser Link",
+    "updateAlertBody": "Öffne AttackFM, um das Update zu laden.",
+    "updateAlertChannel": "App-Updates",
+    "updateAlertChannelHint": "Wenn eine neue Version von AttackFM erschienen ist.",
+    "updateAlertTitle": "AttackFM {{version}} ist da"
   },
   "player": {
     "aGroove": "Ein Groove",
@@ -3345,6 +3349,9 @@
     "notifyTestSending": "Wird gesendet…",
     "notifyTestSent": "Gesendet – schau in deine Mitteilungen.",
     "notifyTestUnsupported": "Dieser Build erreicht die Mitteilungszentrale nicht. Desktop und ältere Installationen brauchen eine frische Version der App selbst, nicht nur ein Update.",
+    "notifyUpdates": "Update-Mitteilungen",
+    "notifyUpdatesGloss": "Sagt dir Bescheid, wenn eine neue Version von AttackFM erscheint, auch bei geschlossener App.",
+    "notifyUpdatesHint": "Eine Mitteilung, sobald eine neue Version von AttackFM da ist, auch bei geschlossener App. Dein Telefon sieht ein paar Mal am Tag nach, sie kann also Stunden nach der Veröffentlichung kommen. Beim Öffnen der App wird das Update installiert.",
     "notifyVerbose": "Ausführliche Mitteilungen",
     "notifyVerboseGloss": "Auch bei Hintergrundarbeit melden: startende Downloads, Songs, die in Stems zerlegt werden, laufende KI.",
     "notifyVerboseHint": "Startende Downloads, Songs, die in Stems zerlegt werden, und die Hintergrunddurchläufe der KI, wenn sie beginnen und enden.",

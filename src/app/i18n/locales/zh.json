@@ -988,7 +988,11 @@
     "stemsStartedLabel": "正在拆分歌曲",
     "stoppedSharing": "{{actor}} 取消共享了 {{playlist}}",
     "testBody": "通知看起来就是这样。",
-    "thatLink": "那个链接"
+    "thatLink": "那个链接",
+    "updateAlertBody": "打开 AttackFM 即可更新。",
+    "updateAlertChannel": "应用更新",
+    "updateAlertChannelHint": "AttackFM 有新版本时。",
+    "updateAlertTitle": "AttackFM {{version}} 已发布"
   },
   "player": {
     "aGroove": "一场 Groove",
@@ -3141,6 +3145,9 @@
     "notifyTestSending": "正在发送…",
     "notifyTestSent": "已发送——看看你的通知。",
     "notifyTestUnsupported": "这个版本够不着通知栏。桌面端和较早的安装需要更新应用本体，光更新前端不够。",
+    "notifyUpdates": "更新通知",
+    "notifyUpdatesGloss": "即使应用已关闭，AttackFM 有新版本时也会通知你。",
+    "notifyUpdatesHint": "即使应用已关闭，AttackFM 发布新版本时也会通知你。手机每天检查几次，所以可能在发布几小时后才收到；打开应用即可安装更新。",
     "notifyVerbose": "详细通知",
     "notifyVerboseGloss": "后台的活儿也响一声：下载开始、歌曲正在分轨、AI 正在跑。",
     "notifyVerboseHint": "下载开始、歌曲正在分轨，以及 AI 后台处理的开始和结束。",

@@ -1188,7 +1188,11 @@
     "stemsStartedLabel": "A separar uma música",
     "stoppedSharing": "{{actor}} deixou de partilhar {{playlist}}",
     "testBody": "É assim que uma notificação vai aparecer.",
-    "thatLink": "Essa ligação"
+    "thatLink": "Essa ligação",
+    "updateAlertBody": "Abre o AttackFM para instalar a atualização.",
+    "updateAlertChannel": "Atualizações da app",
+    "updateAlertChannelHint": "Quando sai uma nova versão do AttackFM.",
+    "updateAlertTitle": "Já saiu o AttackFM {{version}}"
   },
   "player": {
     "aGroove": "Um groove",
@@ -3549,6 +3553,9 @@
     "notifyTestSending": "A enviar…",
     "notifyTestSent": "Enviada — vê as tuas notificações.",
     "notifyTestUnsupported": "Esta versão não chega à bandeja de notificações. O computador e as instalações mais antigas precisam de uma versão nova da própria app, não basta uma atualização.",
+    "notifyUpdates": "Notificações de atualizações",
+    "notifyUpdatesGloss": "Avisa-te quando sai uma nova versão do AttackFM, mesmo com a app fechada.",
+    "notifyUpdatesHint": "Uma notificação quando sai uma nova versão do AttackFM, mesmo com a app fechada. O telemóvel verifica algumas vezes por dia, por isso pode chegar horas depois do lançamento, e abrir a app instala a atualização.",
     "notifyVerbose": "Notificações detalhadas",
     "notifyVerboseGloss": "Avisa também sobre o trabalho de fundo: transferências a começar, músicas a ser separadas em stems, a IA a correr.",
     "notifyVerboseHint": "Transferências a começar, músicas a ser separadas em stems, e as passagens de fundo da IA a começar e a acabar.",

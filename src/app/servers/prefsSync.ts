@@ -121,6 +121,10 @@ export const SYNCED_KEYS = [
  * - `attackfm-wifi-only`: the same NETWORK decision as server-quality above,
  *   phrased as a download rule. A phone on a metered plan and a desktop on
  *   ethernet want opposite answers.
+ * - `attackfm-update-alerts`: schedules a background job on ONE phone's
+ *   operating system, and only an Android shell can schedule it at all. Synced,
+ *   it would arrive on a desktop or an iPhone as a switch with nothing under
+ *   it - and switching it on at a laptop would quietly start a phone polling.
  * - `attackfm-auto-upload`: stored per server as `attackfm-auto-upload:<url>`,
  *   so the bare key holds nothing and syncing it would be a silent no-op. It
  *   is also about a FOLDER on one machine, which is the definition of local.

@@ -156,6 +156,16 @@ dependencies {
     // CastBridge touches is identical between the two.
     implementation("androidx.mediarouter:mediarouter:1.7.0")
     implementation("com.google.android.gms:play-services-cast-framework:21.5.0")
+    // The periodic check behind update alerts (UpdateAlerts, UpdateAlertWorker):
+    // the one scheduler that outlives the app being closed and the phone being
+    // rebooted without a permission of its own. 2.10.5, the last of the 2.10
+    // line, rather than 2.11.x - the same wall as Cast above: work-runtime
+    // 2.11 depends on kotlin-stdlib 2.1.20, and 2.10.5's classes carry Kotlin
+    // 1.8 metadata against a 1.8.22 stdlib, which this 1.9 compiler reads.
+    // Its consumer R8 rules keep a public Worker's name and constructor, which
+    // is what WorkManager's reflective instantiation needs in a minified
+    // release.
+    implementation("androidx.work:work-runtime:2.10.5")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")

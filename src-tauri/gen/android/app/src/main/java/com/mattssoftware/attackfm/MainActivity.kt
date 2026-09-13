@@ -386,6 +386,21 @@ class MainActivity : TauriActivity() {
       runOnUiThread { flushTransport() }
     }
 
+    /**
+     * Update alerts: whether the listener wants to hear about new versions
+     * while the app is closed, what this page is running, and the words to say
+     * it in - one JSON sentence, see UpdateAlerts.configure.
+     *
+     * Sent on every start as well as when the switch moves, so the schedule
+     * always ends up matching the switch. Its presence on the bridge is also
+     * how the page decides to show that switch at all: an older binary has no
+     * worker to schedule, and a row that did nothing would be a lie.
+     */
+    @JavascriptInterface
+    fun setUpdateAlerts(json: String) {
+      UpdateAlerts.configure(this@MainActivity, json)
+    }
+
     @JavascriptInterface
     fun setPlaying(next: Boolean) {
       if (playing == next) return

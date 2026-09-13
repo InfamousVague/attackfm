@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The update announcement's status-bar glyph (UpdateAlerts): an arrow rising
+     off a line. White on transparent because a small notification icon is a
+     MASK - the system paints it, and anything drawn in colour or on a filled
+     square (the launcher icon) arrives as a solid blob. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="24dp" android:height="24dp"
+  android:viewportWidth="24" android:viewportHeight="24"
+  android:tint="#FFFFFFFF">
+  <path android:fillColor="#FFFFFFFF" android:pathData="M12,3 L19,10.5 L14.5,10.5 L14.5,16 L9.5,16 L9.5,10.5 L5,10.5 Z" />
+  <path android:fillColor="#FFFFFFFF" android:pathData="M5,18.5 L19,18.5 L19,20.5 L5,20.5 Z" />
+</vector>

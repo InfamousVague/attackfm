@@ -16,6 +16,7 @@ import { startServerSync } from './serverSync.ts';
 import { useRegistryOptional } from './registrySession.tsx';
 import { startCacheSweeps } from '../downloads/autoCache.ts';
 import { checkForBundle, reclaimEmbeddedIfNewer, reportBootOk, stagedBundle } from '../settings/appUpdate.ts';
+import { startUpdateAlerts } from '../notify/updateAlerts.ts';
 import {
   isRemotePath,
   login as serverLogin,
@@ -357,6 +358,13 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
     // bundle that just booted, hand the floor back to the binary - the one
     // case where the downloaded copy is the stale one.
     void reclaimEmbeddedIfNewer();
+    // And re-tell the native update-alerts job what the switch says and what
+    // is running now - the baseline a published version has to beat. Every
+    // start, not only when the switch moves, so a reinstall or a restored
+    // backup cannot leave the schedule and the switch disagreeing. Here
+    // rather than at a module top level because the words it hands over are
+    // translated, and i18next has started by the time anything mounts.
+    return startUpdateAlerts();
   }, []);
 
   // And ask attack.fm whether it is publishing a newer bundle. Never swapped

@@ -1488,7 +1488,11 @@
     "stemsStartedLabel": "تفكيك أغنية",
     "stoppedSharing": "{{actor}} توقف عن مشاركة {{playlist}}",
     "testBody": "هكذا سيبدو الإشعار.",
-    "thatLink": "ذلك الرابط"
+    "thatLink": "ذلك الرابط",
+    "updateAlertBody": "افتح AttackFM لتثبيت التحديث.",
+    "updateAlertChannel": "تحديثات التطبيق",
+    "updateAlertChannelHint": "عند صدور إصدار جديد من AttackFM.",
+    "updateAlertTitle": "صدر AttackFM {{version}}"
   },
   "player": {
     "aGroove": "جلسة Groove",
@@ -4161,6 +4165,9 @@
     "notifyTestSending": "جارٍ الإرسال…",
     "notifyTestSent": "أُرسل — انظر إلى إشعاراتك.",
     "notifyTestUnsupported": "هذه النسخة لا تصل إلى شريط الإشعارات. سطح المكتب والتثبيتات الأقدم تحتاج نسخة جديدة من التطبيق نفسه، لا مجرد تحديث.",
+    "notifyUpdates": "إشعارات التحديثات",
+    "notifyUpdatesGloss": "ينبّهك عند صدور إصدار جديد من AttackFM، حتى والتطبيق مغلق.",
+    "notifyUpdatesHint": "إشعار عند صدور إصدار جديد من AttackFM، حتى والتطبيق مغلق. يتحقق هاتفك بضع مرات في اليوم، لذا قد يصل بعد ساعات من الإصدار، وفتح التطبيق يثبّت التحديث.",
     "notifyVerbose": "إشعارات مفصّلة",
     "notifyVerboseGloss": "نبّه للعمل في الخلفية أيضًا: بدء التنزيلات، وتفكيك الأغاني إلى طبقات، وتشغيل الذكاء الاصطناعي.",
     "notifyVerboseHint": "بدء التنزيلات، وتفكيك الأغاني إلى طبقات، وبدء تمريرات الذكاء الاصطناعي في الخلفية وانتهاؤها.",

@@ -7,8 +7,9 @@ import { fetchPushPrefs, setPushPref } from '../server.ts';
 import { writeSummary } from './notificationsSummary.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { PaneSection, SettingRow, SettingsEmpty } from './kit/settingsKit.tsx';
-import { discoveryNoticesEnabled, osNoticesEnabled, setDiscoveryNotices, setOsNotices, setVerboseNotices, verboseNoticesEnabled } from './behaviourPrefs.ts';
+import { discoveryNoticesEnabled, osNoticesEnabled, setDiscoveryNotices, setOsNotices, setVerboseNotices, updateAlertsEnabled, verboseNoticesEnabled } from './behaviourPrefs.ts';
 import { ensureOsNotifyPermission, sendTestNotification } from '../notify/osNotify.ts';
+import { switchUpdateAlerts, updateAlertsAvailable } from '../notify/updateAlerts.ts';
 import { useT } from '../i18n/LocaleShell.tsx';
 
 /**
@@ -43,6 +44,12 @@ function DeviceSection() {
   // What the last test did, in the row's own words. Cleared when the switch
   // moves, because an old verdict beside a changed setting is a lie.
   const [tested, setTested] = useState<string | null>(null);
+  // Decided once per mount: the bridge is injected before the page runs and
+  // never changes under it.
+  const [canAlertUpdates] = useState(updateAlertsAvailable);
+  const [updates, setUpdates] = useState(updateAlertsEnabled);
+  // Same rule as `refused` above - only an actual refusal says so.
+  const [updatesRefused, setUpdatesRefused] = useState(false);
 
   return (
     <PaneSection
@@ -99,6 +106,35 @@ function DeviceSection() {
             >
               {t('settings.notifyTestSend')}
             </Button>
+          }
+        />
+      )}
+      {/* A new AttackFM, announced while the app is closed. Its own switch
+          rather than riding the one above: that one decides where the app's
+          news goes WHILE IT RUNS, and this schedules a job that runs when it
+          does not - different costs, asked for separately. Shown only where
+          the native side can schedule it (the Android shell), because on any
+          other build the switch would move and nothing would ever arrive. */}
+      {canAlertUpdates && (
+        <SettingRow
+          id="notify-updates"
+          label={t('settings.notifyUpdates')}
+          hint={updatesRefused ? t('settings.notifyRefused') : t('settings.notifyUpdatesHint')}
+          control={
+            <Switch
+              checked={updates}
+              onCheckedChange={(v) => {
+                setUpdates(v);
+                setUpdatesRefused(false);
+                void switchUpdateAlerts(v).then((ok) => {
+                  // Read back at answer time: a permission prompt can outlast
+                  // an off-flip, and "refused" beside a switch that is off
+                  // describes nothing.
+                  setUpdatesRefused(!ok && updateAlertsEnabled());
+                });
+              }}
+              aria-label={t('settings.notifyUpdates')}
+            />
           }
         />
       )}

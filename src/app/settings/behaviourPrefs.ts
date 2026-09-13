@@ -148,6 +148,35 @@ export function setDiscoveryNotices(value: boolean): void {
   set(DISCOVERY_NOTIFY_KEY, value, true);
 }
 
+/**
+ * Whether the phone tells you a new AttackFM is out, even with the app closed.
+ *
+ * OFF by default, and not for the reason the gestures switch is. The app keeps
+ * itself current without being asked - it installs a newer version at launch -
+ * so this buys nothing for somebody who opens the app anyway. What it does buy
+ * costs something: a job that wakes the phone a few times a day to ask the
+ * registry a question. That is a trade to be asked for, not one to make on
+ * everybody's behalf.
+ *
+ * Device-local, deliberately absent from SYNCED_KEYS: it schedules work on ONE
+ * phone's operating system, and only Android can schedule it at all. A switch
+ * that followed the account onto a desktop or an iPhone would arrive somewhere
+ * with nothing to switch.
+ *
+ * The switch here is only the stored answer. What acts on it is
+ * notify/updateAlerts.ts, which hands it to the native side and re-hands it on
+ * every start.
+ */
+const UPDATE_ALERTS_KEY = 'attackfm-update-alerts';
+
+export function updateAlertsEnabled(): boolean {
+  return on(UPDATE_ALERTS_KEY, false);
+}
+
+export function setUpdateAlertsEnabled(value: boolean): void {
+  set(UPDATE_ALERTS_KEY, value, false);
+}
+
 // ── Sending your music to a server ──────────────────────────────────────────
 
 const UPLOAD_KEY = 'attackfm-auto-upload';

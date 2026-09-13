@@ -988,7 +988,11 @@
     "stemsStartedLabel": "曲を分解中",
     "stoppedSharing": "{{actor}}が{{playlist}}の共有をやめました",
     "testBody": "通知はこんなふうに表示されます。",
-    "thatLink": "そのリンク"
+    "thatLink": "そのリンク",
+    "updateAlertBody": "AttackFM を開くとアップデートされます。",
+    "updateAlertChannel": "アプリのアップデート",
+    "updateAlertChannelHint": "AttackFM の新しいバージョンが出たとき。",
+    "updateAlertTitle": "AttackFM {{version}} が公開されました"
   },
   "player": {
     "aGroove": "あるグルーヴ",
@@ -3141,6 +3145,9 @@
     "notifyTestSending": "送信中…",
     "notifyTestSent": "送りました。通知を見てみてください。",
     "notifyTestUnsupported": "このビルドは通知を出せません。デスクトップや古いインストールは、更新だけでなくアプリ本体を新しくする必要があります。",
+    "notifyUpdates": "アップデートの通知",
+    "notifyUpdatesGloss": "アプリを閉じていても、AttackFM の新しいバージョンが出たら知らせます。",
+    "notifyUpdatesHint": "アプリを閉じていても、AttackFM の新しいバージョンが出たら通知します。確認は1日に数回なので、公開から数時間後に届くことがあります。アプリを開くとアップデートがインストールされます。",
     "notifyVerbose": "細かい通知",
     "notifyVerboseGloss": "裏方の仕事も知らせます。ダウンロードの開始、曲のステム分離、AI の処理など。",
     "notifyVerboseHint": "ダウンロードの開始、曲のステムへの分離、AI の裏の処理の開始と終了。",

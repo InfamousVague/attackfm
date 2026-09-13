@@ -1188,7 +1188,11 @@
     "stemsStartedLabel": "Séparation en cours",
     "stoppedSharing": "{{actor}} ne partage plus {{playlist}}",
     "testBody": "Voilà à quoi ressemblera une notification.",
-    "thatLink": "Ce lien"
+    "thatLink": "Ce lien",
+    "updateAlertBody": "Ouvrez AttackFM pour installer la mise à jour.",
+    "updateAlertChannel": "Mises à jour de l'app",
+    "updateAlertChannelHint": "Quand une nouvelle version d'AttackFM est disponible.",
+    "updateAlertTitle": "AttackFM {{version}} est disponible"
   },
   "player": {
     "aGroove": "Un groove",
@@ -3549,6 +3553,9 @@
     "notifyTestSending": "Envoi…",
     "notifyTestSent": "Envoyée — regardez vos notifications.",
     "notifyTestUnsupported": "Cette version ne peut pas atteindre le centre de notifications. Les installations de bureau et les plus anciennes ont besoin d'une nouvelle version de l'app elle-même, pas seulement d'une mise à jour.",
+    "notifyUpdates": "Notifications de mise à jour",
+    "notifyUpdatesGloss": "Vous prévient quand une nouvelle version d'AttackFM sort, même avec l'app fermée.",
+    "notifyUpdatesHint": "Une notification quand une nouvelle version d'AttackFM est disponible, même avec l'app fermée. Votre téléphone vérifie quelques fois par jour, elle peut donc arriver quelques heures après la sortie, et ouvrir l'app installe la mise à jour.",
     "notifyVerbose": "Notifications détaillées",
     "notifyVerboseGloss": "Signaler aussi le travail de fond : téléchargements qui démarrent, titres découpés en stems, l'IA qui tourne.",
     "notifyVerboseHint": "Téléchargements qui démarrent, titres découpés en stems, et les passes de fond de l'IA qui commencent et se terminent.",

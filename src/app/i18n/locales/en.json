@@ -1088,7 +1088,11 @@
     "stemsStartedLabel": "Taking a song apart",
     "stoppedSharing": "{{actor}} stopped sharing {{playlist}}",
     "testBody": "That's what a notification will look like.",
-    "thatLink": "That link"
+    "thatLink": "That link",
+    "updateAlertBody": "Open AttackFM to get it.",
+    "updateAlertChannel": "App updates",
+    "updateAlertChannelHint": "When a new version of AttackFM is out.",
+    "updateAlertTitle": "AttackFM {{version}} is out"
   },
   "player": {
     "aGroove": "A groove",
@@ -3345,6 +3349,9 @@
     "notifyTestSending": "Sending…",
     "notifyTestSent": "Sent — look at your notifications.",
     "notifyTestUnsupported": "This build cannot reach the notification tray. Desktop and older installs need a fresh version of the app itself, not just an update.",
+    "notifyUpdates": "Update notifications",
+    "notifyUpdatesGloss": "Tells you when a new version of AttackFM is out, even with the app closed.",
+    "notifyUpdatesHint": "A notification when a new version of AttackFM is out, even with the app closed. Your phone checks a few times a day, so it can arrive hours after the release, and opening the app installs it.",
     "notifyVerbose": "Verbose notifications",
     "notifyVerboseGloss": "Ring for background work too: downloads starting, songs being pulled into stems, the AI running.",
     "notifyVerboseHint": "Downloads starting, songs being pulled into stems, and the AI's background passes starting and finishing.",

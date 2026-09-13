@@ -214,6 +214,15 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     keywords: 'test notification try check send sample verify tray',
   },
   {
+    // Android only - the row is not rendered where the native job cannot be
+    // scheduled, and a search hit there opens the pane at its top.
+    id: 'notify-updates',
+    pane: 'notifications',
+    labelKey: 'settings.notifyUpdates',
+    descriptionKey: 'settings.notifyUpdatesGloss',
+    keywords: 'update updates upgrade new version release out available background closed alert notify tray',
+  },
+  {
     id: 'notify-verbose',
     pane: 'notifications',
     labelKey: 'settings.notifyVerbose',

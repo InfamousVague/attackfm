@@ -44,6 +44,10 @@ interface NativeBridge {
   castPause?: () => void;
   castSeek?: (positionMs: number) => void;
   castVolume?: (volume: number) => void;
+  /** Update alerts: the switch, the running version and the words, as one JSON
+   *  sentence. Present from the update-alerts shell; absent before it, which is
+   *  also how Settings knows not to offer the switch. See notify/updateAlerts.ts. */
+  setUpdateAlerts?: (json: string) => void;
 }
 
 declare global {
